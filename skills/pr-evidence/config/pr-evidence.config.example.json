@@ -1,0 +1,13 @@
+{
+  "_comment": "Copy to .pr-evidence/config.json in your repo and edit. testOrigin MUST be local/test. This is plain JSON — no // comments (they would break parsing).",
+  "testOrigin": "http://localhost:3001",
+  "boot": "scripts/dev-test-mode.sh $PORT",
+  "auth": {
+    "strategy": "credentials-bypass",
+    "loginPath": "/login",
+    "email": "e2e@test.local",
+    "password": "TestPass123!"
+  },
+  "host": { "target": "github-attachment" },
+  "tracker": { "pr": "github", "issue": "jira" }
+}
