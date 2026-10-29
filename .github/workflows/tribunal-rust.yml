@@ -2,7 +2,15 @@
 # touches it runs the whole suite on Linux, on the runner the RUNNER repository
 # variable names (a self-hosted one costs no Actions minutes) or else on
 # GitHub's ubuntu-24.04, and on Windows runs the unit tests, builds the release
-# binary and starts it. The differential tests compare the port against the
+# binary and starts it.
+#
+# Runners. This repository is public, so a pull request can come from anyone's
+# fork. Jobs run on the company's self-hosted runners (the RUNNER and
+# MAC_RUNNER variables) only for pull requests from a branch of this
+# repository, for a manual run and for a release tag, all of which need write
+# access. A pull request from a fork runs on GitHub's hosted runners, which are
+# free for public repositories, so code nobody reviewed never reaches a company
+# machine. Unset variables fall back to the hosted runners too. The differential tests compare the port against the
 # JavaScript and bash it replaces, run on the same machine, except the
 # classifier comparisons in diff_classify_heads.rs: their oracle is macOS's
 # BSD userland, so they read what the scripts printed there from
@@ -11,11 +19,12 @@
 # labelled `macos` (from its next push), or by hand: a Mac costs far more
 # than a Linux runner. Adding a label starts no run: a run started by an
 # unrelated label would cancel the one in progress, which shares its
-# concurrency group. The `macos` job and
-# the release's macOS archives run on GitHub's macOS runners. A
-# `tribunal-rust-v*` tag builds the four release binaries and attaches them,
-# each with its sha256, to a GitHub release. `gate` is the one status a branch rule needs to
-# require.
+# concurrency group. The release's macOS archives are built on GitHub's
+# macos-15 runner. A `tribunal-rust-v*` tag builds the four release binaries
+# and attaches them, each with its sha256, to a GitHub release. `gate` sums up
+# the jobs, but runs only on pull requests that touch the paths below: making
+# it a required check would block every other pull request in this
+# repository.
 name: tribunal-rust
 
 on:
@@ -44,7 +53,7 @@ env:
 jobs:
   linux:
     if: github.event_name != 'push'
-    runs-on: ${{ vars.RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.RUNNER || 'ubuntu-24.04' }}
     steps:
       # The evidence-line tests replay this repository's own history.
       - uses: actions/checkout@v5
@@ -178,7 +187,7 @@ jobs:
       (github.event_name == 'pull_request' &&
        (startsWith(github.head_ref, 'release/') ||
         contains(github.event.pull_request.labels.*.name, 'macos')))
-    runs-on: macos-15
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.MAC_RUNNER || 'macos-15' }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -195,7 +204,7 @@ jobs:
   # resolution behaving as on real Windows.
   windows:
     if: github.event_name != 'push'
-    runs-on: ${{ vars.RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.RUNNER || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v5
       - working-directory: plugins/tribunal
@@ -331,7 +340,7 @@ jobs:
   gate:
     needs: [macos, linux, windows]
     if: always() && github.event_name != 'push'
-    runs-on: ${{ vars.RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.RUNNER || 'ubuntu-24.04' }}
     steps:
       - env:
           MACOS: ${{ needs.macos.result }}
