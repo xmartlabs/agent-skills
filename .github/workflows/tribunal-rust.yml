@@ -14,12 +14,9 @@
 # JavaScript and bash it replaces, run on the same machine, except the
 # classifier comparisons in diff_classify_heads.rs: their oracle is macOS's
 # BSD userland, so they read what the scripts printed there from
-# tests/goldens/ and run on Linux too. The `macos` job, a check of the suite
-# on the platform most of the team runs, starts only on a release PR, on a PR
-# labelled `macos` (from its next push), or by hand: a Mac costs far more
-# than a Linux runner. Adding a label starts no run: a run started by an
-# unrelated label would cancel the one in progress, which shares its
-# concurrency group. The release's macOS archives are built on GitHub's
+# tests/goldens/ and run on Linux too. The `macos` job runs the whole suite
+# on the platform most of the team runs, on every pull request, as `linux`
+# and `windows` do. The release's macOS archives are built on GitHub's
 # macos-15 runner. A `tribunal-rust-v*` tag builds the four release binaries
 # and attaches them, each with its sha256, to a GitHub release. `gate` sums up
 # the jobs, but runs only on pull requests that touch the paths below: making
@@ -190,14 +187,12 @@ jobs:
   # rust/scripts/test-macos.sh runs the whole suite on macOS at this job's
   # commit, with all of its history: the evidence-line tests replay this
   # repository's commits.
-  # A hosted Mac bills ten times the Linux rate while the repository is
-  # private, so then the job runs only on the company Mac MAC_RUNNER names.
+  # Hosted Macs are free for a public repository. A private one would bill ten
+  # times the Linux rate, so then the job runs only on the company Mac
+  # MAC_RUNNER names.
   macos:
     if: >-
-      (github.event_name == 'workflow_dispatch' ||
-       (github.event_name == 'pull_request' &&
-        (startsWith(github.head_ref, 'release/') ||
-         contains(github.event.pull_request.labels.*.name, 'macos')))) &&
+      github.event_name != 'push' &&
       (!github.event.repository.private || vars.MAC_RUNNER != '')
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.MAC_RUNNER || 'macos-15' }}
     timeout-minutes: 60
@@ -210,19 +205,41 @@ jobs:
       - run: bash plugins/tribunal/rust/scripts/test-macos.sh
         working-directory: .
 
-  # The release's Windows target, cross-built in a container with cargo-xwin
-  # and checked under Wine: clippy, the unit tests, the release build and the
-  # binary starting. Wine does not show process-tree cleanup or PATHEXT
-  # resolution behaving as on real Windows.
+  # The release's Windows target, x86_64-pc-windows-msvc, built and tested on
+  # a real Windows machine: clippy, the unit tests, the release build and the
+  # binary starting. Unlike the Wine check in rust/docker/Dockerfile, it shows
+  # process-tree cleanup and PATHEXT resolution (finding a `.cmd`) as users get
+  # them. GitHub's Windows runners are free for a public repository. A merge to
+  # main runs it too, to keep its cargo cache warm, as the linux job does.
   windows:
-    if: github.event_name != 'push'
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.RUNNER || 'ubuntu-24.04' }}
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      TARGET: x86_64-pc-windows-msvc
     steps:
-      - uses: actions/checkout@v5
-      - working-directory: plugins/tribunal
+      # The unit tests read agents/ and lib/, which no .gitattributes pins to
+      # LF, and the runner's git checks text out with CRLF by default.
+      - name: git config
+        working-directory: .
         run: |
-          docker buildx build -f rust/docker/Dockerfile \
-            --target windows-msvc-check --progress plain .
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+      - uses: actions/checkout@v5
+      - name: toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add "$TARGET"
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: plugins/tribunal/rust
+      - run: cargo clippy --target "$TARGET" --workspace --lib --bins --locked -- -D warnings
+      - run: cargo test --target "$TARGET" --workspace --lib --bins --locked
+      - run: cargo build --release --locked --target "$TARGET" -p tribunal-cli
+      # rust/.cargo/config.toml puts target/ at the repository root.
+      - run: '"../../../target/$TARGET/release/tribunal.exe" --version'
 
   # The jobs a tag runs (build, build-darwin, release) take the runner the
   # RELEASE_RUNNER variable names, else RUNNER: a runner that never builds pull

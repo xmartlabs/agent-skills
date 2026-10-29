@@ -588,18 +588,19 @@ containers and starts each on a machine with nothing else installed, the
 Windows one under Wine. Wine shows the binary links and starts; it does not
 show that killing a process tree or finding a `.cmd` behaves as on Windows.
 The `windows` job in `.github/workflows/tribunal-rust.yml`, on every pull
-request that touches this directory, builds the `windows-msvc-check` stage of
-`docker/Dockerfile` on the Linux runner: the release's target,
-`x86_64-pc-windows-msvc`, cross-built with cargo-xwin, with clippy, the unit
-tests under Wine, the release build and `--version`. No job uses a GitHub
-Windows runner, so the same Wine limit holds for it.
+request that touches this directory, runs on GitHub's `windows-2025` runner:
+the release's target, `x86_64-pc-windows-msvc`, with clippy, the unit tests,
+the release build and `--version`, on a real Windows machine, so the Wine limit
+does not apply to it. `docker/check.sh` stays for a local check from macOS or
+Linux, and the release still cross-builds the Windows binary in the
+`windows-msvc-bin` stage.
 
 The full suite runs in the `linux` job, on the runner the `RUNNER` repository
 variable names (a self-hosted one costs no Actions minutes), else on GitHub's
 `ubuntu-24.04`. A pull request from a fork always runs on GitHub's runners:
 the repository is public, and only a branch of this repository, a manual run
 or a release tag reaches the self-hosted ones. The runner needs node 24, bash, git, python3 (two of the scripts the tests
-run call it), a C linker, Docker with buildx (the `windows` job), and the
+run call it), a C linker, Docker with buildx (the release's `build` job), and the
 `en_US.UTF-8` locale, which the differential tests set; the job checks for
 the locale and installs rustup when it is missing. It must not run as root:
 the tests that `chmod 000` a file expect the read to fail. The differential tests compare the port
@@ -648,11 +649,10 @@ script printed masked, and keeps the `plugin.json` the script read its version
 from: replaying, the port gets a plugin root holding that file, so a version
 bump needs no regeneration. Regenerate it with `--test diff_post_footer`. The
 helpers these goldens share (`module_texts`, `recorded`, `write_golden`,
-`swapped`) live in `tests/posting/mod.rs`. The `macos` job runs the whole suite on a Mac, on a
-`release/*` pull request, on one labelled `macos`, or by hand
-(`workflow_dispatch`), because a macOS run takes far longer than a Linux one.
-A label takes effect from the next push: no run starts on `labeled`, because it
-would cancel the run in progress. The job runs on the runner the `MAC_RUNNER`
+`swapped`) live in `tests/posting/mod.rs`. The `macos` job runs the whole suite on a Mac on every
+pull request that touches this directory, and by hand (`workflow_dispatch`).
+While the repository is public GitHub's Macs are free; were it private, the job
+would run only when `MAC_RUNNER` names a company Mac. The job runs on the runner the `MAC_RUNNER`
 variable names, else on GitHub's `macos-15` (always for a fork's pull request):
 it checks out the commit's whole history and runs `rust/scripts/test-macos.sh`.
 `rust/scripts/mac-setup.sh` installs the Rust toolchain and node 24 when the
