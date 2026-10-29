@@ -8,8 +8,6 @@ that live in that repo, not in the plugin:
 | `.claude/review-profile.json` | The repo's facts: reviewer kind, lens foci, high-risk paths, branches, sibling repos | Yes. Without it the review stops. |
 | `.claude/review-rules.md` | The repo's own review knowledge, as blocks that replace slots of the plugin's generic methodology | No. Without it reviewers get the generic text. |
 
-Both plugins read the same two files, each taking the parts it uses.
-
 ## Files here
 
 | File | Copy it to |

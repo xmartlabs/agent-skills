@@ -7,10 +7,48 @@ turn out not to be real.
 
 Works on any open PR, including your own.
 
-**Stack.** Tested on a Node, Express and Prisma backend and a React frontend. Other stacks should run but are not measured: see [Which stacks it works on](#which-stacks-it-works-on).
+> **Built for JavaScript and TypeScript.** It was measured on a Node, Express
+> and Prisma backend and a React frontend. Several steps only understand JS/TS
+> files, so on other languages the review runs but with less to go on. Details
+> in [Which stacks it works on](#which-stacks-it-works-on).
 
 **Cost scales with the PR, and the spread is wide.** Read
 [What it costs](#what-it-costs) before launching a run on anything large.
+
+## Quick start
+
+You need `gh` (logged in) and `node`. The `codex` CLI is optional and adds a
+second model to the refutation panel.
+
+**1. Install both plugins** in Claude Code. Tribunal runs its report through
+homosapiens before posting, so install it too.
+
+```
+/plugin marketplace add xmartlabs/agent-skills
+/plugin install tribunal@xmartlabs
+/plugin install homosapiens@xmartlabs
+/reload-plugins
+```
+
+**2. Add two files to the repo you want reviewed**, committed to its base
+branch. Without the first one the review stops.
+
+| File | Start from | What to change |
+|---|---|---|
+| `.claude/review-profile.json` | [`review-profile.backend.json`](templates/review-profile.backend.json) or [`review-profile.frontend.json`](templates/review-profile.frontend.json) | `project`, `repo`, `baseBranch`, `deployBranches`, and the `riskPaths` that matter in your code |
+| `.claude/review-rules.md` | [`review-rules.md`](templates/review-rules.md) | The `intro` and `project-traps` blocks: your stack and the mistakes your team keeps making |
+
+Every field is explained in [templates/README.md](templates/README.md), which
+also has a checker that validates both files before you commit them.
+
+**3. Run a first review that posts nothing**, from a checkout of that repo:
+
+```
+/tribunal:review-pr 1234 --no-post
+```
+
+Drop `--no-post` once the reports look right: tribunal still asks before
+posting anything to GitHub.
 
 ---
 
@@ -133,13 +171,14 @@ need them fail on the missing file.
 - **It reads the diff, not your intent.** It can't know a suspicious-looking
   change was deliberate unless you say so with `--context`.
 
-## Install
+## Install details
 
-**Developing this plugin, not just using it?** Don't hand-edit the installed
-cache: see [Developing it](#developing-it) for the `--plugin-dir` workflow.
+The commands are in [Quick start](#quick-start). **Developing this plugin, not
+just using it?** Don't hand-edit the installed cache: see
+[Developing it](#developing-it) for the `--plugin-dir` workflow.
 
-Requires `gh` (authenticated) and `node`. Optional but recommended: the `codex`
-CLI, which powers the second-opinion refuter and is enabled by default.
+The `codex` CLI is optional but recommended: it powers the second-opinion
+refuter, which is on by default.
 
 The Codex head runs on the `model` in `~/.codex/review.config.toml`, the file
 `codex --profile review` reads, and falls back to the `model` in
@@ -148,13 +187,6 @@ pick a model in its selector, so pin the review model in the first one:
 
 ```bash
 echo 'model = "gpt-6.1-sol"' > ~/.codex/review.config.toml
-```
-
-```
-/plugin marketplace add xmartlabs/agent-skills
-/plugin install tribunal@xmartlabs
-/plugin install homosapiens@xmartlabs
-/reload-plugins
 ```
 
 `homosapiens` is needed only to post: tribunal runs its report through it
@@ -207,13 +239,34 @@ A review runs against one repo, and that repo needs a profile, `.claude/review-p
 |---|---|
 | **Node and TypeScript backend** with Express and Prisma | **Tested.** The reviewers' default text was written for this stack. |
 | **React and TypeScript frontend** | **Tested.** Same. |
-| Another Node or TypeScript stack (Nest, Fastify, Next.js, a different ORM) | Should work, **not measured**. The general review (logic, auth, errors, performance) applies. The default text still talks about Prisma, Zod and BullMQ, or React, so put your stack's own traps in `review-rules.md`. |
-| Python, Java, Go, mobile, anything else | Tribunal should run if you register the repo as `backend` or `frontend`, but **no run was tried** on such a repo, and no reviewer is written for your language. Replace the intro and traps in your rules file. The type-check step only knows TypeScript and is skipped when the repo has no `tsconfig`. |
+| Another JavaScript or TypeScript stack (Nest, Fastify, Next.js, plain JavaScript, a different ORM) | Should work, **not measured**. Every step runs. The default text still talks about Prisma, Zod and BullMQ, or React, so put your stack's own traps in `review-rules.md`. |
+| Python, Java, Go, mobile, anything else | Runs if you register the repo as `backend` or `frontend`, but **no run was tried** on such a repo, three steps do nothing (below), and no reviewer is written for your language. Replace the intro and traps in your rules file. |
+
+Three steps read the code itself rather than the diff, and they only
+understand JavaScript and TypeScript (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`,
+`.tsx`):
+
+| Step | What it gives the review | Outside JS/TS |
+|---|---|---|
+| Callers list | The unchanged code that calls what the PR changed, so lenses check the callers too | Empty |
+| Syntax facts | Patterns worth a look, such as a `catch` that returns a value callers read as an answer | Empty |
+| Type check | `tsc` confirms or refutes a compile-level claim without spending a panel | Skipped. Also skipped in a JavaScript repo with no `tsconfig` |
+
+The lenses, the refutation panel and the report work on any language. What you
+lose elsewhere is the context those three steps add, so expect more findings
+that misread how the changed code is used.
+
+Plain JavaScript gets the callers list and the syntax facts but no type check.
+The Rust engine, the default, parses JS and TS by itself. The Workflow engine
+(`--engine workflow`) borrows the `typescript` package from the reviewed repo's
+`node_modules`. Without it, the Workflow builds the callers list by matching
+names instead of following imports, which is less precise, and finds no syntax
+facts.
 
 What "tested" covers: the review quality was measured only on the first two
 rows. On any other stack you get a working review and unknown quality. To find
 out how good the reviews are there, label 3 to 5 of your own PRs with known bugs
-and compare. Setting up a project is in [`templates/`](templates/README.md).
+and compare.
 
 ## Developing it
 
