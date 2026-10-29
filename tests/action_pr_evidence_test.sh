@@ -49,6 +49,11 @@ cat > "$TMP/bin/claude" <<'SH'
 cat > "$FX/claude-prompt.md"
 printf 'GH_TOKEN=%s\nPORT=%s\nSESS=%s\nCLAUDE_CONFIG_DIR=%s\nARGS=%s\n' \
   "$GH_TOKEN" "$PORT" "$SESS" "$CLAUDE_CONFIG_DIR" "$*" > "$FX/claude-env"
+printf 'GIT_AUTHOR=%s <%s>\nGIT_COMMITTER=%s <%s>\n' "$GIT_AUTHOR_NAME" "$GIT_AUTHOR_EMAIL" \
+  "$GIT_COMMITTER_NAME" "$GIT_COMMITTER_EMAIL" >> "$FX/claude-env"
+# The Authorization headers git would send to github.com: an empty value resets the list.
+git config --get-all http.https://github.com/.extraheader | awk '/^$/ {n = 0; next} {h[n++] = $0}
+  END {for (i = 0; i < n; i++) print "HEADER=" h[i]}' >> "$FX/claude-env"
 SH
 chmod +x "$TMP/bin/gh" "$TMP/bin/claude"
 
@@ -71,7 +76,7 @@ PY
   echo '[]' > "$FX/comments.json"
   echo '[{"filename":"src/app/page.tsx"},{"filename":"README.md"}]' > "$FX/files.json"
 }
-gate() { : > "$GITHUB_OUTPUT"; INPUT_LABEL=pr-evidence INPUT_PATHS="${1:-}" ATTACH_TOKEN="${2:-}" bash "$RUN" gate 2>/dev/null; sed -n 's/^run=//p' "$GITHUB_OUTPUT"; }
+gate() { : > "$GITHUB_OUTPUT"; HAS_CLAUDE_TOKEN="${HAS_CLAUDE:-true}" INPUT_LABEL=pr-evidence INPUT_PATHS="${1:-}" ATTACH_TOKEN="${2:-}" bash "$RUN" gate 2>/dev/null; sed -n 's/^run=//p' "$GITHUB_OUTPUT"; }
 
 # --- gate ---------------------------------------------------------------------------------------
 new_job opened false
@@ -96,6 +101,11 @@ assert_eq "posted evidence from the bot stops the run" "false" "$(gate)"
 new_job opened false
 echo '[{"user":{"login":"dev","type":"User"},"body":"<!-- pr-evidence:posted -->"}]' > "$FX/comments.json"
 assert_eq "a person's comment with the marker does not stop the run" "true" "$(gate)"
+new_job opened false
+echo '[{"user":{"login":"other-app[bot]","type":"Bot"},"body":"> <!-- pr-evidence:posted -->"}]' > "$FX/comments.json"
+assert_eq "another bot quoting the marker does not stop the run" "true" "$(gate)"
+new_job opened false
+assert_eq "without a Claude token (e.g. Dependabot) it does not run" "false" "$(HAS_CLAUDE=false gate)"
 new_job opened false
 echo '[{"user":{"login":"evidence-bot","type":"User"},"body":"<!-- pr-evidence:posted -->"}]' > "$FX/comments.json"
 echo '{"login":"evidence-bot"}' > "$FX/user.json"
@@ -140,13 +150,24 @@ new_job opened false; printf '%s' '{"testOrigin":"https://app.example.com","boot
 prepare; RC=$?
 assert_ok "a non-local testOrigin is refused" test "$RC" -ne 0
 
+new_job opened false; printf '%s' '{"testOrigin":"http://[::1]:3000","boot":"x"}' > "$FX/base-config.json"
+prepare
+assert_eq "an IPv6 testOrigin keeps its brackets" "http://[::1]:$(cat "$TMP/runner/pr-evidence/port")" "$(cfg_val "$TMP/ws/.pr-evidence/config.json" "testOrigin")"
+
+new_job opened false; echo "gh: Server Error (HTTP 502)" > "$FX/contents-error"
+echo '{"tracked":true}' > "$TMP/ws/.pr-evidence/config.json"
+prepare; (cd "$TMP/ws" && bash "$RUN" cleanup >/dev/null 2>&1)
+assert_eq "cleanup after a failed prepare keeps the checkout's config" '{"tracked":true}' "$(cat "$TMP/ws/.pr-evidence/config.json")"
+
 # --- capture ------------------------------------------------------------------------------------
 capture() { (cd "$TMP/ws" && GITHUB_TOKEN_INPUT=job-secret ATTACH_TOKEN="${1:-}" CLAUDE_CODE_OAUTH_TOKEN=c \
   INPUT_INSTRUCTIONS="${2:-}" INPUT_MAX_TURNS=50 INPUT_CLAUDE_ARGS="--model m" bash "$RUN" capture >/dev/null 2>&1); }
 new_job opened false; printf '%s' "$base_cfg" > "$FX/base-config.json"; prepare
+git -C "$TMP/ws" init -q 2>/dev/null
+git -C "$TMP/ws" config http.https://github.com/.extraheader "AUTHORIZATION: basic CHECKOUT"
 capture "" docs/evidence.md
 assert_ok "the prompt names the PR" grep -q "PR_NUMBER=12" "$FX/claude-prompt.md"
-assert_ok "the prompt points at the staged skill" grep -qF "$TMP/runner/pr-evidence/claude/skills/pr-evidence/scripts/run.sh host pr-12" "$FX/claude-prompt.md"
+assert_ok "the prompt points at the staged skill" grep -qF "$TMP/runner/pr-evidence/claude/skills/pr-evidence/scripts/run.sh host" "$FX/claude-prompt.md"
 assert_ok "the prompt includes the repository instructions" grep -qF '`docs/evidence.md`' "$FX/claude-prompt.md"
 assert_fail "no placeholder is left" grep -q '{{' "$FX/claude-prompt.md"
 assert_ok "git-branch mode uses the job token" grep -qx "GH_TOKEN=job-secret" "$FX/claude-env"
@@ -154,12 +175,17 @@ assert_ok "Claude gets the port" grep -qx "PORT=$(cat "$TMP/runner/pr-evidence/p
 assert_ok "Claude gets the session" grep -qx "SESS=pr-evidence-7-1" "$FX/claude-env"
 assert_ok "Claude reads the staged config dir" grep -qx "CLAUDE_CONFIG_DIR=$TMP/runner/pr-evidence/claude" "$FX/claude-env"
 assert_ok "extra claude args are passed" grep -q -- "--max-turns 50 .*--model m" "$FX/claude-env"
+assert_ok "hosting commits have an author" grep -qx "GIT_AUTHOR=github-actions\[bot\] <41898282+github-actions\[bot\]@users.noreply.github.com>" "$FX/claude-env"
+assert_ok "hosting commits have a committer" grep -q "^GIT_COMMITTER=github-actions\[bot\] <" "$FX/claude-env"
+assert_eq "git sends exactly one Authorization header" "1" "$(grep -c '^HEADER=' "$FX/claude-env")"
+assert_ok "the header carries github-token" grep -qx "HEADER=AUTHORIZATION: basic $(printf 'x-access-token:job-secret' | base64)" "$FX/claude-env"
+assert_ok "hosting passes the config path" grep -qF "run.sh host --config .pr-evidence/config.json pr-12" "$FX/claude-prompt.md"
 
 new_job opened false; printf '%s' "$base_cfg" > "$FX/base-config.json"; prepare attach-secret
 capture attach-secret
 assert_ok "attachment mode uses the attach token" grep -qx "GH_TOKEN=attach-secret" "$FX/claude-env"
 assert_ok "attachment mode posts files with the comment" grep -qF "run.sh comment 12 <body-file> <files...>" "$FX/claude-prompt.md"
-assert_fail "attachment mode has no hosting step" grep -qF "run.sh host pr-12" "$FX/claude-prompt.md"
+assert_fail "attachment mode has no hosting step" grep -qF "run.sh host --config" "$FX/claude-prompt.md"
 
 # --- fallback -----------------------------------------------------------------------------------
 fallback() { INPUT_LABEL=pr-evidence bash "$RUN" fallback >/dev/null 2>&1; }

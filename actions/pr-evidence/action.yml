@@ -58,6 +58,7 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.github-token }}
         ATTACH_TOKEN: ${{ inputs.attach-token }}
+        HAS_CLAUDE_TOKEN: ${{ inputs.claude-token != '' }}
         INPUT_PATHS: ${{ inputs.paths }}
         INPUT_LABEL: ${{ inputs.label }}
       run: bash "$GITHUB_ACTION_PATH/run.sh" gate

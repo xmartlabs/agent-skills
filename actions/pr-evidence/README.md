@@ -2,8 +2,9 @@
 
 Runs the [`pr-evidence`](../../skills/pr-evidence) skill with Claude on a pull request that changes
 UI: it boots your app locally on the runner, captures a screenshot or recording of the change, and
-posts it as a comment on the pull request. It never fails the job: when it cannot capture, it posts
-an "Evidence pending" comment with the reason and a link to the run.
+posts it as a comment on the pull request. A capture that does not work out does not fail the job:
+it posts an "Evidence pending" comment with the reason and a link to the run. Setup errors do fail
+it: no config on either branch, a config `check` refuses, or a tool that cannot be installed.
 
 ## Setup
 
@@ -38,8 +39,8 @@ jobs:
         with:
           claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           paths: |
-            src/**
-            !src/**/*.test.tsx
+            src/*
+            !src/*.test.tsx
 ```
 
 ## When it runs
@@ -49,12 +50,17 @@ jobs:
 - It skips a pull request that already has a comment with `<!-- pr-evidence:posted -->` from the
   action. Adding the `pr-evidence` label forces a run, drafts included. Remove and add it again to
   run once more.
-- Fork pull requests never run (they get no secrets).
-- A cancelled run posts nothing; the run that replaced it reports.
+- Fork pull requests never run, and neither do runs without the Claude token (Dependabot's, for
+  example): they get no secrets.
+- A cancelled run posts nothing; the run that replaced it reports. A job that hits its
+  `timeout-minutes` counts as cancelled too, so it posts nothing either: check the Actions tab.
+- Only the action's own comments count as "already posted": `github-actions[bot]`'s, the
+  `github-token` user's and the `attach-token` user's.
 
 ## Where the media goes
 
-GitHub only lets a user upload attachments to a comment; the Actions token cannot. So:
+GitHub only lets a user upload attachments to a comment; the Actions token cannot. So the action
+sets the config's `host.target` from the token, whatever the config says:
 
 | `attach-token` | Media | Token permissions |
 | --- | --- | --- |
@@ -68,7 +74,7 @@ GitHub only lets a user upload attachments to a comment; the Actions token canno
 | `claude-token` | required | Claude Code OAuth token. |
 | `github-token` | `github.token` | Reads the pull request, posts comments, pushes to the hosting branch. |
 | `attach-token` | empty | User token for native attachments (see above). |
-| `paths` | empty | Newline-separated globs (`*` also crosses `/`, a leading `!` excludes). |
+| `paths` | empty | Newline-separated globs (fnmatch: `*` also crosses `/`, so `src/*` is the whole tree; a leading `!` excludes). |
 | `label` | `pr-evidence` | The label that forces a run. |
 | `config` | `.pr-evidence/config.json` | Config path, read at the base branch. |
 | `instructions` | empty | A repository document Claude reads first, for example how to log in, pick data or which route shows a component. |
@@ -85,6 +91,9 @@ share a host, it picks a free port and its own browser session, so parallel jobs
 
 ## Security
 
-The action reads the config from the base branch, but Claude still boots and browses the pull
-request's code with `github-token` (and `attach-token`) in its environment. Same-repository pull
-requests only; do not run it on code you would not run with those tokens.
+Claude boots and browses the pull request's code with `claude-token`, `github-token` and
+`attach-token` available to it, and the app's `boot` command runs in that environment too. Reading
+the config from the base branch keeps a pull request from changing *how* the app boots, but under
+`pull_request` the pull request also controls the workflow file, so the real boundary is: the action
+runs only on same-repository pull requests, and adding one to it means trusting its code with those
+tokens.

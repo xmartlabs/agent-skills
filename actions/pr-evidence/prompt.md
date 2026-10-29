@@ -11,7 +11,9 @@ Inputs, passed explicitly (this checkout may be a merge ref, so do not resolve t
 
 Environment:
 - `{{CONFIG}}` is the trusted copy from the base branch, with `testOrigin` already pointing at
-  the port in `PORT`. Do not edit it. Boot with its `boot` command and `PORT` exported.
+  the port in `PORT`. Do not edit it. Use it wherever the skill reads a config (pass it to the
+  skill's `run.sh check` and `run.sh browser`, and `--config {{CONFIG}}` to `run.sh host`), and
+  boot with its `boot` command with `PORT` exported.
 - Use the exported `SESS` as the playwright-cli session name (`playwright-cli -s="$SESS" ...`)
   and never run `playwright-cli kill-all`: other jobs may share this machine.
 

@@ -31,13 +31,14 @@ PY
 
 pr_number() { event pull_request.number; }
 
-# Comments written by the action's own identities: any bot account (github-actions[bot], an App)
-# and the attach-token user. Prints their bodies, one JSON string per line, newest last.
+# Comments written by the action's own identities: github-actions[bot], the github-token's user
+# when it can read one (a PAT or an App's user token), and the attach-token user. Prints their
+# bodies, one JSON string per line, newest last.
 own_comment_bodies() { # [SINCE_ISO]
-  local since="${1:-}" attach_login=""
-  [ -f "$JOB/attach-login" ] && attach_login="$(cat "$JOB/attach-login")"
+  local since="${1:-}" logins='["github-actions[bot]"]'
+  [ -f "$JOB/own-logins.json" ] && logins="$(cat "$JOB/own-logins.json")"
   gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$(pr_number)/comments?per_page=100${since:+&since=$since}" \
-    --jq ".[] | select(.user.type == \"Bot\" or .user.login == \"$attach_login\") | .body | @json"
+    --jq ".[] | select(.user.login as \$l | $logins | index(\$l)) | .body | @json"
 }
 
 # matches_paths FILE_LIST PATTERNS: exit 0 when a listed file matches an include pattern and no
@@ -69,10 +70,15 @@ cmd_gate() {
 
   [ -n "$(pr_number)" ] || { decide "not a pull_request event" false; return 0; }
   [ "$head_repo" = "$GITHUB_REPOSITORY" ] || { decide "fork pull request" false; return 0; }
+  # Dependabot and similar runs get no secrets: without a Claude token there is nothing to run.
+  [ "${HAS_CLAUDE_TOKEN:-}" = true ] || { decide "no claude-token (secrets are not available to this run)" false; return 0; }
+  local own=("github-actions[bot]") login
+  login="$(gh api user --jq .login 2>/dev/null)" && [ -n "$login" ] && own+=("$login")
   if [ -n "${ATTACH_TOKEN:-}" ]; then
-    GH_TOKEN="$ATTACH_TOKEN" gh api user --jq .login > "$JOB/attach-login" 2>/dev/null \
-      || { log "attach-token cannot read its own user"; : > "$JOB/attach-login"; }
+    login="$(GH_TOKEN="$ATTACH_TOKEN" gh api user --jq .login 2>/dev/null)" && [ -n "$login" ] && own+=("$login") \
+      || log "attach-token cannot read its own user"
   fi
+  python3 -c 'import json,sys;print(json.dumps(sys.argv[1:]))' "${own[@]}" > "$JOB/own-logins.json"
   if [ "$action" = labeled ]; then
     if [ "$label" = "$INPUT_LABEL" ]; then decide "label '$label' forces a run" true
     else decide "label '$label' is not '$INPUT_LABEL'" false; fi
@@ -101,16 +107,17 @@ cmd_prepare() {
   mkdir -p "$JOB"
   date -u +%Y-%m-%dT%H:%M:%SZ > "$JOB/started-at"
   printf '%s\n' "$cfg" > "$JOB/config-path"
+  [ -f "$cfg" ] && cp "$cfg" "$JOB/config.original.json"
   if gh api -H 'Accept: application/vnd.github.raw' \
       "repos/$GITHUB_REPOSITORY/contents/$cfg?ref=$base_sha" > "$JOB/config.json" 2> "$JOB/config.err"; then
     log "using $cfg from the base branch ($base_sha)"
-  elif grep -q 'HTTP 404' "$JOB/config.err" && [ -f "$cfg" ]; then
+  elif grep -q 'HTTP 404' "$JOB/config.err"; then
+    [ -f "$cfg" ] || { log "no $cfg on the base branch or in the pull request"; return 1; }
     log "the base branch has no $cfg; using the pull request's copy"
     cp "$cfg" "$JOB/config.json"
   else
-    cat "$JOB/config.err" >&2; log "no $cfg on the base branch or in the checkout"; return 1
+    cat "$JOB/config.err" >&2; log "could not read $cfg from the base branch"; return 1
   fi
-  [ -f "$cfg" ] && cp "$cfg" "$JOB/config.original.json"
 
   port="$(pick_port)"; echo "$port" > "$JOB/port"
   if [ -n "${ATTACH_TOKEN:-}" ]; then host=github-attachment; else host=git-branch; fi
@@ -121,7 +128,8 @@ path, port, host = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 c = json.load(open(path))
 if c.get('testOrigin'):
     u = urlsplit(c['testOrigin'])
-    c['testOrigin'] = urlunsplit((u.scheme, f"{u.hostname}:{port}", u.path, u.query, u.fragment))
+    host_part = f"[{u.hostname}]" if ":" in (u.hostname or "") else u.hostname
+    c['testOrigin'] = urlunsplit((u.scheme, f"{host_part}:{port}", u.path, u.query, u.fragment))
 h = c.get('host') or {}
 h['target'] = host
 c['host'] = h
@@ -159,8 +167,11 @@ cmd_install() {
   export PATH="$tools/bin:$PATH"
   case "$(uname -m)" in x86_64) arch=amd64 ;; aarch64 | arm64) arch=arm64 ;; *) arch="$(uname -m)" ;; esac
   if ! gh_at_least 2 99; then
-    curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${arch}.tar.gz" \
-      | tar -xz -C "$tools"
+    local rel="https://github.com/cli/cli/releases/download/v${GH_VERSION}" tgz="gh_${GH_VERSION}_linux_${arch}.tar.gz"
+    curl -fsSL -o "$tools/$tgz" "$rel/$tgz"
+    curl -fsSL -o "$tools/gh-checksums.txt" "$rel/gh_${GH_VERSION}_checksums.txt"
+    (cd "$tools" && grep " $tgz\$" gh-checksums.txt | sha256sum -c -)
+    tar -xzf "$tools/$tgz" -C "$tools"
     ln -sf "$tools/gh_${GH_VERSION}_linux_${arch}/bin/gh" "$tools/bin/gh"
   fi
   if ! command -v playwright-cli >/dev/null; then
@@ -171,9 +182,10 @@ cmd_install() {
   local browser; browser="$(bash "$SKILL_SRC/scripts/run.sh" browser "$(cat "$JOB/config-path")")"
   if sudo -n true 2>/dev/null; then playwright-cli install-browser "$browser" --with-deps
   else playwright-cli install-browser "$browser"; fi
+  # ffmpeg only turns recordings into GIFs; without it the skill captures screenshots instead.
   if ! command -v ffmpeg >/dev/null; then
-    if curl -fsSL "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-${arch}-static.tar.xz" | tar -xJ -C "$tools"; then
-      for d in "$tools"/ffmpeg-*-static; do ln -sf "$d/ffmpeg" "$tools/bin/ffmpeg"; done
+    if sudo -n true 2>/dev/null && command -v apt-get >/dev/null; then
+      { sudo -n apt-get update -qq && sudo -n apt-get install -y -qq ffmpeg; } >/dev/null || log "ffmpeg install failed; recordings fall back to screenshots"
     else
       log "ffmpeg unavailable; recordings fall back to screenshots"
     fi
@@ -194,8 +206,9 @@ cmd_warmup() {
   if command -v setsid >/dev/null; then PORT="$port" setsid bash -c "$boot" > "$JOB/warmup.log" 2>&1 &
   else PORT="$port" bash -c "$boot" > "$JOB/warmup.log" 2>&1 & fi
   pid=$!
-  for _ in $(seq 1 120); do
-    if curl -sf -o /dev/null --max-time 600 -L "${origin%/}/${INPUT_WARMUP_PATH#/}"; then ok=true; break; fi
+  local deadline=$((SECONDS + ${PR_EVIDENCE_WARMUP_SECONDS:-900}))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if curl -sf -o /dev/null --max-time "$((deadline - SECONDS))" -L "${origin%/}/${INPUT_WARMUP_PATH#/}"; then ok=true; break; fi
     kill -0 "$pid" 2>/dev/null || break
     sleep 2
   done
@@ -215,7 +228,7 @@ cmd_capture() {
     publish="Post exactly one comment with \`$JOB/claude/skills/pr-evidence/scripts/run.sh comment $pr <body-file> <files...>\`, referencing each file by its local path in the body (GitHub replaces the paths with the uploaded attachments)."
   else
     token="$GITHUB_TOKEN_INPUT"
-    publish="1. Host the media first: \`$JOB/claude/skills/pr-evidence/scripts/run.sh host pr-$pr <files...>\` prints a base URL; each file is \`<base URL>/<file name>\`.
+    publish="1. Host the media first: \`$JOB/claude/skills/pr-evidence/scripts/run.sh host --config $(cat "$JOB/config-path") pr-$pr <files...>\` prints a base URL; each file is \`<base URL>/<file name>\`.
 2. Embed those URLs in the body file, then post exactly one comment with \`$JOB/claude/skills/pr-evidence/scripts/run.sh comment $pr <body-file>\` and NO file arguments (file arguments switch to native attachments, which this token cannot upload)."
   fi
   instructions=""
@@ -229,15 +242,20 @@ t = open(sys.argv[1]).read()
 t = re.sub(r"\{\{([A-Z_]+)\}\}", lambda m: os.environ["P_" + m.group(1)], t)
 open(sys.argv[2], "w").write(t)
 PY
-  # git-branch pushes through origin with the job token, scoped to these commands by env.
+  # git-branch commits as github-actions[bot] and pushes through origin with github-token, scoped
+  # to Claude's commands by env. The empty first value resets any header actions/checkout left in
+  # the repo config, so git sends one Authorization header, not two.
   local basic; basic="$(printf 'x-access-token:%s' "$GITHUB_TOKEN_INPUT" | base64 | tr -d '\n')"
   echo "::add-mask::$basic"
+  export GIT_AUTHOR_NAME="github-actions[bot]" GIT_COMMITTER_NAME="github-actions[bot]"
+  export GIT_AUTHOR_EMAIL="41898282+github-actions[bot]@users.noreply.github.com"
+  export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
   set -o pipefail
   # shellcheck disable=SC2086 # INPUT_CLAUDE_ARGS is a list of arguments
   GH_TOKEN="$token" PORT="$(cat "$JOB/port")" SESS="$(cat "$JOB/session")" \
   CLAUDE_CONFIG_DIR="$JOB/claude" \
-  GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
-  GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $basic" \
+  GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" GIT_CONFIG_VALUE_0="" \
+  GIT_CONFIG_KEY_1="http.https://github.com/.extraheader" GIT_CONFIG_VALUE_1="AUTHORIZATION: basic $basic" \
     claude -p --max-turns "$INPUT_MAX_TURNS" \
       --allowedTools Skill,Bash,Read,Write,Edit,Grep,Glob ${INPUT_CLAUDE_ARGS:-} \
       < "$JOB/prompt.md" 2>&1 | tee "$JOB/claude.log"
