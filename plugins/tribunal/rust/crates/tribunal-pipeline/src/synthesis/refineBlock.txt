@@ -1,0 +1,4 @@
+
+<refine_skipped_for_budget note="these findings were nearly refuted and EARNED a strengthen pass that the budget did not pay for — each was decided on its first, weaker form">
+{{refinesSkipped}}
+</refine_skipped_for_budget>

@@ -1,0 +1,14 @@
+.DS_Store
+node_modules
+
+# per-user permission grants, never commit
+.claude/settings.local.json
+
+# cargo build output for plugins/tribunal/rust: .cargo/config.toml puts it at
+# the root, and CARGO_TARGET_DIR=target run from the crate puts it there
+/target/
+/plugins/tribunal/rust/target/
+
+# tribunal's private test data (TRIBUNAL_HARNESS_DATA defaults here). It holds
+# real reviews of private pull requests and must never be committed.
+/review-harness-data/

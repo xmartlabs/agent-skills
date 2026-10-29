@@ -1,0 +1,11 @@
+REFUTE — do not confirm — this code review finding on PR #{{prNumber}} in repo {{repo}}.
+{{diffBlock}}
+{{contextAndTail}}
+
+===== YOUR CASE =====
+Lens: {{lens}}
+
+Finding: {{title}}
+File: {{location}}
+Severity: {{severity}}
+Description: {{description}}

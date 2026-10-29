@@ -1,0 +1,2 @@
+
+AN INCREMENTAL RE-REVIEW WAS EXPECTED AND COULD NOT BE APPLIED. {{existsPhrase}} at {{baseline8}}, but this run could not work out what changed since it ({{reason}}), so EVERY file was re-read. Open the report with that fact, on its own line above the verdict, in these words or clearer: "Expected an incremental re-review against `{{baseline8}}` and could not scope it ({{reason}}) — every file was re-read." It is not a finding about the PR; it is a statement about what this run cost and why.

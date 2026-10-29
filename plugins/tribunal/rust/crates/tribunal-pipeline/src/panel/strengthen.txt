@@ -1,0 +1,13 @@
+A code-review finding on PR #{{prNumber}} (repo {{repo}}) was nearly refuted, but the CORE defect appears real — only its claim/severity/repro was weak. STRENGTHEN it: tighten the claim to exactly what breaks, add the concrete input/repro, and raise the severity if the evidence supports it. Never lower it.
+
+You are allowed to fail at this, and saying so is more useful than a weaker rewrite. If you cannot make the case stronger — the refuters were right, or the evidence you would need is not reachable from what you were given — set `strengthened: false`, give a one-line `unstrengthenableReason`, and repeat the finding's original title, file, severity and description UNCHANGED. Do not paper over a failed strengthen by softening the claim or lowering the severity: a demoted finding and an unstrengthenable one are different outcomes and the harness counts them separately. Set `strengthened: true` only when you actually improved it.
+{{diffBlock}}
+
+If you honestly cannot make it concrete, set `strengthened: false` and say why; a lower severity you propose is recorded, not applied.
+
+===== YOUR CASE =====
+Original finding: {{title}}
+File: {{location}}
+Severity: {{severity}}
+Description: {{description}}
+Refuters' objections: {{objections}}

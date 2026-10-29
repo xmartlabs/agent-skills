@@ -1,0 +1,93 @@
+{
+  "type": "object",
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "number"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "important",
+              "nit"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string",
+            "description": "The exact code that shows the problem, quoted word-for-word from the diff or the file at HEAD — not a paraphrase. If there is genuinely nothing to cite, write exactly: No relevant quotes found"
+          },
+          "isBehaviorChanging": {
+            "type": "boolean"
+          },
+          "touchesHighRiskSurface": {
+            "type": "boolean"
+          },
+          "confidence": {
+            "type": "number"
+          },
+          "mechanicalClaim": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "type-error",
+              "undefined-symbol",
+              "signature-mismatch",
+              null
+            ]
+          },
+          "verifiedBy": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "number"
+                },
+                "quote": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "title",
+          "file",
+          "severity",
+          "description",
+          "evidence",
+          "isBehaviorChanging",
+          "touchesHighRiskSurface"
+        ]
+      }
+    },
+    "notReached": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "findings"
+  ]
+}

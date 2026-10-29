@@ -1,0 +1,18 @@
+{
+  "name": "homosapiens",
+  "displayName": "Homosapiens",
+  "description": "Rewrites text so it does not read as AI-generated, without changing what it says. Run it over anything that lands in a shared system: PR titles and bodies, commit messages, Jira comments, docs.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Xmartlabs",
+    "url": "https://xmartlabs.com"
+  },
+  "keywords": [
+    "writing",
+    "editing",
+    "ai-tells",
+    "documentation"
+  ],
+  "license": "MIT",
+  "repository": "https://github.com/xmartlabs/agent-skills"
+}

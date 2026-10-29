@@ -1,0 +1,52 @@
+{
+  "type": "object",
+  "properties": {
+    "strengthened": {
+      "type": "boolean",
+      "description": "true if you actually made the case stronger. false if you could not — the refuters were right, or the evidence you would need is not reachable from what you were given. On false, repeat the original fields unchanged rather than writing a weaker version of them."
+    },
+    "unstrengthenableReason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "One line, required when strengthened is false: what stopped you. Null otherwise."
+    },
+    "title": {
+      "type": "string"
+    },
+    "file": {
+      "type": "string"
+    },
+    "line": {
+      "type": "number"
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "critical",
+        "important",
+        "nit"
+      ]
+    },
+    "description": {
+      "type": "string"
+    },
+    "repro": {
+      "type": "string"
+    },
+    "isBehaviorChanging": {
+      "type": "boolean"
+    },
+    "touchesHighRiskSurface": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "strengthened",
+    "title",
+    "file",
+    "severity",
+    "description"
+  ]
+}

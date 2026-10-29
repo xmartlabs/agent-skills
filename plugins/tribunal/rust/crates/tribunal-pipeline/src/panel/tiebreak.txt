@@ -1,0 +1,8 @@
+PANEL-CEILING TIE-BREAK. This review has more findings that earned an adversarial panel than the agent budget can pay for. Every finding below tied EXACTLY on the harness's own priority formula (operator-named claim > critical severity > high-risk surface > behavior-changing/bot-comment), so without a real judgment call the ceiling would drop the least-contested one by emission order alone — not by anything about which finding actually needs the scarce slot more.
+
+Rank ALL {{count}} finding(s) below from MOST deserving of one of the remaining {{slots}} panel slot(s) to LEAST deserving. Judge by what a panel is actually FOR on THIS PR: which is hardest to settle without adversarial scrutiny, which does the most damage if wrong, which touches the riskiest surface here. Do not just re-derive the tied score — the tie exists because the score already cannot distinguish them.
+
+Findings (tied at priority {{priority}}):
+{{group}}
+
+Return "order": the same {{count}} slotIds above, each exactly once, ranked most-deserving first.

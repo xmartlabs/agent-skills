@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Prints the plugin's root directory.
+#
+# WHY THIS EXISTS. The harness emits bash that dispatched agents run through the
+# Bash tool, and that bash has to locate scripts inside the plugin. It cannot
+# hardcode a path: a plugin lives in a version-keyed cache directory that changes
+# on every update. It cannot rely on `${CLAUDE_PLUGIN_ROOT}` either — that is
+# expanded for plugin hook and command strings, not guaranteed in the environment
+# of an arbitrary Bash call made by a subagent.
+#
+# `bin/` is added to the Bash tool's PATH while the plugin is enabled, so this
+# script is callable by name and can resolve the root from its own location —
+# the one thing that is always true no matter where the plugin was installed.
+set -euo pipefail
+
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+  printf '%s\n' "$CLAUDE_PLUGIN_ROOT"
+  exit 0
+fi
+
+# bin/tribunal-root -> plugin root. `cd -P` resolves symlinks, which matters
+# because the development setup symlinks the plugin into a skills directory.
+here=$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+printf '%s\n' "$(dirname "$here")"

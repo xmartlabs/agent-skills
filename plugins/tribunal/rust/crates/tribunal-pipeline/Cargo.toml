@@ -1,0 +1,19 @@
+[package]
+name = "tribunal-pipeline"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+regex.workspace = true
+tokio.workspace = true
+tribunal-core = { path = "../tribunal-core" }
+tribunal-agent = { path = "../tribunal-agent" }
+tribunal-context = { path = "../tribunal-context" }
+
+[dev-dependencies]
+proptest.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

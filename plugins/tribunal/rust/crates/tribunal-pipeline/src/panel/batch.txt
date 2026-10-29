@@ -1,0 +1,33 @@
+You are refuting {{count}} INDEPENDENT code-review findings on PR #{{prNumber}} in repo {{repo}}, one lens applied to each. REFUTE — do not confirm — each one. Find the input or code path that proves its mechanism does NOT happen. Be blunt.
+
+Lens (same for every case below): {{lens}}
+
+<diff>
+{{diffBlock}}
+</diff>
+
+CRITICAL — these {{count}} cases are UNRELATED beyond sharing this PR's diff. Evaluate each on a clean slate:
+- Do NOT let your verdict on one case influence another. Before writing each case's verdict, mentally discard whatever you decided for the previous one.
+- Similarity between two cases is coincidence, not evidence. Judge each strictly from its own file/line/description — never by pattern-matching it to a case you already ruled on in this batch.
+- Do NOT drift lenient or drift strict as you move down the list. If your verdict on case {{count}} would differ from what you'd give it as the FIRST and ONLY case in an empty batch, you have drifted — stop and recheck it against case 1's standard before finalizing.
+- Treat "I already found real bugs in this batch, this one is probably fine too" (or the reverse) as the specific failure this instruction exists to block.
+{{contextInstruction}}
+
+For EVERY case below, return one entry in `verdicts`, tagged with its exact `slotId` from the `<finding slot="...">` tag (do not renumber, do not invent one). Each entry needs:
+- slotId: the finding's slot id from its <finding> tag, unchanged
+- verdict: answers ONLY whether that case's mechanism happens at the pinned commit. REFUTED only when it does not, with killReason "not-triggered" or "incorrect-premise" and contradiction {file, line, quote}: the exact code, copied from the file at the pinned commit, that shows it. A REFUTED entry without that quote does not count. A real mechanism you think does not matter (older than this PR, minor, a style preference, wanted by repo policy) is NOT_REFUTED; say why in the fields below.
+- refutationType: PRE_DECIDED | TECHNICALLY_WRONG | NO_REFUTATION
+- confidence: 0..1, how sure you are THIS case's verdict is correct
+- introducedByPr: "yes" when this PR's diff adds or changes the code that causes it, or makes a path reachable that was not before; "no" when the same behaviour already exists at the PR's base; "unsure" otherwise
+- proposedSeverity: critical | important | nit, the severity you would give that case if its mechanism is real (a style preference is nit; repeat its severity when you agree)
+- intendedBy: {file, rule} ONLY when a rule in the repo's conventions file requires exactly the behaviour that case calls a defect, the rule copied word for word; omit otherwise
+- reason: one to two sentences, specific to that case
+- source: "claude"
+- slotStatus: "OK" in the normal case. Return "UNAVAILABLE" with failureReason: "confined" ONLY when the claim cannot be settled from the code you were able to read — the mechanism spans files outside what you were given. That is an ABSTENTION: it is not a vote for or against the finding, and the tally excludes it rather than counting it. Never reach for it because you are merely unsure; reach for it when the evidence is out of reach. Judge each case separately: one confined case says nothing about the others in this batch.
+
+===== YOUR CASE =====
+<findings>
+{{cases}}
+</findings>
+
+Return a verdict for EVERY case above — {{count}} entries, no fewer, no duplicates, no slotId not listed above.

@@ -1,0 +1,33 @@
+[package]
+name = "tribunal-context"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+oxc_allocator.workspace = true
+oxc_ast.workspace = true
+oxc_ast_visit.workspace = true
+oxc_parser.workspace = true
+oxc_span.workspace = true
+rquickjs.workspace = true
+regex.workspace = true
+tribunal-core = { path = "../tribunal-core" }
+
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+# The recorded `gh` the Rust side of the differential tests runs; see the
+# file's header. Not part of the engine.
+[[bin]]
+name = "tribunal-test-gh"
+path = "src/bin/tribunal-test-gh.rs"
+test = false
+doc = false

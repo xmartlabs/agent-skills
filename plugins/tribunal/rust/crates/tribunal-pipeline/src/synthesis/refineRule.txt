@@ -1,0 +1,1 @@
+- Every finding named in <refine_skipped_for_budget> must be reported with that fact attached, in a short clause on its own entry: it was borderline, it earned a strengthen pass, and the run could not afford one, so the verdict you are reporting is a verdict on its weaker first form. Do not present it as though it had the same scrutiny as the rest, and do not quietly drop it.

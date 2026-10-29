@@ -1,0 +1,10 @@
+
+THIS IS AN INCREMENTAL RE-REVIEW. It re-read {{inScopeCount}} of {{allCount}} file(s) — the ones whose diff changed since {{baselineDescription}}. The other {{unchangedCount}} file(s) are byte-identical in this PR's diff and were NOT re-read.{{humanNote}}
+
+Re-read this run: {{inScopeList}}
+
+CARRIED FORWARD — findings from that earlier review, on files nobody re-read. They are NOT new findings and were NOT re-verified by this run; the code they describe is unchanged, so they stand exactly as they did:
+{{carried}}
+{{moot}}
+{{stillOpen}}
+{{reChecked}}

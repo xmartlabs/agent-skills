@@ -1,0 +1,344 @@
+# The Rust port of tribunal (plugins/tribunal/rust). A pull request that
+# touches it runs the whole suite on Linux, on the runner the RUNNER repository
+# variable names (a self-hosted one costs no Actions minutes) or else on
+# GitHub's ubuntu-24.04, and on Windows runs the unit tests, builds the release
+# binary and starts it. The differential tests compare the port against the
+# JavaScript and bash it replaces, run on the same machine, except the
+# classifier comparisons in diff_classify_heads.rs: their oracle is macOS's
+# BSD userland, so they read what the scripts printed there from
+# tests/goldens/ and run on Linux too. The `macos` job, a check of the suite
+# on the platform most of the team runs, starts only on a release PR, on a PR
+# labelled `macos` (from its next push), or by hand: a Mac costs far more
+# than a Linux runner. Adding a label starts no run: a run started by an
+# unrelated label would cancel the one in progress, which shares its
+# concurrency group. The `macos` job and
+# the release's macOS archives run on GitHub's macOS runners. A
+# `tribunal-rust-v*` tag builds the four release binaries and attaches them,
+# each with its sha256, to a GitHub release. `gate` is the one status a branch rule needs to
+# require.
+name: tribunal-rust
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "plugins/tribunal/rust/**"
+      - "plugins/tribunal/lib/**"
+      - ".github/workflows/tribunal-rust.yml"
+  push:
+    tags: ["tribunal-rust-v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: tribunal-rust-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+    working-directory: plugins/tribunal/rust
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    if: github.event_name != 'push'
+    runs-on: ${{ vars.RUNNER || 'ubuntu-24.04' }}
+    steps:
+      # The evidence-line tests replay this repository's own history.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # The tests run git, and a self-hosted runner's git reads the operator's
+      # ~/.gitconfig: a diff.noprefix there drops the b/ the evidence tests read
+      # paths from. Every later step gets an empty global config instead. Not
+      # /dev/null: checkout's post step writes safe.directory to it.
+      - name: git config
+        working-directory: .
+        run: |
+          : > "$RUNNER_TEMP/gitconfig"
+          echo "GIT_CONFIG_GLOBAL=$RUNNER_TEMP/gitconfig" >> "$GITHUB_ENV"
+          echo "GIT_CONFIG_NOSYSTEM=1" >> "$GITHUB_ENV"
+      # Node 23 and later compile regexp modifiers such as (?-i:...), which the
+      # profile checks are measured against.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      # The differential tests run the bash with LC_ALL=en_US.UTF-8; without
+      # that locale bash falls back to C and every comparison over non-ASCII
+      # text fails for a reason that has nothing to do with the port.
+      - name: en_US.UTF-8 locale
+        working-directory: .
+        run: |
+          if ! locale -a | grep -qiE '^en_US\.utf-?8$'; then
+            echo "::error::this runner lacks the en_US.UTF-8 locale (locale-gen en_US.UTF-8)"
+            exit 1
+          fi
+      # A self-hosted runner may have no rustup; GitHub's images do.
+      - name: rustup
+        working-directory: .
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
+      # The toolchain rust-toolchain.toml names, with rustfmt and clippy. The
+      # job pins it for every later step: rust-cache runs `rustc -vV` from the
+      # repository root, which has no toolchain file, and fails without it.
+      - name: toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+      # Where the build goes. On GitHub's runners, target/ at the repository
+      # root, where rust/.cargo/config.toml puts it. The self-hosted runners
+      # share one directory outside the workspace, kept between jobs: inside
+      # the workspace, checkout's `git clean -ffdx` deleted target/ before
+      # every job, so each run compiled every dependency from scratch.
+      #
+      # The job holds an exclusive flock on it until `release target dir`.
+      # Two jobs building different commits into one directory would overwrite
+      # each other's test binaries, and the cleanup must not delete a build in
+      # use. A job that waits LOCK_WAIT_S without getting it builds in its
+      # workspace instead, from scratch, as before.
+      #
+      # The directory is emptied when it holds more than TARGET_MAX_GB minus
+      # TARGET_BUILD_GB, the size of one full build, so it never passes
+      # TARGET_MAX_GB even while a job builds everything again.
+      - name: target dir
+        working-directory: .
+        env:
+          TARGET_MAX_GB: 10
+          TARGET_BUILD_GB: 3
+          LOCK_WAIT_S: 1800
+        run: |
+          fallback="$GITHUB_WORKSPACE/target"
+          if [ "$RUNNER_ENVIRONMENT" != self-hosted ] || ! command -v flock >/dev/null; then
+            echo "CARGO_TARGET_DIR=$fallback" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          root="$HOME/.cache/tribunal-rust"
+          dir="$root/target"
+          mkdir -p "$dir"
+          exec 9>"$root/target.lock"
+          if ! flock -w "$LOCK_WAIT_S" -x 9; then
+            echo "::warning::no lock on $dir after ${LOCK_WAIT_S}s, building in the workspace"
+            echo "CARGO_TARGET_DIR=$fallback" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          # Keeps the lock past this step: the sleep inherits descriptor 9.
+          nohup sleep 14400 >/dev/null 2>&1 &
+          echo "TARGET_LOCK_PID=$!" >> "$GITHUB_ENV"
+          # Directories one per runner, from before the directory was shared.
+          rm -rf "$root"/target-*
+          used_kb=$(du -sk "$dir" | cut -f1)
+          echo "$dir: $((used_kb / 1024)) MB"
+          if [ "$used_kb" -gt $(((TARGET_MAX_GB - TARGET_BUILD_GB) * 1024 * 1024)) ]; then
+            echo "over $((TARGET_MAX_GB - TARGET_BUILD_GB)) GB, emptying it"
+            rm -rf "$dir"
+            mkdir -p "$dir"
+          fi
+          # Line tables only, to keep the build small: backtraces still name
+          # the file and line.
+          echo "CARGO_PROFILE_DEV_DEBUG=line-tables-only" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_DIR=$dir" >> "$GITHUB_ENV"
+      # Only on GitHub's runners. Its post step deletes everything in
+      # ~/.cargo/bin that `cargo install` did not put there, rustup's cargo,
+      # rustc and rustup included: harmless on a machine thrown away after the
+      # job, but on the self-hosted runners, which share one ~/.cargo, it
+      # removed cargo from under a job running next to it.
+      - if: runner.environment == 'github-hosted'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: plugins/tribunal/rust
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - run: cargo build --release --locked -p tribunal-cli
+      - run: '"$CARGO_TARGET_DIR/release/tribunal" --version'
+      # What the job left in the target dir, the number TARGET_MAX_GB is set from.
+      - if: always() && runner.environment == 'self-hosted'
+        name: target dir size
+        working-directory: .
+        run: du -sh "$CARGO_TARGET_DIR" "$CARGO_TARGET_DIR"/*/ "$CARGO_TARGET_DIR"/debug/*/ 2>/dev/null || true
+      # The runner also kills the sleep when the job ends; this releases the
+      # lock as soon as the job is done with the directory.
+      - if: always() && env.TARGET_LOCK_PID != ''
+        name: release target dir
+        working-directory: .
+        run: kill "$TARGET_LOCK_PID" 2>/dev/null || true
+
+  # rust/scripts/test-macos.sh runs the whole suite on macOS at this job's
+  # commit, with all of its history: the evidence-line tests replay this
+  # repository's commits.
+  macos:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       (startsWith(github.head_ref, 'release/') ||
+        contains(github.event.pull_request.labels.*.name, 'macos')))
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - run: bash plugins/tribunal/rust/scripts/test-macos.sh
+        working-directory: .
+
+  # The release's Windows target, cross-built in a container with cargo-xwin
+  # and checked under Wine: clippy, the unit tests, the release build and the
+  # binary starting. Wine does not show process-tree cleanup or PATHEXT
+  # resolution behaving as on real Windows.
+  windows:
+    if: github.event_name != 'push'
+    runs-on: ${{ vars.RUNNER || 'ubuntu-24.04' }}
+    steps:
+      - uses: actions/checkout@v5
+      - working-directory: plugins/tribunal
+        run: |
+          docker buildx build -f rust/docker/Dockerfile \
+            --target windows-msvc-check --progress plain .
+
+  # The jobs a tag runs (build, build-darwin, release) take the runner the
+  # RELEASE_RUNNER variable names, else RUNNER: a runner that never builds pull
+  # requests keeps their code away from the release and its write token.
+  #
+  # The Linux and Windows release binaries, built on the Linux runner in the
+  # containers of rust/docker/Dockerfile: a static musl binary, and the msvc
+  # one cross-built with cargo-xwin after its clippy and unit tests pass
+  # under Wine.
+  build:
+    if: startsWith(github.ref, 'refs/tags/tribunal-rust-v')
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-musl, stage: linux-bin, bin: tribunal, archive: tar.gz }
+          - { target: x86_64-pc-windows-msvc, stage: windows-msvc-bin, bin: tribunal.exe, archive: zip }
+    runs-on: ${{ vars.RELEASE_RUNNER || vars.RUNNER || 'ubuntu-24.04' }}
+    steps:
+      - uses: actions/checkout@v5
+      # The tag names the CLI crate's version, or the release is refused.
+      - name: tag matches the version
+        run: |
+          want="tribunal-rust-v$(sed -n 's/^version = "\(.*\)"/\1/p' crates/tribunal-cli/Cargo.toml | head -1)"
+          if [ "$GITHUB_REF_NAME" != "$want" ]; then
+            echo "the tag $GITHUB_REF_NAME is not the CLI version $want"; exit 1
+          fi
+      # A builder of its own and no cache: the runner also builds pull
+      # requests, whose BuildKit cache mounts a release must not reuse.
+      - name: build
+        working-directory: plugins/tribunal
+        run: |
+          builder="tribunal-release-$GITHUB_RUN_ID-${{ strategy.job-index }}"
+          docker buildx create --name "$builder" --driver docker-container >/dev/null
+          trap 'docker buildx rm "$builder" >/dev/null' EXIT
+          # A tar, not type=local: that exporter keeps root as the owner, which
+          # a runner that is not root cannot set.
+          docker buildx build --builder "$builder" --no-cache \
+            -f rust/docker/Dockerfile --target ${{ matrix.stage }} \
+            --output "type=tar,dest=$RUNNER_TEMP/bin.tar" --progress plain .
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xf "$RUNNER_TEMP/bin.tar" -C "$RUNNER_TEMP/bin" --no-same-owner
+      - name: package
+        run: |
+          # tribunal-v0.1.0-<target>: rust/scripts/pin-release.mjs and the
+          # launcher (skills/review-pr/scripts/rust-engine.mjs) read this shape.
+          name="tribunal-${GITHUB_REF_NAME#tribunal-rust-}-${{ matrix.target }}"
+          mkdir -p "$RUNNER_TEMP/$name"
+          cp "$RUNNER_TEMP/bin/${{ matrix.bin }}" "$RUNNER_TEMP/$name/"
+          cd "$RUNNER_TEMP"
+          if [ "${{ matrix.archive }}" = zip ]; then
+            python3 -m zipfile -c "$name.zip" "$name"
+          else
+            tar -czf "$name.tar.gz" "$name"
+          fi
+          asset="$name.${{ matrix.archive }}"
+          sha256sum "$asset" > "$asset.sha256"
+          echo "ASSET=$asset" >> "$GITHUB_ENV"
+      # The musl binary starts here before it ships; the Windows one already
+      # started under Wine in its container.
+      - if: matrix.archive == 'tar.gz'
+        run: '"$RUNNER_TEMP/bin/${{ matrix.bin }}" --version'
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            ${{ runner.temp }}/${{ env.ASSET }}
+            ${{ runner.temp }}/${{ env.ASSET }}.sha256
+          retention-days: 1
+
+  # rust/scripts/build-darwin.sh builds both macOS archives at this commit,
+  # under the names the matrix uses.
+  build-darwin:
+    if: startsWith(github.ref, 'refs/tags/tribunal-rust-v')
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - name: tag matches the version
+        run: |
+          want="tribunal-rust-v$(sed -n 's/^version = "\(.*\)"/\1/p' crates/tribunal-cli/Cargo.toml | head -1)"
+          if [ "$GITHUB_REF_NAME" != "$want" ]; then
+            echo "the tag $GITHUB_REF_NAME is not the CLI version $want"; exit 1
+          fi
+      - name: build
+        working-directory: .
+        env:
+          OUT_DIR: ${{ runner.temp }}/darwin
+        run: bash plugins/tribunal/rust/scripts/build-darwin.sh
+      - uses: actions/upload-artifact@v6
+        with:
+          name: aarch64-apple-darwin
+          path: ${{ runner.temp }}/darwin/*-aarch64-apple-darwin.tar.gz*
+          if-no-files-found: error
+          retention-days: 1
+      - uses: actions/upload-artifact@v6
+        with:
+          name: x86_64-apple-darwin
+          path: ${{ runner.temp }}/darwin/*-x86_64-apple-darwin.tar.gz*
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: [build, build-darwin]
+    runs-on: ${{ vars.RELEASE_RUNNER || vars.RUNNER || 'ubuntu-24.04' }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          path: assets
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: .
+        run: |
+          # A tag with a suffix (tribunal-rust-v0.1.3-rc.1) publishes a
+          # prerelease, which is never the repository's latest release. The
+          # check reads the version only: the tag's own prefix has hyphens.
+          pre=""
+          case "${GITHUB_REF_NAME#tribunal-rust-v}" in *-*) pre=--prerelease ;; esac
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --verify-tag --generate-notes $pre assets/*
+
+  # `macos` is skipped on most pull requests, and that passes; it failing does not.
+  gate:
+    needs: [macos, linux, windows]
+    if: always() && github.event_name != 'push'
+    runs-on: ${{ vars.RUNNER || 'ubuntu-24.04' }}
+    steps:
+      - env:
+          MACOS: ${{ needs.macos.result }}
+          LINUX: ${{ needs.linux.result }}
+          WINDOWS: ${{ needs.windows.result }}
+        working-directory: .
+        run: |
+          echo "macos: $MACOS, linux: $LINUX, windows: $WINDOWS"
+          { [ "$MACOS" = success ] || [ "$MACOS" = skipped ]; } &&
+            [ "$LINUX" = success ] && [ "$WINDOWS" = success ]

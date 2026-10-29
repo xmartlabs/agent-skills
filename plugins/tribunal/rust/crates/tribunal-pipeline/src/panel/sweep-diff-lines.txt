@@ -1,0 +1,2 @@
+The complete diff for this PR is at {{diffPath}}. Read that file FIRST — it is the authoritative copy of this change.
+The diff file was not written for this run, so there is no single authoritative copy of the change on disk. The files this PR touches are: {{files}}.

@@ -1,0 +1,4810 @@
+{
+  "recordedWith": {
+    "lib/operator.mjs": "// operator.mjs — per-machine settings: never shipped with a plugin, never part\n// of a project profile. One JSON file, which other review tools may share:\n//\n//   ${REVIEW_HARNESS_CONFIG:-~/.claude/review-harness.json}\n//   { \"defaultRepo\": \"owner/name\" }\n//\n// `defaultRepo` is the repo a review runs against when the caller names none,\n// the role a hardcoded default used to play.\n\nimport { execFileSync } from \"node:child_process\";\nimport { existsSync, readFileSync } from \"node:fs\";\nimport { homedir } from \"node:os\";\nimport { join } from \"node:path\";\n\nconst REPO_RE = /^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$/;\n\nexport function operatorConfigPath(env = process.env) {\n  return env.REVIEW_HARNESS_CONFIG || join(homedir(), \".claude\", \"review-harness.json\");\n}\n\nexport function readOperatorConfig(path = operatorConfigPath()) {\n  if (!existsSync(path)) return { config: {}, path, present: false };\n  let config;\n  try {\n    config = JSON.parse(readFileSync(path, \"utf8\"));\n  } catch (err) {\n    return { error: `${path} is not valid JSON: ${err.message}`, path };\n  }\n  if (!config || typeof config !== \"object\" || Array.isArray(config))\n    return { error: `${path} must hold a JSON object`, path };\n  if (config.defaultRepo !== undefined && !REPO_RE.test(String(config.defaultRepo)))\n    return { error: `${path}: defaultRepo must be owner/name, got ${JSON.stringify(config.defaultRepo)}`, path };\n  return { config, path, present: true };\n}\n\nexport function repoFromRemoteUrl(url) {\n  const m = String(url || \"\")\n    .trim()\n    .match(/github\\.com[:/]([A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+?)(?:\\.git)?\\/?$/);\n  return m ? m[1] : null;\n}\n\nexport function cwdRepo(cwd = process.cwd()) {\n  try {\n    const url = execFileSync(\"git\", [\"-C\", cwd, \"remote\", \"get-url\", \"origin\"], {\n      encoding: \"utf8\",\n      stdio: [\"ignore\", \"pipe\", \"ignore\"],\n    });\n    return repoFromRemoteUrl(url);\n  } catch {\n    return null;\n  }\n}\n\n// --repo, else the operator's defaultRepo, else the current directory's origin.\n// The operator default comes before the cwd so a machine that always reviewed\n// one repo by default keeps doing so wherever the session was started.\nexport function resolveRepo({ flag = \"\", operator = readOperatorConfig(), cwd = process.cwd(), cwdRepoOf = cwdRepo } = {}) {\n  if (flag)\n    return REPO_RE.test(flag) ? { repo: flag, source: \"flag\" } : { error: `--repo must be owner/name, got ${JSON.stringify(flag)}` };\n  if (operator.error) return { error: operator.error };\n  if (operator.config.defaultRepo) return { repo: operator.config.defaultRepo, source: `operator:${operator.path}` };\n  const fromCwd = cwdRepoOf(cwd);\n  if (fromCwd) return { repo: fromCwd, source: \"cwd-origin\" };\n  return {\n    error: `no repo to review: pass --repo <owner/name>, set \"defaultRepo\" in ${operator.path}, or run from a checkout whose origin is on GitHub`,\n  };\n}\n",
+    "skills/review-pr/eval/paths.mjs": "#!/usr/bin/env node\n// paths.mjs — the one place that knows where the harness lives on disk.\n//\n// WHY IT EXISTS. Until the harness was packaged as a plugin, 36 call sites\n// across 28 files resolved their own paths against `homedir()/.claude/...`.\n// That worked while the harness only ever lived in one place. A plugin is\n// copied into a version-keyed cache directory whose path nobody can predict,\n// so every one of those call sites would have resolved to a file that is not\n// there — silently, since most of them feed `readFileSync` inside a try or a\n// region slicer that reports \"region not found\" rather than \"wrong path\".\n//\n// This is the same move `rows.mjs` already made for metrics.jsonl, for the same\n// reason: a rule that lives in 28 copies is a rule that will be wrong in at\n// least one of them. `replay-region-coverage.mjs` guards that nothing goes back\n// to resolving its own.\n//\n// DATA vs CODE. The plugin directory is replaced wholesale on every update, so\n// nothing writable may live inside it. Measurement state resolves to DATA_DIR\n// instead, which is outside the plugin and survives updates.\n\nimport { existsSync, realpathSync } from \"node:fs\";\nimport { homedir } from \"node:os\";\nimport { dirname, resolve } from \"node:path\";\nimport { fileURLToPath } from \"node:url\";\nimport { cwdRepo, resolveRepo } from \"../../../lib/operator.mjs\";\n\nconst HERE = dirname(fileURLToPath(import.meta.url));\n\n// `CLAUDE_PLUGIN_ROOT` is set when a plugin component runs inside Claude Code.\n// The eval battery is also run by hand from a terminal, where it is not set, so\n// the relative walk is the fallback rather than the other way round: it is\n// derived from this file's own location and cannot be stale.\n//   <root>/skills/review-pr/eval/paths.mjs -> ../../.. -> <root>\nexport const PLUGIN_ROOT =\n  process.env.CLAUDE_PLUGIN_ROOT || resolve(HERE, \"..\", \"..\", \"..\");\n\nexport const SKILL_DIR = resolve(PLUGIN_ROOT, \"skills\", \"review-pr\");\n// The commented source is what the battery reads. The Workflow runs the built\n// copy, the same code with comment lines removed (scripts/build-workflow.mjs).\nexport const WORKFLOW = resolve(PLUGIN_ROOT, \"workflow-src\", \"tribunal.js\");\nexport const WORKFLOW_BUILT = resolve(PLUGIN_ROOT, \"workflows\", \"tribunal.js\");\nexport const LIB_DIR = resolve(PLUGIN_ROOT, \"lib\");\nexport const AGENTS_DIR = resolve(PLUGIN_ROOT, \"agents\");\n\nexport const lib = (name) => resolve(LIB_DIR, name);\nexport const agent = (name) => resolve(AGENTS_DIR, name);\n\n// Writable state. Never inside PLUGIN_ROOT — see the DATA vs CODE note above.\nexport const DATA_DIR =\n  process.env.TRIBUNAL_DATA_DIR || resolve(homedir(), \".claude\", \"tribunal-data\");\n\nexport const METRICS_PATH = resolve(DATA_DIR, \"metrics.jsonl\");\nexport const AGENT_COSTS_PATH = resolve(DATA_DIR, \"agent-costs.jsonl\");\nexport const AGENT_COUNTS_PATH = resolve(DATA_DIR, \"agent-counts.jsonl\");\nexport const INFLIGHT_PATH = resolve(DATA_DIR, \"inflight-runs.jsonl\");\nexport const QUEUE_STATE_PATH = resolve(DATA_DIR, \"queue-state.json\");\n\n// A client's recorded history and test data: the runs the replays re-decide,\n// the fixtures cut from real runs, the labelled corpus, the specs and the\n// release log. It lives in the documentation repo next to plugins/, never\n// inside a plugin, so installing the plugin never copies a client's data.\n// Outside that repo these paths do not exist, and every replay that needs one\n// fails on the missing file instead of passing over nothing.\nexport const HARNESS_DATA =\n  process.env.TRIBUNAL_HARNESS_DATA || resolve(PLUGIN_ROOT, \"..\", \"..\", \"review-harness-data\");\nexport const TRIBUNAL_DATA = resolve(HARNESS_DATA, \"tribunal\");\nexport const FIXTURES_DIR = resolve(TRIBUNAL_DATA, \"fixtures\");\nexport const CORPUS_DIR = resolve(TRIBUNAL_DATA, \"corpus\");\n// The release log is this repository's own, generic: a row says which gate ran\n// and what changed, and carries no client data. TRIBUNAL_RELEASES overrides it.\nexport const RELEASES_PATH = process.env.TRIBUNAL_RELEASES || resolve(PLUGIN_ROOT, \"RELEASES.md\");\n// The replays that read HARNESS_DATA and so cannot run where it is absent. One\n// list for the whole repo, kept by scripts/check-portable.sh.\nexport const NEEDS_DATA_PATH = resolve(PLUGIN_ROOT, \"scripts\", \"needs-data.txt\");\nexport const PROFILES_DIR = resolve(HARNESS_DATA, \"profiles\");\n// A frozen ledger, so a replay re-decides the same recorded runs on every\n// machine instead of whatever this operator's DATA_DIR happens to hold.\nexport const RECORDED_METRICS_PATH = resolve(TRIBUNAL_DATA, \"ledger\", \"metrics.jsonl\");\nexport const RECORDED_INFLIGHT_PATH = resolve(TRIBUNAL_DATA, \"ledger\", \"inflight-runs.jsonl\");\n\n// Claude Code's own session transcripts. Genuinely outside the plugin, and\n// genuinely under the real home directory — this one is not a packaging\n// artefact and stays homedir-based.\nexport const PROJECTS_DIR = resolve(homedir(), \".claude\", \"projects\");\n\n// The per-workspace transcript directory. Was hardcoded to one contributor's\n// path in six files, which made every cost analysis silently empty on anyone\n// else's machine — `findRunDirs` on a missing directory returns nothing, so the\n// failure reads as \"this run had no agents\" rather than as a wrong path.\nexport function projectDir(cwd = process.cwd()) {\n  if (process.env.TRIBUNAL_PROJECT_DIR) return process.env.TRIBUNAL_PROJECT_DIR;\n  return resolve(PROJECTS_DIR, projectSlug(resolve(cwd)));\n}\n\n// Claude Code's own rule: every character but a letter or a digit becomes \"-\".\n// Replacing only \"/\", \".\" and \"_\" left a Windows cwd (C:\\GIT\\x) whole, and\n// resolve() then returned the cwd itself instead of a directory under projects.\nexport function projectSlug(absPath) {\n  return absPath.replace(/[^A-Za-z0-9]/g, \"-\");\n}\n\n// The repository under review, as a checkout on disk. Only the Tier-1 rigs\n// need one (they re-read the code a recorded refuter read). TRIBUNAL_REPO_DIR\n// wins; otherwise the repo is `repo`, else what a review would pick (the\n// operator's defaultRepo, else the cwd's origin), and the checkout is the first\n// of the cwd, ./<name> and ../<name> whose origin is exactly that repo. Null rather than a guess when none matches: a wrong\n// checkout would score an arm against the wrong source.\nexport function reviewRepo(repo = \"\", { cwd = process.cwd(), originOf = cwdRepo } = {}) {\n  if (process.env.TRIBUNAL_REPO_DIR) return process.env.TRIBUNAL_REPO_DIR;\n  const target = repo || resolveRepo({ cwd, cwdRepoOf: originOf }).repo;\n  if (!target) return null;\n  const name = target.split(\"/\")[1];\n  for (const dir of [cwd, resolve(cwd, name), resolve(cwd, \"..\", name)])\n    if (existsSync(dir) && originOf(dir) === target) return dir;\n  return null;\n}\n\n// Is this module the entry point? Callers pass their own `import.meta.url`:\n//\n//   if (isMainModule(import.meta.url)) { ... }\n//\n// The obvious spelling, `import.meta.url === \"file://\" + process.argv[1]`, is\n// wrong twice over, and both failures are silent — the guard is false, the body\n// never runs, and the process exits 0, which is indistinguishable from a script\n// that ran and found nothing.\n//\n//   - Through a symlink (the ~/.claude/skills/... link into this plugin's real,\n//     version-keyed cache directory), argv[1] keeps the link path while\n//     import.meta.url resolves to the real one.\n//   - On Windows it can never match at all: import.meta.url normalises to\n//     `file:///C:/Users/...` (three slashes, forward slashes) while the string\n//     concatenation builds `file://C:\\Users\\...`. Measured 2026-08-10 — seven\n//     eval scripts, `lost-runs.mjs` among them, had never executed on that\n//     platform. A loss detector reporting silence over 44 started / 38 completed\n//     runs is the failure this guard is supposed to make impossible.\n//\n// Resolving both sides to a real path fixes both. All NINE scripts under\n// `scripts/` carry this as a local copy predating this one — `build-post-footer`,\n// `count-in-context-agents`, `harness-version`, `incremental-scope`,\n// `locate-last-row`, `persist-review-record`, `post-review`,\n// `resolve-evidence-line`, `strip-draft-comments`. They are equivalent, and this\n// is the shared version for the same reason the rest of this file exists. The\n// count is the argument, so it is spelled as a list: nine copies is a rule that\n// will be wrong in at least one of them, and \"four\" understated the case by more\n// than half.\nexport function isMainModule(importMetaUrl) {\n  try {\n    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(importMetaUrl));\n  } catch {\n    return false;\n  }\n}\n",
+    "skills/review-pr/eval/rows.mjs": "#!/usr/bin/env node\n// rows.mjs — the one place that reads metrics.jsonl, and the one place that\n// decides which rows an analysis is allowed to treat as comparable.\n//\n// WHY IT EXISTS. 17 of 48 rows predate the canonical shape and come in three\n// mutually incompatible forms; `references/metrics-schema.md` and the lever\n// ledger both say plainly that they are not aggregatable without normalisation.\n// That warning lived in PROSE, and on 2026-07-27 a count showed the result: of\n// the scripts that read metrics.jsonl, five respected the distinction and six\n// did not — and the six were the cost analyses, the ones whose numbers ended up\n// in a 44KB architecture document and a lever ledger. One of the six was written\n// that same day, by someone who had cited the warning twelve hours earlier and\n// still read the file raw.\n//\n// A caveat that has to be remembered is a caveat that will be forgotten. This\n// module makes the choice explicit at the call site: you ask for `canonical` or\n// you ask for `all`, and either way you had to decide.\n//\n// The canonical test is `mode` + a `findings` array — the shape sentinel\n// score.mjs has always used. It is reproduced here rather than redefined,\n// because a second definition of \"comparable\" is the problem, not the fix.\n\nimport { readFileSync } from \"node:fs\";\nimport { METRICS_PATH, isMainModule } from \"./paths.mjs\";\n\n// Re-exported because every analysis imports it from here, not from paths.mjs —\n// this module is the documented chokepoint for reading the measurement log, and\n// `replay-rows.mjs` asserts nothing bypasses it. The path itself moved out of\n// the skill directory when the harness became a plugin: that directory is a\n// cache replaced on every update, and this file is the one thing RELEASES.md\n// calls irreproducible.\nexport { METRICS_PATH };\n\nfunction parseAll(path = METRICS_PATH) {\n  let text;\n  try {\n    text = readFileSync(path, \"utf8\");\n  } catch {\n    return [];\n  }\n  const out = [];\n  for (const line of text.split(\"\\n\")) {\n    const t = line.trim();\n    if (!t) continue;\n    try {\n      out.push(JSON.parse(t));\n    } catch {\n      // A row that will not parse is data loss, not a row. Counted by summary().\n      out.push(null);\n    }\n  }\n  return out;\n}\n\n/** Every row, including legacy shapes and unparseable lines (as null). */\nexport function allRows(path) {\n  return parseAll(path).filter(Boolean);\n}\n\n/** The shape sentinel: what score.mjs has always meant by \"canonical\". */\nexport const isCanonical = (r) => !!(r && r.mode && Array.isArray(r.findings));\n\n/**\n * Rows an analysis may compare against each other. Anything you intend to\n * average, rate, or plot belongs here — not in allRows().\n */\nexport function canonicalRows(path) {\n  return allRows(path).filter(isCanonical);\n}\n\n/** The complement, so a script can REPORT what it excluded instead of hiding it. */\nexport function legacyRows(path) {\n  return allRows(path).filter((r) => !isCanonical(r));\n}\n\n/**\n * Canonical rows minus re-runs of the same commit. PR 1957 has four rows for one\n * headSha; counting them four times weights that commit 4x in every rate. Same\n * de-duplication score.mjs applies, for the same reason.\n */\nexport function independentRows(path) {\n  const seen = new Set();\n  return canonicalRows(path).filter((r) => {\n    if (r.rerunOf) return false;\n    const key = `${r.repo || \"\"}#${r.pr}@${r.headSha}`;\n    if (seen.has(key)) return false;\n    seen.add(key);\n    return true;\n  });\n}\n\n/**\n * One row per commit, keeping the LATEST — the best run available for that tree.\n *\n * Not the same question as `independentRows()`, and the difference is not\n * cosmetic. An aggregate wants ONE SAMPLE per commit and does not care which, so\n * dropping every `rerunOf` row is fine there. The corpus wants THE BEST RUN of a\n * PR, and dropping every `rerunOf` row means the FIRST run wins forever: PR #1796\n * kept being scored against a 2026-07-21 row with no lens, no evidence and no\n * refutationType, while a v20 re-run of the same commit sat in the log ignored.\n *\n * Both live here so the two selections stay one decision made twice, rather than\n * two definitions that drift.\n */\nexport function latestPerCommit(path) {\n  const byCommit = new Map();\n  for (const r of canonicalRows(path)) byCommit.set(`${r.repo || \"\"}#${r.pr}@${r.headSha}`, r);\n  return [...byCommit.values()];\n}\n\n/** One line a script can print so its reader knows what was left out. */\nexport function summary(path) {\n  const parsed = parseAll(path);\n  const rows = parsed.filter(Boolean);\n  const canonical = rows.filter(isCanonical).length;\n  return {\n    total: rows.length,\n    canonical,\n    legacy: rows.length - canonical,\n    unparseable: parsed.length - rows.length,\n    independent: independentRows(path).length,\n    line: `${rows.length} rows: ${canonical} canonical, ${rows.length - canonical} legacy (excluded from comparisons)`,\n  };\n}\n\nif (isMainModule(import.meta.url)) {\n  const s = summary();\n  console.log(`  ${s.line}`);\n  console.log(`  independent (canonical, one per commit): ${s.independent}`);\n  if (s.unparseable) console.log(`  UNPARSEABLE LINES: ${s.unparseable}`);\n}\n",
+    "skills/review-pr/scripts/locate-last-row.mjs": "#!/usr/bin/env node\n// locate-last-row.mjs — the one guard for \"read the LAST row of metrics.jsonl\n// and refuse (never write, never fabricate) if it doesn't belong to this run.\"\n//\n// Why this exists. The guard used to live inline in persist-review-record.mjs\n// (read + parse + refuse, then patch in place). build-post-footer.mjs needs\n// the exact same guard — same file, same \"last row\", same pr/headSha\n// refusal — to read a Workflow run's already-persisted harnessVersion/\n// codexModelUsed/reviewMode/wallClockSeconds/agentCost before composing the\n// post. Two independent copies of \"does the last row belong to this run\" is\n// exactly the kind of drift eval/check-mirror.mjs exists to catch between\n// PROSE surfaces — the fix for two SCRIPTS agreeing is not a mirror check,\n// it's one function both import.\n//\n// Never writes. Only persist-review-record.mjs writes; this module only\n// reads and refuses.\n\nimport { readFileSync, realpathSync } from \"node:fs\";\nimport { fileURLToPath } from \"node:url\";\nimport { METRICS_PATH } from \"../eval/rows.mjs\";\n\nexport class RowMismatchError extends Error {}\n\nconst SCAN_ROWS = 50;\n\n// Read metrics.jsonl and return the newest of the last SCAN_ROWS rows that\n// belongs to the run identified by pr/headSha, refusing (throw RowMismatchError)\n// when none does.\n// headSha and repo are optional — omitting them checks pr only. A row with no\n// `repo` predates the field and is not refused for lacking one.\n//\n// Returns { row, lines, lineIndex } — `lines` is the full split file (blank\n// lines dropped) and `lineIndex` is where `row` sits in it, so a caller that\n// needs to WRITE the row back (persist-review-record.mjs) can mutate\n// `lines[lineIndex]` and rejoin, without re-reading or re-splitting the file\n// a second time.\nexport function locateLastRow({ pr, headSha, repo } = {}) {\n  let text;\n  try {\n    text = readFileSync(METRICS_PATH, \"utf8\");\n  } catch (e) {\n    throw new RowMismatchError(`refusing: could not read ${METRICS_PATH}: ${e.message}`);\n  }\n  const lines = text.split(\"\\n\").filter(Boolean);\n  if (lines.length === 0) {\n    throw new RowMismatchError(`refusing: ${METRICS_PATH} is empty`);\n  }\n  // Another run can append between this run's row and this read, so the newest\n  // row is not necessarily this run's. Walk back over the newest rows and take\n  // the first that belongs to the run; only when none does, refuse with the\n  // reason the newest row gives.\n  let newest;\n  for (let i = lines.length - 1; i >= Math.max(0, lines.length - SCAN_ROWS); i--) {\n    let row;\n    try {\n      row = JSON.parse(lines[i]);\n    } catch (e) {\n      if (i === lines.length - 1) {\n        throw new RowMismatchError(`refusing: last line of ${METRICS_PATH} does not parse: ${e.message}`);\n      }\n      continue;\n    }\n    const why = mismatch(row, { pr, headSha, repo });\n    if (!why) return { row, lines, lineIndex: i };\n    if (!newest) newest = why;\n  }\n  throw new RowMismatchError(newest);\n}\n\nfunction mismatch(row, { pr, headSha, repo }) {\n  if (pr !== undefined && String(row.pr) !== String(pr)) {\n    return `refusing: last row is pr ${row.pr}, expected ${pr}`;\n  }\n  if (repo && row.repo && row.repo !== repo) {\n    return `refusing: last row is repo ${row.repo}, expected ${repo}`;\n  }\n  if (headSha && row.headSha !== headSha) {\n    return `refusing: last row headSha ${row.headSha} does not match --head-sha ${headSha}`;\n  }\n  return null;\n}\n\nfunction parseArgs(argv) {\n  const out = {};\n  for (let i = 0; i < argv.length; i++) {\n    const a = argv[i];\n    if (!a.startsWith(\"--\")) continue;\n    const key = a.slice(2);\n    const next = argv[i + 1];\n    if (next === undefined || next.startsWith(\"--\")) out[key] = true;\n    else {\n      out[key] = next;\n      i++;\n    }\n  }\n  return out;\n}\n\nfunction isMainModule() {\n  try {\n    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));\n  } catch {\n    return false;\n  }\n}\n\n// Standalone debugging use: prints the located row's JSON, or refuses non-zero.\nif (isMainModule()) {\n  const args = parseArgs(process.argv.slice(2));\n  try {\n    const { row } = locateLastRow({ pr: args.pr, headSha: args[\"head-sha\"] });\n    process.stdout.write(JSON.stringify(row) + \"\\n\");\n  } catch (e) {\n    process.stderr.write(`${e.message}\\n`);\n    process.exit(1);\n  }\n}\n"
+  },
+  "cases": [
+    {
+      "input": "f2a91a359f74604b68fec2934b82f6868438566b4ebbffbb5dba305448be390b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/0/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "316d57407f767326bef3c2dddc3cedf07b7482d75f83208916f9b94bb8914998",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/1/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/1/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "1f597a6657920f7bb875d5c4d7392f2f641984c65188bd2991e2ced84dad6523",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/2/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "60f77d80a21bb157551e7c7ec9b7b1481abb2d889f20a848a368f4dc258cb3ac",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/3/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/3/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "ca6be5b9244554812a79cf3a468eb719ebfa06644bdb81febf6a9613a4fb6b6a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "1abfb52ad8ab2b47cc826f603853ffedee53227f364c9460280132a38b6eb556",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/5/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "f0a7ed19d1f3743e50620524a0f8bd6c9ab17ea4b5f20c5e2be4f55ef5bf23e0",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "fc95d5b6bf3618708652203dc9f1a5b6e14eed793b7a7c7fc6cf8d7b4ab56d68",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/7/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/7/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "065893e555aa47ffe876b6ed8a7313177e6a5bd53549d85acef439e5116022b8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/8/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "20d9078cd6ff095a312eb353d69f3478d9b0cd69472a5c55d9c5649a4ee30780",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "979ab86cbc1b231a8234f63bd63e83b2d7f4b2a96c901e6a98d6f095082ea2d6",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/10/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "a91d1d5ad976efdf9c318e5de1cd201815629fa214bcfe4c4ecfaf46971993a7",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "Cannot read properties of null (reading 'headSha')\n"
+      }
+    },
+    {
+      "input": "c86bec97f667c25a8db7895eae0caeb8f1054069aaf8df0891206cd7b49f2e2d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "e248f7b06efea9cb6ce50bc536760aaee173ea9e873024d0b94505d1488fd712",
+      "js": {
+        "code": 0,
+        "stdout": "{\"s\":\"é\\u0001\\n\",\"pr\":12,\"headSha\":true,\"repo\":\"o/r\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "879be439501193facc5888664e0687175c2954b557249db6dc61a79a5415cdba",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/14/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "41be6500b957ff64af1b897bcf7b86753c916a6ec5a6ffb4bca3078ee5a0f463",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1047, expected true\n"
+      }
+    },
+    {
+      "input": "b39d6532022aa52b6bcdb3ed26a5c65e225be805150939cc7e188bd7d9130a28",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha true does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "1abfb52ad8ab2b47cc826f603853ffedee53227f364c9460280132a38b6eb556",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/17/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "3d706d933a6b231166eb809657c31ac8646169dbfa63fdf49474432bb072ddad",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "8f35e49caefed617312172e492ce4e430be73559778f71fb6bad19f459011594",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/19/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/19/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "b99c1e689da7eccb6e567bc38d330d22cb9777000e32d8d9dbb59d12086cf31c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/20/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "371812965be29edab113ebfa8739b9c471805505e567edf42bc9769399891fad",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/21/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/21/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "06bab74fdae864681e4ec014ccf9cb90311a4162614fd84f14b80a596a1b7af8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr null, expected true\n"
+      }
+    },
+    {
+      "input": "2f256979578cdd2d21697bac5242acf09b7dbd71c6d965fd52eddc27c3f23967",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "Cannot read properties of null (reading 'headSha')\n"
+      }
+    },
+    {
+      "input": "4f3ecfb59a5b10021259d8bf29a5401a492ff1dc5a2a321c9ad70ede6636b4e3",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":12,\"headSha\":true,\"repo\":\"\",\"b\":1,\"s\":\"é\\u0001\\n\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "ca578eaaf9f6fbb0ffe8ea20f630b3e98be971aab05d36a2f77b7d601ca58c84",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "2510a231e4141139b22d891236e514c0c4d63d6559ec243b0529e08f4da53b2b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 13\n"
+      }
+    },
+    {
+      "input": "a32233cc60381f1fca3c46c33f41f6d4e1a3ca4d0c8eb33b85b42bc67db39783",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha true does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "30e7a7360b445943d7b479ce83b6674f00593395fc2d886dd4e1884ed36b5ea5",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":true,\"headSha\":true}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "46176b4b7106429db5d8d3bdb21fe741e4be4ea7a9a4c5da4a138c772e6b7d76",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"pr\":null,\"headSha\":\"abc\",\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "27506a1c323d9faa2c625129edeffb9135b02f1c30f5ce9c6dca17018fc08512",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"12\",\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "d3e0a5605e367bff7eeace45fbe776c9e09fce16a720d14382fee3838c0b1334",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha true does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "c4bd5e3208a42774eacd0aaf707161f2a842d559b264c566d0c514b36a75cb59",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/32/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/32/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "91555e6758a176e7a8e7469d8d6253c2ed8df0aa7214241be00403d1134e38c6",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/33/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "98a6d1c8ae0a368bf205376e951e4770477e8984d429f7aa63692b793fd8a238",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "af6407b288c1f72abe7218309cf0bece16815d11c068cb4370a8517392bab6ac",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/35/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "e39bacdd71ef293700829fc384f6ca64aa7914fc4ff0ea4442f6c393a2f79dab",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":12,\"repo\":\"o/r\",\"s\":\"é\\u0001\\n\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "385b261b431d07958e9d5af00cdbe66c3fd5cddfe8c6fee8407fbc02ff23ef3e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1050, expected undefined\n"
+      }
+    },
+    {
+      "input": "1da818b8f40b8c5dd10407d962237c09e86711ca8fc8ac0aac74937f6660a48d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last line of <SCRATCH>/38/data/metrics.jsonl does not parse: Expected property name or '}' in JSON at position 1 (line 1 column 2)\n"
+      }
+    },
+    {
+      "input": "55ed9a72e8cb22f3e21ab0c41d3fab036b57566bc5c63b00f909017c8fdd08fd",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1048, expected 12\n"
+      }
+    },
+    {
+      "input": "515203a079311620d383747e0042dd3e07213e73e1d90a2b3088e634d43b6ac3",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":12,\"headSha\":5,\"repo\":\"\",\"s\":\"é\\u0001\\n\",\"__proto__\":{\"x\":1}}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "98ffcbabcd39671712d67a0e0bd4aaaca444cb62fecee73c1074ff69499992c4",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "7f71642d7b54fc2aead7cf93682a0c63b63046a3d62b343e6c7b489cdbc7cfe9",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/42/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/42/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "c9515e715c81649653aab259316c809fdcefc58d3afdae705524fbe71b511a9a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr null, expected undefined\n"
+      }
+    },
+    {
+      "input": "d959540fd6fc9c74246230089f116b02f0a3f5bb9c4a98eb42554413f44ffd53",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha true\n"
+      }
+    },
+    {
+      "input": "9e4fc742b6f2eb07e1498e9c6f460e9c96309b3dc9f1b053bfc03a4b80736dd5",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last line of <SCRATCH>/45/data/metrics.jsonl does not parse: Expected double-quoted property name in JSON at position 9 (line 1 column 10)\n"
+      }
+    },
+    {
+      "input": "7c9a6155473c893e8dc6c2fab84b458819065621b316b8b7bddbe7d39c22f851",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "54bc1618ed369bf7bb72221c443158e4672aaec572349a621fc96bf045291b7b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected true\n"
+      }
+    },
+    {
+      "input": "1735cd042bc53681a84f65b8a84a51df41b6a5204f9844c0cd76feb3f3860dad",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":12,\"headSha\":\"def\",\"n\":1e+21,\"z\":[1,{\"2\":0,\"a\":0}]}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "316d57407f767326bef3c2dddc3cedf07b7482d75f83208916f9b94bb8914998",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/49/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/49/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "975e10c31236eca777a14712b39b1747643eb29863e70e9b4f174747038b07ba",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"undefined\",\"headSha\":true,\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "bf3d0367034f7966f271b5e25c0627d0ed813e2cfaa12b047e99fca75a4ea42d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr null, expected true\n"
+      }
+    },
+    {
+      "input": "3ee965197b796e4d37aae7e52539aaa047f48bac494963d8fa58cb528b308bc3",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":true}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "90033fd101832f9081d0409b0e7a5a0cce4f2c7ccfb14feb174b49c22a5d29fa",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha 5 does not match --head-sha true\n"
+      }
+    },
+    {
+      "input": "b73b324bda334d99a279a4508d50f7278318b8428e2aa338e4400e18101a15f7",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "07364ad8af9ada6254976b915ecc2e790d073c835c5ffe6f484f519a3b106f37",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/55/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "1b76cf2115245448250841d7f28bfbcb5ce9f1ca3ff8570cebc54db2461c3767",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/56/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "88a8bb25991396f9aa700519fcfe478249ec176697570921cbbac6de3c31cdc2",
+      "js": {
+        "code": 0,
+        "stdout": "{\"b\":1,\"pr\":99,\"headSha\":true,\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "6030bf0c4f3521eda8f59ec43f9cb50a63cbb4aaf09272370ba7bb7327cc3142",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/58/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "ca3a504e44e3a26a22c834342c0aca3b867bec0663659d99b412d84298f69d19",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1047, expected true\n"
+      }
+    },
+    {
+      "input": "bdd0ae2c283ff7cb6001dc83f56bc1e5ac9554f5cb5df2f2a2969e985491e4d6",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/60/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "310e9de546c1f05c85e0a330d3b1c18550e338ef410d228063bd2ee8f218190d",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":\"def\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "853ddba8c186761f2217d3b52d833991110924cfeb7d41079c2bae6132cabee0",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last line of <SCRATCH>/62/data/metrics.jsonl does not parse: Expected property name or '}' in JSON at position 1 (line 1 column 2)\n"
+      }
+    },
+    {
+      "input": "cf6426d9d4bd09630ebb0d5cf1ab6623f5d93928172a045c93657fafcce6dcf0",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/63/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "d833eb658a70724c247ba14c35f46f8cfba2464e9a6ea9dfd15ebfc8e87a7ff4",
+      "js": {
+        "code": 0,
+        "stdout": "{\"b\":1,\"n\":1e+21,\"pr\":[12],\"headSha\":true,\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "4e68ce29dcffa3445a71beab09de9e2ad706649a4f24871bc87c256941c0538f",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/65/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "05b5ee6b132b0c5a9e4f3b835c7ebbb8b5909d389319f774b99e6cc3332169cf",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":13,\"headSha\":\"def\",\"repo\":\"x/y\",\"n\":1e+21}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "06b111bdc4458ac43eba4c4b5cdd3cb6f7bb9f04e92ff1f992b07b143bc0779a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr null, expected true\n"
+      }
+    },
+    {
+      "input": "54c11649d42dc038b40766aed47103884568cb3e854d905f90e9baff8f9655e7",
+      "js": {
+        "code": 0,
+        "stdout": "{\"s\":\"é\\u0001\\n\",\"__proto__\":{\"x\":1},\"pr\":\"12\",\"headSha\":5,\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "d26672b6118b6c14fba85fe8278b35c26d623f70d5d25441175c8db1d74202b8",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":12,\"headSha\":null,\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "f46da79b225e4996efe5c00ff5ab9e90ee272b7f1fe0924ad3c9934b8898efbe",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected 13\n"
+      }
+    },
+    {
+      "input": "68cb62fcbc0009cf4581d813dd42685cca0b87f1e859955aaa8c1d1ce55fab0f",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha 5 does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "81b2c1f5e301c9a6886744c74f1c98ebe4922ca6a7f320812dfc11f512368327",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "05bfad4dd1aea6ea768741b58b11fbf2267a0d95ef7c43dd3a1367c01ec96819",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "d9a6840736529712209727ce531060e7059de9cc0f7d750608cf49d385de24fd",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "269892d7ec9e277c2810c65abf5e299865d5501e1d84e4c07f92c5097f1b12c5",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/75/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "efcbb73ce57553c4b6b83e71968bf96d972d615bf20c3e0e516a3c505571afd3",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "Cannot read properties of null (reading 'pr')\n"
+      }
+    },
+    {
+      "input": "ee3e0e5cd319d51867ec800842d8cb6390e87141c932353be275eafcd9a1d595",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha true\n"
+      }
+    },
+    {
+      "input": "6e86f7d639c8570899940cb2aa55d374c59d23d41e32c1ec5cdf12e068ba2246",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"undefined\",\"headSha\":null,\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "541e94eeac8466efac39e26b239fa3d2fc49b572ff77bec66138d5a19437f076",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "68ddc9ab83689493ffc1604dd445d4b8548d2cb5db1cd58dda1155b3eb04b635",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "78c10d21e1b4e5084663db6161bfe555330e808e607619023624f7ce73a851d7",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/81/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "a6bc5d595be38b7f63231eff1f25023cafc2ce0a08cf5de05c2c7c28fe06c2e2",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr true, expected 13\n"
+      }
+    },
+    {
+      "input": "520bcbbd2d6956e473dfe833904f179a8628f6bad2915a2d7380c185b9e40150",
+      "js": {
+        "code": 0,
+        "stdout": "{\"n\":1e+21,\"pr\":null,\"headSha\":null}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "4094955de09c344ef225462380d43e7f8efa7e49324fa8016e46ba21f421fa3f",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected 13\n"
+      }
+    },
+    {
+      "input": "8e192ff1b3d4261a47eede4209c3e2c95f1637a4b38916fe3ab1c1904e14b67a",
+      "js": {
+        "code": 0,
+        "stdout": "{\"z\":[1,{\"2\":0,\"a\":0}],\"pr\":12,\"headSha\":\"def\",\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "7bdfad4b746c3be30c31f8f06e1ae92c1842c23bd41c1a504295c3301fd70456",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/86/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "1627e2f29bdd8d7b188bc09c8f25d82db34845db606e482ae3cc7c69e54386a4",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 13, expected undefined\n"
+      }
+    },
+    {
+      "input": "b14a06a051feee97b0ba26d7f698e7f7db74c7f2d8ad705b77f37d60434eb3ae",
+      "js": {
+        "code": 0,
+        "stdout": "{\"__proto__\":{\"x\":1},\"pr\":\"12\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "ff2be028a8ad6d1f046f608a5089359ec67ad703b0d017127215dce4fcb0f84a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/89/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "19b0b6f313d0bd645a0b6c4567bb9f9bb21952a5327ebc64fa8880f373f09e89",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1049, expected true\n"
+      }
+    },
+    {
+      "input": "7805068d44c812452a2b575204000ea46f1655f456b579674aeecdfe990c0060",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":true,\"headSha\":null,\"repo\":\"x/y\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "ea80400cf2855293deed9e5891ebe5da8e2473ae794c77d1c75669ab17ccffdf",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"12\",\"headSha\":\"def\",\"repo\":\"x/y\",\"b\":1}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "c38d7f006a94c20a757880c528a7ff7ab2a74ef3e63a01ba8e53b0f6c9cc37e3",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha 5 does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "80e2e4a9dcc58da4a6634788d895ddd59ea64753192bffde726d87c35fdc83a2",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected true\n"
+      }
+    },
+    {
+      "input": "bbea9af0bfd24324597ab1741d168a6d3f75366aa1beeae581267108af0f8376",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"undefined\",\"repo\":\"o/r\",\"n\":1e+21,\"__proto__\":{\"x\":1}}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "26254b467e99c2bb9189d5abf5a40491278eca8787d6eb1465590e5834f81597",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/96/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "e9f9f91cb24176472d32995a29921bbaa14abd7a856a159ce215877c911be772",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected 13\n"
+      }
+    },
+    {
+      "input": "fe2a599636ca26e22538749c56250a8ada3b68383bf174bc1e532481441dadf0",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/98/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/98/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "091a2db5caf459a6494e6dc339e1cb46e57d4e08481389f7d6d1af468e4e62ea",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "b7d70418dd36b6f76e363858b2afa5bd941e8deb65ab5d2f94d9ea4e5a5f99fc",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1049, expected true\n"
+      }
+    },
+    {
+      "input": "250544633d1d3a2a4c8404b818a05a8a4f3835dd9d8d9fdd91cb7d72845fbb66",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/101/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/101/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "316d57407f767326bef3c2dddc3cedf07b7482d75f83208916f9b94bb8914998",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/102/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/102/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "940329038d13d8d9cc0d45ca0ae31eb7f1fcf194ebfb663c05ca07df658caf58",
+      "js": {
+        "code": 0,
+        "stdout": "{\"n\":1e+21,\"pr\":true,\"headSha\":\"abc\",\"repo\":\"o/r\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "1ce5cc14f9001d64bbc929d229040b60173a7aa1f12a79e026d9ba2b604a8984",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/104/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "67feb84b158c6d365d21b3776cdb0ad951ce38561366c8f781cd36953ceb2ad9",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/105/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "d4fb34b77511b1f04083b0fdeed81311e56f4ff45a2f6ec941b6490b8bccac87",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr true, expected undefined\n"
+      }
+    },
+    {
+      "input": "8e5de0856fd36a9020da65091adc60032c63421b04ff823198b884ed36d678c1",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "fe2a599636ca26e22538749c56250a8ada3b68383bf174bc1e532481441dadf0",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/108/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/108/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "a35ac33b6501bb74becf9906359bc554130b32bfba481a45355e82ffbbfc7f4b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha abc does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "616db61ac3768b1bc7aa0e4fe543bee07faea6653bfa6e8fe6db992b94d06a4d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr true, expected 13\n"
+      }
+    },
+    {
+      "input": "a7d66d638503879f52c4253f2ce06a75a346cbb6ee5267222cb5f835eac874b6",
+      "js": {
+        "code": 0,
+        "stdout": "{\"b\":1,\"pr\":\"12\",\"headSha\":\"abc\",\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "7fcecb42a285fad752c67f5366f8906e8f8058ceee0a5669f455e97565c3899c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha true\n"
+      }
+    },
+    {
+      "input": "37ed758ad3b6e011015e74dcb2271f566397dc4ba735708e898266244f9ec001",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/113/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/113/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "bc3210f593bbeb5983a79351401e10ba3f18a435d2028b72d0f6e7b2e0d57129",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/114/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "8d8887a610179b4a78e2cc181c7e37673ed6f797ac55908033ba5ce398a0bc3b",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":5,\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "40694a8d92f97e8d43e5dc94c6ea25462e4514ba1beeb363e188a03e050bd24d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected true\n"
+      }
+    },
+    {
+      "input": "c754b0beb8f40df77c59c2e10696f9f9dfe2dfcdc278bff83b2aeb5209cf664a",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"headSha\":\"def\",\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "cf3a871dc0df4171cf08f96e3426fcc46d9c257ede09503fe45d0c0757aee532",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"12\",\"headSha\":\"abc\",\"repo\":\"x/y\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "3b5affc0d43c1988ede3996807c4d11d4e7cc526bbfee4756e091774bd3dffee",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/119/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "2e05477b5e234c09367c34431adcbba9af3953a1b741184e425f45ff2d2e07f6",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected 13\n"
+      }
+    },
+    {
+      "input": "fc95d5b6bf3618708652203dc9f1a5b6e14eed793b7a7c7fc6cf8d7b4ab56d68",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/121/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/121/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "f99fb04f9aba216c42efda85b0fa3777b7ad384ea8ed2efe27b0bc4ef48909fc",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha null does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "242ebb79a03341c05822dd2d437cdcc3d304a894763b2734b47dcd3af3308df6",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last line of <SCRATCH>/123/data/metrics.jsonl does not parse: Expected property name or '}' in JSON at position 1 (line 1 column 2)\n"
+      }
+    },
+    {
+      "input": "3380a50f51a8f3b072142843278013bd482613a5761407f3be223e0297b3f492",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected 13\n"
+      }
+    },
+    {
+      "input": "ff2be028a8ad6d1f046f608a5089359ec67ad703b0d017127215dce4fcb0f84a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/125/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "4fba7f18ae4d28acec3ae803ffe8433335b50248658a8b46471a3cf2f6db83cc",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "d1940e8595b608b939ab4ab579af0e36be1a8fc200185dfd8b6529bdb2984d3b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "c4bd5e3208a42774eacd0aaf707161f2a842d559b264c566d0c514b36a75cb59",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/128/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/128/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "ff2be028a8ad6d1f046f608a5089359ec67ad703b0d017127215dce4fcb0f84a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/129/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "4e66744c6d408efc7b56de74e050215654a8b593caadb64ba1b44a5cbaa387d1",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":true,\"headSha\":\"abc\",\"repo\":\"o/r\",\"z\":[1,{\"2\":0,\"a\":0}]}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "38ab5b65669ffcdd822c5df10c270453dea92ba1f29f8a586e3b910da685cdce",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/131/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/131/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "4470eb8a4b543d752f72b1eb88975e3a0088cc5685170e4293fe644fdba6244c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/132/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "93ef340f1e0db3fd7a602dbbc5c62359196daa95912fa96b3f4cefbc8fa76aff",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected undefined\n"
+      }
+    },
+    {
+      "input": "a07b597cdf58a1e15d6085f7e3b65a8e528b6dc5702bcbbe69222d4f49fd3709",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":13,\"headSha\":true,\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "124245e139fe6721b37694d9115b391f903a37050411e317f5f38145c9a3c4a9",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":13,\"headSha\":\"abc\",\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "07364ad8af9ada6254976b915ecc2e790d073c835c5ffe6f484f519a3b106f37",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/136/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "ea91d9679036050e24d3feeeaa589f21f204cb40de3985bf27eb4f83192735a7",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "62b752681635b425dfe4230b0d38a778f83cd57aee14da973203130215222dff",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected undefined\n"
+      }
+    },
+    {
+      "input": "d57986e88faaf27c26bd3b56d4621cb89768085938cb63c955c24189b0cb448f",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":\"abc\",\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "769da770a86bb16c2a6e2e61552ea87d713c9979ea7b68af33ad5535780a6818",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 13\n"
+      }
+    },
+    {
+      "input": "7a23375d73957cf9891910cd558adc2d3e0d44d6f33c1c370f56847e33e45b9c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/141/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "91555e6758a176e7a8e7469d8d6253c2ed8df0aa7214241be00403d1134e38c6",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/142/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "aae56b28ad930faf160eb7c088a0e5e9cac38e9d7e7b9d524f65b29b931e8a0b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha abc does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "32cf384b5bb647a46bba1999c2b59566bbd0ac2bcf632e57a19624e038d0e6dc",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 13\n"
+      }
+    },
+    {
+      "input": "472074173048d287401f00921e752aed2f3ab656523e2f9eadf0e39493ac49af",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "70a5d51c60b31722ad4cdab200ca61e46f53fcf2c549ece431a3137ebae43e77",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 13\n"
+      }
+    },
+    {
+      "input": "fda9d66f25ab1c45fb07c0d5ff6b0246435e1436d459e02c0770a3fe85210569",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "c5bece487b953ea77aeed038249df3596dc924f84272c965a5bee851d2f808db",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "81ac3a0ad0eed693828b1d8fb81f743e554f7e2ebb8de993e8615f981bea9e20",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":12,\"headSha\":5,\"repo\":\"o/r\",\"__proto__\":{\"x\":1}}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "ff2be028a8ad6d1f046f608a5089359ec67ad703b0d017127215dce4fcb0f84a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/150/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "371812965be29edab113ebfa8739b9c471805505e567edf42bc9769399891fad",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/151/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/151/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "000b123a32c81d14616d5f7893b4b91614ba54078c961237eaf6c195a01edfe4",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/152/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "85a2685b1fc66f80b65b6dd592c179fd7a72dc2ce202043220c863f053bc3a20",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":5,\"repo\":5,\"n\":1e+21,\"__proto__\":{\"x\":1}}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "acf3a7eec388441106e2cee3bb33418fbb9ec8d6a7a061690fc6396376cc114d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "6c37fd41e282545a78a3c4d3e6265a82924d403542d97c45803466cfadce3b35",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected 13\n"
+      }
+    },
+    {
+      "input": "2651be41a753d35aa9f9554149e57b5a413ac17bb323dfec12d6c1afc94ccdec",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/156/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "a98af39a87491be1247c2404117ee7f72f502070ec83923db8268459003b046a",
+      "js": {
+        "code": 0,
+        "stdout": "{\"b\":1,\"headSha\":\"abc\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "000b123a32c81d14616d5f7893b4b91614ba54078c961237eaf6c195a01edfe4",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/158/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "a45afeda0939b25f94cacf3c39925d78075b876ab8c29a54bc883cfb82d816a7",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/159/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "37d109ed51479f099f8e4e41b1f0956c1ac70caccb426bb583e2f6dc03f7d5ce",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1048, expected 13\n"
+      }
+    },
+    {
+      "input": "4a032873ff984cd3304b8b246e5e9521d3b63c8c34648e0b84eff93349710927",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"undefined\",\"repo\":\"o/r\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "065893e555aa47ffe876b6ed8a7313177e6a5bd53549d85acef439e5116022b8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/162/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "2f3a9b16d54ae2b3f3d443fa25cb9b35c8c109ae717a398641d0651e7aa88b02",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected 13\n"
+      }
+    },
+    {
+      "input": "13600501b33d5bb9a9ec834544c75dc4a83a00bc41682abab48b45dd729ccde1",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/164/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "f7f32391edbdda4c4ff2d428ff67a175d24b2d3581c66e2b61cd98d7a65b97a8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "5eff419f9a2c559e3de3c382c3520327bbeef20b2dc55aff7ee9708004d3ed23",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha 5 does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "463a95fd86dd114830290d3faa78fb1a65c67ef3d4dac7ed9f50134f5e3d2c70",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last line of <SCRATCH>/167/data/metrics.jsonl does not parse: Unexpected end of JSON input\n"
+      }
+    },
+    {
+      "input": "039c1b6038a3178f2814d32b06bd6881d3170b3eef4fefddc10c3e53316d7e81",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/168/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/168/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "6cf8aa23ffbff848cd1f805033f636bb93181f10a6d34de662c48b24ecc1552d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "20991face990fbeaf1eebc01bade2f67b0d91cf4a3caff4c0abc253fc313032a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "83207912931844495b10c2a2e81221c6932e6a00c562d389c011c50be74da5e5",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/171/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "7a4a588859e652078f5bafe37e4c74c52b360593bbaef005658cb4404b6ed203",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/172/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/172/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "7887b10de2c8703fd77056661bf831ebf8f46648353f88f79defd3c2f3653053",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":\"abc\",\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "d7d9f8b8feb74718521f49ddde024f05ada2941f94626430fee4cbbb0595036e",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":12,\"repo\":5,\"s\":\"é\\u0001\\n\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "b9274a02f2ac8b0b929db22ca31b9fc8308e8e56897ba126c9ab208bb257404a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1047, expected true\n"
+      }
+    },
+    {
+      "input": "46a5e2c072eb1a896caf9086e2ec63ef9ce9958f5de5f840b2132a7931e395cb",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":12,\"headSha\":true,\"repo\":\"o/r\",\"n\":1e+21,\"s\":\"é\\u0001\\n\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "5f86a0a36b8e385d9156c1416822558e125c970ae432c903460479b0d77e3651",
+      "js": {
+        "code": 0,
+        "stdout": "{\"__proto__\":{\"x\":1},\"pr\":true,\"headSha\":5,\"repo\":\"o/r\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "deceedc267beee9d7d7c0552079ec0d912d013ad997b73184f67e484a21340d6",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/178/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "a9740cf3e88b76002e9e5004b50d1740c8e0eea416dbea340c9876c3e15d49c3",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected 13\n"
+      }
+    },
+    {
+      "input": "316d57407f767326bef3c2dddc3cedf07b7482d75f83208916f9b94bb8914998",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/180/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/180/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "eb1272031d2b0dfb0a118fb18758791fbbdb7b3703bf9781f0314d5faac37b2f",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":null,\"headSha\":\"def\",\"z\":[1,{\"2\":0,\"a\":0}]}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "bd84707617dcc946037fee2c66d40f53e7a26ad3555ba0b9ba533472d74e26e2",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "e05b4c89e265e5c87ec7f4c5f0d0233b6e39780b73b04a4a8c5bc0d8575ba666",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1047, expected undefined\n"
+      }
+    },
+    {
+      "input": "a45afeda0939b25f94cacf3c39925d78075b876ab8c29a54bc883cfb82d816a7",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/184/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "6387da664c5d0e46d551c1f539477ad5548723a4cfc0df11d9bde37264fb7bdf",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/185/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "ecc19d4d7d5c929ade036a29419ae3dc7ee55e0b20e36e8d5fb281c6bec5d2c1",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "c1b7547d8d401027b5ca938d9dcb5354683f54b17e27cbd6f4031fccabb4113a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha abc does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "e03967621dc777e868b59600811b236d627c4329d7c36bcc6999b1e435d3e805",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "a0edfdc007c057f2434d9d962dc1a4538c9ee4e85d4e92bef2d5fa208e45a4ac",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha abc does not match --head-sha true\n"
+      }
+    },
+    {
+      "input": "3e70a6aa95b2bb12b97f6402ec70c38e93df4199033a782497b3e0bb5200a772",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/190/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "0daff6a3e59b0220040451e9e453eebaacf2a8dea1e5da36c686cd9b6139cd02",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 13, expected true\n"
+      }
+    },
+    {
+      "input": "7a23375d73957cf9891910cd558adc2d3e0d44d6f33c1c370f56847e33e45b9c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/192/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "2ce8c33458fe55cfb5c1a5d33f5d6eaab183a60743b6f470de65cb908d425db8",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"12\",\"headSha\":\"def\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "61b5993e562824d874a0af80493546be9c20eaa3fde03641c150a6a2ea2684f6",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "0c2f32687bae4aa37991f8612537782e2a3fe6896cf89d793e638893e62f5e60",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/195/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/195/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "8a9a1454759ca53ca379e26b8d318580144b1f5c9a781b013931dcd11df184c9",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"pr\":13,\"headSha\":null,\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "c67cb0da6775270fcc04be827f24bf8f7affd0d14081aab1eaa932108699b83f",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected undefined\n"
+      }
+    },
+    {
+      "input": "92bde216fec3df6d6b1668ef985720506f113284eea29badcb73a37d39ee152a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected undefined\n"
+      }
+    },
+    {
+      "input": "b68c8966c4acc08fd3eec9921d8b14965524e079884bd673d6d16eedd9dbfcb3",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last line of <SCRATCH>/199/data/metrics.jsonl does not parse: Unexpected end of JSON input\n"
+      }
+    },
+    {
+      "input": "c23e00d48cebc22c7c66b276dc0556d3cbd0f7f6150048afb7384cb3665313fd",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/200/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/200/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "ed9ed83d71ea997f67c2565ac4a81b436217c468d34e31fba4eeebf6a76eae8f",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"12\",\"b\":1}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "07364ad8af9ada6254976b915ecc2e790d073c835c5ffe6f484f519a3b106f37",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/202/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "f1f8c30067b8a3150cb31f417e4e8f4e920b3572f8b3417e9473e3db7db071fa",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "41df03d9c193e9b55a4218101e67aa376694a22848c56bb2247b4e5502e79f5d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected 13\n"
+      }
+    },
+    {
+      "input": "807b49f9c9f3cf568394b946a1eacb9cf1f0f6d0e6216a8dd8ae6a1baf45fc9f",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected 13\n"
+      }
+    },
+    {
+      "input": "ad39da3db74f34ef4e9cb7c3cc4a10213b640f2d669934a96257c2cd04254252",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "fe57429ec4693878ea7d52ab99847b0114065dc0b29935c011189bfd1d8d22f8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected 13\n"
+      }
+    },
+    {
+      "input": "bbccb68b6732aa186cdad5f0779a6158d7db30ced5f6faac53eba67960178f30",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "db4c1fb6e8eb6f58864bce0646f17b8a395823d186414971ad342861fb765336",
+      "js": {
+        "code": 0,
+        "stdout": "{\"b\":1,\"pr\":99,\"headSha\":\"def\",\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "8c47c0ce44e41125ce3bf25be2aac3e683d8b1bf63ec98661019655a972bd49d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1048, expected 12\n"
+      }
+    },
+    {
+      "input": "bd8efc338016d29cd191907bf952e580e24e8fe8456dd7cc4729329249579715",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1050, expected undefined\n"
+      }
+    },
+    {
+      "input": "c23cbd7e24d880b16f477fee9f53f7045faf9d3c88bf9a8d6e6512f7b7ec7c5f",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"undefined\",\"headSha\":\"abc\",\"b\":1}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "5e23fdbbc7299505b550ab04130b5df2cbf885fad910c62fcd2a037a0bc6fdc8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "d8d3b323e2dd747d97050d75c5b86db99af42d391cf6e09081c7e07827be6ff5",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":true,\"headSha\":true,\"repo\":\"o/r\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "1b76cf2115245448250841d7f28bfbcb5ce9f1ca3ff8570cebc54db2461c3767",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/215/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "947a0b3bb878b008be5ee0f35336d79223b68c1a5d14d414e39ffafcbf0578eb",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "630ba6f65145d2814f87aa94de96422ba91b14ac383b9cb9c17c8cce3bbad2f1",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":99,\"headSha\":\"def\",\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "aa34786bf61542bdc35a86e60bd887c570018e3ab6add9e7e31c1834e7a80ee2",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected 12\n"
+      }
+    },
+    {
+      "input": "a2254b885b748451912fe80f54234c040e157434cbe4bc5cc5a52ac3bcbe66a5",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 13, expected true\n"
+      }
+    },
+    {
+      "input": "60c4030bfaff5f13fd025d8162a3034aecf19e86821d5779f50f50b474ccb8f2",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":true}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "7e5c6fbcd378ef6f9c10f78aa5847916be1cb6284e2e77d904f187184a0ab2ec",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "817d11923108c4853e612b7c2c1d040896d3c431dddfc267518d1ab02ef50836",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 13\n"
+      }
+    },
+    {
+      "input": "41eeba7dbed3ac4c12be034640691b72c9326bd2af151c166a43bd577cde5f1a",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":12,\"headSha\":\"def\",\"repo\":\"x/y\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "238a267d4d76c1cfcdf336c7dec15654891d0988b4ff378e40c01e073b6f9555",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha def does not match --head-sha true\n"
+      }
+    },
+    {
+      "input": "9c23b7e7e7d3ffc2aa440be37dcfd33432dee705ae59dfed953b0e5617af53a1",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected undefined\n"
+      }
+    },
+    {
+      "input": "1e701993df42baad64c4c650b1c527ccdeb7c5d38e88b0d829b7a45d2d5e17e7",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"undefined\",\"headSha\":null}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "2b04aeb72f2a41b780451e64e74b4a8e0d81ed05f5d4a12adff3a330394da999",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 13, expected true\n"
+      }
+    },
+    {
+      "input": "039c1b6038a3178f2814d32b06bd6881d3170b3eef4fefddc10c3e53316d7e81",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/228/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/228/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "87b9f6b3a7b78701e8821b30cb557722cd30b0549e445ff9904f52bedf5ca40d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr null, expected true\n"
+      }
+    },
+    {
+      "input": "550c688dfabfca0ce574ce27a04f132e22a83db7eb64015eed4ecf788686b07b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "e32cc6a049ee9cc2bda4e14468e0e6a03407dea2b3a7b45b555f6a0289be9abb",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/231/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "343e1987c5f4da227ae38400a8b9000f8551924cc74e5a5a367bc89ee8579338",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 13, expected true\n"
+      }
+    },
+    {
+      "input": "d7b1c2eb3e8ab59d4c4200f0058aba89de4c898283005c8997a61d4e60f03cfb",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "Cannot read properties of null (reading 'pr')\n"
+      }
+    },
+    {
+      "input": "0a8f40d86efca72ac39498b35b28981ca1cf9820e0a0867b535732dbbf6f07ea",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/234/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "6b61838e3ab2ba7d8e2d6d1d63157f9d5cd13d03e5e3815c4e1c2272d25397de",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":13,\"headSha\":\"def\",\"repo\":\"o/r\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "226fb72dfc77054596b98f00a442c81e7d989ae1b9bb237f946073204dc9ee07",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "ce873ac8d70fe5a7d629745e055129c4fb3f1862dde750d59ea5c15dbfba50f4",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 13\n"
+      }
+    },
+    {
+      "input": "000b123a32c81d14616d5f7893b4b91614ba54078c961237eaf6c195a01edfe4",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/238/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "7bb3d59f97636a7d92a1ff9f657669e87e272c8fb9da203ba9965d7b37d7b453",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "54f067287a7ec12f1ebeeabd8fb94fe6736e94e08f7d36e58ca2257f9f57e81a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 13, expected true\n"
+      }
+    },
+    {
+      "input": "bfe9df2e924f92c0ebc45339965678e8c8a9f2a7268188d42463e1de9ff379cb",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":5,\"repo\":\"o/r\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "8cf34febe55975e8dc6f8bc2c13ff3f5af06f63960e01cababae3d373d2858cf",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha null does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "1abfb52ad8ab2b47cc826f603853ffedee53227f364c9460280132a38b6eb556",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/243/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "caeafd5b93dd1b39fab9864ff8b65e8153eab18aaa8792a1c45093382e58ad8c",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"__proto__\":{\"x\":1},\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "0c392d6caae49d2211a1b83273acfdac9d3454b2980c14fa94769b5aa218c103",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 13\n"
+      }
+    },
+    {
+      "input": "90d876e9a6f0f81bab64261dd41a9c4976c36e2588158e8501700a9e4b85c904",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"pr\":\"undefined\",\"headSha\":null,\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "766889167f046a54aa39f8ede7e0baad25fc593f3e55805a8e9a1e6c27575f9f",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/247/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "75b1a7a632b11a1828c72c27d4252e9adf496d45267a4c377d19a1d954536173",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 13, expected true\n"
+      }
+    },
+    {
+      "input": "494d804e26d25384af20f026f63e8f2e232fa3fb0026e7253e2955f7466adcc9",
+      "js": {
+        "code": 0,
+        "stdout": "{\"s\":\"é\\u0001\\n\",\"pr\":13,\"headSha\":\"abc\",\"repo\":\"o/r\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "c4905c0d8852deb3832890c7f357e10491339f08ab8a45ed646fbe52e38afc62",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"pr\":true,\"repo\":\"x/y\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "770290f8c999f1d89ce7f0d6f4b29da0877c5a53fab640a8a92483f6fc372582",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 13, expected true\n"
+      }
+    },
+    {
+      "input": "dbfe4dbd62cd8db7a84235136b83834a6ae2544f20419574334032e2e7b2181b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/252/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "500f50500fc16ebb04886de78158f0e2268c9442bddedd47872b5115a5034df4",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha true does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "3bf2412741bbf3339ebc7640987bbcfbf3ecd11dcb6fc1f997776ba38cd15ba7",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "9db49b414d15ceef42665acbe146b87bee9b599cb6a3091eafedb74dd7b9dc1c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha true\n"
+      }
+    },
+    {
+      "input": "a5819a213d29429c0363f8e5a8836f71cae6abd15e537c3bf9a164a1b7d62b6d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha null does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "2971f207e476790d50a21f2ff6037981fb3d7bca49cfce4b1231f746ba1b3c69",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "1f597a6657920f7bb875d5c4d7392f2f641984c65188bd2991e2ced84dad6523",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/258/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "7f71642d7b54fc2aead7cf93682a0c63b63046a3d62b343e6c7b489cdbc7cfe9",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/259/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/259/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "6d6f25eeb22cff6c696fed82861684c1794bf1d9aa30e4030d5ca640e8034cfd",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "3cbaf45cce431113febd260e35d1cc840f7c70af7b9f26e8edd652dba55fe2cb",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha 5 does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "45d6e40db2db6547d53737c9179e48292fe639f7406bb31fccdedfd0022d048e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected 13\n"
+      }
+    },
+    {
+      "input": "cbdbbe73144035e89fc11a0f6faaa2bbf8f113fc8985ff6a5fb7a9e2db791c13",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/263/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "0cebf356d3288f22f816469ec61f977aa90adabf47e95ec2a441df3ce1b59f4c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "1f08814218e6b043d39d600573c4954a2c913728da1f050505f9fbae8ee471f0",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "ab9b9283a640ababc6d66dd2d9040af6f2d64ed110c26603f37977148a02980d",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":5,\"repo\":\"x/y\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "b61a6595997a0473b33c3a5adba8c31d071d90f3b04131cad98e35281ed0d1f3",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "888bcc9c48719d1f876cbb16bc64cdf839fd5d1cdad1d990dc2e039528443c36",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/268/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "316d57407f767326bef3c2dddc3cedf07b7482d75f83208916f9b94bb8914998",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/269/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/269/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "48aacc4efb7a84dedeb782e48c1b026eb3193b7bd9178fdf8a49c9e620e23094",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":13,\"headSha\":\"def\",\"repo\":\"o/r\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "39174a8b06e7447e70ddf09a260626e3dcfeb0e2a982a7fc0f089a8713150951",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr true, expected undefined\n"
+      }
+    },
+    {
+      "input": "1460e319ac548d1a09b3d1ec270c7e3c0caa6e89062de1b23132b65e43838b5c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/272/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "386ca435a1ddc08add2bf232b662e143f39b986c4f198a9a6a2b48e5e12e8f93",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/273/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "17efea9e6692308616d57d477f0cf5825cb67721d401dad499e76a1cd629eb71",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/274/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "47dd7e4ee8be9159f56a0ac3386265c2cc702f0a838bfb44ca3bae8c8b06dada",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":null,\"repo\":\"x/y\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "dbfe4dbd62cd8db7a84235136b83834a6ae2544f20419574334032e2e7b2181b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/276/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "6fd341909c4c448bc3c4f94b9aeae53e6742bba4fab3b04565bc97d5d233e83d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/277/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "7f71642d7b54fc2aead7cf93682a0c63b63046a3d62b343e6c7b489cdbc7cfe9",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/278/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/278/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "dbfe4dbd62cd8db7a84235136b83834a6ae2544f20419574334032e2e7b2181b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/279/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "3c18dd297887d2d3a589c6dc85abb130558feeb80fdfceac3b41568d73a1f222",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "257986e766467b65324e5d8fd4d8542f77d5a0a877da3b6ee0e7c5e799c918af",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1050, expected 13\n"
+      }
+    },
+    {
+      "input": "1670546ce331d777f84545b63817bea371af7e7d09a9f1a8d663e51717c13e62",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/282/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/282/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "27ccea81bbd351096724c58be918a0ab7b25f8014fd0ffd196cb4a2d874b80f5",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":1048}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "3aa388eb6f310fbd348606a7b84563ee5f84f143a0b2e3565d52cc3181aa29b5",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected 13\n"
+      }
+    },
+    {
+      "input": "baee6c24bd5171cee5b9d5d646368e4e3f13185051144a3f95b0e710e7021847",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "Cannot read properties of null (reading 'pr')\n"
+      }
+    },
+    {
+      "input": "03c61f756dfe436febde204ee8f144176f7c50e4ee52339446430587cfea7b7e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected 13\n"
+      }
+    },
+    {
+      "input": "1d81c15bcb41ac2c3b26ce6d6ec27e7fd7553c4cdc4ed6a01408aa2c8307efb6",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 13, expected true\n"
+      }
+    },
+    {
+      "input": "944cb44cc6a74e274a75c9892bb5d294e4a84649081efcc30d1810cc07521f07",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":null,\"z\":[1,{\"2\":0,\"a\":0}],\"__proto__\":{\"x\":1}}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "576143280e0c057b7fbeb133673143aeaa826e0ee9264df87e738f54fea96e25",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "ab6d06d82dcfde0029be23169196df06e4af828a41a42095473e750ab17fbbfa",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/290/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "0a63d4464c5eb5b943857b910c3f875b2887ebf6835810375875ac11bdd1b02f",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected 13\n"
+      }
+    },
+    {
+      "input": "37ec1051d47d3565e4bcd64d301e1018dff93f0b714418dbbd40a2ae8b7cdb03",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/292/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "cb7e340083dd1346beda653b8c19a9cadf098086c6ee67fcb783ea5965cad7b9",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr null, expected true\n"
+      }
+    },
+    {
+      "input": "529afe34dc4c3366e680050d320f78d2fa80a8ac695ddabfc0baba97e2d00fa5",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"undefined\",\"headSha\":\"def\",\"s\":\"é\\u0001\\n\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "a549c36f0033cfeef106a3e443f13943df008e1167497ea632dc6a63a3d41757",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha true does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "4bd2d9066e8fec8f079c5b5fd1b99707a418a8ee1591bce0510c9351923b09f1",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last line of <SCRATCH>/296/data/metrics.jsonl does not parse: Unexpected end of JSON input\n"
+      }
+    },
+    {
+      "input": "766889167f046a54aa39f8ede7e0baad25fc593f3e55805a8e9a1e6c27575f9f",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/297/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "9ca2c69d73becbcfee363d624dd32a3fe6e51421fbad9dadfb3aac241c71e7e1",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"pr\":true,\"headSha\":5,\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "429076cf80f48d458b0eb74b21323c8cae8793b1547273a9a9329c2f7715b1ae",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":[12],\"headSha\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "c4215dabc5f55825387f741724fa5f292b3738cdee64fa6522f04a7bbda7de39",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "316d57407f767326bef3c2dddc3cedf07b7482d75f83208916f9b94bb8914998",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/301/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/301/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "256afa3e054bdfd87d5c19b7beefc51a9fb6fec38bf5b047819bd8eed95764b8",
+      "js": {
+        "code": 0,
+        "stdout": "{\"b\":1,\"pr\":\"12\",\"headSha\":\"def\",\"repo\":\"x/y\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "d1705460c1e9782de18ddf45806a653c7239e17e1ffb8b9b97cc7f799475ddd5",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"headSha\":5,\"repo\":\"x/y\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "401bfeb576e7f44a2894bbc21ebfa999ad3db05ab4ba1de91ef4623a99316f6b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "273abcb5af48941a0571dab23334c763320caf554c2b4abd9543b7be751b3b59",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":12}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "f448f9cce280b001953f8c1247a788051950d8e76e67142b63489861378de160",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/306/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "bbe49f973ad558f042fd9fc359310564df6f331a4c377498c5f2cd003f23d6d9",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/307/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "9c08e05523ff5d7d1e2ba4dd6756d85a77d48fa809fefc2d726da5ca7329ffe3",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "2652d9dd834dd6ff038d167ee23128a416da5b59792cc8b28de8a83808879e56",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr true, expected 13\n"
+      }
+    },
+    {
+      "input": "f5b04c26877b3aefa4dad93ffc1210813ed0f6c51417f7864b27703b36a18aa6",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":[12],\"headSha\":true}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "7a23375d73957cf9891910cd558adc2d3e0d44d6f33c1c370f56847e33e45b9c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/311/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "f5c2dfe2e425743da9d5cb61b3b7a84da0036b488ff929b4291a359394b13171",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/312/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "99eb49060de8a4b5ba366b7db2fb54668789a66742c59e1643e3adb3377a3ba5",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected 13\n"
+      }
+    },
+    {
+      "input": "854e25a07a26bbec11053fef38d1c40ed1326a4dccf9fe5f13487afb100e01d2",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "c26d96346ce9faa149aff0ea9a9bb8d60fcc1a1639ee5db1e9663890503520bb",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 13, expected undefined\n"
+      }
+    },
+    {
+      "input": "018d974ff47d8ff0b7df7d9b802fd5e6bb456266ea11bce1c630f1856cec0a9d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "73020029e8d1ad7172ef5868e6ff21cf374e650629f12d22927e14ab29dfca95",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/317/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "0e2dca0ed1466912fbc080d28f0a64ff0065c29d1c4a5881357b1d432be82a8e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 13\n"
+      }
+    },
+    {
+      "input": "ce37a5ed435727b0726ca281e0aed54d690fb799cc679e566fafcf04effa02e7",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "d323268aa3cd419d89ac3e5710348700747e13a084df3ab2169bd2c0bb054277",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha def does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "d648ea62329ed958e9aaf68f7ac819da2f8829d76c49a1c7fb2e4553124253a0",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha def does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "7f8f88c4466ea4d00c1814e19e12cbc30b857aed213535f772afca89053dbe48",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "fbba4907f0ee5bc51b53f644add2e42b4bcab9f2da8545469db1bb7ce5e85366",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":12,\"headSha\":true,\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "39df2909db15e371aef832bcbd4934a952b89e79b30c694c5dd58b0baffd76c3",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "6c75334f530c96ed052d47377376b3b3faf948ecfe24eaa7f03cfbba63c45e23",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "fcc5aac888493ef05878eef8b89f2cc27f29c49554a6de1f519118e6401b0302",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/326/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "88f4b80ede1d73874187701d13e4aea84fa007d98e113d266bc0805c9cd1f588",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":true,\"headSha\":\"def\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "8dd278dbbf51c438bc00c32868e4b8dd6d282b4f0d348c4abe10aa8b21cbf06c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha null does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "66d481897ed0f20f75d26221d3af6e8e00193c3570380eb063891cca11c52d41",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "f2179a6b85d5628c0d71009a15ab8230b54ad5c5b35689444fbd0af85ea55696",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":13,\"headSha\":\"abc\",\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "a641a14d86db2b88a5aa0f5632a83fedd68e8e3494dca524ac9188a51e36cea5",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"undefined\",\"__proto__\":{\"x\":1},\"headSha\":\"abc\",\"repo\":\"o/r\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "e45a776ae72f49815b5aec9bff3960dc7cdaf1149ac9e59743f2b64c8aa303e8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "7a4a588859e652078f5bafe37e4c74c52b360593bbaef005658cb4404b6ed203",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/333/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/333/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "bc7b0d7b3b677d9fbfef08fbdea5cf581f76eee6cd0ede9dd1f8b42ab0b76f4f",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1050, expected true\n"
+      }
+    },
+    {
+      "input": "8c12c96010143b2376c4b1bc6ab156b08fe5cab3a8f5736a7fd2559811dbcd03",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha def does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "0a3180213e7e8986b1601602a5e78c1673d4faa5e82a23a0d66973a87cef7ebd",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1046, expected true\n"
+      }
+    },
+    {
+      "input": "e2c39bf3742566be1798609cc208aa40b631207225e0e57ad19150b18e677f3e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "Cannot read properties of null (reading 'pr')\n"
+      }
+    },
+    {
+      "input": "7922dd2ed3722e772c211fe8cdb6a52007ad48097211e636a80b81bba67bcacf",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/338/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "1743fc9a52ae7fcfa06e662e08fb8f5282e684260316af3691610ef870a75376",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr true, expected undefined\n"
+      }
+    },
+    {
+      "input": "8bc122a58ba792839c279c70c687d3bfcf5c62d0ef142d4c8dc5a171d68d469f",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "48debad7657e9438f0346f3f63ff043febf4e25353a2c5023eaedf14ec2c2b76",
+      "js": {
+        "code": 0,
+        "stdout": "5\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "dc75cd1b355216b0c26cfe1b32de8c896455b9272b8c53ee5fd1fde91b021158",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "fa1cb00a341ae5800cc687cd1dbe1ad4658629ebcfcb292a0d0f7fb3a75925ff",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "a0bc2a693abdea87cdec08b905fa9d9d5eaaac119542dcc88d26ad23a788fd49",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/344/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/344/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "140c9ca8ad2e39714f14b2d5a1a31cba367c8cf05308d94b9e14652c5b667fbf",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "05220a54eb75d57504cd367e48e02508de420018c7636d49ae213e644f434052",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":5,\"repo\":\"o/r\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "4508ac9e83d8c675452ddfc2b1a5433076c5a7bfcd14028f20002a8456b6daec",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/347/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "b9fb5194e5740f6fe584aaaddf5954cc0f54ab86258ffc7980aca3a278f34a65",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/348/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/348/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "f73a69937b8bc3788b1a04eb636a68c2b73c8bbfdc17fd45f90bc228162f892c",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":1048}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "5e6bc1274dc7e986634fde03b5a6ae59ce0f081c636ed8f86df104b52832fd0a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha 5 does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "18d4c4fc730b9a955ad91c34ccff0729c0cd58ab1680150e02958a09d3ee21cf",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "8ad7d7dbe3bb79dbade66ec1949dec87d16465346a4f1db5a3f31678f55121cc",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha null does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "c6c0768bf465cfa97959ccf59bc5cd3fbe8349c4d3724308c0ca4487b28f6b8e",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":true,\"headSha\":\"def\",\"repo\":\"\",\"s\":\"é\\u0001\\n\",\"__proto__\":{\"x\":1}}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "83207912931844495b10c2a2e81221c6932e6a00c562d389c011c50be74da5e5",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/354/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "a3d5e0fab05a1816d71d7920d5b3b5ebbf3186b42b69f12016c053a2313e2c88",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "797f550c962c8c3e9dce47833d1551a8540b53f80bb2104d5f94b0589a28f499",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":null,\"headSha\":\"def\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "d580bc833b9262565582d31d3d2b08567425e92f82800ec04c06d393b993e430",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":true,\"headSha\":\"abc\",\"z\":[1,{\"2\":0,\"a\":0}]}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "1dd5a48c49ddb31439f2272cab41f16250ae00bb502a1b9c3a4352f976a317e0",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/358/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "b83c01f6fcbf80b041117c18c8f87d4272e7d693358fbc87e755df942aaf7624",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected undefined\n"
+      }
+    },
+    {
+      "input": "82f7089a5d7c3545ffd904632f32101445bfd2d9567bf85a0a73c5b73d7d835e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "646ab12b139dd728027ea3ce8b7df115432fe37419b9b441ffad508495ccedd3",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/361/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "6018ea151354fbfbc59ddb48b8231fd4dfb8092f11809d216584fb66ba491f2e",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"pr\":99,\"headSha\":null,\"repo\":\"x/y\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "3d63fb4522bd2b8e01654756e0407fb3908d1be850b45551c8c91a689270c7f9",
+      "js": {
+        "code": 0,
+        "stdout": "{\"b\":1,\"pr\":13,\"headSha\":null,\"repo\":\"o/r\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "b9192c0ee3b6c652093c192e6f45d98a320c393946673fc5af9e34c429029061",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/364/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/364/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "039c1b6038a3178f2814d32b06bd6881d3170b3eef4fefddc10c3e53316d7e81",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/365/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/365/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "9f6efd9b23f9880f937e4723cc1bcba22e4e996e1f9c3832ff256dd240bf88ca",
+      "js": {
+        "code": 0,
+        "stdout": "{\"n\":1e+21,\"__proto__\":{\"x\":1},\"pr\":true,\"headSha\":null}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "3170ab8ec9a3c26e6fcd3824bd2f123d16a0da8f0558a002108759e292026296",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "3c262d90cb383986fc574491ee00a88b5ac2212ed1031befbaba4d50c28e9f93",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected 13\n"
+      }
+    },
+    {
+      "input": "ffa1afd7672402ef4878cc223e82b19627cc97d8e3e4d6eeba551b632be160c5",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"__proto__\":{\"x\":1},\"pr\":[12],\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "d59f67467c7789bf1fd1950a6dc0c774df509bc68106ffaf2a2b62eeebf8b641",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected undefined\n"
+      }
+    },
+    {
+      "input": "646ab12b139dd728027ea3ce8b7df115432fe37419b9b441ffad508495ccedd3",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/371/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "b9ad2b50ad1aa5a8f78a02c4b51148acc6345f33a48123e17ee40b1e520662cf",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "83207912931844495b10c2a2e81221c6932e6a00c562d389c011c50be74da5e5",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/373/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "b43dc29cccabacb5d19a0f3ab3ca602b6886021ba7b7330ea958f7d5aeddb789",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 13, expected 12\n"
+      }
+    },
+    {
+      "input": "1b61b46f4b3e2404c1e92557ddaf74a7cf6c589074e698ce02c2abedc7ed2d2c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "a0cb5d496e4575092c1c52c08b13adf1c28b373f2009c52ee99533723c5f5f13",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"12\",\"headSha\":5,\"repo\":\"x/y\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "4508ac9e83d8c675452ddfc2b1a5433076c5a7bfcd14028f20002a8456b6daec",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/377/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "f51ccf52d5cd86bed9e255bb9490d35a74f76f96be60b2320bf446f1c291698a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/378/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "70057d53f8d9f247e8ccfdc73cc5c62a8f7fc7675222eee8fff01e4176fa5075",
+      "js": {
+        "code": 0,
+        "stdout": "{\"z\":[1,{\"2\":0,\"a\":0}],\"__proto__\":{\"x\":1},\"repo\":\"o/r\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "079677216cd1cbe41e3f782d85bbd8bc3fa344223afd90265d2ecb134d800afc",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":\"def\",\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "bad098f788fc894ec9a7fd7f821432b5e013ea98417946c9bf3ff24abf6fa07d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "968ed26331dc88c02f2c77db99f22e2d5078b22ba2d426eb65b584abb5b7ad34",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/382/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "55f23d7f103a9bc56d0837d26bf68a5e2ec4b52f816c64ac4290db8b7e81b98e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 13\n"
+      }
+    },
+    {
+      "input": "128cb86c59f1b8e200f5947dcad48a97626cd0e642c3370edc04c34acd5fd958",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":\"def\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "4c677346f37e5473520250957339fe9459393d046f1abc21649960d0dd4027bc",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected 13\n"
+      }
+    },
+    {
+      "input": "a22ed671ef6cbe3b3926c855cccddfa3bc1b6bf504c4fec35b0f3e9fe3e6f7d0",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 13, expected undefined\n"
+      }
+    },
+    {
+      "input": "802c6c920bcbf34c4568bf0d7c10bcbeede38b5fc37e7d6161ae3b3ec306252e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected true\n"
+      }
+    },
+    {
+      "input": "065893e555aa47ffe876b6ed8a7313177e6a5bd53549d85acef439e5116022b8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/388/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "67feb84b158c6d365d21b3776cdb0ad951ce38561366c8f781cd36953ceb2ad9",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/389/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "17fcd26fe1266e556513c7b2425841065dbcebd490fba17ca98192c4924bd7ec",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "2ffd017c542a2ea719879ecaa26408080c3c4e5d445c1e0ebc98ab613d156778",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/391/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "17fc3645dde14f5c30a8fb4b33f79a325f3777f4c3137afc3225245c55287d61",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/392/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/392/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "de2fdccba4a1966f5ff7071e24c6694d0a332a3bc6bd1f5226f01258b56410d2",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha def does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "b3067051ffcae6c893c45b45ac3ea67e76bfdd62f9f22cf276072089fee7d502",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":\"def\",\"repo\":\"\",\"__proto__\":{\"x\":1}}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "dc16085d720a3acda4139d39258989d2014359321933a15e2dc650db4c193a51",
+      "js": {
+        "code": 0,
+        "stdout": "{\"b\":1,\"pr\":\"12\",\"headSha\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "ff2be028a8ad6d1f046f608a5089359ec67ad703b0d017127215dce4fcb0f84a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/396/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "4bd2c26cbdf5aa7e4ae3001c95c6582041b661c0adb98fce806cbe291c0a04b8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "4ea89072e989da93ca4f21a2ce66b97e7c7a62596c54d26f6444ce8370f6c2d8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "ec98e3cc42ce68dcbe1e15521560383f5ddad699d5cd86adc4eaeb24ba63aa49",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"undefined\",\"headSha\":5,\"repo\":\"x/y\",\"n\":1e+21}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "269dbf61b07fedc61cdc9e85d40c72a3ce5debcbbb68eb325a39b4fec278344b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/400/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/400/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "8267a2e8b6cb3208d6884852a7084707e34d876eddbc24e7337426e387a2bcf9",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr true, expected undefined\n"
+      }
+    },
+    {
+      "input": "d8adf6000d3fc5ac691abd78bf65db9778e73377c1c1fcbddfb1acf14fce188f",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr null, expected true\n"
+      }
+    },
+    {
+      "input": "1ead48e4d096df3ab14d9b2a4a1c461a7c4cfb71803ada99d2cd673e71dbc439",
+      "js": {
+        "code": 0,
+        "stdout": "{\"s\":\"é\\u0001\\n\",\"z\":[1,{\"2\":0,\"a\":0}],\"pr\":[12],\"headSha\":5,\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "fc95d5b6bf3618708652203dc9f1a5b6e14eed793b7a7c7fc6cf8d7b4ab56d68",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/404/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/404/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "e32cc6a049ee9cc2bda4e14468e0e6a03407dea2b3a7b45b555f6a0289be9abb",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/405/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "1b76cf2115245448250841d7f28bfbcb5ce9f1ca3ff8570cebc54db2461c3767",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/406/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "a1f01500adf841cb61fa260308fcfc61a4a0929558ce9e4d92241d97d402dccd",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "851e7cf056ee16f105156abf79e42e435be68c1f0982283867c77db961431c50",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"pr\":true,\"headSha\":true,\"repo\":\"\",\"s\":\"é\\u0001\\n\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "85954bb9336e41fb636130c8e618029285914528c4e875c81a139b67febaa434",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha true does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "d4c92ed6221aa831f1b683b2c7f797b4ade756f997f10bd7901bb1f087dd8c02",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha true does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "023d2785c2b5ea1050432e6173ebe7f573c8366b006ff67f5d02d2996a726be4",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "1f166da003acee47937edc126447e814bc1d3fed111cefb42da6e3d5ea9e6ff9",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":true,\"headSha\":null,\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "a747d3e33981cc42cb52a785a52bf054a61248266e3dffeefd8f86f5a299a4e2",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":\"abc\",\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "e7c8a2ef3ea592dc978289d55698ffd340f0c316a92a765a7bae6e9cba1a7e9e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/414/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "a1a3e20235b6c93bf5d5f1dcf8971b5cdeeb4e8aa74070f14ba8ecf6fbb992ab",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":true,\"headSha\":\"abc\",\"repo\":\"x/y\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "973a3bf8f614b79ff46a2bfa99f4dabcecd5a455efa274dbbb45bb530ee827ff",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "f20f1257e4c3fa7d085b8f4fb1f3e999a70bfbe01be03004b8bb7b8418d76bcc",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":12,\"headSha\":true,\"repo\":5,\"__proto__\":{\"x\":1}}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "5cb5e0187dac5e637ae6456cf74f7dbb87c90911184f4308097ed80e7a7c1604",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":12,\"headSha\":\"abc\",\"repo\":\"x/y\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "f448f9cce280b001953f8c1247a788051950d8e76e67142b63489861378de160",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/419/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "97b88d29164c3c6561516210d1c62b77bb9907afa7253437e7a0d27848d03d0f",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"pr\":true,\"headSha\":\"def\",\"repo\":\"\",\"b\":1}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "f2a91a359f74604b68fec2934b82f6868438566b4ebbffbb5dba305448be390b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/421/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "9c50f32b06e27961c2b715515feee0a52f45126452e30acef4638f5b15566506",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected 13\n"
+      }
+    },
+    {
+      "input": "14674b92e338c819482206144354fda72573294f212d1e5fe83ac7859f9264ab",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":[12],\"headSha\":null,\"repo\":\"\",\"s\":\"é\\u0001\\n\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "7c96a9e547cb52b3b1025b3aa463a130ef8cfa1aeaba7f9436e08b70d0afbf1d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 13\n"
+      }
+    },
+    {
+      "input": "79dc56ccaae5d6ca327b23acfbb5a9ea2cade24eba3ed035ac0618377e4a9233",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"undefined\",\"headSha\":\"def\",\"repo\":\"x/y\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "ec9ca7fb7489da8ec0bd3e1a6f1b1167ba81e8665bef91efa9efe60dce19d373",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":true,\"repo\":5,\"n\":1e+21,\"s\":\"é\\u0001\\n\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "96862eb4e2c1a9cf5740412601e855f5afb2f3899867e7a3ab9de8c76cb04b63",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha def does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "18d6ac02424b95d5faf33c6957f0a97b999c403fe91f7155d33c3a9dce27f915",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr true, expected 12\n"
+      }
+    },
+    {
+      "input": "e80c47112ae53a6f2e0801515d56e840357ed7612047fcbac99c888db9c1499e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr true, expected 12\n"
+      }
+    },
+    {
+      "input": "ec923fd918d7f84738051d8fb513db04bdbf4b8ce155291065c60638e4afbcb8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "cc93cd922b04fac06f154013b9c403695f7bee8da2f2c208ad9be730da64b330",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "d861816b72cbf2f3d1423c474d0e7e240ff92d13e650e5316f480b211272e8e6",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "4bb5da91a0aa788b7095d9d5ec0726980085a998825b2f8b5c5fa056fbc41f88",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"pr\":12,\"headSha\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "11d3e1664dfb60bc8ce4cdce66d06105f873a9cdc109de2ee817b9372f13bd9d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "d94329fb6ef5432889021b9cc9cce57efeadd8d2f22130f61b1e79b6e4629dc1",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/435/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "e6cc82a950d40cfe32a18dcc259eb246c16e11d76604d876005d8ffde91347b3",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha true\n"
+      }
+    },
+    {
+      "input": "33fb8b3e10c2358f5f999fc1832ec083742438f376d2494ef7801f067802fb8d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "7b4121b8b66ab62e037e2d02e79de8f6dbc773dd7d9ae8da44ff348286cbeecd",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last line of <SCRATCH>/438/data/metrics.jsonl does not parse: Expected double-quoted property name in JSON at position 9 (line 1 column 10)\n"
+      }
+    },
+    {
+      "input": "8ed9e17184baf321e7bbdfc1937f3fedd6cfc57f5daa5cb41b255c22ff4b276d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr null, expected 13\n"
+      }
+    },
+    {
+      "input": "f2a91a359f74604b68fec2934b82f6868438566b4ebbffbb5dba305448be390b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/440/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "505be6be1ca3d0805ec33477a22643bfce7153ec9a662d0d0c98efee03b0d37d",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":\"abc\",\"repo\":\"o/r\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "d2a25299767456e8af718ce2ba652152068fe525c9e1a6d27c683a197f9511ae",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha true\n"
+      }
+    },
+    {
+      "input": "520938d80f7b18b7cdf7be75aac5a78475705642e4e6c46c4294769953504a31",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"undefined\",\"repo\":\"x/y\",\"n\":1e+21}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "c09b72d660790d246f0e08b3e752186b8d46bf27490dd2912ab1f03fd4e1518b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1049, expected undefined\n"
+      }
+    },
+    {
+      "input": "25ae20e299a5e9ce3bd72575f93cd8768734e8b19b9a0be600df94e457aaf323",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 13\n"
+      }
+    },
+    {
+      "input": "e48f75bd4f1b2f741b627c09caf3eee937ef5d2e800e1f8ff07f038c8b5a9589",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected true\n"
+      }
+    },
+    {
+      "input": "16f52b25aadb1aeedee664c9f840c10e2b3a68075251b4594a0dad2996b30d97",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"__proto__\":{\"x\":1},\"pr\":\"12\",\"headSha\":\"def\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "2d26ff69628d3fe0ff208c232adc303c249e7eee61139399b2fb32b96c289d71",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected true\n"
+      }
+    },
+    {
+      "input": "38ab5b65669ffcdd822c5df10c270453dea92ba1f29f8a586e3b910da685cdce",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/449/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/449/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "d4e70c6efb72ba8f3002f8c9998aef5cd98f737654eb329864205d810dbde2ba",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/450/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "7a78b9c578e42dbc20d4d0c66611d65d06d8f0afacefaf60cf718bd7b4807651",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":\"undefined\",\"headSha\":\"def\",\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "7f71642d7b54fc2aead7cf93682a0c63b63046a3d62b343e6c7b489cdbc7cfe9",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/452/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/452/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "ab395fd8579f5be980289ec53cad5bfacb95d5bbcc467eaf71c8e5cf81698e84",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":true,\"headSha\":5,\"repo\":5,\"n\":1e+21,\"s\":\"é\\u0001\\n\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "793e265427ebc4d4dd52627e068f917f96cbc0a09c979f0e9d69108ff2d5d90c",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":null,\"repo\":5,\"z\":[1,{\"2\":0,\"a\":0}]}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "2a8826f8a44022374a2957ec42bb6b15e9c0d38fdf8f9ce75726651dbbb9be07",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1047, expected true\n"
+      }
+    },
+    {
+      "input": "38ab5b65669ffcdd822c5df10c270453dea92ba1f29f8a586e3b910da685cdce",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/456/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/456/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "54e11ed0391c504f814e46911bc7f35df8ce1f8b7cc4447b4690d06dee95b9af",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected true\n"
+      }
+    },
+    {
+      "input": "df96ab24e2f68e18ceb62a87267cc7ab6fc192d366489e9b0e2ceacc2038c96b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha true\n"
+      }
+    },
+    {
+      "input": "266718ab95cc1b33fc43a7635dec16da36cd930733bbdc81f002767b456082df",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "316d57407f767326bef3c2dddc3cedf07b7482d75f83208916f9b94bb8914998",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/460/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/460/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "3d43bce335ced2a9cd85dbfefe3aba5a3350b84bc3d77ea638e54481b55abdfe",
+      "js": {
+        "code": 0,
+        "stdout": "{\"z\":[1,{\"2\":0,\"a\":0}],\"pr\":99,\"headSha\":\"def\",\"repo\":\"o/r\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "d0e3de0e44c4b5e95546bada00e8b5269776350e8b1b67db3971e7da5a296c1c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "Cannot read properties of null (reading 'pr')\n"
+      }
+    },
+    {
+      "input": "8ae2cde9f2e0f37c13c37efc641233be00efb29f9dabf7563c081c30dd795ddb",
+      "js": {
+        "code": 0,
+        "stdout": "{\"b\":1,\"s\":\"é\\u0001\\n\",\"pr\":null,\"headSha\":true,\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "ef14740bf2a3ffc816d7c0772bf702fd0c351f74910eb7459fb60b6020accec2",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/464/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "f78a566ef609dd84c6ee61a76c43df6010f555937a9e6be4abd2cee1d6163bcd",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/465/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "1b1c94728e7010cdd91db8e274de0e6cb269b9b5454eef0363ffbdb712e1c919",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "062ecfa8fdcdeb938a35f0cc48717be46e7bbdc4254929627086432153d65854",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"pr\":true,\"headSha\":null}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "99129eafb3f9eb18f82b48e0eda7cd4577f10b7a1ec20111964f26df1d34259d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha true\n"
+      }
+    },
+    {
+      "input": "b31608223d80129571fc68426bc6cedf2e476849e146879472e92fcf2af8106e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 13, expected undefined\n"
+      }
+    },
+    {
+      "input": "1b76cf2115245448250841d7f28bfbcb5ce9f1ca3ff8570cebc54db2461c3767",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/470/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "801bd17063c40de7ac220b105dbc0bd1ab2cda4409d3a6fb3e126f4298b902ea",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "0004577233c7f6945ceb8b4e2af54ee37536b254ea38b5bbe559fa9d4a2268ef",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/472/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/472/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "7a41fd90b79071c543c0d79057fa73b585f80598f3399bd2fe5b7982ca0556b8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr null, expected true\n"
+      }
+    },
+    {
+      "input": "5ddf99485a5f4a3cb753f9113c82932751d8c1bccd1a6138ee67eb99503bb2cc",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":true,\"headSha\":\"abc\",\"__proto__\":{\"x\":1}}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "7527164575ea0c568179ad0f0b97fe45d3a98bcd654324fb4bddcc2782929aa8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 13\n"
+      }
+    },
+    {
+      "input": "65c4d30548bd2e09f2f3406bce9b309d44b0bce90327b5f5d2c1cb24dd81385c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "ea3de3cf0109b590fb6b8f1bba8eb9162002237ecad091346f84e56883a862e9",
+      "js": {
+        "code": 0,
+        "stdout": "{\"b\":1,\"__proto__\":{\"x\":1},\"pr\":\"12\",\"headSha\":5,\"repo\":\"x/y\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "719d54e1d90d0a6c674c9ce26147d66a00606d1085530d8504f83294921a9fbe",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":[12],\"headSha\":5,\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "726c30eb5461894c1959878fa5875a53f1646b833d29d44c5a2dc27776351be0",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/479/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/479/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "d94329fb6ef5432889021b9cc9cce57efeadd8d2f22130f61b1e79b6e4629dc1",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/480/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "6f2b0c36265e18bc7ccfde299a3faee8d538c7795b733529460cd376179369ce",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":99,\"repo\":5,\"n\":1e+21}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "3df1a63a32146ef074af98bcf588248309ede6fd1501c499e0388f6c905fa182",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/482/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/482/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "0ccd022c77b13bea06e45c81a3a6066ee1b1fa8280558f75bd7aa1779581e15a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr true, expected 13\n"
+      }
+    },
+    {
+      "input": "9accb336c1f15083ff29e26f116bc922d71f47431cba0fa51f5e71982d92ec27",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected 13\n"
+      }
+    },
+    {
+      "input": "615d5b938e148ea0758a056dce8657596333c2787600ca7b198c096a36c5a98b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected undefined\n"
+      }
+    },
+    {
+      "input": "9ab16fa25170d71ca7b3489684a34c5c12f6db558c7bf7ec96bfe60342e67599",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1048, expected 13\n"
+      }
+    },
+    {
+      "input": "b146f2de047e849d146e8be1c06679fab7b41ee921127dcb097f9e6dcb3413b8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/487/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "4a69f1bc6f9c36f40376b7b3ebe9615cf022b84523b6c8a36d3716259b38eef0",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha def does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "4f981c013bf9db3415790ec3e3999ed9a7540da4fdd78675f1d6c7fe50042f0e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr null, expected true\n"
+      }
+    },
+    {
+      "input": "76d0a4feea1b5c065180ec0ef3e3339f36b80017601700e4c9e649948e49817c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha null does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "508655ba581df8569b8cb69c3353fb7757581148b894efb55a57f4a66aa8aab7",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected 13\n"
+      }
+    },
+    {
+      "input": "65a4ff8effbe9e505b61cd55435706f898b02f93608b90ccee5afbe8e9d3ef3c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/492/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/492/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "7c03aac99a140c22ba7e17e3dd56fc8c0bc59c089191acaf5ad08ce505cedc5e",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":13,\"headSha\":\"abc\",\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "2c5715268e077d89c209638c63d3b32058b1de420a1b0c44eb7594f9773b41a1",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "1abfb52ad8ab2b47cc826f603853ffedee53227f364c9460280132a38b6eb556",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/495/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "7bb695256ce85aac399e040c061a902dbe2c056fdc028c3e657b67366ca5eed0",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 13, expected 12\n"
+      }
+    },
+    {
+      "input": "4f8783997921de3d1b85f6ab6034b4e0c5397d0db905d81d07e95b6dcea28e86",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected true\n"
+      }
+    },
+    {
+      "input": "17fc3645dde14f5c30a8fb4b33f79a325f3777f4c3137afc3225245c55287d61",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/498/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/498/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "4f7bdc0e1a13702d70cd5f12131d6189bffa1b61c1ad5bb66c133b16fb3f99bd",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected 13\n"
+      }
+    },
+    {
+      "input": "48d5bc634d773bdcd320bcef7ad6f6c6ce3fd30fc76644271d89c1c97160426b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha abc does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "a2c39e2ab051a4330c62c78816a11e60da8e7b96d5c986fb17ceff3092fab63e",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":1046}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "1470caf40a2d96acaa63a033137deb1a7d8c5cf6001da1a506bbe066bcf1bc00",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/502/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "a7cef89970059b4ceb8c058a534f1e88fb188530b31c39c0ee08ad661d6b66da",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha true does not match --head-sha abc\n"
+      }
+    },
+    {
+      "input": "1abfb52ad8ab2b47cc826f603853ffedee53227f364c9460280132a38b6eb556",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/504/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "c7c9218cb5c7d4a0bf0301925f1beaa30c0681b04ac6b2f32a53e95e0fb70dbb",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"pr\":true,\"headSha\":true,\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "270c8ae6fca42ad7dabf4345d2c3afae9315c5cddf047042b76632bfc45af939",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":99,\"headSha\":\"def\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "eea3cd5cd93c8451b62481db546ebaa5d69ec94896d2861257580b2ba33484c8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 13, expected true\n"
+      }
+    },
+    {
+      "input": "bf2c839aa58a0cd11a8589255989dbf35336aca46b7302cd78c42538b9ae6e9f",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "ab6d06d82dcfde0029be23169196df06e4af828a41a42095473e750ab17fbbfa",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/509/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "81102ee63ce2576bbb9226feaf5dbde19c9124bc378e2a7c6745e53463c8f6f8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last line of <SCRATCH>/510/data/metrics.jsonl does not parse: Expected double-quoted property name in JSON at position 9 (line 1 column 10)\n"
+      }
+    },
+    {
+      "input": "1771a2131bee160a8813008dd059a03297b81cbe81105403c764fd242bbd3481",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected 13\n"
+      }
+    },
+    {
+      "input": "aec7456ad0c8bc78f0f79dcb631e84480e82fe533e5507270f249e9ce0fd22ec",
+      "js": {
+        "code": 0,
+        "stdout": "{\"n\":1e+21,\"z\":[1,{\"2\":0,\"a\":0}],\"headSha\":\"def\",\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "0e93187c07cb71fdd9ce408443dc3aaf415c3ff54728b80c1ae7a90aee972003",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "2b12a9d43862351ec8b4be12455dc5420fad5c40b1d833b6af73e8b047dcf631",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "Cannot read properties of null (reading 'pr')\n"
+      }
+    },
+    {
+      "input": "8446adbca27565aacc13cc6890d77575bb30dcc41f61b4542721a9801a725f2a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/515/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "d2790c069541a3eaea783585eb284c55ccfb1cc04a9c8cd665420021f1858bb4",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/516/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "7a7868b9cad81a329ab491bfbb3db5de4b331ddd384cdd2f0fc082a52448bd90",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "70cb4e8c4fc828d9f9cdc2f2faad9db310d27af5606571db058b67ce2027d274",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "c4bd5e3208a42774eacd0aaf707161f2a842d559b264c566d0c514b36a75cb59",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/519/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/519/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "ca429923774f4b48ae32a3102da9aacff0ef2e9afece27fc61e610620b987ee9",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"pr\":13,\"headSha\":true,\"repo\":\"o/r\",\"n\":1e+21}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "588943fab770cef6c9a1e51e05a37aeb7ec103b090d79d2517ef3c6ca35397c5",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "95318ab83a2e5f2d60613afde0f9e1f19586f6d7635e40772df4896c3ec73398",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "d0ee11fd661189fbc69b4ddac11a3e34c2dcfeed514f6416fd5c07646b677348",
+      "js": {
+        "code": 0,
+        "stdout": "{\"s\":\"é\\u0001\\n\",\"headSha\":5,\"repo\":\"o/r\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "3329872215cfb278686314f1f1689579af386575f9257d7269b1e1aa11641223",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "1920c432c07020bb60a3187e98ecc68d5d39f1c378e812988fe3d559a470370a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "5d6a57bc949f1fb5ec79da0333f992a683041904fdad7cf27dc0b39afa1ca44c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/526/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "3521168c73b23a23b402758de3504c97575b3f814e0d7aa99fa9ee2fc41622ea",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 13\n"
+      }
+    },
+    {
+      "input": "ca3c2f1446dff49f7bfc50a4af8c1b12b98f23b3cbc08ae8e1737eabff263125",
+      "js": {
+        "code": 0,
+        "stdout": "{}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "85ee41ad33e99e7e008098914acf244fb73bdc015da5afd50dc09e5cbe6c87c1",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/529/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "12551d81b7784f00e8bafb117544904ca9d44dc1123c04142c63c0118c5f93d6",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "661bf67a854df80c8c016d6940fe187d9c00c0bad209123dd6bfb105ea5d1089",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":[12],\"headSha\":\"abc\",\"repo\":\"x/y\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "b5e97e3ebdf73497419747a80bb674c34cc7237475bd20d2fbaf76b9ec63ead1",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/532/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "43be7310632a6cbe560c577701ff0ddd7bd0752f3f9c54e5fc1d5478ec4cd08b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1050, expected 13\n"
+      }
+    },
+    {
+      "input": "039c1b6038a3178f2814d32b06bd6881d3170b3eef4fefddc10c3e53316d7e81",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/534/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/534/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "039c1b6038a3178f2814d32b06bd6881d3170b3eef4fefddc10c3e53316d7e81",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/535/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/535/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "b3b7e02074e68076782972d522536ee505330e246e6fd99540ee5e5359fad421",
+      "js": {
+        "code": 0,
+        "stdout": "{\"n\":1e+21,\"z\":[1,{\"2\":0,\"a\":0}],\"headSha\":\"def\",\"repo\":\"o/r\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "26254b467e99c2bb9189d5abf5a40491278eca8787d6eb1465590e5834f81597",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/537/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "0410e717134d1159a87ee4f5059faa5d9ca140f1ab83a938f1045a74db6f8fd8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 13\n"
+      }
+    },
+    {
+      "input": "c7b25b1e93e32355b8e17ed3c4ba8e83fb8e6e55b226e357c75dd8a5ff088fca",
+      "js": {
+        "code": 0,
+        "stdout": "{\"1\":\"i\",\"pr\":\"undefined\",\"headSha\":\"abc\",\"repo\":5}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "346b542c488b761a2eec766a739a1009f82ad38f397b88cd4e8e5a183f425e16",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "f5c2dfe2e425743da9d5cb61b3b7a84da0036b488ff929b4291a359394b13171",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/541/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "577f685986ca698486e0ef974a12e10865f7239e704a39c9cdd9d3c65576b7d6",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "ee9c3ed26bda216f4a193598a7c5a3612b8a36bbbba7602f163069656834c6cc",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected true\n"
+      }
+    },
+    {
+      "input": "7d85e4debbe8212b6a9fc86557df01b4655b037ac97c3cb08aa73d9c64427e1a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last line of <SCRATCH>/544/data/metrics.jsonl does not parse: Unexpected end of JSON input\n"
+      }
+    },
+    {
+      "input": "7a4a588859e652078f5bafe37e4c74c52b360593bbaef005658cb4404b6ed203",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/545/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/545/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "3f01a14865c3e059740f07364196181e4f55c308dbebb5ca34ce50658be945ee",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 13\n"
+      }
+    },
+    {
+      "input": "da63af8c4b3dd8b3c81f0b1d084a561e0f3b70c6a409a2b7c877c5d07812006d",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":12,\"repo\":\"\",\"b\":1}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "a320f2598c1d2682ad938bde2dbe383a1ac3900be1b67bc1b2d4ac5241a56815",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected undefined\n"
+      }
+    },
+    {
+      "input": "3f9c48388f315dea83f5671584287b8e1d647589a2c74f69b1df7753a3fa9e15",
+      "js": {
+        "code": 0,
+        "stdout": "{\"s\":\"é\\u0001\\n\",\"z\":[1,{\"2\":0,\"a\":0}],\"pr\":12,\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "879be439501193facc5888664e0687175c2954b557249db6dc61a79a5415cdba",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/550/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "71dc88f4d8dd94f65c43e8cfbb8c94dfb2c56b64813551927f6c731905cc8990",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "9ad70533b6260573ff70e11ac077b6a28cd24a7c870a35752ac4c9427343073d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "ee8b462e9147280355b5251acc1e9ba0f8594ae9b9ec4779b2fb7f66b19e2f30",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1048, expected true\n"
+      }
+    },
+    {
+      "input": "38fd8ca7a7af1420f7598b25e977fc057a6522f1c5984380493ff7aa65525551",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":13}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "21996c56889541b0f89b13a308ff4b0d70abf9cae44b54b39e06442c34a23de8",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "f93cbe714f80f1702f230f88c10f7a599d0f701b8672da7b7a769440800c210e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha true does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "a513db8be49bb8a5c1c7b2edc761a18e3bfe7ec8117307232d58aa2741a94744",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "37ec3ad8292394394f2239b1948ae941946e2502e14bf687be6705d6a556fd33",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "ff2776c2cff4ce9e1351c04b4654f49a68ef6eb10cff3b98946d09ec920c993c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr null, expected true\n"
+      }
+    },
+    {
+      "input": "96c677e823cb2d5566fd01f7608d52e07fbd29457dcd945a9caabc217dee0ca3",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1050, expected true\n"
+      }
+    },
+    {
+      "input": "5c73d24359a743c68b17e9fa6f2f99a07234036295f972334d04526047df4e3d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "76dd0b21c9da98c9b5c37abf25ed95531c155b3712fbdc1d6e414d335c3c2ae8",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":\"def\",\"b\":1,\"z\":[1,{\"2\":0,\"a\":0}]}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "83207912931844495b10c2a2e81221c6932e6a00c562d389c011c50be74da5e5",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/563/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "8454b7200b1641c6b95357bc00535daea01fcc86290a678352b472e8559739dd",
+      "js": {
+        "code": 0,
+        "stdout": "{\"repo\":\"x/y\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "8d26fb09db5df424518fc6b38e3f706d79eb666a81ce0dcd50bc4b7b31e1ad0e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected 13\n"
+      }
+    },
+    {
+      "input": "fd2ea186ee8437d755a221016e2207ddf181a1671480eaabb9e1875351d7ca07",
+      "js": {
+        "code": 0,
+        "stdout": "{\"headSha\":\"abc\",\"repo\":\"\",\"s\":\"é\\u0001\\n\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "4470eb8a4b543d752f72b1eb88975e3a0088cc5685170e4293fe644fdba6244c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/567/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "998d943594b7f6a9388dc49ea3093371945f08108f732317ef1c05b3e304d6c2",
+      "js": {
+        "code": 0,
+        "stdout": "{\"b\":1,\"s\":\"é\\u0001\\n\",\"headSha\":\"abc\",\"repo\":\"\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "b34631cbe1add92e86ec3c013194011ffe8e44cf95ca4d1f87779a8fc04e347b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected 13\n"
+      }
+    },
+    {
+      "input": "5ca8a06fd4837b2f33bc8848e64540410164b0081093653dbd07c8d3b44ffe2c",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "bebce1f2e5aa56236840bc55454b6e6f6147232165af4f9dfda6789568ff1ee2",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/571/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "e42b46b99041c9b9474bd987f89e6b027f2a621cf649ef364b19fa1445b76d09",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "Cannot read properties of null (reading 'pr')\n"
+      }
+    },
+    {
+      "input": "dc89b5d8c7aae0d8770e2ea6ee1255a9948c99915fc8322586cd8f3ea6f157a3",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "726c30eb5461894c1959878fa5875a53f1646b833d29d44c5a2dc27776351be0",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/574/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/574/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "db8de951d000eaa5386623a28ea7daa23d200c80122a539a518e67be9f3806ea",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha true\n"
+      }
+    },
+    {
+      "input": "3d9a510cd0f8445dded280e5c1c03621c96db23778cfc9930a407305d51176fa",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 12, expected true\n"
+      }
+    },
+    {
+      "input": "5674bf88f815996dc87b4b1387882f303c07c53136d17706abfde583b9389a60",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/577/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "29bb12f10abfdfbad62d37deb9b00ca94249e37d6b92aae11762e6e640e4e09d",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/578/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "74fded6c74818cab80fda66a71d860b57459e9a939ef28096b8a551e3b269a7f",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha true\n"
+      }
+    },
+    {
+      "input": "7dfd4817b0930c0619f2d24a3188d4a0d92d663265839da256f136f050a768e4",
+      "js": {
+        "code": 0,
+        "stdout": "null\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "c2038c3ef353bb171791585de2a734a1e2f97b887f3dcaac4de709186b21205a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 99, expected 13\n"
+      }
+    },
+    {
+      "input": "e0b9542ad91311d962055c1e3e4c3cdb4b30d347dfffd43e66ef80cd69929d51",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "31d38b95bb76a13cdbc1038c2419560ba032edf57d6d1e03f281d84aa233f6e1",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "51609a1e61e66d4369ba79e1e94f0bc6440fc7b1e0c447ae9c3430da466fef5e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 12\n"
+      }
+    },
+    {
+      "input": "2404311ca8d1354169b5eb88241749bf7d6fafedac2268dcd65b68e02ef3273e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1047, expected true\n"
+      }
+    },
+    {
+      "input": "a8a1b8964819db154c59c84daffc3ad737d5a6eebf192cc933d3123b9a828cdc",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "Cannot read properties of null (reading 'pr')\n"
+      }
+    },
+    {
+      "input": "891408cadf6673709cf02551b28f7aaae0f7cfccf074b06f287b8a83a323d0bd",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: <SCRATCH>/587/data/metrics.jsonl is empty\n"
+      }
+    },
+    {
+      "input": "aa0e40f0006977d84c75a74a8cd370b01d6784b19af270357b9b4b3e5a17dc20",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr 1047, expected 13\n"
+      }
+    },
+    {
+      "input": "4c170b932bca587092c126db0ea364c213cdaad2969105d656a5b076621817d3",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/589/data/metrics.jsonl: ENOENT: no such file or directory, open '<SCRATCH>/589/data/metrics.jsonl'\n"
+      }
+    },
+    {
+      "input": "680645986dce85d0989578a01a0102b7e1b50b657094d657cab37a960853d0c5",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected 13\n"
+      }
+    },
+    {
+      "input": "44465ae97a11e7a295811972674a53f03d13349565e6dc5c759cec89cd7fb96b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last line of <SCRATCH>/591/data/metrics.jsonl does not parse: Unexpected end of JSON input\n"
+      }
+    },
+    {
+      "input": "15d4b3c63d543543df08e190b90016dacebde06a1bab7cab19ced8f08e82608a",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "00a7d34a92d2c37516034d7589cd78e2cf74da5765ef7cb0d32de5bc5f69d1aa",
+      "js": {
+        "code": 0,
+        "stdout": "{\"pr\":true,\"headSha\":\"abc\",\"repo\":\"o/r\",\"__proto__\":{\"x\":1}}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "input": "2116cd5b241aedd7c4f583c360bc5340035b527de12fd9dce02003aa5532e6cc",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr null, expected true\n"
+      }
+    },
+    {
+      "input": "d4ee3451c7b47945ab9687bf8b611fa27cb6183363fac71b07e64d8264e51a34",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row headSha undefined does not match --head-sha def\n"
+      }
+    },
+    {
+      "input": "f4c69f7fd7593a0d6d18e6474b009f43f663b26fe739f79b7e1b94d899ba889b",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    },
+    {
+      "input": "37ec1051d47d3565e4bcd64d301e1018dff93f0b714418dbbd40a2ae8b7cdb03",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: could not read <SCRATCH>/597/data/metrics.jsonl: EISDIR: illegal operation on a directory, read\n"
+      }
+    },
+    {
+      "input": "f4bd342ad14aae3bb4f1833ea1a1c0575ddf7edb718b0671de36b0676425c30e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr null, expected true\n"
+      }
+    },
+    {
+      "input": "d2773327a4f94fbcb74e2623740a04d153a31ed01b8f73e8b786dc73815f536e",
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "refusing: last row is pr undefined, expected true\n"
+      }
+    }
+  ]
+}
