@@ -6,8 +6,15 @@ author: Xmartlabs
 
 inputs:
   claude-token:
-    description: Claude Code OAuth token (`claude setup-token`). Store it as a secret.
-    required: true
+    description: >-
+      Claude Code OAuth token from `claude setup-token` (uses that account's Claude subscription).
+      Give this or `anthropic-api-key`. Store it as a secret.
+    default: ''
+  anthropic-api-key:
+    description: >-
+      Anthropic API key from the Console (billed per use). Give this or `claude-token`; when both
+      are set, the API key is used. Store it as a secret.
+    default: ''
   github-token:
     description: >-
       Token for reading the pull request, posting comments and pushing media to the hosting branch.
@@ -58,7 +65,7 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.github-token }}
         ATTACH_TOKEN: ${{ inputs.attach-token }}
-        HAS_CLAUDE_TOKEN: ${{ inputs.claude-token != '' }}
+        HAS_CLAUDE_AUTH: ${{ inputs.claude-token != '' || inputs.anthropic-api-key != '' }}
         INPUT_PATHS: ${{ inputs.paths }}
         INPUT_LABEL: ${{ inputs.label }}
       run: bash "$GITHUB_ACTION_PATH/run.sh" gate
@@ -89,6 +96,7 @@ runs:
         GITHUB_TOKEN_INPUT: ${{ inputs.github-token }}
         ATTACH_TOKEN: ${{ inputs.attach-token }}
         CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude-token }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         INPUT_INSTRUCTIONS: ${{ inputs.instructions }}
         INPUT_MAX_TURNS: ${{ inputs.max-turns }}
         INPUT_CLAUDE_ARGS: ${{ inputs.claude-args }}

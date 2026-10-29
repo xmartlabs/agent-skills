@@ -12,8 +12,11 @@ it: no config on either branch, a config `check` refuses, or a tool that cannot 
    [README](../../skills/pr-evidence/README.md#config-contract)). Its `boot` command starts the app
    on `$PORT`, and `testOrigin` must be a local address. Merge it to the default branch first: the
    action reads the config from the pull request's base branch, because `boot` runs code.
-2. Create a Claude Code token with `claude setup-token` and store it as the
-   `CLAUDE_CODE_OAUTH_TOKEN` secret.
+2. Give Claude a credential, as a secret, through one of two inputs:
+   - `claude-token`: an OAuth token from `claude setup-token`. Runs on that account's Claude
+     subscription.
+   - `anthropic-api-key`: an API key from the Anthropic Console. Billed per use, and not tied to a
+     person's account. When both are set, the API key is used.
 3. Add the workflow:
 
 ```yaml
@@ -50,8 +53,8 @@ jobs:
 - It skips a pull request that already has a comment with `<!-- pr-evidence:posted -->` from the
   action. Adding the `pr-evidence` label forces a run, drafts included. Remove and add it again to
   run once more.
-- Fork pull requests never run, and neither do runs without the Claude token (Dependabot's, for
-  example): they get no secrets.
+- Fork pull requests never run, and neither do runs without a Claude credential (Dependabot's,
+  for example): they get no secrets.
 - A cancelled run posts nothing; the run that replaced it reports. A job that hits its
   `timeout-minutes` counts as cancelled too, so it posts nothing either: check the Actions tab.
 - Only the action's own comments count as "already posted": `github-actions[bot]`'s, the
@@ -71,7 +74,8 @@ sets the config's `host.target` from the token, whatever the config says:
 
 | Input | Default | Meaning |
 | --- | --- | --- |
-| `claude-token` | required | Claude Code OAuth token. |
+| `claude-token` | empty | Claude Code OAuth token (subscription). This or `anthropic-api-key` is required. |
+| `anthropic-api-key` | empty | Anthropic API key (billed per use). Wins over `claude-token` when both are set. |
 | `github-token` | `github.token` | Reads the pull request, posts comments, pushes to the hosting branch. |
 | `attach-token` | empty | User token for native attachments (see above). |
 | `paths` | empty | Newline-separated globs (fnmatch: `*` also crosses `/`, so `src/*` is the whole tree; a leading `!` excludes). |
@@ -91,7 +95,7 @@ share a host, it picks a free port and its own browser session, so parallel jobs
 
 ## Security
 
-Claude boots and browses the pull request's code with `claude-token`, `github-token` and
+Claude boots and browses the pull request's code with its Claude credential, `github-token` and
 `attach-token` available to it, and the app's `boot` command runs in that environment too. Reading
 the config from the base branch keeps a pull request from changing *how* the app boots, but under
 `pull_request` the pull request also controls the workflow file, so the real boundary is: the action

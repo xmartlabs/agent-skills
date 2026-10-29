@@ -70,8 +70,9 @@ cmd_gate() {
 
   [ -n "$(pr_number)" ] || { decide "not a pull_request event" false; return 0; }
   [ "$head_repo" = "$GITHUB_REPOSITORY" ] || { decide "fork pull request" false; return 0; }
-  # Dependabot and similar runs get no secrets: without a Claude token there is nothing to run.
-  [ "${HAS_CLAUDE_TOKEN:-}" = true ] || { decide "no claude-token (secrets are not available to this run)" false; return 0; }
+  # Dependabot and similar runs get no secrets: without Claude credentials there is nothing to run.
+  [ "${HAS_CLAUDE_AUTH:-}" = true ] \
+    || { decide "no claude-token or anthropic-api-key (secrets are not available to this run)" false; return 0; }
   local own=("github-actions[bot]") login
   login="$(gh api user --jq .login 2>/dev/null)" && [ -n "$login" ] && own+=("$login")
   if [ -n "${ATTACH_TOKEN:-}" ]; then
@@ -250,6 +251,14 @@ PY
   export GIT_AUTHOR_NAME="github-actions[bot]" GIT_COMMITTER_NAME="github-actions[bot]"
   export GIT_AUTHOR_EMAIL="41898282+github-actions[bot]@users.noreply.github.com"
   export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+  # One credential reaches Claude: the API key when given (billed per use), else the OAuth token
+  # (a Claude subscription). An empty variable is unset, so the CLI never sees a blank credential.
+  if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+    [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && log "both claude-token and anthropic-api-key are set; using the API key"
+    unset CLAUDE_CODE_OAUTH_TOKEN
+  else
+    unset ANTHROPIC_API_KEY
+  fi
   set -o pipefail
   # shellcheck disable=SC2086 # INPUT_CLAUDE_ARGS is a list of arguments
   GH_TOKEN="$token" PORT="$(cat "$JOB/port")" SESS="$(cat "$JOB/session")" \

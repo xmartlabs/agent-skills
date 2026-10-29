@@ -49,6 +49,7 @@ cat > "$TMP/bin/claude" <<'SH'
 cat > "$FX/claude-prompt.md"
 printf 'GH_TOKEN=%s\nPORT=%s\nSESS=%s\nCLAUDE_CONFIG_DIR=%s\nARGS=%s\n' \
   "$GH_TOKEN" "$PORT" "$SESS" "$CLAUDE_CONFIG_DIR" "$*" > "$FX/claude-env"
+printf 'OAUTH=%s\nAPI_KEY=%s\n' "${CLAUDE_CODE_OAUTH_TOKEN-<unset>}" "${ANTHROPIC_API_KEY-<unset>}" >> "$FX/claude-env"
 printf 'GIT_AUTHOR=%s <%s>\nGIT_COMMITTER=%s <%s>\n' "$GIT_AUTHOR_NAME" "$GIT_AUTHOR_EMAIL" \
   "$GIT_COMMITTER_NAME" "$GIT_COMMITTER_EMAIL" >> "$FX/claude-env"
 # The Authorization headers git would send to github.com: an empty value resets the list.
@@ -76,7 +77,7 @@ PY
   echo '[]' > "$FX/comments.json"
   echo '[{"filename":"src/app/page.tsx"},{"filename":"README.md"}]' > "$FX/files.json"
 }
-gate() { : > "$GITHUB_OUTPUT"; HAS_CLAUDE_TOKEN="${HAS_CLAUDE:-true}" INPUT_LABEL=pr-evidence INPUT_PATHS="${1:-}" ATTACH_TOKEN="${2:-}" bash "$RUN" gate 2>/dev/null; sed -n 's/^run=//p' "$GITHUB_OUTPUT"; }
+gate() { : > "$GITHUB_OUTPUT"; HAS_CLAUDE_AUTH="${HAS_CLAUDE:-true}" INPUT_LABEL=pr-evidence INPUT_PATHS="${1:-}" ATTACH_TOKEN="${2:-}" bash "$RUN" gate 2>/dev/null; sed -n 's/^run=//p' "$GITHUB_OUTPUT"; }
 
 # --- gate ---------------------------------------------------------------------------------------
 new_job opened false
@@ -105,7 +106,7 @@ new_job opened false
 echo '[{"user":{"login":"other-app[bot]","type":"Bot"},"body":"> <!-- pr-evidence:posted -->"}]' > "$FX/comments.json"
 assert_eq "another bot quoting the marker does not stop the run" "true" "$(gate)"
 new_job opened false
-assert_eq "without a Claude token (e.g. Dependabot) it does not run" "false" "$(HAS_CLAUDE=false gate)"
+assert_eq "without Claude credentials (e.g. Dependabot) it does not run" "false" "$(HAS_CLAUDE=false gate)"
 new_job opened false
 echo '[{"user":{"login":"evidence-bot","type":"User"},"body":"<!-- pr-evidence:posted -->"}]' > "$FX/comments.json"
 echo '{"login":"evidence-bot"}' > "$FX/user.json"
@@ -160,7 +161,8 @@ prepare; (cd "$TMP/ws" && bash "$RUN" cleanup >/dev/null 2>&1)
 assert_eq "cleanup after a failed prepare keeps the checkout's config" '{"tracked":true}' "$(cat "$TMP/ws/.pr-evidence/config.json")"
 
 # --- capture ------------------------------------------------------------------------------------
-capture() { (cd "$TMP/ws" && GITHUB_TOKEN_INPUT=job-secret ATTACH_TOKEN="${1:-}" CLAUDE_CODE_OAUTH_TOKEN=c \
+capture() { (cd "$TMP/ws" && GITHUB_TOKEN_INPUT=job-secret ATTACH_TOKEN="${1:-}" \
+  CLAUDE_CODE_OAUTH_TOKEN="${OAUTH-oauth-secret}" ANTHROPIC_API_KEY="${API_KEY-}" \
   INPUT_INSTRUCTIONS="${2:-}" INPUT_MAX_TURNS=50 INPUT_CLAUDE_ARGS="--model m" bash "$RUN" capture >/dev/null 2>&1); }
 new_job opened false; printf '%s' "$base_cfg" > "$FX/base-config.json"; prepare
 git -C "$TMP/ws" init -q 2>/dev/null
@@ -179,6 +181,15 @@ assert_ok "hosting commits have an author" grep -qx "GIT_AUTHOR=github-actions\[
 assert_ok "hosting commits have a committer" grep -q "^GIT_COMMITTER=github-actions\[bot\] <" "$FX/claude-env"
 assert_eq "git sends exactly one Authorization header" "1" "$(grep -c '^HEADER=' "$FX/claude-env")"
 assert_ok "the header carries github-token" grep -qx "HEADER=AUTHORIZATION: basic $(printf 'x-access-token:job-secret' | base64)" "$FX/claude-env"
+assert_ok "the OAuth token reaches Claude" grep -qx "OAUTH=oauth-secret" "$FX/claude-env"
+assert_ok "no API key is set when none was given" grep -qx "API_KEY=<unset>" "$FX/claude-env"
+OAUTH="" API_KEY=api-secret capture
+assert_ok "an API key alone reaches Claude" grep -qx "API_KEY=api-secret" "$FX/claude-env"
+assert_ok "with an API key alone no OAuth token is set" grep -qx "OAUTH=<unset>" "$FX/claude-env"
+API_KEY=api-secret capture
+assert_ok "with both, the API key is used" grep -qx "API_KEY=api-secret" "$FX/claude-env"
+assert_ok "with both, the OAuth token is dropped" grep -qx "OAUTH=<unset>" "$FX/claude-env"
+capture
 assert_ok "hosting passes the config path" grep -qF "run.sh host --config .pr-evidence/config.json pr-12" "$FX/claude-prompt.md"
 
 new_job opened false; printf '%s' "$base_cfg" > "$FX/base-config.json"; prepare attach-secret
