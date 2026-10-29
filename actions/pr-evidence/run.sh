@@ -233,7 +233,7 @@ cmd_capture() {
 2. Embed those URLs in the body file, then post exactly one comment with \`$JOB/claude/skills/pr-evidence/scripts/run.sh comment $pr <body-file>\` and NO file arguments (file arguments switch to native attachments, which this token cannot upload)."
   fi
   instructions=""
-  [ -n "${INPUT_INSTRUCTIONS:-}" ] && instructions="Before booting, read \`$INPUT_INSTRUCTIONS\`: it is this repository's own guidance for capturing evidence, and it wins over the defaults below where they differ."
+  [ -n "${INPUT_INSTRUCTIONS:-}" ] && instructions="Before booting, read \`$INPUT_INSTRUCTIONS\`: it is this repository's own guidance on what to capture and how (personas, data, routes, screenshot or recording), and it wins over this prompt on those. The environment, script paths and publishing steps below always apply, even where that document names other paths."
   P_PR_NUMBER="$pr" P_REPO="$GITHUB_REPOSITORY" P_SKILL_DIR="$JOB/claude/skills/pr-evidence" \
   P_CHANGED_FILE="$JOB/changed-files.txt" P_CONFIG="$(cat "$JOB/config-path")" \
   P_PUBLISH="$publish" P_INSTRUCTIONS="$instructions" \

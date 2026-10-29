@@ -171,6 +171,7 @@ capture "" docs/evidence.md
 assert_ok "the prompt names the PR" grep -q "PR_NUMBER=12" "$FX/claude-prompt.md"
 assert_ok "the prompt points at the staged skill" grep -qF "$TMP/runner/pr-evidence/claude/skills/pr-evidence/scripts/run.sh host" "$FX/claude-prompt.md"
 assert_ok "the prompt includes the repository instructions" grep -qF '`docs/evidence.md`' "$FX/claude-prompt.md"
+assert_ok "the prompt's environment and publishing win over the repository document" grep -qF "always apply, even where that document names other paths" "$FX/claude-prompt.md"
 assert_fail "no placeholder is left" grep -q '{{' "$FX/claude-prompt.md"
 assert_ok "git-branch mode uses the job token" grep -qx "GH_TOKEN=job-secret" "$FX/claude-env"
 assert_ok "Claude gets the port" grep -qx "PORT=$(cat "$TMP/runner/pr-evidence/port")" "$FX/claude-env"
