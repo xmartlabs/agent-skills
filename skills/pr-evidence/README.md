@@ -69,7 +69,8 @@ which drives the real upload flow using a browser `user_session` cookie. That me
 
 ## Running in CI
 
-The flow also runs unattended in a GitHub Actions job, with these differences from a local run:
+For GitHub Actions, use the [`pr-evidence` action](../../actions/pr-evidence/README.md): it does
+everything below for you. These are the differences from a local run, if you wire it yourself:
 
 - Pass `PR_NUMBER` and `CHANGED` explicitly. Actions checks out a merge ref, so
   `gh pr view` without arguments cannot resolve the PR.
