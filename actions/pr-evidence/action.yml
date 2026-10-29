@@ -1,0 +1,115 @@
+name: PR evidence
+description: >-
+  Captures a screenshot or recording of a pull request's UI change with the pr-evidence skill and
+  Claude, and posts it on the pull request.
+author: Xmartlabs
+
+inputs:
+  claude-token:
+    description: >-
+      Claude Code OAuth token from `claude setup-token` (uses that account's Claude subscription).
+      Give this or `anthropic-api-key`. Store it as a secret.
+    default: ''
+  anthropic-api-key:
+    description: >-
+      Anthropic API key from the Console (billed per use). Give this or `claude-token`; when both
+      are set, the API key is used. Store it as a secret.
+    default: ''
+  github-token:
+    description: >-
+      Token for reading the pull request, posting comments and pushing media to the hosting branch.
+      The job needs `contents: write` and `pull-requests: write` for it.
+    default: ${{ github.token }}
+  attach-token:
+    description: >-
+      Optional OAuth token or classic PAT of a user (for example a bot account) with write access.
+      When set, media is uploaded as native pull-request attachments and the comment is posted as
+      that user; no hosting branch is used. The Actions token cannot upload attachments.
+    default: ''
+  paths:
+    description: >-
+      Newline-separated glob patterns (fnmatch, `*` crosses `/`; a leading `!` excludes). The run
+      starts on opened or ready_for_review only when a changed file matches. Empty: any change.
+    default: ''
+  label:
+    description: Adding this label forces a run, drafts included, even when evidence was posted.
+    default: pr-evidence
+  config:
+    description: Path of the pr-evidence config, read from the base branch.
+    default: .pr-evidence/config.json
+  instructions:
+    description: Optional path of a repository document Claude reads before capturing.
+    default: ''
+  warmup-path:
+    description: >-
+      Optional path to request once before Claude starts (for example `/`), so a dev server that
+      compiles on first visit is warm. Empty: no warm-up.
+    default: ''
+  max-turns:
+    description: Maximum Claude turns.
+    default: '120'
+  claude-args:
+    description: Extra arguments for `claude`, for example `--model claude-sonnet-5-5`.
+    default: ''
+
+outputs:
+  ran:
+    description: '`true` when the gate started a capture.'
+    value: ${{ steps.gate.outputs.run }}
+
+runs:
+  using: composite
+  steps:
+    - id: gate
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        ATTACH_TOKEN: ${{ inputs.attach-token }}
+        HAS_CLAUDE_AUTH: ${{ inputs.claude-token != '' || inputs.anthropic-api-key != '' }}
+        INPUT_PATHS: ${{ inputs.paths }}
+        INPUT_LABEL: ${{ inputs.label }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" gate
+
+    - if: steps.gate.outputs.run == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        ATTACH_TOKEN: ${{ inputs.attach-token }}
+        INPUT_CONFIG: ${{ inputs.config }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" prepare
+
+    - if: steps.gate.outputs.run == 'true'
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/run.sh" install
+
+    - if: steps.gate.outputs.run == 'true' && inputs.warmup-path != ''
+      shell: bash
+      continue-on-error: true
+      env:
+        INPUT_WARMUP_PATH: ${{ inputs.warmup-path }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" warmup
+
+    - if: steps.gate.outputs.run == 'true'
+      shell: bash
+      continue-on-error: true
+      env:
+        GITHUB_TOKEN_INPUT: ${{ inputs.github-token }}
+        ATTACH_TOKEN: ${{ inputs.attach-token }}
+        CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude-token }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        INPUT_INSTRUCTIONS: ${{ inputs.instructions }}
+        INPUT_MAX_TURNS: ${{ inputs.max-turns }}
+        INPUT_CLAUDE_ARGS: ${{ inputs.claude-args }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" capture
+
+    # A cancelled run (a newer request, or by hand) stays silent; the newer run reports.
+    - if: ${{ !cancelled() && steps.gate.outputs.run == 'true' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_LABEL: ${{ inputs.label }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" fallback
+
+    - if: ${{ always() && steps.gate.outputs.run == 'true' }}
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/run.sh" cleanup

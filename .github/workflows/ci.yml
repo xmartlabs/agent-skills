@@ -24,8 +24,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - name: shellcheck the skill scripts
-        run: shellcheck -S warning skills/*/scripts/*.sh skills/*/scripts/lib/*.sh
+      - name: shellcheck the skill and action scripts
+        run: shellcheck -S warning skills/*/scripts/*.sh skills/*/scripts/lib/*.sh actions/*/*.sh
       - name: actionlint
         uses: docker://rhysd/actionlint:1.7.7
         with:

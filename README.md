@@ -17,6 +17,15 @@ Works with any [Agent Skills](https://agentskills.io) harness (Claude Code, Code
 npx skills add xmartlabs/agent-skills --skill pr-evidence --skill release-notes
 ```
 
+## Use in CI
+
+| Action | What it does |
+| --- | --- |
+| [`actions/pr-evidence`](actions/pr-evidence) | Runs the `pr-evidence` skill with Claude on every pull request that changes UI, and posts the evidence on it. See its [README](actions/pr-evidence/README.md). |
+
+Each action runs the skills at its own ref, so `@pr-evidence-v1` pins the skill and the action
+together.
+
 ## Tests
 
 ```bash
