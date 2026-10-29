@@ -65,7 +65,7 @@ Reasoning: the two writes the finding named are now inside a single `$transactio
 <example>
 Finding: "getAccountBalance can return stale data because the cache is never invalidated on update."
 Verdict: CANNOT_TELL
-Reasoning: `updateAccount` now calls `invalidateAccountCache(accountId)`, but `invalidateAccountCache`'s implementation lives in a helper file this run did not have access to read — cannot confirm it actually clears the key `getAccountBalance` reads from without seeing both sides. Say what's missing rather than assume the name implies the behavior.
+Reasoning: `updateAccount` now calls `clearAccountCache(accountId)`, but `clearAccountCache`'s implementation lives in a helper file this run did not have access to read — cannot confirm it actually clears the key `getAccountBalance` reads from without seeing both sides. Say what's missing rather than assume the name implies the behavior.
 </example>
 
 <example>

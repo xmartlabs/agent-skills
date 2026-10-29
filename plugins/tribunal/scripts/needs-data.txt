@@ -4,11 +4,9 @@ tribunal replay-dedup.mjs
 tribunal replay-embedded-bash.mjs
 tribunal replay-evidence-resolver-relay.mjs
 tribunal replay-evidence-resolver.mjs
-tribunal replay-fidelity-payload.mjs
 tribunal replay-gates.mjs
 tribunal replay-harness-data-paths.mjs
 tribunal replay-high-risk-surface.mjs
-tribunal replay-in-context-plan.mjs
 tribunal replay-incremental-scope.mjs
 tribunal replay-lens-foci.mjs
 tribunal replay-lens-routing.mjs

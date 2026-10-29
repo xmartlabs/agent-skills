@@ -1362,7 +1362,7 @@ fn head_worktree_region_matches_js() {
         "CLONED:",
         "CLONED:\u{a0}",
         "WORKTREE_FAILED",
-        "Preparing worktree (detached HEAD 6fed12b3)",
+        "Preparing worktree (detached HEAD 7495b91f)",
         "",
         "\t",
         "CREATED_WORKTREE\u{a0}/p",

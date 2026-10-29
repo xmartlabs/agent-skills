@@ -1,8 +1,14 @@
-# Peer-review eval
+# Tribunal eval
 
-Two things live here: the **validation ladder** (how to check a change to the
-harness without paying for a run) and the **ground-truth corpus** (how to decide
+Two things live here: the **validation ladder** (how to check a change to
+tribunal without paying for a run) and the **ground-truth corpus** (how to decide
 a threshold with data instead of an argument).
+
+The corpus, the fixtures, the recorded runs and the `specs/` this page cites
+were recorded on private pull requests, so they live in the maintainers' test
+data (`TRIBUNAL_HARNESS_DATA`), not in this repository. The replays that need
+them are listed in `../../../scripts/needs-data.txt`; everything else runs from
+a clone with `plugins/tribunal/scripts/check-portable.sh`.
 
 ## The ladder — climb it, don't skip it
 
@@ -210,7 +216,7 @@ them, and `TRIBUNAL_HARNESS_DATA` points elsewhere):
 {
   "repo": "acme/api",
   "pr": 1796,
-  "headSha": "3628a931…",
+  "headSha": "fa77b26b…",
   "status": "annotated | pending-outcome | needs-annotation",
   "groundTruthTier": "production-incident | author-fixed | human-judged | pending",
   "knownReal": [
@@ -237,7 +243,7 @@ adjudication) is an opinion, not ground truth — do not add it as `knownReal`.
 
 | Tier | Meaning | Example |
 |---|---|---|
-| `production-incident` | The bug shipped and bit. The strongest possible label: a review that misses it has a proven false negative. | PR #1796 → incident ticket → hotfix #1872 |
+| `production-incident` | The bug shipped and bit. The strongest possible label: a review that misses it has a proven false negative. | a PR whose bug shipped → its incident ticket → the hotfix |
 | `author-fixed` | A review flagged it and the author fixed exactly that (fix commit touches the flagged file/logic). | pending on PR #1947 |
 | `human-judged` | A human explicitly adjudicated the finding (fixed = real, dismissed-with-reason = bogus). | prior review threads |
 | `pending` | Review posted; author outcome not yet known. Re-annotate when it lands. | PR #1947 today |

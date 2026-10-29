@@ -4,10 +4,14 @@ Back to the [Tribunal README](../README.md).
 
 ## Changing it
 
-The harness is versioned by a hash of its own behavioral surface, and every
-change is expected to clear the offline battery before it ships.
+Tribunal is versioned by a hash of its own behavioral surface, and every
+change is expected to clear the offline battery before it ships. The commands
+in this page run from `plugins/tribunal/skills/review-pr` unless a block says
+otherwise. `../../scripts/check-portable.sh` runs every replay that needs no
+private data, from any directory.
 
 ```bash
+cd plugins/tribunal/skills/review-pr
 node scripts/harness-version.mjs --manifest   # what the hash covers
 node eval/check-mirror.mjs                    # do the Workflow and its copies still agree?
 for f in eval/replay-*.mjs; do node "$f" || echo "FAILED: $f"; done
@@ -16,15 +20,14 @@ for f in eval/replay-*.mjs; do node "$f" || echo "FAILED: $f"; done
 Edit the workflow in `workflow-src/tribunal.js`, never in `workflows/tribunal.js`.
 The Workflow runtime refuses a script over 524,288 bytes, and comments were 45%
 of the file, so the shipped script is a build: the source with its comment lines
-removed. Rebuild after every edit with
-`node skills/review-pr/scripts/build-workflow.mjs`.
+removed. Rebuild after every edit with `node scripts/build-workflow.mjs`.
 `eval/replay-workflow-built.mjs` fails when the build is stale or was edited by
 hand. When TypeScript is installed, it also checks that the build removed nothing
 but comments.
 
-To iterate, drop a `.claude-plugin/plugin.json` into a folder in your skills
-directory: it loads in place, with no install step, and edits to `SKILL.md` apply
-immediately.
+To iterate, start Claude Code with `claude --plugin-dir plugins/tribunal` from
+the repository root: the plugin loads from your clone, and `/reload-plugins`
+picks up each edit.
 
 **Run reviews from an interactive session, not from `claude -p`.** Headless mode
 terminates its own background tasks after 600 seconds, which kills a review
@@ -40,12 +43,14 @@ answer a question here.
 ## Releasing a version
 
 **Not every change is a release.** Ordinary work (edit, commit, push, merge)
-changes nothing for anyone else: the manifest pins `version`, so teammates keep
+changes nothing for anyone else: the manifest pins `version`, so users keep
 running the version they have until that field moves. That is the point of pinning
 it, and it has one consequence worth internalising: **a fix that is merged but not
-released is invisible to the team.** Urgent fixes need a release, not a merge.
+released reaches no user.** Urgent fixes need a release, not a merge.
 
-A release is one command.
+A release is one command, run by a maintainer from `plugins/tribunal` on a
+branch (it refuses to run on `main`), because the full gate needs the private
+test data.
 
 `./release.sh <N>` does the whole sequence, and `--dry-run` shows the plan and
 runs the gate without writing anything. It opens `$EDITOR` for the row's notes
@@ -100,14 +105,14 @@ The order it enforces, and why each step sits where it does:
 #    if the offline battery is red, if --notes-file is missing, or if that file
 #    is empty. --tag is passed in because the tag does not exist until step 4,
 #    so release.mjs cannot derive it without naming the PREVIOUS release.
-node eval/release.mjs --record --tag tribunal/v31 --notes-file <path>
+node eval/release.mjs --record --tag tribunal/v31 --notes-file <path>   # from skills/review-pr
 
 # 2. Bump `version` in .claude-plugin/plugin.json to match the tag. This is the
-#    cache key /plugin update keys off — leave it and teammates are told they
+#    cache key /plugin update keys off — leave it and users are told they
 #    are "already at the latest version" and never receive the freeze.
 
-# 3. Commit
-git add -A && git commit -m "chore(tribunal): freeze tribunal/v31"
+# 3. Commit, from plugins/tribunal: only this plugin's files
+git add -- . && git commit -m "chore(tribunal): freeze tribunal/v31"
 
 # 4. Tag
 git tag -a tribunal/v31 -m "..."
@@ -124,6 +129,7 @@ commits with a new one, so a tag created on the branch would name a tree that is
 not an ancestor of `main`: the freeze stays checkout-able but stops being part of
 the history it claims to belong to.
 
-**Read `review-harness-data/tribunal/specs/2026-07-25-lever-ledger.md` before proposing any cost or latency
-improvement.** It is one page, and it records which optimisations were already
-measured and rejected, several of which look obviously correct and are not.
+**Before proposing a cost or latency improvement, ask a maintainer about it.**
+The maintainers keep a ledger, with the private test data, of the optimisations
+already measured and rejected, several of which look obviously correct and are
+not.

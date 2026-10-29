@@ -40,7 +40,7 @@ const { api, violations } = loadRegion(WORKFLOW, "HEAD-WORKTREE", [
 ]);
 const { headWorktreeBash, parseHeadWorktree, pinnedCheckoutBlock } = api;
 
-const SHA = "6fed12b3674d55538881a96efa36eb08c37f9b2a";
+const SHA = "991e04734f7ce7410d1c0234951d1b71a4845c4a";
 
 console.log(`\nHEAD-WORKTREE region extracted from ${WORKFLOW}`);
 console.log(`\n--- purity ---`);
@@ -86,7 +86,7 @@ console.log(`\n--- reading the answer out of real command noise ---`);
 check(
   "the marker is found among leading git chatter",
   parseHeadWorktree(
-    "Preparing worktree (detached HEAD 6fed12b3)\nHEAD is now at 6fed12b3\nCREATED_WORKTREE /tmp/wt",
+    "Preparing worktree (detached HEAD 7495b91f)\nHEAD is now at 7495b91f\nCREATED_WORKTREE /tmp/wt",
   ).path === "/tmp/wt",
 );
 check(

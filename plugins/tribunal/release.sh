@@ -25,8 +25,7 @@
 # A freeze takes the next integer and lands as N.0.0. Minor and patch bumps are
 # hand-edited into .claude-plugin/plugin.json inside the ordinary feature PR that
 # earns them, and never come through here. tribunal has never used a non-zero
-# minor, but a sibling plugin has shipped seven of them, so the rule is a
-# convention rather than a property of the tooling. A further wrinkle worth
+# minor, so the rule is a convention rather than a property of the tooling. A further wrinkle worth
 # knowing: on every recent freeze checked (v60, v62, v63, v64) the commit does
 # not touch plugin.json at all, because the manifest was already at the target
 # version, set by hand on the same branch, so step 2/5 below rewrote the value
@@ -105,6 +104,8 @@ fi
 # to work around the check. Those are reported and pass.
 DEFAULT_BRANCH=$(git symbolic-ref --quiet --short "refs/remotes/$REMOTE/HEAD" 2>/dev/null | sed "s|^$REMOTE/||" || true)
 DEFAULT_BRANCH="${DEFAULT_BRANCH:-main}"
+# The freeze commit lands through a pull request like any other change.
+[ "$BRANCH" != "$DEFAULT_BRANCH" ] || die "freeze from a branch, not $DEFAULT_BRANCH: the commit reaches $DEFAULT_BRANCH through a pull request"
 git fetch --quiet "$REMOTE" "$DEFAULT_BRANCH" \
   || die "could not fetch $REMOTE/$DEFAULT_BRANCH, so this tree's freshness is unknown. A freeze pushes; if the network is down, stop here anyway."
 BEHIND=$(git rev-list --count "HEAD..$REMOTE/$DEFAULT_BRANCH")

@@ -90,7 +90,7 @@ console.log("\n--- unawaited-enqueue (BE #2167) ---");
 
 console.log("\n--- sentinel-from-catch (BE #1996) ---");
 {
-  const src = `const getByVid = async (vid) => {
+  const src = `const getByExternalId = async (vid) => {
   try {
     return await db.find(vid);
   } catch (e) {
@@ -100,13 +100,13 @@ console.log("\n--- sentinel-from-catch (BE #1996) ---");
 
 export async function resolve(vid) {
   for (let i = 0; i < 3; i++) {
-    const a = await getByVid(vid);
+    const a = await getByExternalId(vid);
     if (!a) return null;
   }
   return null;
 }`;
   const f = facts(src, new Set([11]));
-  check("a new call to a function that returns its sentinel from a catch fires at the call", f.some((x) => x.kind === "sentinel-from-catch" && x.line === 11 && /getByVid/.test(x.detail) && /null/.test(x.detail)), JSON.stringify(f));
+  check("a new call to a function that returns its sentinel from a catch fires at the call", f.some((x) => x.kind === "sentinel-from-catch" && x.line === 11 && /getByExternalId/.test(x.detail) && /null/.test(x.detail)), JSON.stringify(f));
   const noCatch = `const get = async (vid) => db.find(vid);
 const a = get(1);`;
   check("a callee with no catch is quiet", facts(noCatch).length === 0);

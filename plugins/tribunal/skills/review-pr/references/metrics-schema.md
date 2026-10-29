@@ -30,7 +30,7 @@ because it was not interesting this run — write `null`/`[]`/`false` instead.
   "ts": null,
   "repo": "owner/repo",
   "pr": 1947,
-  "headSha": "bb344e04…",
+  "headSha": "53845a60…",
   "mode": "in-context",
   "fileCount": 9,
   "additions": 1028,
@@ -63,8 +63,8 @@ because it was not interesting this run — write `null`/`[]`/`false` instead.
   "diffExposure": null,
   "findings": [
     {
-      "title": "fingerprint excludes amount",
-      "file": "src/_helpers/v2/paymentIdempotency.ts",
+      "title": "dedup key ignores the request body",
+      "file": "src/lib/helpers/requestDedup.ts",
       "severity": "important",
       "lens": "falsification",
       "blocking": true,
@@ -90,7 +90,7 @@ because it was not interesting this run — write `null`/`[]`/`false` instead.
         "matchKind": "exact",
         "claimedLine": 42,
         "resolvedLine": 42,
-        "resolvedFile": "src/_helpers/v2/paymentIdempotency.ts",
+        "resolvedFile": "src/lib/helpers/requestDedup.ts",
         "matchedLineKind": "added",
         "ambiguousCount": 1,
         "delta": 0,
@@ -707,7 +707,7 @@ the code can say that, and that happens after the row exists. Patched in
 afterwards.
 
 Why it needs a field rather than an inference: on PR #1968
-(`0eedf726d9e02fb47db43776a3c9a26aa7794a56`) the panel killed a real finding at
+(`d878683309f5702689e754ce007590418986db7a`) the panel killed a real finding at
 `refuteFraction` exactly `0.5` against `T_KILL` `0.45` — one Claude
 `NOT_REFUTED` at 0.85 against one Codex `REFUTED` at 0.85, `killReason: null`,
 `borderline: true`, and `debate.fired: false` because the gate then still

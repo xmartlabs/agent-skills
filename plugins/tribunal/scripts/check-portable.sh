@@ -39,6 +39,11 @@ for f in eval/replay-*.mjs; do
     fail=$((fail + 1)); echo "FAIL $name"; tail -5 "$SB/out.txt" | sed 's/^/     /'
   fi
 done
+# An entry for a replay that no longer exists hides nothing, but it hides the
+# fact that the list went stale.
+while read -r _ n; do
+  [ -f "eval/$n" ] || { fail=$((fail + 1)); echo "FAIL needs-data.txt lists $n, which does not exist"; }
+done < "$NEEDS"
 node eval/check-mirror.mjs >"$SB/mirror.txt" 2>&1 \
   && echo "ok   check-mirror: $(grep -o 'mirror invariants: [0-9/]* agree' "$SB/mirror.txt" | tail -1)" \
   || { fail=$((fail + 1)); echo "FAIL check-mirror"; tail -5 "$SB/mirror.txt" | sed 's/^/     /'; }

@@ -3374,7 +3374,7 @@ if (preflight) {
 // Every agent judging a finding must read source at the commit under review,
 // and a prompt sentence is not enforcement. Same classifier throughout: 19% of
 // refuter reads hit the unpinned checkout (2026-07-31); 3% of lens and 5% of
-// refuter reads after ae7f8ee (2026-09-08); and on 2026-09-11 a refuter with
+// refuter reads after c31fd9c (2026-09-08); and on 2026-09-11 a refuter with
 // only the sentence REFUTED THREE REAL FINDINGS at 0.95 citing symbols absent
 // at the reviewed sha, while a pinned worktree got all three right.
 // The prose rule stays; this closes the remainder structurally. A wrong-ref
@@ -3444,7 +3444,7 @@ function pinnedCheckoutBlock(pin, sha) {
 // Deterministic, no model: a refutation that rests on code NAMES code, so
 // confirm the identifiers it names exist at the reviewed commit. On 2026-09-11
 // this flagged all four wrong kills (VendorSyncCountError,
-// maskEmailForLog, seenOrderIds, csv-safety.ts, absent at 6fed12b3) and none of
+// redactEmail, seenOrderIds, export-sanitize.ts, absent at 7495b91f) and none of
 // the six sound ones.
 //
 // An AUDIT FLAG, never a gate: it cannot tell a missing symbol from a library
@@ -3453,9 +3453,9 @@ function pinnedCheckoutBlock(pin, sha) {
 // Deliberately conservative: two shapes only, both of which a prose sentence
 // almost never produces by accident.
 //   - an identifier with an internal capital and at least 8 characters
-//     (`maskEmailForLog`, `VendorSyncCountError`) — the 8 keeps ordinary
+//     (`redactEmail`, `VendorSyncCountError`) — the 8 keeps ordinary
 //     product nouns like vendor names out
-//   - a path ending in a source extension (`csv-safety.ts`)
+//   - a path ending in a source extension (`export-sanitize.ts`)
 // Under-extracting is the safe direction: a missed citation costs a flag that
 // never fires, while over-extracting trains everyone to ignore the field.
 // Two kinds of entry, and the second is the one that matters. Platform nouns
@@ -4537,7 +4537,7 @@ Return only clusters of size 2 or more. An index not mentioned in any cluster is
     // The prompt asks the model not to merge "the same class of bug in a
     // different function" and nothing enforced it. On PR #1911 this dispatch
     // returned cluster [4,21,24,25,27]: two genuine duplicates in
-    // merge-contacts.ts PLUS the same exit-0 defect in bulk-void-invoices,
+    // dedupe-contacts.ts PLUS the same exit-0 defect in bulk-void-invoices,
     // update-payment-links and reverse-cancelled-order — four
     // different scripts. `mergeCandidates` keeps `...members[0]`, so the other
     // three files' instances left the review entirely (they are not in the
@@ -5427,7 +5427,7 @@ const CLAUDE_BATCH_SIZE = 3;
 const CLAUDE_BATCH_PANEL_THRESHOLD = 8;
 // Gates whether CLAUDE_BATCH_PANEL_THRESHOLD is allowed to auto-activate
 // batching with NO flag passed. Validated 2026-07-24 on PR #1968
-// (b241f4091d): two non-batched baselines (candidates 4/7, killed 0/1) plus
+// (192aea112e): two non-batched baselines (candidates 4/7, killed 0/1) plus
 // one --batch-panels run (candidates 4, killed 1) all show zero Claude-side
 // voteCorrections/failedSlots — batching only changes codex-side dispatch
 // mechanics, never Claude vote health. See
@@ -6143,7 +6143,7 @@ Return total, and entries as an array of {key, failclass, verdict, confidence, c
 // T_KILL / DELTA / GEMINI_CONFIDENCE_CAP from the first one.
 
 // A path names the same file only on a whole segment: a decision scoped to
-// "worker.ts" must not cover src/jobs/accounts_worker.ts (BE #2167, 2026-10-18).
+// "worker.ts" must not cover src/jobs/profiles_worker.ts (BE #2167, 2026-10-18).
 function samePath(a, b) {
   if (!a || !b) return false;
   return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
@@ -6194,7 +6194,7 @@ function preDecidedCoversFile(decisionQuestioned, findingFile, decisions = []) {
   return false;
 }
 
-// Distinctive words, camelCase split, so "retryDuringRedisStartup" shares
+// Distinctive words, camelCase split, so "retryUntilRedisReady" shares
 // "retry" and "startup" with a finding that says "startup retry".
 const TOPIC_STOPWORDS = new Set(
   "this that with from when then than into does have been will only also added each which their there these those because should would could file files code function returns return value null true false async await const finding".split(" "),
@@ -6893,7 +6893,7 @@ Fetch the diff yourself per your own "PR number provided" scope rule (gh pr view
 
 READ AT ${prContext.headRefOid} AND NOWHERE ELSE. Every claim you make about source must come from \`git show ${prContext.headRefOid}:<path>\` or \`gh api repos/${repo}/contents/<path>?ref=${prContext.headRefOid}\`. The local working tree is on another branch and shows the PRE-merge state.
 
-IF YOU CONTRADICT A FINDING BELOW, QUOTE THE CODE THAT REFUTES IT — word for word, copied from the file at that commit, naming the file and line. A contradiction without a quote is not reportable: write "could not verify" instead. This is the one thing you say that can cause a real defect to be dismissed, so it carries the same evidence burden every lens and refuter already carries. On the 2026-07-25 PR #1968 run a critic claimed \`addAccountMergeJob\` built its job data as \`{ ...input, contactId: input.newObjectId }\` "with an inline comment stating this exact rationale", and contradicted a verified blocking finding on that basis. That string exists at no commit in this repository. It was invented, it reached the report as a warning against a real bug, and it produced a draft comment asking the author to confirm code that does not exist.
+IF YOU CONTRADICT A FINDING BELOW, QUOTE THE CODE THAT REFUTES IT — word for word, copied from the file at that commit, naming the file and line. A contradiction without a quote is not reportable: write "could not verify" instead. This is the one thing you say that can cause a real defect to be dismissed, so it carries the same evidence burden every lens and refuter already carries. On the 2026-07-25 PR #1968 run a critic claimed \`addAccountDedupeJob\` built its job data as \`{ ...input, contactId: input.createRecordId }\` "with an inline comment stating this exact rationale", and contradicted a verified blocking finding on that basis. That string exists at no commit in this repository. It was invented, it reached the report as a warning against a real bug, and it produced a draft comment asking the author to confirm code that does not exist.
 
 Changed files: ${prContext.files.join(", ")}
 
@@ -8321,7 +8321,7 @@ const mootFindings = priorOutcome.moot;
 // --- Did the author fix it? --------------------------------------------------
 // Lenses hunt NEW defects and carry-forward accounts for old ones; nobody
 // decided whether an old one was resolved. Before 2026-07-27 a run had the fix
-// to `accounts_worker.ts` in its own diff and still reported the prior CRITICAL
+// to `profiles_worker.ts` in its own diff and still reported the prior CRITICAL
 // as "not verified". "Never claim a fix you did not verify" is not a reason
 // not to verify.
 //

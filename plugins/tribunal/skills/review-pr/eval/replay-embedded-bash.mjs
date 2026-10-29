@@ -32,8 +32,13 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
+import { dataId } from "./data-ids.mjs";
 import { FIXTURES_DIR, lib, LIB_DIR, PLUGIN_ROOT, RECORDED_METRICS_PATH, SKILL_DIR, WORKFLOW } from "./paths.mjs";
 import { clientProfileByReviewer } from "./client-profiles.mjs";
+
+// The baseline and head commits of the recorded review, from the private data.
+const BASE_ID = dataId("029625130900", 8);
+const HEAD_ID = dataId("8ebd03d307b7", 8);
 
 // The recorded ledger and fixture patches come from the backend repo, and the
 // probe matches ledger rows by repo, so the repo is read from its frozen profile.
@@ -149,13 +154,13 @@ console.log(`\n--- the baseline probe actually runs ---`);
 // bash, so an empty one produces "scope unusable" — indistinguishable from the
 // bug this file exists to catch, and it points the reader at the workflow.
 //
-// Not hypothetical: on 2026-07-28 an INJECTION run truncated d047fa9f.patch to
+// Not hypothetical: on 2026-07-28 an INJECTION run truncated the head patch to
 // zero. The injected variant pointed `CUR` at the fixture, the next line
 // redirects a `gh pr diff` into `$CUR`, and the stub for that arm makes the
 // fetch fail — so the redirect emptied the file. Several minutes went into
 // diagnosing the workflow before anyone looked at the fixture. An injection that
 // runs shell can reach outside its sandbox; this check makes that loud.
-for (const f of ["d047fa9f.patch", "0eedf726.patch"]) {
+for (const f of [HEAD_ID + ".patch", BASE_ID + ".patch"]) {
   let size = 0;
   try {
     size = readFileSync(join(FIX, f)).length;
@@ -186,14 +191,14 @@ const end = src.indexOf("Return that final JSON line", probeStart);
 check("probe bash found in the workflow", start !== -1 && end > start);
 
 if (start !== -1 && end > start) {
-  const HEAD = "d047fa9fffffffffffffffffffffffffffffffff";
+  const HEAD = "83b6ecffffffffffffffffffffffffffffffffff";
   let bash = src
     .slice(start, end)
     .replaceAll("${prNumber}", "1968")
     .replaceAll("${repo}", BE_REPO)
     .replaceAll('"$HEAD_SHA"', JSON.stringify(HEAD))
     .replaceAll("${JSON.stringify(sinceOverride)}", '""')
-    .replaceAll("${currentPatchPath}", join(FIX, "d047fa9f.patch"))
+    .replaceAll("${currentPatchPath}", join(FIX, HEAD_ID + ".patch"))
     .replace(/\\\$\{/g, "${")
     .trim();
   // Anchor on the JS identifiers, not on `${` — the script legitimately contains
@@ -221,15 +226,15 @@ if (start !== -1 && end > start) {
 # and that is exactly how this test stayed green while the shipped probe still
 # used baseRefName: the fix had been applied to the wrong occurrence.
 case "$1 $2" in
-  "pr diff") cat ${JSON.stringify(join(FIX, "d047fa9f.patch"))} ;;
+  "pr diff") cat ${JSON.stringify(join(FIX, HEAD_ID + ".patch"))} ;;
   "pr view")
     case "$*" in
-      *baseRefOid*) echo 4b7bad7200000000000000000000000000000000 ;;
-      *headRefOid*) echo d047fa9fffffffffffffffffffffffffffffffff ;;
+      *baseRefOid*) echo 44ea7bb300000000000000000000000000000000 ;;
+      *headRefOid*) echo 83b6ecffffffffffffffffffffffffffffffffff ;;
       *baseRefName*) echo development ;;
       *) echo "stub gh: pr view asked for something unexpected: $*" >&2; exit 1 ;;
     esac ;;
-  "api repos/${BE_REPO}/compare/4b7bad72"*) cat ${JSON.stringify(join(FIX, "0eedf726.patch"))} ;;
+  "api repos/${BE_REPO}/compare/44ea7bb3"*) cat ${JSON.stringify(join(FIX, BASE_ID + ".patch"))} ;;
   *) echo "stub gh: unexpected $*" >&2; exit 1 ;;
 esac
 `,
@@ -237,7 +242,7 @@ esac
   chmodSync(join(bin, "gh"), 0o755);
 
   // The probe reads metrics.jsonl for a POSTED row of PR 1968 at a sha that is
-  // not HEAD. The recorded ledger holds exactly one: 0eedf726, the review from
+  // not HEAD. The recorded ledger holds exactly one: <baseline>, the review from
   // 2026-07-24 with 3 findings. That row is the fixture.
   let out = "";
   try {
@@ -262,7 +267,7 @@ esac
       parsed.prior?.found === true,
       parsed.prior?.reason,
     );
-    check("the baseline is the 0eedf726 review", (parsed.prior?.sha || "").startsWith("0eedf726"));
+    check("the baseline is the recorded review", (parsed.prior?.sha || "").startsWith(BASE_ID));
     check("it carries that review's findings", (parsed.prior?.findings || []).length === 3, `${(parsed.prior?.findings || []).length}`);
     check("the scope is usable", parsed.scope?.usable === true, parsed.scope?.reason);
     check("4 files in scope, not 16", (parsed.scope?.inScope || []).length === 4, JSON.stringify(parsed.scope?.inScope));
@@ -290,13 +295,13 @@ case "$1 $2" in
   "pr diff") echo "" ;;
   "pr view")
     case "$*" in
-      *baseRefOid*) echo 4b7bad7200000000000000000000000000000000 ;;
+      *baseRefOid*) echo 44ea7bb300000000000000000000000000000000 ;;
       *headRefOid*) echo ${NOROW_HEAD} ;;
       *baseRefName*) echo development ;;
-      *reviews*) echo '[{"author":"alice","state":"APPROVED","at":"2026-09-09T13:44:09Z","commit":"b548bfc335ca3d8e16f83b49ba04b1a02c6f3601"},{"author":"alice","state":"COMMENTED","at":"2026-09-09T17:52:43Z","commit":"6f1a852f00000000000000000000000000000000"},{"author":"coderabbitai","state":"APPROVED","at":"2026-09-09T18:00:00Z","commit":"deadbeef00000000000000000000000000000000"}]' ;;
+      *reviews*) echo '[{"author":"alice","state":"APPROVED","at":"2026-09-09T13:44:09Z","commit":"85b0cd5313707394857a75a3baf3f08ab4cc9b5d"},{"author":"alice","state":"COMMENTED","at":"2026-09-09T17:52:43Z","commit":"6dec0d1200000000000000000000000000000000"},{"author":"coderabbitai","state":"APPROVED","at":"2026-09-09T18:00:00Z","commit":"deadbeef00000000000000000000000000000000"}]' ;;
       *) echo "stub gh: pr view asked for something unexpected: $*" >&2; exit 1 ;;
     esac ;;
-  "api repos/acme/api/compare/4b7bad72"*) echo "" ;;
+  "api repos/acme/api/compare/44ea7bb3"*) echo "" ;;
   *) echo "stub gh: unexpected $*" >&2; exit 1 ;;
 esac
 `,
@@ -351,7 +356,7 @@ esac
     // The stub's three reviews are shaped so that this one assertion is
     // load-bearing for BOTH filters, and the expected winner is the OLDEST of
     // the three. Break the COMMENTED exclusion and alice's later COMMENTED
-    // wins with 6f1a852f. Break the bot exclusion and coderabbitai's later
+    // wins with 6dec0d12. Break the bot exclusion and coderabbitai's later
     // APPROVED wins with deadbeef. Two earlier versions of this fixture caught
     // neither: the first gave both reviews the same commit, so any pick
     // passed, and the second made the only COMMENTED review a bot's, so the
@@ -359,7 +364,7 @@ esac
     // nothing.
     check(
       "the baseline sha is the APPROVED human review's commit, not the later COMMENTED or bot one",
-      parsed4.prior?.sha === "b548bfc335ca3d8e16f83b49ba04b1a02c6f3601",
+      parsed4.prior?.sha === "85b0cd5313707394857a75a3baf3f08ab4cc9b5d",
       parsed4.prior?.sha,
     );
     check("a human-review baseline carries no findings to verify", (parsed4.prior?.findings || []).length === 0, JSON.stringify(parsed4.prior?.findings));
@@ -380,7 +385,7 @@ esac
 console.log(`\n--- the probe fetches its own patch and still fails open ---`);
 if (start !== -1 && end > start) {
   const tmp = mkdtempSync(join(tmpdir(), "pr-tmp-"));
-  writeFileSync(join(tmp, "peer-review-diff-1968.patch"), readFileSync(join(FIX, "d047fa9f.patch")));
+  writeFileSync(join(tmp, "peer-review-diff-1968.patch"), readFileSync(join(FIX, HEAD_ID + ".patch")));
   const bin2 = mkdtempSync(join(tmpdir(), "pr-bin2-"));
   writeFileSync(
     join(bin2, "gh"),
@@ -394,15 +399,15 @@ if (start !== -1 && end > start) {
 # and that is exactly how this test stayed green while the shipped probe still
 # used baseRefName: the fix had been applied to the wrong occurrence.
 case "$1 $2" in
-  "pr diff") cat ${JSON.stringify(join(FIX, "d047fa9f.patch"))} ;;
+  "pr diff") cat ${JSON.stringify(join(FIX, HEAD_ID + ".patch"))} ;;
   "pr view")
     case "$*" in
-      *baseRefOid*) echo 4b7bad7200000000000000000000000000000000 ;;
-      *headRefOid*) echo d047fa9fffffffffffffffffffffffffffffffff ;;
+      *baseRefOid*) echo 44ea7bb300000000000000000000000000000000 ;;
+      *headRefOid*) echo 83b6ecffffffffffffffffffffffffffffffffff ;;
       *baseRefName*) echo development ;;
       *) echo "stub gh: pr view asked for something unexpected: $*" >&2; exit 1 ;;
     esac ;;
-  "api repos/${BE_REPO}/compare/4b7bad72"*) cat ${JSON.stringify(join(FIX, "0eedf726.patch"))} ;;
+  "api repos/${BE_REPO}/compare/44ea7bb3"*) cat ${JSON.stringify(join(FIX, BASE_ID + ".patch"))} ;;
   *) echo "stub gh: unexpected $*" >&2; exit 1 ;;
 esac
 `,
@@ -412,7 +417,7 @@ esac
     .slice(start, end)
     .replaceAll("${prNumber}", "1968")
     .replaceAll("${repo}", BE_REPO)
-    .replaceAll('${JSON.stringify(prContext.headRefOid || "")}', JSON.stringify("d047fa9f" + "f".repeat(32)))
+    .replaceAll('${JSON.stringify(prContext.headRefOid || "")}', JSON.stringify(HEAD_ID + "f".repeat(32)))
     .replaceAll("${JSON.stringify(sinceOverride)}", '""')
     .replace(/\\\$\{/g, "${")
     .trim();
@@ -454,12 +459,12 @@ case "$1 $2" in
   "pr diff") echo "stub gh: diff unavailable" >&2; exit 1 ;;
   "pr view")
     case "$*" in
-      *baseRefOid*) echo 4b7bad7200000000000000000000000000000000 ;;
-      *headRefOid*) echo d047fa9fffffffffffffffffffffffffffffffff ;;
+      *baseRefOid*) echo 44ea7bb300000000000000000000000000000000 ;;
+      *headRefOid*) echo 83b6ecffffffffffffffffffffffffffffffffff ;;
       *baseRefName*) echo development ;;
       *) exit 1 ;;
     esac ;;
-  "api repos/${BE_REPO}/compare/4b7bad72"*) cat ${JSON.stringify(join(FIX, "0eedf726.patch"))} ;;
+  "api repos/${BE_REPO}/compare/44ea7bb3"*) cat ${JSON.stringify(join(FIX, BASE_ID + ".patch"))} ;;
   *) exit 1 ;;
 esac
 `,
@@ -618,7 +623,7 @@ const markerEnd = markerOpen === -1 ? -1 : src.indexOf("`", markerOpen);
 check("marker bash found in the workflow", markerStart !== -1 && markerEnd > markerOpen);
 
 if (markerStart !== -1 && markerEnd > markerOpen && start !== -1 && end > start) {
-  const HEAD = "d047fa9fffffffffffffffffffffffffffffffff";
+  const HEAD = "83b6ecffffffffffffffffffffffffffffffffff";
   const markerBash = src
     .slice(markerOpen, markerEnd)
     .replaceAll("${prNumber}", "1968")
@@ -639,7 +644,7 @@ if (markerStart !== -1 && markerEnd > markerOpen && start !== -1 && end > start)
     .replaceAll("${repo}", BE_REPO)
     .replaceAll('"$HEAD_SHA"', JSON.stringify(HEAD))
     .replaceAll("${JSON.stringify(sinceOverride)}", '""')
-    .replaceAll("${currentPatchPath}", join(FIX, "d047fa9f.patch"))
+    .replaceAll("${currentPatchPath}", join(FIX, HEAD_ID + ".patch"))
     .replace(/\\\$\{/g, "${")
     .trim();
 
@@ -648,14 +653,14 @@ if (markerStart !== -1 && markerEnd > markerOpen && start !== -1 && end > start)
     join(bin, "gh"),
     `#!/bin/sh
 case "$1 $2" in
-  "pr diff") cat ${JSON.stringify(join(FIX, "d047fa9f.patch"))} ;;
+  "pr diff") cat ${JSON.stringify(join(FIX, HEAD_ID + ".patch"))} ;;
   "pr view")
     case "$*" in
-      *headRefOid*) echo d047fa9fffffffffffffffffffffffffffffffff ;;
+      *headRefOid*) echo 83b6ecffffffffffffffffffffffffffffffffff ;;
       *baseRefName*) echo development ;;
-      *) echo 4b7bad7200000000000000000000000000000000 ;;
+      *) echo 44ea7bb300000000000000000000000000000000 ;;
     esac ;;
-  "api repos/${BE_REPO}/compare/4b7bad72"*) cat ${JSON.stringify(join(FIX, "0eedf726.patch"))} ;;
+  "api repos/${BE_REPO}/compare/44ea7bb3"*) cat ${JSON.stringify(join(FIX, BASE_ID + ".patch"))} ;;
   *) echo "stub gh: unexpected $*" >&2; exit 1 ;;
 esac
 `,
@@ -886,7 +891,7 @@ console.log(`\n--- lib/persist-run.sh writes a row ---`);
     const nasty = [
       "## Blocking",
       "",
-      "1. `assertDevTarget` guard order \u2014 src/x.ts:77",
+      "1. `assertStagingTarget` guard order \u2014 src/x.ts:77",
       "",
       "```ts",
       "const [identity] = await prisma.$queryRaw`SELECT VERSION()`;",

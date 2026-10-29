@@ -423,7 +423,7 @@ const REF_EXPORTS: &[&str] = &["citedIdentifiers", "refEvidenceVerdict"];
 // Verbatim from replay-ref-evidence.mjs.
 const REF_SEEDS: &[&str] = &[
     "At HEAD the catch block checks `e instanceof RemoteOrderCountSyncError` and prints a distinct 'do NOT decrement the DB count again' message when only OpsHub failed.",
-    "Every console.log/console.warn that references prodEmail passes it through `maskEmailForLog()` imported from `./csv-safety.ts`, which masks all but the first character and domain.",
+    "Every console.log/console.warn that references prodEmail passes it through `redactEmail()` imported from `./export-sanitize.ts`, which masks all but the first character and domain.",
     "An intra-batch dedupe pass (seenOrderIds Set, lines 616-635) already runs before createMany, pushing a success:false result for any duplicate orderId within the batch.",
     "existingOrderIds is computed only from the DB and never deduplicated against itself; OrderDetail.orderId is @unique in schema.prisma so skipDuplicates genuinely drops an intra-batch duplicate row.",
     "The OpsHub call can fail and BillingsHub is not involved; see the GitHub thread. TypeScript types are fine.",
@@ -433,9 +433,9 @@ const REF_SEEDS: &[&str] = &[
 #[test]
 fn ref_evidence_check_matches_js() {
     let token = pick(vec![
-        "maskEmailForLog",
+        "redactEmail",
         "VendorSyncCountError",
-        "csv-safety.ts",
+        "export-sanitize.ts",
         "a.tsx",
         "a.ts.js",
         "foo.ts-bar",
@@ -474,7 +474,7 @@ fn ref_evidence_check_matches_js() {
     let text = prop_oneof![
         8 => prop::collection::vec((token, sep), 0..8)
             .prop_map(|v| Some(json!(v.into_iter().map(|(t, s)| format!("{t}{s}")).collect::<String>()))),
-        1 => pick(vec![Value::Null, json!(5), json!(["maskEmailForLog", "x.ts"]), json!({"a": 1}), json!(true), json!(false), json!(0), json!("")]).prop_map(Some),
+        1 => pick(vec![Value::Null, json!(5), json!(["redactEmail", "x.ts"]), json!({"a": 1}), json!(true), json!(false), json!(0), json!("")]).prop_map(Some),
         1 => Just(None),
     ];
     let mut texts = sample(text);

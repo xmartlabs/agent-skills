@@ -718,7 +718,7 @@ fn attention_seeds() -> Vec<Value> {
     let upload = "export async function upload(req, res) {\n  const filesToClean = [];\n  try {\n    if (!req.ok) {\n      return res.status(403).json({});\n    }\n    req.files.forEach((f) => filesToClean.push(f.path));\n    return res.status(200).json({});\n  } finally {\n    cleanup(filesToClean);\n  }\n}";
     let set_above = "export async function render(p) {\n  const tmp = make(p);\n  try {\n    return await read(tmp);\n  } finally {\n    await rm(tmp);\n  }\n}";
     let hook = "export async function hook(req, res) {\n  addSyncJob(req.body);\n  await addOtherJob(req.body);\n  return enqueueThing(req.body);\n}";
-    let sentinel = "const getByVid = async (vid) => {\n  try {\n    return await db.find(vid);\n  } catch (e) {\n    return null;\n  }\n};\n\nexport async function resolve(vid) {\n  for (let i = 0; i < 3; i++) {\n    const a = await getByVid(vid);\n    if (!a) return null;\n  }\n  return null;\n}";
+    let sentinel = "const getByExternalId = async (vid) => {\n  try {\n    return await db.find(vid);\n  } catch (e) {\n    return null;\n  }\n};\n\nexport async function resolve(vid) {\n  for (let i = 0; i < 3; i++) {\n    const a = await getByExternalId(vid);\n    if (!a) return null;\n  }\n  return null;\n}";
     let both = "export function parse(s) {\n  if (!s) return false;\n  try {\n    return JSON.parse(s).ok;\n  } catch {\n    return false;\n  }\n}";
     let distinct = "export function parse(s) {\n  if (!s) return null;\n  try {\n    return JSON.parse(s).ok;\n  } catch {\n    throw new Error(\"bad\");\n  }\n}";
     let authz = "module.exports = (req, res, next) => {\n  if (!allowed(req)) {\n    return res.status(403).json({ code: 403 });\n  }\n  if (account.isActive === 0) {\n    return res.status(StatusCodes.UNAUTHORIZED).json({ code: 401 });\n  }\n  next();\n};";
@@ -1459,13 +1459,13 @@ fn fact_stmt(rng: &mut Rng, can_await: bool, can_return: bool, depth: usize) -> 
         "throw new UnauthorizedError();".to_owned(),
         "throw new ForbiddenError('no');".to_owned(),
         "throw new AuthUnauthorisedException();".to_owned(),
-        "getByVid(1);".to_owned(),
+        "getByExternalId(1);".to_owned(),
         "helper(2);".to_owned(),
         "noCatch(3);".to_owned(),
     ];
     if can_await {
         forms.push("await addSyncJob(req.body);".to_owned());
-        forms.push("const a = await getByVid(vid);".to_owned());
+        forms.push("const a = await getByExternalId(vid);".to_owned());
     }
     if can_return {
         forms.push(format!("return {s};"));
@@ -1514,10 +1514,10 @@ fn gen_fact_file(rng: &mut Rng) -> (String, String) {
     let ext = *rng.pick(&[".ts", ".ts", ".js", ".tsx", ".cjs"]);
     let mut src = String::new();
     let helpers = [
-        "const getByVid = async (vid) => {\n  try {\n    return await db.find(vid);\n  } catch (e) {\n    return null;\n  }\n};\n",
+        "const getByExternalId = async (vid) => {\n  try {\n    return await db.find(vid);\n  } catch (e) {\n    return null;\n  }\n};\n",
         "function helper(x) {\n  try { return compute(x); } catch { return false; }\n}\n",
         "const noCatch = async (x) => db.find(x);\n",
-        "export const getByVid = function (vid) {\n  if (!vid) return [];\n  try { return db.find(vid); } catch { return []; }\n};\n",
+        "export const getByExternalId = function (vid) {\n  if (!vid) return [];\n  try { return db.find(vid); } catch { return []; }\n};\n",
     ];
     for h in helpers {
         if rng.chance(50) {
@@ -2207,11 +2207,11 @@ const LOOKUP_BASE: &str = r"function findAccount(id) {
   return r;
 }
 
-function getAccountByVid(vid) {
+function getAccountByExternalId(vid) {
   return db.byVid(vid);
 }
 
-module.exports = { findAccount, getAccountByVid };
+module.exports = { findAccount, getAccountByExternalId };
 ";
 
 const LOOKUP_HEAD: &str = r"function findAccount(id) {
@@ -2220,7 +2220,7 @@ const LOOKUP_HEAD: &str = r"function findAccount(id) {
   return r;
 }
 
-function getAccountByVid(vid, opts) {
+function getAccountByExternalId(vid, opts) {
   try {
     return db.byVid(vid, opts);
   } catch (e) {
@@ -2228,16 +2228,16 @@ function getAccountByVid(vid, opts) {
   }
 }
 
-module.exports = { findAccount, getAccountByVid };
+module.exports = { findAccount, getAccountByExternalId };
 ";
 
-const LOOKUP_USER: &str = r"const { findAccount, getAccountByVid } = require('./lookup');
+const LOOKUP_USER: &str = r"const { findAccount, getAccountByExternalId } = require('./lookup');
 const lookup = require('./lookup');
 
 exports.resolve = async (vid) => {
   const a = findAccount(vid);
   try {
-    return getAccountByVid(vid) || lookup.findAccount(vid);
+    return getAccountByExternalId(vid) || lookup.findAccount(vid);
   } catch (e) {
     return null;
   }

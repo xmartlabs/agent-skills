@@ -98,19 +98,19 @@ eq("batch: a prompt with no CASE blocks yields nothing", parseRefuterBatchCases(
 const SINGLE_PROMPT = `REFUTE — do not confirm — this code review finding on PR #1935 in repo acme/api.
 The PR diff (already fetched):
 ---
-diff --git a/src/_helpers/v2/utilities.test.ts b/src/_helpers/v2/utilities.test.ts
-+++ b/src/_helpers/v2/utilities.test.ts
+diff --git a/src/lib/helpers/utilities.test.ts b/src/lib/helpers/utilities.test.ts
++++ b/src/lib/helpers/utilities.test.ts
 ---
 Lens: correctness/falsification
 
 Finding: getStateCode assumes its input is always a string
-File: src/_middleware/v2/partnerMiddleware.ts:137
+File: src/lib/middleware/partnerMiddleware.ts:137
 Severity: nit
 Description: getStateCode calls \`state.trim()\` directly.`;
 
 const single = parseSingleRefuterCase(SINGLE_PROMPT);
 eq("single: title", single.title, "getStateCode assumes its input is always a string");
-eq("single: file", single.file, "src/_middleware/v2/partnerMiddleware.ts:137");
+eq("single: file", single.file, "src/lib/middleware/partnerMiddleware.ts:137");
 eq("single: no slot is claimed", single.slotId, null);
 
 // The diff is embedded in this prompt, so the anchor has to be the
@@ -188,14 +188,14 @@ ok("external: source is never guessed as claude", parseExternalSlot(EXT_GEMINI).
 const STRENGTHEN_PROMPT = `A code-review finding on PR #1911 (repo acme/api) was nearly refuted, but the CORE defect appears real — only its claim/severity/repro was weak. STRENGTHEN it.
 
 Original finding: Audit trail attributes every action to an arbitrary SuperAdmin
-File: scripts/contacts/merge-contacts.ts:384
+File: scripts/contacts/dedupe-contacts.ts:384
 Severity: important
-Description: getSuperAdminContactId() does findFirst with no ordering.
+Description: getAdminContactId() does findFirst with no ordering.
 Refuters' objections: Verified against schema.prisma`;
 
 const st = parseStrengthenTarget(STRENGTHEN_PROMPT);
 eq("strengthen: original title", st.title, "Audit trail attributes every action to an arbitrary SuperAdmin");
-eq("strengthen: original file", st.file, "scripts/contacts/merge-contacts.ts:384");
+eq("strengthen: original file", st.file, "scripts/contacts/dedupe-contacts.ts:384");
 // "Original finding:" not "Finding:" — a strengthen prompt has no "Finding:"
 // line, so reusing the refuter parser on it silently matches nothing.
 eq("strengthen: refuter parser does not match a strengthen prompt", parseSingleRefuterCase(STRENGTHEN_PROMPT), null);
@@ -231,7 +231,7 @@ const PERSIST_PROMPT = `Run a sequence of scripts EXACTLY as given, in order.
 
 Run EXACTLY this bash:
 cat <<'METRICSJSON' > "/tmp/peer-review-votes-1935/metrics.json"
-{"schemaVersion":3,"ts":null,"pr":1935,"headSha":"0b8e5340","paneled":1,"findings":[{"title":"a","file":"src/a.ts","refined":false}]}
+{"schemaVersion":3,"ts":null,"pr":1935,"headSha":"a75eb53d","paneled":1,"findings":[{"title":"a","file":"src/a.ts","refined":false}]}
 METRICSJSON
 bash ~/.claude/skills/peer-review/persist.sh`;
 

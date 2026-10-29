@@ -77,7 +77,7 @@ fn shuffled_object(fields: Vec<(&'static str, Field)>) -> BoxedStrategy<Value> {
 const PATHS: [&str; 9] = [
     "src/jobs/worker.ts",
     "worker.ts",
-    "src/jobs/accounts_worker.ts",
+    "src/jobs/profiles_worker.ts",
     "jobs/worker.ts",
     "src/jobs/queue.ts",
     "scripts/invoices/other-file.ts",
@@ -88,7 +88,7 @@ const PATHS: [&str; 9] = [
 
 const SUMMARIES: [&str; 9] = [
     "ledger flush timing deferred by the author",
-    "BY-DESIGN: retryDuringRedisStartup is not added to the accounts, orders, catalog_search or worker.ts workers; each accounts scheduler registration already has its own try/catch",
+    "BY-DESIGN: retryUntilRedisReady is not added to the accounts, orders, catalog_search or worker.ts workers; each accounts scheduler registration already has its own try/catch",
     "Ledger Flush deferred",
     "no auth checks on these CLI scripts, by design",
     "Fa\u{00E7}ade \u{039F}\u{0394}\u{039F}\u{03A3} caching deferred \u{2014} \u{0130}stanbul rollout",
@@ -113,10 +113,10 @@ const QUESTIONED: [&str; 22] = [
     "kelvin startup",
     "\u{212A}elvin",
     "startup retry",
-    "retryDuringRedisStartup",
+    "retryUntilRedisReady",
     "deferred by the author",
     "per batch ledger flushing scheduled",
-    "BY-DESIGN: retryDuringRedisStartup is not added to the accounts, orders, catalog_search or worker.ts workers; each accounts scheduler registration already has its own try/catch",
+    "BY-DESIGN: retryUntilRedisReady is not added to the accounts, orders, catalog_search or worker.ts workers; each accounts scheduler registration already has its own try/catch",
     "no auth checks",
     "x",
     "\u{0130}stanbul",
@@ -135,7 +135,7 @@ const TITLES: [&str; 8] = [
 ];
 
 const DESCRIPTIONS: [&str; 6] = [
-    "registrationRemindersQueue schedulers are registered at boot without retryDuringRedisStartup",
+    "signupRemindersQueue schedulers are registered at boot without retryUntilRedisReady",
     "per-batch ledger flushing duplicates rows",
     "retry_during startup scheduler",
     "redisStartupRetry flushLedger",
@@ -489,11 +489,11 @@ fn panel_seeds() -> Vec<PanelCase> {
         "category": "BY-DESIGN",
         "summary": b4_summary,
         "source": "bob, 2026-10-16",
-        "files": ["src/jobs/accounts_worker.ts", "src/jobs/orders_worker.ts", "src/jobs/worker.ts"],
+        "files": ["src/jobs/profiles_worker.ts", "src/jobs/orders_worker.ts", "src/jobs/worker.ts"],
     }]);
     let b4_pr: Vec<String> = [
         "src/jobs/queue.ts",
-        "src/jobs/accounts_worker.ts",
+        "src/jobs/profiles_worker.ts",
         "src/jobs/orders_worker.ts",
         "src/jobs/worker.ts",
     ]
@@ -502,7 +502,7 @@ fn panel_seeds() -> Vec<PanelCase> {
     let b4_finding = json!({
         "file": "src/jobs/queue.ts",
         "title": "Accounts schedulers bypass the new startup retry",
-        "description": "registrationRemindersQueue schedulers are registered at boot without retryDuringRedisStartup",
+        "description": "signupRemindersQueue schedulers are registered at boot without retryUntilRedisReady",
     });
     let v2 = |verdict: &str, c: f64, extra: Value| {
         let mut e = json!({"introducedByPr": "yes", "proposedSeverity": "important"});

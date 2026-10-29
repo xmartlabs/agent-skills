@@ -45,7 +45,7 @@ const OTHER_ROW = { pr: 1111, headSha: "aaaaaaa", verdict: "APPROVE", posted: tr
 function targetRow() {
   return {
     pr: 2082,
-    headSha: "c07905b1",
+    headSha: "28fc4cc3",
     verdict: null,
     posted: false,
     agentsActual: null,
@@ -103,7 +103,7 @@ function setup() {
 }
 
 function run(dir, extraArgs) {
-  const args = [SCRIPT, "--pr", "2082", "--head-sha", "c07905b1", "--posted", "true", "--verdict", "REQUEST CHANGES", "--agent-count", "7", ...extraArgs];
+  const args = [SCRIPT, "--pr", "2082", "--head-sha", "28fc4cc3", "--posted", "true", "--verdict", "REQUEST CHANGES", "--agent-count", "7", ...extraArgs];
   const stdout = execFileSync("node", args, {
     encoding: "utf8",
     env: { ...process.env, TRIBUNAL_DATA_DIR: dir },

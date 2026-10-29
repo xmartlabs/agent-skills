@@ -3,9 +3,9 @@
 // this run only re-reads part of the PR.
 //
 // THE CASE THIS EXISTS FOR, and it is not hypothetical. On the first successful
-// incremental run (PR #1968, 2026-07-27) the `0eedf726` baseline carried three
+// incremental run (PR #1968, 2026-07-27) the `39962991` baseline carried three
 // findings. Two were on unchanged files and were carried forward correctly. The
-// third — the CRITICAL `'failed'`-listener bug in `src/jobs/accounts_worker.ts` —
+// third — the CRITICAL `'failed'`-listener bug in `src/jobs/profiles_worker.ts` —
 // was on a file that DID change, so it was re-read, did not resurface, and
 // disappeared from the report entirely: not as fixed, not as open. A reader had
 // to notice an ABSENCE to learn that the question the re-review was launched to
@@ -15,7 +15,7 @@
 // findings the run reported — so the classifier is measured against what
 // actually happened rather than against an invented scenario.
 //
-// The discriminating pair is `accounts_worker.ts`: the prior CRITICAL is about a
+// The discriminating pair is `profiles_worker.ts`: the prior CRITICAL is about a
 // `'failed'` listener stranding rows in `error`; this run's surviving finding on
 // the SAME FILE is about `contactName ?? undefined` causing a redundant lookup.
 // Same file, unrelated defects. A matcher too loose calls the critical "still
@@ -69,7 +69,7 @@ console.log(`\n--- purity ---`);
 check("region references no run state", violations.length === 0, violations.join(" | "));
 
 // --- the real data ----------------------------------------------------------
-// metrics.jsonl row 2026-07-24T20:39:14Z, headSha 0eedf726, posted: true.
+// metrics.jsonl row 2026-07-24T20:39:14Z, headSha 39962991, posted: true.
 const PRIOR = [
   {
     file: "src/services/v2/contactResults.ts",
@@ -85,7 +85,7 @@ const PRIOR = [
     blocking: true,
   },
   {
-    file: "src/jobs/accounts_worker.ts",
+    file: "src/jobs/profiles_worker.ts",
     title: "Worker's 'failed' listener permanently flips contactResults row to error on any retryable failure",
     severity: "critical",
     blocking: true,
@@ -93,8 +93,8 @@ const PRIOR = [
 ];
 // The scope the 2026-07-27 run actually computed.
 const SCOPE = {
-  changed: ["src/controllers/v2/account.controller.test.ts", "src/jobs/accounts_worker.ts"],
-  added: ["src/jobs/jobAttempts.test.ts", "src/jobs/jobAttempts.ts"],
+  changed: ["src/controllers/v2/account.controller.test.ts", "src/jobs/profiles_worker.ts"],
+  added: ["src/jobs/retryState.test.ts", "src/jobs/retryState.ts"],
   unchanged: [
     "src/controllers/v2/account.controller.ts",
     "src/controllers/v2/contactResults.ts",
@@ -107,13 +107,13 @@ const SCOPE = {
 // The one finding that run reported and survived.
 const CURRENT = [
   {
-    file: "src/jobs/accounts_worker.ts",
+    file: "src/jobs/profiles_worker.ts",
     title: "outcome.contactName ?? undefined collapses an intentional null into 'not provided', triggering an unintended DB lookup",
     severity: "nit",
   },
 ];
 
-console.log(`\n--- the golden: PR #1968, 0eedf726 -> d047fa9f ---`);
+console.log(`\n--- the golden: PR #1968, 39962991 -> 83b6ecff ---`);
 const out = classifyPriorFindings(SCOPE, PRIOR, CURRENT);
 check("2 findings carried forward (unchanged files)", out.carried.length === 2, `${out.carried.length}`);
 check(
@@ -125,7 +125,7 @@ check(
 check("nothing moot", out.moot.length === 0, `${out.moot.length}`);
 // THE assertion. Before this region existed the critical was in no list at all.
 check(
-  "the accounts_worker CRITICAL is DID-NOT-RESURFACE, not silently dropped",
+  "the profiles_worker CRITICAL is DID-NOT-RESURFACE, not silently dropped",
   out.notResurfaced.length === 1 && out.notResurfaced[0].severity === "critical",
   JSON.stringify(out.notResurfaced.map((f) => f.title)),
 );
@@ -149,7 +149,7 @@ check(
 check(
   "a genuine re-raise DOES match (same defect, reworded)",
   cfSameFinding(priorCritical, {
-    file: "src/jobs/accounts_worker.ts",
+    file: "src/jobs/profiles_worker.ts",
     title: "The 'failed' listener still flips the contactResults row to error on a retryable failure",
   }) === true,
 );
@@ -186,7 +186,7 @@ console.log(`\n--- "did the author fix it?" — the claim needs code behind it -
 const realFix = gradePriorVerification({
   verdict: "FIXED",
   // The actual guard the author added, which a person verified by hand.
-  quote: "if (job && isFinalJobAttempt(job)) {",
+  quote: "if (job && isLastRetry(job)) {",
   reason: "the flip is now gated on the final attempt",
 });
 check("FIXED with a real quote survives", realFix.verdict === "FIXED", JSON.stringify(realFix));
@@ -220,7 +220,7 @@ check(
 );
 
 console.log(`\n--- a verified fix clears the blocker; anything else does not ---`);
-const blockingCritical = { file: "src/jobs/accounts_worker.ts", severity: "critical", blocking: true };
+const blockingCritical = { file: "src/jobs/profiles_worker.ts", severity: "critical", blocking: true };
 check(
   "verified FIXED stops counting against the PR",
   unresolvedPriorBlockersFrom([], [{ ...blockingCritical, verification: realFix }]).length === 0,
@@ -264,7 +264,7 @@ const REINSTATED = {
   operatorOverride: {
     direction: "reinstated",
     by: "alice",
-    verifiedAt: "0eedf726d9e02fb47db43776a3c9a26aa7794a56",
+    verifiedAt: "d878683309f5702689e754ce007590418986db7a",
     reason: "Traced in source at this sha",
   },
 };
@@ -322,7 +322,7 @@ check(
 {
   const unresolved = unresolvedPriorBlockersFrom(
     [REINSTATED, { file: "src/services/v2/contactResults.ts", severity: "nit", blocking: false }],
-    [{ file: "src/jobs/accounts_worker.ts", severity: "critical", blocking: true, verification: realFix }],
+    [{ file: "src/jobs/profiles_worker.ts", severity: "critical", blocking: true, verification: realFix }],
   );
   check(
     "only the reinstated finding is left counting",
@@ -420,12 +420,12 @@ check(
 );
 check(
   "baseline + usable scope -> null",
-  incrementalFallbackFor("0eedf726", true, 0, null) === null,
+  incrementalFallbackFor("39962991", true, 0, null) === null,
 );
-const fb = incrementalFallbackFor("0eedf726d9e0", false, 0, "a diff was empty");
+const fb = incrementalFallbackFor("91c5e0458392", false, 0, "a diff was empty");
 check(
   "baseline + failed scope -> expected:true with the baseline and the reason",
-  fb?.expected === true && fb.baseline === "0eedf726d9e0" && fb.reason === "a diff was empty",
+  fb?.expected === true && fb.baseline === "91c5e0458392" && fb.reason === "a diff was empty",
   JSON.stringify(fb),
 );
 check(

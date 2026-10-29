@@ -44,7 +44,7 @@ function check(name, got, expect) {
   else ok(name);
 }
 
-const HEAD = "d047fa9fffffffffffffffffffffffffffffffff";
+const HEAD = "83b6ecffffffffffffffffffffffffffffffffff";
 
 console.log("\n--- isBotAuthor() ---");
 if (isBotAuthor("renovate[bot]") && isBotAuthor("dependabot[bot]") && isBotAuthor("coderabbitai")) {
@@ -66,17 +66,17 @@ if (BOT_LOGIN_SUFFIX_RE.test("x[bot]") && BOT_LOGINS.has("coderabbitai")) {
 console.log("\n--- source 1 (tribunal-row): behaviour-identical to the PYPRIOR predicate it replaces ---");
 
 // PR #1968's real shape (see eval/replay-embedded-bash.mjs): 8 rows, 6 posted,
-// two 2-lens ablations. The posted 0eedf726 row is the one that must win.
+// two 2-lens ablations. The posted 39962991 row is the one that must win.
 const rows1968 = [
   { pr: 1968, schemaVersion: 3, headSha: "aaaaaaaa", posted: true, findings: [{ file: "a.ts", title: "old", severity: "important" }] },
   { pr: 1968, schemaVersion: 3, headSha: "bbbbbbbb", posted: false, findings: [{ file: "b.ts", title: "ablation-only", severity: "critical" }] },
-  { pr: 1968, schemaVersion: 3, headSha: "0eedf726", posted: true, ts: "2026-07-24T12:00:00Z", findings: [{ file: "c.ts", title: "real", severity: "critical" }] },
+  { pr: 1968, schemaVersion: 3, headSha: "39962991", posted: true, ts: "2026-07-24T12:00:00Z", findings: [{ file: "c.ts", title: "real", severity: "critical" }] },
 ];
 {
   const r = resolveBaseline({ rows: rows1968, reviews: [], headSha: HEAD, since: "" });
-  check("the posted 0eedf726 row wins over an unposted later ablation", r, {
+  check("the posted 39962991 row wins over an unposted later ablation", r, {
     found: true,
-    sha: "0eedf726",
+    sha: "39962991",
     source: "tribunal-row",
   });
 }
@@ -179,15 +179,15 @@ console.log("\n--- the findings projection carries operatorOverride verbatim ---
 
 console.log("\n--- source 2 (human-review): only tried when source 1 finds nothing ---");
 
-const approvedByAlice = { author: "alice", state: "APPROVED", at: "2026-09-09T13:44:09Z", commit: "b548bfc3" };
-const commentedByCoderabbit1 = { author: "coderabbitai", state: "COMMENTED", at: "2026-09-01T19:22:51Z", commit: "85bb25e8" };
-const commentedByCoderabbit2 = { author: "coderabbitai", state: "COMMENTED", at: "2026-09-09T17:52:43Z", commit: "6f1a852f" };
+const approvedByAlice = { author: "alice", state: "APPROVED", at: "2026-09-09T13:44:09Z", commit: "2894be21" };
+const commentedByCoderabbit1 = { author: "coderabbitai", state: "COMMENTED", at: "2026-09-01T19:22:51Z", commit: "4cdbb8f5" };
+const commentedByCoderabbit2 = { author: "coderabbitai", state: "COMMENTED", at: "2026-09-09T17:52:43Z", commit: "6dec0d12" };
 
 {
   const r = resolveBaseline({ rows: [], reviews: [approvedByAlice, commentedByCoderabbit1, commentedByCoderabbit2], headSha: HEAD, since: "" });
   check("no tribunal row, one qualifying human review -> human-review baseline", r, {
     found: true,
-    sha: "b548bfc3",
+    sha: "2894be21",
     source: "human-review",
     reviewer: "alice",
     reviewState: "APPROVED",
@@ -204,7 +204,7 @@ console.log("\n--- precedence: a matching tribunal row wins over an available hu
     headSha: HEAD,
     since: "",
   });
-  check("tribunal-row wins even when a qualifying human review also exists", r, { found: true, sha: "0eedf726", source: "tribunal-row" });
+  check("tribunal-row wins even when a qualifying human review also exists", r, { found: true, sha: "39962991", source: "tribunal-row" });
 }
 
 console.log("\n--- COMMENTED reviews never produce a baseline ---");
@@ -214,7 +214,7 @@ console.log("\n--- COMMENTED reviews never produce a baseline ---");
   else fail("COMMENTED-only reviews -> not found, even from a non-bot", JSON.stringify(r));
 }
 {
-  const humanCommented = { author: "alice", state: "COMMENTED", at: "2026-09-09T13:33:02Z", commit: "b548bfc3" };
+  const humanCommented = { author: "alice", state: "COMMENTED", at: "2026-09-09T13:33:02Z", commit: "2894be21" };
   const r = resolveBaseline({ rows: [], reviews: [humanCommented], headSha: HEAD, since: "" });
   if (r.found === false) ok("a COMMENTED review from a human is still not evidence of review");
   else fail("a COMMENTED review from a human is still not evidence of review", JSON.stringify(r));
@@ -222,13 +222,13 @@ console.log("\n--- COMMENTED reviews never produce a baseline ---");
 
 console.log("\n--- bot reviews never produce a baseline ---");
 {
-  const botApproved = { author: "coderabbitai", state: "APPROVED", at: "2026-09-09T13:44:09Z", commit: "b548bfc3" };
+  const botApproved = { author: "coderabbitai", state: "APPROVED", at: "2026-09-09T13:44:09Z", commit: "2894be21" };
   const r = resolveBaseline({ rows: [], reviews: [botApproved], headSha: HEAD, since: "" });
   if (r.found === false) ok("an APPROVED review from coderabbitai (named bot) does not count");
   else fail("an APPROVED review from coderabbitai (named bot) does not count", JSON.stringify(r));
 }
 {
-  const botApproved = { author: "some-ci-runner[bot]", state: "CHANGES_REQUESTED", at: "2026-09-09T13:44:09Z", commit: "b548bfc3" };
+  const botApproved = { author: "some-ci-runner[bot]", state: "CHANGES_REQUESTED", at: "2026-09-09T13:44:09Z", commit: "2894be21" };
   const r = resolveBaseline({ rows: [], reviews: [botApproved], headSha: HEAD, since: "" });
   if (r.found === false) ok("a CHANGES_REQUESTED review from a [bot]-suffixed login does not count");
   else fail("a CHANGES_REQUESTED review from a [bot]-suffixed login does not count", JSON.stringify(r));
@@ -270,18 +270,18 @@ console.log("\n--- nothing at all matches: found:false, caller falls back to ful
 
 console.log("\n--- real-shaped PR #2025 data (see the task's own real-data check) ---");
 {
-  // The live metrics file has exactly one row for PR 2025: headSha 1aa17ad9,
+  // The live metrics file has exactly one row for PR 2025: headSha 46b8bbc6,
   // posted: false, 9 findings — not usable as source 1 without --since. Real
-  // reviews: an APPROVED by alice at b548bfc3, plus two COMMENTED by
+  // reviews: an APPROVED by alice at 2894be21, plus two COMMENTED by
   // coderabbitai.
-  const pr2025Row = { pr: 2025, schemaVersion: 3, headSha: "1aa17ad9", posted: false, findings: new Array(9).fill({ file: "x.ts", title: "t" }) };
+  const pr2025Row = { pr: 2025, schemaVersion: 3, headSha: "46b8bbc6", posted: false, findings: new Array(9).fill({ file: "x.ts", title: "t" }) };
   const pr2025Reviews = [commentedByCoderabbit1, commentedByCoderabbit2, approvedByAlice];
   const currentHead = "9999999999999999999999999999999999999999";
   const r = resolveBaseline({ rows: [pr2025Row], reviews: pr2025Reviews, headSha: currentHead, since: "" });
   check("PR #2025 shape: unposted row is skipped, falls through to the human APPROVED review", r, {
     found: true,
     source: "human-review",
-    sha: "b548bfc3",
+    sha: "2894be21",
   });
 }
 

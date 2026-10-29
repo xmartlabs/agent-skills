@@ -28,14 +28,14 @@ function check(name, cond, detail) {
 
 console.log("\n--- shell commands, classified ---");
 const CASES = [
-  ["git show 7ae7919:src/services/v2/ledgerSync.ts | sed -n 790,900p", "ref-read"],
+  ["git show 94d67ac:src/services/v2/ledgerSync.ts | sed -n 790,900p", "ref-read"],
   ["cd /tmp/peer-review-wt-2094-x && git grep -n foo HEAD -- src", "ref-read"],
   ["gh api repos/o/r/contents/src/a.ts?ref=abc", "ref-read"],
   ["cd /var/folders/T//peer-review-wt-2094-lBw5sp && sed -n 640,860p src/services/v2/ledgerSync.ts", "file-read"],
   ["cat /tmp/review-2042.patch | head -600", "file-read"],
   ["head -50 src/a.ts", "file-read"],
   ["tail -n 20 /tmp/x.log", "file-read"],
-  ["cd /wt && grep -rn \"withPaymentIdempotency\" src --include=*.ts -l", "search"],
+  ["cd /wt && grep -rn \"withRequestDedup\" src --include=*.ts -l", "search"],
   ["cat /tmp/x.patch | grep -n deleteMany", "search"],
   ["find src/serializers -name '*.test.ts'", "search"],
   ["ls src/helpers/v2", "search"],

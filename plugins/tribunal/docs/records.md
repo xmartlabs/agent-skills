@@ -12,22 +12,22 @@ what makes the product checkable.
 Without it the harness would be unfalsifiable: it would emit confident reviews
 and no one could say whether they were any good. With it:
 
-- **Quality is scored against reality, not opinion.** Findings are matched to an
-  annotated corpus of PRs whose real defects are known from hotfixes and
-  incidents, producing true/false positive and false negative counts. The current
-  reading is `TP=4 FP=0 FN=1`, with 16 findings still awaiting human judgment,
-  reported as a queue rather than rounded away.
+- **Quality is scored against reality, not opinion.** The maintainers match the
+  findings in their own rows to a private, annotated corpus of PRs whose real
+  defects are known from hotfixes and incidents, producing true/false positive
+  and false negative counts. You can do the same with your own PRs: see
+  [Which stacks it works on](../README.md#which-stacks-it-works-on).
 
   **Most reviews are never scored, and that's not a failure.** The log holds a
-  row for every run; the corpus holds ground truth for a handful of PRs, 7 today
-  against 15 in the log. Scoring iterates the corpus, so a review of a PR nobody
-  has annotated is simply never compared to anything. The corpus grows only when
+  row for every run; a corpus holds ground truth for a handful of PRs. Scoring
+  iterates the corpus, so a review of a PR nobody has annotated is simply never
+  compared to anything. The corpus grows only when
   a person establishes what the truth was, and only on evidence a reader can
   check: a hotfix SHA, an incident ticket, the author's own fix. An annotation
   without one is an opinion, and the corpus refuses it, which is why it's small
   and why the numbers it produces are worth anything.
-- **Changes are validated for free.** A third of the offline battery re-decides
-  panels recorded in this file. That's what lets a change to the voting rules be
+- **Changes are validated for free.** A third of the maintainers' offline battery
+  re-decides panels recorded in rows like these. That's what lets a change to the voting rules be
   checked in seconds instead of by paying for a review.
 - **Comparisons can't silently mix versions.** Each row carries its
   `harnessVersion`, so "is this better than before" is answerable rather than

@@ -54,38 +54,19 @@ const show = (sha, p) =>
     stdio: ["ignore", "pipe", "ignore"]
   });
 
-// Every entry is knownReal in eval/corpus/, so the correct verdict is
-// NOT_REFUTED for all of them. `truth` is stated explicitly rather than implied
-// so a reader of the output does not have to go and look it up.
-const CASES = [
-  {
-    id: "csv-header",
-    pr: 1911,
-    sha: "272732ddcf691f3ecf7dffbe9e2509ae20b918cf",
-    truth: "NOT_REFUTED",
-    corpusId: "headerless-csv-eats-first-order-id",
-    title: "Headerless CSV silently swallows the first order ID",
-    file: "scripts/orders/cancel-orders.ts",
-    severity: "critical",
-    description:
-      "The order-cancellation CSV is parsed with csv-parse `columns: true`, which unconditionally consumes row 1 as the header. On a headerless file (the operator pastes a bare list of order IDs, which the script's own docs allow) the first order ID is silently swallowed: no error, no warning, one order simply never cancelled. Money/state path with no reconciliation.",
-    package: ["scripts/orders/cancel-orders.ts"]
-  },
-  {
-    id: "dup-orderids",
-    pr: 1796,
-    sha: "3628a931717884ed40fb01f82d2ffdcfa68181ac",
-    truth: "NOT_REFUTED",
-    corpusId: "duplicate-orderids-count-vs-length",
-    title:
-      "Duplicate orderIds in private multi-order save falsely rejected by count() vs array-length mismatch",
-    file: "src/services/v2/quoteRequest.ts",
-    severity: "important",
-    description:
-      "The eligibility check compares the number of rows returned by a findMany against the LENGTH of the caller-supplied orderIds array. The request schema does not enforce uniqueness, so a caller passing the same orderId twice gets fewer rows than array entries and the whole save is rejected as ineligible, even though every id is valid.",
-    package: ["src/services/v2/quoteRequest.ts"]
-  }
-];
+// The cases are real bugs from the repository the corpus was recorded on, so
+// they live with the corpus in the private test data, as groundtruth-cases.json
+// next to the pr-<n>.json files: an array of {id, pr, sha, truth, corpusId,
+// title, file, severity, description, package}. Every entry is knownReal in the
+// corpus, so the correct verdict is NOT_REFUTED for all of them.
+const CASES_FILE = join(CORPUS_DIR, "groundtruth-cases.json");
+let CASES;
+try {
+  CASES = JSON.parse(readFileSync(CASES_FILE, "utf8"));
+} catch (e) {
+  console.error(`needs the private test data: cannot read ${CASES_FILE} (${e.message})`);
+  process.exit(1);
+}
 
 const RETURN_SPEC = `
 Return: verdict REFUTED or NOT_REFUTED, refutationType, confidence 0..1, coreStands, reason.`;

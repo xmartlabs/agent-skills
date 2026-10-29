@@ -32,7 +32,7 @@
 //     structurally impossible to wire up a fake value by accident.
 //
 // Usage/output:
-//   node build-post-footer.mjs --mode workflow --pr 1947 --head-sha 3cf9542a... --agent-count 36
+//   node build-post-footer.mjs --mode workflow --pr 1947 --head-sha 769bf530... --agent-count 36
 //   node build-post-footer.mjs --mode in-context --harness-version pr-harness-49366450a283 \
 //     --review-mode incremental --agent-count 9
 //   -> prints one line to stdout: <sub>...</sub>\n

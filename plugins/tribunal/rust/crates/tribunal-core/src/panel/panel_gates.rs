@@ -568,7 +568,7 @@ mod tests {
     fn paths_match_on_whole_segments() {
         assert!(same_path(Some("src/jobs/worker.ts"), Some("worker.ts")));
         assert!(!same_path(
-            Some("src/jobs/accounts_worker.ts"),
+            Some("src/jobs/profiles_worker.ts"),
             Some("worker.ts")
         ));
     }
@@ -576,8 +576,8 @@ mod tests {
     #[test]
     fn camel_case_matches_do_not_overlap() {
         assert_eq!(
-            topic_words("retryDuringRedisStartup"),
-            ["retry", "during", "redis", "startup"]
+            topic_words("retryUntilRedisReady"),
+            ["retry", "until", "redis", "ready"]
         );
         assert_eq!(topic_words("abcdEFGH"), ["abcd", "efgh"]);
     }

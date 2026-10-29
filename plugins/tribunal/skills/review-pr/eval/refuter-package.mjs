@@ -209,7 +209,7 @@ export function extractReads(text) {
 }
 
 // Resolve a cited token against a file list, the way citedFiles does: exact
-// match, or a suffix match on a full path (`utilities.ts` → `src/_helpers/v2/utilities.ts`).
+// match, or a suffix match on a full path (`utilities.ts` → `src/lib/helpers/utilities.ts`).
 // An ambiguous suffix (two files with the same basename) resolves to NOTHING
 // rather than to the first hit — guessing here would credit the package with a
 // file the refuter never opened.

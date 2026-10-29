@@ -30,7 +30,7 @@ const OK = {
   direction: "reinstated",
   by: "alice",
   at: "2026-07-22T14:00:00Z",
-  verifiedAt: "272732ddcf691f3ecf7dffbe9e2509ae20b918cf",
+  verifiedAt: "7dfacca5bb7afb925122a30e64ab7499f9520534",
   reason: "read the worker's failed listener at that sha: isFinalAttempt is never set"
 };
 const killed = (over) => ({ title: "t", file: "a.ts", survived: false, refuteFraction: 0.5, threshold: 0.45, operatorOverride: over });
