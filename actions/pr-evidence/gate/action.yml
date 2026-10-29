@@ -13,8 +13,9 @@ inputs:
     default: ''
   has-claude-credential:
     description: >-
-      `true` when the evidence job has a Claude credential, for example
-      `${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}`. Runs without one (Dependabot's) are skipped.
+      `true` when the evidence job has a Claude credential: pass the expression comparing the
+      credential secret with an empty string (see the README). Runs without one (Dependabot's) are
+      skipped.
     required: true
   paths:
     description: Same as the pr-evidence action's input.
