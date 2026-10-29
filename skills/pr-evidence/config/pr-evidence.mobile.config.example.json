@@ -1,0 +1,14 @@
+{
+  "_comment": "Mobile variant. Copy to .pr-evidence/config.json and edit. No testOrigin — the guard checks build variant + API base instead (see flow/mobile-evidence-flow.md). capture.driver selects the mobile driver (maestro default).",
+  "platform": "ios",
+  "guard": {
+    "requireDebugBuild": true,
+    "apiBase": "https://api.dev.example.test",
+    "forbidApiHosts": ["api.example.com", "api.prod.example.com"]
+  },
+  "boot": "xcodebuild -scheme App-Debug -sdk iphonesimulator -derivedDataPath .build build",
+  "auth": { "strategy": "deep-link", "url": "myapp://e2e/session?token=$E2E_TOKEN" },
+  "capture": { "driver": "maestro" },
+  "host": { "target": "github-attachment" },
+  "tracker": { "pr": "github", "issue": "jira", "issueUrlTemplate": "https://<org>.atlassian.net/browse/{KEY}" }
+}
