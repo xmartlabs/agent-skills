@@ -190,12 +190,15 @@ jobs:
   # rust/scripts/test-macos.sh runs the whole suite on macOS at this job's
   # commit, with all of its history: the evidence-line tests replay this
   # repository's commits.
+  # A hosted Mac bills ten times the Linux rate while the repository is
+  # private, so then the job runs only on the company Mac MAC_RUNNER names.
   macos:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' &&
-       (startsWith(github.head_ref, 'release/') ||
-        contains(github.event.pull_request.labels.*.name, 'macos')))
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'pull_request' &&
+        (startsWith(github.head_ref, 'release/') ||
+         contains(github.event.pull_request.labels.*.name, 'macos')))) &&
+      (!github.event.repository.private || vars.MAC_RUNNER != '')
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.MAC_RUNNER || 'macos-15' }}
     timeout-minutes: 60
     permissions:
@@ -229,8 +232,21 @@ jobs:
   # containers of rust/docker/Dockerfile: a static musl binary, and the msvc
   # one cross-built with cargo-xwin after its clippy and unit tests pass
   # under Wine.
+  # While the repository is private, GitHub-hosted runners bill the
+  # organization's Actions minutes, macOS at ten times the Linux rate, and a
+  # release builds four binaries from scratch. A tag pushed then builds
+  # nothing: release-guard fails and says why. Build locally meanwhile with
+  # rust/docker/check.sh and rust/scripts/build-darwin.sh.
+  release-guard:
+    if: startsWith(github.ref, 'refs/tags/tribunal-rust-v') && github.event.repository.private
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          echo "::error::the repository is private, so a release would bill hosted Actions minutes; make it public, then push the tag again"
+          exit 1
+
   build:
-    if: startsWith(github.ref, 'refs/tags/tribunal-rust-v')
+    if: startsWith(github.ref, 'refs/tags/tribunal-rust-v') && !github.event.repository.private
     strategy:
       fail-fast: true
       matrix:
@@ -293,7 +309,7 @@ jobs:
   # rust/scripts/build-darwin.sh builds both macOS archives at this commit,
   # under the names the matrix uses.
   build-darwin:
-    if: startsWith(github.ref, 'refs/tags/tribunal-rust-v')
+    if: startsWith(github.ref, 'refs/tags/tribunal-rust-v') && !github.event.repository.private
     runs-on: macos-15
     permissions:
       contents: read
