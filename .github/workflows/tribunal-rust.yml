@@ -34,7 +34,16 @@ on:
       - "plugins/tribunal/rust/**"
       - "plugins/tribunal/lib/**"
       - ".github/workflows/tribunal-rust.yml"
+  # A merge to main runs the linux job once more, so main holds a warm cargo
+  # cache: a pull request can restore the cache of main but not that of
+  # another pull request, so without it every new pull request built from
+  # scratch. Path filters do not apply to the tag.
   push:
+    branches: [main]
+    paths:
+      - "plugins/tribunal/rust/**"
+      - "plugins/tribunal/lib/**"
+      - ".github/workflows/tribunal-rust.yml"
     tags: ["tribunal-rust-v*"]
   workflow_dispatch:
 
@@ -52,7 +61,7 @@ env:
 
 jobs:
   linux:
-    if: github.event_name != 'push'
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.RUNNER || 'ubuntu-24.04' }}
     steps:
       # The evidence-line tests replay this repository's own history.
