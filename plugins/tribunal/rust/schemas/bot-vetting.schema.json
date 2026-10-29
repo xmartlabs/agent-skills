@@ -1,0 +1,70 @@
+{
+  "type": "object",
+  "properties": {
+    "comments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "number"
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "VALID",
+              "INVALID",
+              "POLICY"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "number"
+          },
+          "isBehaviorChanging": {
+            "type": "boolean"
+          },
+          "verifiedBy": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "number"
+                },
+                "quote": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "line",
+                "quote"
+              ]
+            }
+          }
+        },
+        "required": [
+          "index",
+          "classification",
+          "summary",
+          "reason"
+        ]
+      }
+    }
+  },
+  "required": [
+    "comments"
+  ]
+}

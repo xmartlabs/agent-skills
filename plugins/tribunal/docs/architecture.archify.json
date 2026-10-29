@@ -1,0 +1,647 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Tribunal: one PR review, step by step",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "output": "plugins/tribunal/docs/architecture.html",
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "frontend": {
+          "label": "Sonnet agent"
+        },
+        "backend": {
+          "label": "Script, no model"
+        },
+        "database": {
+          "label": "Written to disk"
+        },
+        "cloud": {
+          "label": "Other model family, via CLI"
+        },
+        "messagebus": {
+          "label": "Haiku mechanic, runs a script"
+        },
+        "external": {
+          "label": "Repo or GitHub"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "profile",
+      "type": "external",
+      "label": "Repo profile",
+      "sublabel": "rules and conventions",
+      "tag": "at the base ref",
+      "pos": [
+        60,
+        40
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "fetch",
+      "type": "messagebus",
+      "label": "fetch-pr",
+      "sublabel": "diff, worktree, sections, callers",
+      "tag": "relay loaded from a file",
+      "pos": [
+        380,
+        40
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "bookkeeping",
+      "type": "messagebus",
+      "label": "context-bookkeeping",
+      "sublabel": "prior reviews, incremental scope",
+      "pos": [
+        60,
+        160
+      ],
+      "size": [
+        280,
+        64
+      ]
+    },
+    {
+      "id": "facts",
+      "type": "backend",
+      "label": "callers and attention facts",
+      "sublabel": "binding-resolved, ranked; AST facts",
+      "pos": [
+        380,
+        160
+      ],
+      "size": [
+        280,
+        64
+      ]
+    },
+    {
+      "id": "fallback",
+      "type": "messagebus",
+      "label": "fallback mechanics",
+      "sublabel": "only for a part fetch-pr missed",
+      "tag": "section-diff, worktree, blast-radius",
+      "pos": [
+        700,
+        160
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "partition",
+      "type": "backend",
+      "label": "partition files",
+      "sublabel": "split by churn",
+      "tag": "riskPaths force foci",
+      "pos": [
+        380,
+        280
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "lens1",
+      "type": "frontend",
+      "label": "lens 1",
+      "sublabel": "own sections, callers, facts",
+      "tag": "code-review-expert",
+      "pos": [
+        60,
+        430
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "lensn",
+      "type": "frontend",
+      "label": "lens N",
+      "sublabel": "N set by churn",
+      "tag": "or fe-code-review-expert",
+      "pos": [
+        380,
+        430
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "botvet",
+      "type": "frontend",
+      "label": "bot-vetting",
+      "sublabel": "bot comments, if asked",
+      "tag": "--bot-comments only",
+      "pos": [
+        700,
+        430
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "reanchor",
+      "type": "backend",
+      "label": "out-of-diff gate",
+      "sublabel": "re-anchor on the changed file, else drop",
+      "pos": [
+        380,
+        600
+      ],
+      "size": [
+        280,
+        64
+      ]
+    },
+    {
+      "id": "evidence",
+      "type": "messagebus",
+      "label": "evidence-resolver",
+      "sublabel": "is the quoted code really there?",
+      "pos": [
+        380,
+        710
+      ],
+      "size": [
+        280,
+        64
+      ]
+    },
+    {
+      "id": "dedup",
+      "type": "messagebus",
+      "label": "dedup-candidates",
+      "sublabel": "one claim from several lenses",
+      "pos": [
+        380,
+        820
+      ],
+      "size": [
+        280,
+        64
+      ]
+    },
+    {
+      "id": "tsc",
+      "type": "messagebus",
+      "label": "grounded-typecheck",
+      "sublabel": "tsc hit confirms, clean tsc kills",
+      "pos": [
+        380,
+        936
+      ],
+      "size": [
+        280,
+        64
+      ]
+    },
+    {
+      "id": "sweep",
+      "type": "cloud",
+      "label": "clean-verdict sweep",
+      "sublabel": "only when none reach a panel",
+      "tag": "Codex",
+      "pos": [
+        700,
+        930
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "critic",
+      "type": "frontend",
+      "label": "completeness-critic",
+      "sublabel": "what did no lens read?",
+      "tag": "its gaps become findings",
+      "pos": [
+        380,
+        1060
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "codex",
+      "type": "cloud",
+      "label": "Codex / Gemini",
+      "sublabel": "one outside vote",
+      "tag": "failure says why",
+      "pos": [
+        60,
+        1230
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "claude",
+      "type": "frontend",
+      "label": "Claude refuter x 1-2",
+      "sublabel": "try to kill the finding",
+      "tag": "two when no outside vote",
+      "pos": [
+        380,
+        1230
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "escalate",
+      "type": "frontend",
+      "label": "escalate, refine, debate",
+      "sublabel": "split or borderline votes",
+      "pos": [
+        700,
+        1230
+      ],
+      "size": [
+        280,
+        64
+      ]
+    },
+    {
+      "id": "classify",
+      "type": "messagebus",
+      "label": "classify-votes",
+      "sublabel": "parse CLI answers",
+      "pos": [
+        60,
+        1350
+      ],
+      "size": [
+        280,
+        64
+      ]
+    },
+    {
+      "id": "tally",
+      "type": "backend",
+      "label": "tallyVotes",
+      "sublabel": "weighted refute fraction",
+      "tag": "kill at 0.45",
+      "pos": [
+        380,
+        1350
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "refcheck",
+      "type": "messagebus",
+      "label": "ref-evidence-check",
+      "sublabel": "refutations citing missing code",
+      "pos": [
+        60,
+        1520
+      ],
+      "size": [
+        280,
+        64
+      ]
+    },
+    {
+      "id": "verdict",
+      "type": "backend",
+      "label": "verdictFor",
+      "sublabel": "survivors to verdict",
+      "tag": "APPROVE, COMMENT, REQUEST CHANGES",
+      "pos": [
+        380,
+        1520
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "anchor",
+      "type": "messagebus",
+      "label": "anchor resolver",
+      "sublabel": "pins each cited line",
+      "pos": [
+        700,
+        1520
+      ],
+      "size": [
+        280,
+        64
+      ]
+    },
+    {
+      "id": "synth",
+      "type": "frontend",
+      "label": "synthesize",
+      "sublabel": "writes the report around it",
+      "pos": [
+        380,
+        1640
+      ],
+      "size": [
+        280,
+        64
+      ]
+    },
+    {
+      "id": "persist",
+      "type": "messagebus",
+      "label": "persist-and-verify",
+      "sublabel": "parts, row, teardown, read-back",
+      "tag": "one dispatch on the first try",
+      "pos": [
+        380,
+        1750
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "row",
+      "type": "database",
+      "label": "metrics row and self-audit",
+      "sublabel": "one row per run",
+      "pos": [
+        380,
+        1880
+      ],
+      "size": [
+        280,
+        64
+      ]
+    },
+    {
+      "id": "report",
+      "type": "external",
+      "label": "report",
+      "sublabel": "posted only if confirmed",
+      "pos": [
+        700,
+        1880
+      ],
+      "size": [
+        280,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Pin and prepare",
+      "wraps": [
+        "profile",
+        "fetch",
+        "bookkeeping",
+        "facts",
+        "fallback",
+        "partition"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Review",
+      "wraps": [
+        "lens1",
+        "lensn",
+        "botvet"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Check",
+      "wraps": [
+        "reanchor",
+        "evidence",
+        "dedup",
+        "tsc",
+        "sweep",
+        "critic"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Refuter panel, per finding",
+      "wraps": [
+        "codex",
+        "claude",
+        "escalate",
+        "classify",
+        "tally"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Decide and write",
+      "wraps": [
+        "refcheck",
+        "verdict",
+        "anchor",
+        "synth",
+        "persist",
+        "row",
+        "report"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "profile-fetch",
+      "from": "profile",
+      "to": "fetch",
+      "label": "profile"
+    },
+    {
+      "id": "fetch-facts",
+      "from": "fetch",
+      "to": "facts"
+    },
+    {
+      "id": "fetch-fallback",
+      "from": "fetch",
+      "to": "fallback",
+      "variant": "dashed"
+    },
+    {
+      "id": "fallback-facts",
+      "from": "fallback",
+      "to": "facts",
+      "variant": "dashed"
+    },
+    {
+      "id": "facts-partition",
+      "from": "facts",
+      "to": "partition",
+      "label": "callers"
+    },
+    {
+      "id": "bookkeeping-partition",
+      "from": "bookkeeping",
+      "to": "partition",
+      "label": "scope",
+      "variant": "dashed"
+    },
+    {
+      "id": "partition-lens1",
+      "from": "partition",
+      "to": "lens1"
+    },
+    {
+      "id": "partition-lensn",
+      "from": "partition",
+      "to": "lensn"
+    },
+    {
+      "id": "lens1-reanchor",
+      "from": "lens1",
+      "to": "reanchor"
+    },
+    {
+      "id": "lensn-reanchor",
+      "from": "lensn",
+      "to": "reanchor",
+      "label": "findings"
+    },
+    {
+      "id": "botvet-reanchor",
+      "from": "botvet",
+      "to": "reanchor"
+    },
+    {
+      "id": "reanchor-evidence",
+      "from": "reanchor",
+      "to": "evidence"
+    },
+    {
+      "id": "evidence-dedup",
+      "from": "evidence",
+      "to": "dedup"
+    },
+    {
+      "id": "dedup-tsc",
+      "from": "dedup",
+      "to": "tsc"
+    },
+    {
+      "id": "tsc-sweep",
+      "from": "tsc",
+      "to": "sweep"
+    },
+    {
+      "id": "tsc-critic",
+      "from": "tsc",
+      "to": "critic"
+    },
+    {
+      "id": "sweep-critic",
+      "from": "sweep",
+      "to": "critic",
+      "label": "new candidates"
+    },
+    {
+      "id": "critic-claude",
+      "from": "critic",
+      "to": "claude",
+      "label": "findings and gaps"
+    },
+    {
+      "id": "codex-classify",
+      "from": "codex",
+      "to": "classify"
+    },
+    {
+      "id": "classify-tally",
+      "from": "classify",
+      "to": "tally",
+      "label": "vote"
+    },
+    {
+      "id": "claude-tally",
+      "from": "claude",
+      "to": "tally",
+      "label": "votes"
+    },
+    {
+      "id": "tally-escalate",
+      "from": "tally",
+      "to": "escalate",
+      "label": "split, close"
+    },
+    {
+      "id": "tally-verdict",
+      "from": "tally",
+      "to": "verdict",
+      "label": "kept"
+    },
+    {
+      "id": "refcheck-verdict",
+      "from": "refcheck",
+      "to": "verdict"
+    },
+    {
+      "id": "verdict-synth",
+      "from": "verdict",
+      "to": "synth",
+      "label": "verdict"
+    },
+    {
+      "id": "anchor-synth",
+      "from": "anchor",
+      "to": "synth"
+    },
+    {
+      "id": "synth-persist",
+      "from": "synth",
+      "to": "persist"
+    },
+    {
+      "id": "persist-row",
+      "from": "persist",
+      "to": "row"
+    },
+    {
+      "id": "persist-report",
+      "from": "persist",
+      "to": "report"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": [
+        "SURVIVES",
+        "REFUTED"
+      ]
+    },
+    "confidence": {
+      "type": "number"
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "changedFromPanel": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "decision",
+    "rationale",
+    "changedFromPanel"
+  ]
+}

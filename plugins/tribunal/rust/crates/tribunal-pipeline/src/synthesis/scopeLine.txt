@@ -1,0 +1,2 @@
+
+> **Incremental re-review.** Re-read {{inScopeCount}} of {{allCount}} files — those changed since {{baselineDescription}}. {{unchangedCount}} unchanged file(s) were not re-read; {{carriedPhrase}}.

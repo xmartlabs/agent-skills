@@ -1,0 +1,11 @@
+### Carried forward (not re-reviewed)
+- <finding> — <file> — raised by the review at `{{sha8}}`, still open: that file's diff has not changed since. Not re-verified by this run.
+(list every CARRIED FORWARD entry above, one line each. Omit the section only when that list is empty. If a MOOT list was given, add its entries here instead as "— moot: this file is no longer part of the PR's diff".)
+
+### Prior findings on files this run DID re-read
+- <finding> — <file> — raised at `{{sha8}}`, **raised again this run** (see it under Blocking/nits above).
+- <finding> — <file> — raised at `{{sha8}}`, **FIXED** — <what closed it, in one line>, verified at HEAD: `<the verification.quote, word for word>`
+- <finding> — <file> — raised at `{{sha8}}`, **STILL OPEN** — verified at HEAD: `<the verification.quote>`. <If blocking, it stays in the Blocking list above.>
+- <finding> — <file> — raised at `{{sha8}}`, **UNRESOLVED — could not be verified**: <the verification.reason>. Treated as still open. <If it was blocking: it stays blocking and needs a human check before merge.>
+(list every STILL OPEN entry and every RE-CHECKED entry above, using each RE-CHECKED entry's own verification.verdict — FIXED / STILL_OPEN / CANNOT_TELL — and quoting its verification.quote verbatim. Omit the section only when both lists are empty. This section is the answer to "did the author fix what I flagged?" — the question a re-review exists to answer — so it may never be left implicit, and never answered by silence.)
+

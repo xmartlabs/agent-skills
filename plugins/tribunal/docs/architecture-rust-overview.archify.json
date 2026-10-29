@@ -1,0 +1,451 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Tribunal with --engine rust: the review at a glance",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "output": "plugins/tribunal/docs/architecture-rust-overview.html",
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "frontend": {
+          "label": "Model call: Sonnet"
+        },
+        "backend": {
+          "label": "Deterministic: Rust, node, git, gh"
+        },
+        "database": {
+          "label": "Written to disk: what gets measured"
+        },
+        "cloud": {
+          "label": "Model call: Codex or Gemini"
+        },
+        "external": {
+          "label": "Session, repo or GitHub"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "start",
+      "type": "external",
+      "label": "/tribunal:review-pr --engine rust",
+      "sublabel": "MODEL · your Claude Code session",
+      "tag": "asks before posting",
+      "pos": [
+        380,
+        40
+      ],
+      "size": [
+        300,
+        76
+      ]
+    },
+    {
+      "id": "launch",
+      "type": "backend",
+      "label": "Find the binary",
+      "sublabel": "DETERMINISTIC · node + gh",
+      "tag": "pinned release, sha256 checked",
+      "pos": [
+        380,
+        170
+      ],
+      "size": [
+        300,
+        76
+      ]
+    },
+    {
+      "id": "fallback",
+      "type": "external",
+      "label": "the Workflow",
+      "sublabel": "when there is no binary",
+      "tag": "same review, JS harness",
+      "pos": [
+        40,
+        170
+      ],
+      "size": [
+        260,
+        76
+      ]
+    },
+    {
+      "id": "prepare",
+      "type": "backend",
+      "label": "Prepare",
+      "sublabel": "DETERMINISTIC · Rust, git, gh + one haiku call",
+      "tag": "profile, diff, worktree, callers; haiku reads the thread",
+      "pos": [
+        380,
+        300
+      ],
+      "size": [
+        300,
+        76
+      ]
+    },
+    {
+      "id": "lenses",
+      "type": "frontend",
+      "label": "Lenses",
+      "sublabel": "MODEL · sonnet, N in parallel",
+      "tag": "each reads its files and returns findings",
+      "pos": [
+        380,
+        430
+      ],
+      "size": [
+        300,
+        76
+      ]
+    },
+    {
+      "id": "checks",
+      "type": "backend",
+      "label": "Mechanical checks",
+      "sublabel": "DETERMINISTIC · Rust, tsc + one haiku call",
+      "tag": "in the diff? quote there? tsc? haiku merges repeats",
+      "pos": [
+        380,
+        560
+      ],
+      "size": [
+        300,
+        76
+      ]
+    },
+    {
+      "id": "critic",
+      "type": "frontend",
+      "label": "Completeness critic",
+      "sublabel": "MODEL · sonnet",
+      "tag": "what did no lens read?",
+      "pos": [
+        380,
+        690
+      ],
+      "size": [
+        300,
+        76
+      ]
+    },
+    {
+      "id": "panel",
+      "type": "frontend",
+      "label": "Refuter panel",
+      "sublabel": "MODEL · sonnet refuters",
+      "tag": "each tries to kill one finding",
+      "pos": [
+        380,
+        820
+      ],
+      "size": [
+        300,
+        76
+      ]
+    },
+    {
+      "id": "outside",
+      "type": "cloud",
+      "label": "Outside vote",
+      "sublabel": "MODEL · Codex or Gemini",
+      "tag": "a second model family",
+      "pos": [
+        40,
+        820
+      ],
+      "size": [
+        260,
+        76
+      ]
+    },
+    {
+      "id": "decide",
+      "type": "backend",
+      "label": "Tally and verdict",
+      "sublabel": "DETERMINISTIC · Rust",
+      "tag": "weighted vote, fixed verdict rules",
+      "pos": [
+        380,
+        950
+      ],
+      "size": [
+        300,
+        76
+      ]
+    },
+    {
+      "id": "report",
+      "type": "frontend",
+      "label": "Write the report",
+      "sublabel": "MODEL · sonnet",
+      "tag": "around a verdict it cannot change",
+      "pos": [
+        380,
+        1080
+      ],
+      "size": [
+        300,
+        76
+      ]
+    },
+    {
+      "id": "persist",
+      "type": "backend",
+      "label": "Persist",
+      "sublabel": "DETERMINISTIC · Rust",
+      "tag": "self-audit, vote reconciliation",
+      "pos": [
+        380,
+        1210
+      ],
+      "size": [
+        300,
+        76
+      ]
+    },
+    {
+      "id": "post",
+      "type": "frontend",
+      "label": "Post",
+      "sublabel": "MODEL · sonnet, then gh",
+      "tag": "composes the review, gh posts it",
+      "pos": [
+        380,
+        1340
+      ],
+      "size": [
+        300,
+        76
+      ]
+    },
+    {
+      "id": "github",
+      "type": "external",
+      "label": "GitHub review",
+      "sublabel": "on the PR",
+      "pos": [
+        380,
+        1470
+      ],
+      "size": [
+        300,
+        64
+      ]
+    },
+    {
+      "id": "m-start",
+      "type": "database",
+      "label": "start marker",
+      "sublabel": "inflight-runs.jsonl",
+      "tag": "a run that never finishes shows up",
+      "pos": [
+        760,
+        300
+      ],
+      "size": [
+        260,
+        76
+      ]
+    },
+    {
+      "id": "m-calls",
+      "type": "database",
+      "label": "every model call",
+      "sublabel": "transcript and token usage",
+      "tag": "lenses, critic, refuters, report, post",
+      "pos": [
+        760,
+        430
+      ],
+      "size": [
+        260,
+        76
+      ]
+    },
+    {
+      "id": "m-votes",
+      "type": "database",
+      "label": "outside vote files",
+      "sublabel": "the vote is read from the file",
+      "pos": [
+        760,
+        820
+      ],
+      "size": [
+        260,
+        64
+      ]
+    },
+    {
+      "id": "m-row",
+      "type": "database",
+      "label": "metrics row",
+      "sublabel": "metrics.jsonl, run JSON, report",
+      "tag": "cost summed from every call",
+      "pos": [
+        760,
+        1210
+      ],
+      "size": [
+        260,
+        76
+      ]
+    },
+    {
+      "id": "m-posted",
+      "type": "database",
+      "label": "row updated",
+      "sublabel": "posted and verdict",
+      "pos": [
+        760,
+        1340
+      ],
+      "size": [
+        260,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "The review",
+      "wraps": [
+        "start",
+        "launch",
+        "fallback",
+        "prepare",
+        "lenses",
+        "checks",
+        "critic",
+        "panel",
+        "outside",
+        "decide",
+        "report",
+        "persist",
+        "post",
+        "github"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Measured along the way",
+      "wraps": [
+        "m-start",
+        "m-calls",
+        "m-votes",
+        "m-row",
+        "m-posted"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "start-launch",
+      "from": "start",
+      "to": "launch"
+    },
+    {
+      "id": "launch-fallback",
+      "from": "launch",
+      "to": "fallback",
+      "label": "no binary",
+      "variant": "dashed"
+    },
+    {
+      "id": "launch-prepare",
+      "from": "launch",
+      "to": "prepare"
+    },
+    {
+      "id": "prepare-lenses",
+      "from": "prepare",
+      "to": "lenses"
+    },
+    {
+      "id": "lenses-checks",
+      "from": "lenses",
+      "to": "checks",
+      "label": "findings"
+    },
+    {
+      "id": "checks-critic",
+      "from": "checks",
+      "to": "critic"
+    },
+    {
+      "id": "critic-panel",
+      "from": "critic",
+      "to": "panel",
+      "label": "findings and gaps"
+    },
+    {
+      "id": "outside-panel",
+      "from": "outside",
+      "to": "panel",
+      "label": "vote"
+    },
+    {
+      "id": "panel-decide",
+      "from": "panel",
+      "to": "decide",
+      "label": "votes"
+    },
+    {
+      "id": "decide-report",
+      "from": "decide",
+      "to": "report",
+      "label": "verdict"
+    },
+    {
+      "id": "report-persist",
+      "from": "report",
+      "to": "persist"
+    },
+    {
+      "id": "persist-post",
+      "from": "persist",
+      "to": "post",
+      "label": "you confirm",
+      "variant": "dashed"
+    },
+    {
+      "id": "post-github",
+      "from": "post",
+      "to": "github"
+    },
+    {
+      "id": "prepare-mstart",
+      "from": "prepare",
+      "to": "m-start",
+      "label": "started"
+    },
+    {
+      "id": "lenses-mcalls",
+      "from": "lenses",
+      "to": "m-calls",
+      "label": "each model call"
+    },
+    {
+      "id": "panel-mvotes",
+      "from": "panel",
+      "to": "m-votes"
+    },
+    {
+      "id": "persist-mrow",
+      "from": "persist",
+      "to": "m-row",
+      "label": "completed"
+    },
+    {
+      "id": "post-mposted",
+      "from": "post",
+      "to": "m-posted"
+    }
+  ]
+}

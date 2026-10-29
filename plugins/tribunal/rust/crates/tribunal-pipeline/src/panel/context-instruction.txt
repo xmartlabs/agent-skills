@@ -1,0 +1,8 @@
+
+
+Decisions already made — do NOT re-litigate (from --context and/or this PR's own review thread):
+{{combinedDecisions}}
+
+{{precedenceRule}}
+
+If this finding merely repeats a DEFERRED/BY-DESIGN/SPLIT-OUT item above rather than a real code defect, return REFUTED with refutationType PRE_DECIDED and quote the SPECIFIC decision line above word-for-word into decisionQuestioned — it must be about THIS finding's file and defect, not merely a similarly-themed one. A PRE_DECIDED vote with an empty or non-matching decisionQuestioned is discarded and counted as an ordinary vote instead, so a vague or generalized citation buys nothing. When a decision above carries a "[files: ...]" tag, it applies ONLY to those files — do not cite it for a finding in a different file, even if the topic sounds similar; a decision with no "[files: ...]" tag is broad and may apply wherever it's genuinely on-topic. A "RESOLVED in <sha>" item is only pre-decided if the fix actually holds at HEAD — if you can show the fix is incomplete there, do NOT refute; let the finding stand.

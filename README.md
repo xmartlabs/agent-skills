@@ -22,3 +22,29 @@ npx skills add xmartlabs/agent-skills --skill pr-evidence --skill release-notes
 ```bash
 bash tests/run-all.sh
 ```
+
+## Claude Code plugins
+
+This repository is also a Claude Code plugin marketplace named `xmartlabs`.
+
+| Plugin | What it does |
+| --- | --- |
+| [`tribunal`](plugins/tribunal) | Adversarial PR review. Independent lenses read the diff in parallel, then every serious finding faces a panel that tries to disprove it, and only the survivors are reported. See its [README](plugins/tribunal/README.md) for cost, limits and how to set up a repo. |
+| [`homosapiens`](plugins/homosapiens) | Rewrites text so it does not read as AI-generated, without changing what it says. Tribunal runs its report through it before posting. |
+
+Requires `gh` (authenticated) and `node`. Tribunal can also use the `codex` CLI
+as a second-opinion refuter.
+
+```
+/plugin marketplace add xmartlabs/agent-skills
+/plugin install tribunal@xmartlabs
+/plugin install homosapiens@xmartlabs
+/reload-plugins
+```
+
+Third-party marketplaces have auto-update off by default. To turn it on:
+`/plugin`, then **Marketplaces**, select `xmartlabs`, then **Enable
+auto-update**. To update by hand, run `/plugin marketplace update xmartlabs`,
+then `/reload-plugins`.
+
+Each plugin keeps its docs, tests and release tooling in its own directory.

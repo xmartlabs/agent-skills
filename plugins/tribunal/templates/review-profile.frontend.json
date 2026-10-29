@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "project": "your-project",
+  "repo": "your-org/your-web-app",
+  "reviewer": "frontend",
+  "baseBranch": "main",
+  "deployBranches": [],
+  "foci": {
+    "correctness": "correctness and logic (state and effects, control flow, edge cases, stale closures)",
+    "dataContract": "data contracts (API response shapes, field naming, types matching what the backend really returns)",
+    "security": "security (XSS, unsafe HTML, tokens in storage or URLs, client-side-only authorization)",
+    "performance": "performance (needless re-renders, unmemoized work in render, bundle weight, request waterfalls)",
+    "errorHandling": "error handling and user feedback (failed requests, loading and empty states, error boundaries)"
+  },
+  "highRiskSurface": "auth and session handling, payment flows, routes guarded by role",
+  "projectRules": ".claude/review-rules.md",
+  "conventionFiles": ["CLAUDE.md", ".claude/rules/*.md"],
+  "crossRepoAnchors": [
+    { "repo": "your-org/your-api", "ref": "main" }
+  ],
+  "riskPaths": [
+    { "focus": "security", "pattern": "auth|session|token|permission|role" },
+    { "focus": "dataContract", "pattern": "invoice|payment|billing|checkout" }
+  ]
+}

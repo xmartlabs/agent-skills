@@ -1,0 +1,111 @@
+Synthesize the final peer review report for PR #{{prNumber}}: {{title}}
+Author: {{author}} | Jira: {{jira}} | Repo: {{repo}}
+{{fallbackBlock}}{{scopeBlock}}
+<surviving_findings>
+{{surviving}}
+</surviving_findings>
+
+<prior_open_reviews note="still requesting changes — NOT decisions, NOT pre-decided">
+{{priorReviews}}
+</prior_open_reviews>
+
+<pre_decided>
+{{preDecided}}
+</pre_decided>
+
+<placed_aside note="kept by the panel, not counted toward the verdict">
+{{placedAside}}
+</placed_aside>
+
+<technically_refuted>
+{{techRefuted}}
+</technically_refuted>
+
+<dropped_pre_panel note="out-of-scope gate">
+{{droppedPrePanel}}
+</dropped_pre_panel>
+
+<refuted_by_typecheck note="compile-level claim, clean tsc">
+{{groundedRefuted}}
+</refuted_by_typecheck>
+
+<debate_outcomes>
+{{debateOutcomes}}
+</debate_outcomes>
+
+<bot_comments_vetted>
+{{botVetted}}
+</bot_comments_vetted>
+
+<completeness_critic>
+{{critic}}
+</completeness_critic>
+{{cleanSweepBlock}}{{refineBlock}}
+Grounding rules — every claim below must come from the payload above, never from you:
+{{refineRule}}- A finding's "evidence" field is the code that backs it, quoted by the lens. Reproduce it as given; do not paraphrase it into something the snippet does not say. It is a required field, so it is always present — but the literal value "No relevant quotes found" means the lens could cite nothing. Treat that as a caveat on the finding and say so; never substitute code of your own to fill the gap. Put the quote inside the sentence of <why> that is about that code, for example "calls `await saveAuditLog({ ... })` at line 54 and ignores the result". Never give it a line or bullet of its own such as "Evidence: ...": a quote standing alone reads as a separate point and says nothing.
+- A finding carrying "verifiedByGateNote" has already been demoted from Blocking by the evidence gate — its "adjudicated" is forced to false regardless of what the panel decided, because it claimed important/critical status without citing the code its claim depends on (distinct from "evidence", which only points at the changed line). Report it as an open question, quoting the note, never as Blocking. Do not re-adjudicate it yourself or restore it based on your own reading — the gate is mechanical on purpose. Its "adjudicated": false is the gate's, not the panel's: when its "votes" is non-empty the panel DID examine it, so never write "no refuter examined this claim" or "NOT ADJUDICATED" on it. Say what happened: the panel ran (cite its votes as for any other finding) and the gate demoted it for the reason in the note.
+- A finding's "votes" carry the panel's own wording for why it held or fell. Draw the reasoning from them.
+- A debate entry's "rationale" is the adjudicator's. Use it as the reason; if it is empty, write "no rationale recorded" rather than composing one.
+- "failedSlots" lists refuter heads that were dispatched but never returned a verdict; "failedSlotsDetail" pairs each with WHY ("crashed", "timeout", "error", "refused", "quota" meaning the CLI's account is out of credits, or "auth" meaning the CLI is not logged in or its key was rejected). They cast NO vote and are excluded from refuteFraction. When failedSlots is non-empty, say so on that finding, citing the reason when known — e.g. "(panel degraded: codex did not respond — timeout)" or "(panel degraded: codex is out of credits)" — because the finding got less independent scrutiny than a clean panel, and refuteFraction was computed from the surviving voters only. Never describe a failed head as having verified or agreed with anything.
+- "unverified": true means EVERY head failed and no vote was cast at all. Such a finding did not survive a panel — it never faced one. Report it under its severity but label it explicitly as unverified, and do not cite a refuteFraction for it.
+- A refuted finding's "killReason" is the refuter's own category for why it didn't hold (out-of-scope, pre-existing, not-triggered, incorrect-premise, style-not-bug, other) — cite it directly when present; write "uncategorized" when absent. This is a data field for future threshold tuning, not a stronger claim than the "reason" text itself.
+- Only claim model-diverse verification when "codexSlotUsed" / "geminiSlotUsed" is true. Those flags already account for failures; do not infer participation from anything else.
+- A finding's "mergedFrom" lists the lenses that independently reported the SAME underlying defect before the panel ran (they were merged into one candidate pre-panel, so only one panel ran for it). When "mergedFrom" has 2 or more entries, note it in that finding's line as "(found by: <lens>, <lens>)" — omit this note entirely when "mergedFrom" has 0 or 1 entries.
+- A merged finding also carries "mergedLocations": every member's own file:line. When it lists MORE THAN ONE DISTINCT file:line, you MUST print the additional ones on their own indented sub-lines under that finding, as "also at: <file>:<line>". Never collapse them into the headline location. A merge is one panel, not one place to fix: dropping the other locations is how a real defect leaves the review without appearing anywhere, and it has happened. If two locations are in different files, say so plainly — that merge was probably wrong and the reader needs to see both.
+- "discardedVotes" lists panel voices the tally SET ASIDE: a refuter that claimed the finding was already decided and could not cite a decision covering it ("no-decision-cited"), or cited one scoped to a different file ("citation-does-not-cover-finding"). Those votes counted for nothing, so a finding carrying one survived on fewer voices than its "votes" array suggests. When it is non-empty, say so on that finding — e.g. "(one vote set aside: claimed a prior decision, cited none)" — and never present a set-aside vote as agreement or as scrutiny the finding passed.
+- "adjudicated": false on a finding WITHOUT "verifiedByGateNote" means NOTHING contested this finding — no panel ran on it, every head in its panel failed, or no typecheck confirmed it. A dispatched panel whose heads all died adjudicated nothing, and "unverified" is the same case seen from the other side. It did not survive scrutiny; it never met any. Such a finding MUST NOT appear under "Blocking" no matter how serious it reads. Put it under "Non-blocking / nits" with the suffix "— NOT ADJUDICATED: no refuter examined this claim", and do not cite a refuteFraction for it. This is not a judgement about the finding's merit: it is a statement about what the review did and did not do, and a review that cannot tell those apart is the failure this whole panel exists to prevent.
+- "PRIOR OPEN REVIEWS" lists reviews on this PR that are still in CHANGES_REQUESTED. They are OUTSTANDING objections, not decisions: never treat an item there as pre-decided, never drop or downgrade a finding because it appears there, and never move one out of Blocking on those grounds. What you MUST do is mark the overlap. When a finding you are reporting is the same underlying issue as an item in a prior open review, keep it exactly where its panel put it AND append to its line: "— repeat: already raised by <author> on <YYYY-MM-DD>" (use the "at" value, date part only; write "date not recorded" if "at" is null). Then list it again under "Repeat (already open in the thread)". Match on the underlying defect — same file and same mechanism — not on wording; when you are unsure whether two descriptions are the same issue, say so on the line rather than asserting the match. If PRIOR OPEN REVIEWS is empty, omit the section and add no such annotations.
+{{costRule}}{{sweepRule}}- A finding's "grounded.verdict" of "confirmed" means a real tsc --noEmit diagnostic (its "grounded.diagnostic" string) landed on its changed line, so it skipped the panel — ground truth, not a vote. When present, note it on that finding's line as "(confirmed by typecheck: <the grounded.diagnostic value>)" instead of the panel mechanics. Never invent a diagnostic; use the "grounded.diagnostic" value verbatim.
+
+{{scopedRules}}- THE VERDICT IS ALREADY DECIDED: the harness computed {{verdict}} from the surviving findings, the unresolved prior blockers and the clean-verdict sweep, and it is the verdict this run records and submits. Print the verdict line exactly as the format shows it. Every sentence of the report must be consistent with it. If you believe it is wrong, say why in one line directly under it; do not change the line. The harness rewrites any other verdict line back to this one.
+
+Produce the report in this format:
+
+## Peer review: PR #{{prNumber}} — {{title}}
+{{scopeLine}}
+### Verdict suggestion: {{verdict}}
+
+### Blocking
+1. <issue> — <file:line> — <why> (found by: <lens>, <lens> — only when mergedFrom has 2+ entries; panel: refuteFraction N.NN vs kill {{tKill}}; debate: held/flipped if fired; append "panel degraded: <slots> did not respond" when failedSlots is non-empty, or "UNVERIFIED — no refuter returned a verdict" when unverified is true; "confirmed by typecheck: <TScode>" instead of panel stats when grounded.verdict is "confirmed")
+
+### Non-blocking / nits
+- ...
+
+### Repeat (already open in the thread)
+- <finding> → already raised by <author> on <YYYY-MM-DD>, still unresolved — <one line on whether this run adds anything new to it>
+(omit section if PRIOR OPEN REVIEWS is empty or nothing overlaps. These findings stay listed under Blocking/Non-blocking as well — this section is a duplication warning, not a bucket that removes them.)
+
+### Pre-decided (not re-litigated)
+- <finding> → PRE-DECIDED: <which decision it questioned>
+- <finding> → POSSIBLY PRE-DECIDED: <which decision it questioned> (that decision names <decisionFiles>; this finding is at <file>. Not counted toward the verdict.)
+(use the POSSIBLY form only for an entry carrying "possiblyPreDecided": the panel did not kill it, a vote matched it to that decision and the decision is scoped to other files of this PR. omit section if empty)
+
+### Pre-existing or required by a convention (not counted toward the verdict)
+- <finding> — <file:line> → PRE-EXISTING: most of the panel found the same behaviour at the PR's base
+- <finding> — <file:line> → REQUIRED BY CONVENTION: <intendedBy.file>: "<intendedBy.rule, word for word>"
+(one line per entry of placed_aside, by its "placement". The panel did not refute these: say so, and do not call them fixed or wrong. omit section if empty)
+
+{{carriedFormat}}### Refuted / downgraded
+- <finding> → <one-line reason it didn't hold> (refuteFraction N.NN; killReason: <category or "uncategorized">)
+
+### Dropped (out of scope)
+- <finding> → <reason> (omit section if none)
+
+### Refuted by typecheck
+- <finding> → <file>: typecheck clean, compile-level claim not reproduced (omit section if none)
+
+### Debate (borderline high-risk)
+- <finding> → held | flipped — <one-line reason>
+(omit section if no debate fired)
+
+### Bot comments vetted
+- [VALID/INVALID/POLICY] <summary>
+(omit this whole section if BOT COMMENTS VETTED above says "not requested")
+
+### Coverage gaps
+<completeness critic output — omit section if nothing missed>
+
+### Draft comments (ready to paste)
+2-3 concise GitHub review comments for the most important blocking findings.
+
+Keep it scannable. Half a page for a 5-file PR.

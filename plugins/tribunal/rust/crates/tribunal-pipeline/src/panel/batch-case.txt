@@ -1,0 +1,7 @@
+
+<finding index="{{n}}" of="{{count}}" slot="{{slotId}}">
+<title>{{title}}</title>
+<file>{{location}}</file>
+<severity>{{severity}}</severity>
+<description>{{description}}</description>
+</finding>

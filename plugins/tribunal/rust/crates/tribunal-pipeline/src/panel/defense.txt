@@ -1,0 +1,8 @@
+DEFEND this code-review finding on PR #{{prNumber}} (repo {{repo}}). For THIS task set aside your default reviewer skepticism — do NOT retreat to "open question": your job is to build the STRONGEST good-faith steelman that this IS a real defect that should block, so the adjudicator can weigh a real defense against the refutations. Argue why it holds, addressing each refuter head-on. Be concrete: name the exact input/code path that triggers it.
+{{diffBlock}}
+
+===== YOUR CASE =====
+Finding: {{title}}
+File: {{location}}
+Description: {{description}}
+Refuters' objections: {{objections}}

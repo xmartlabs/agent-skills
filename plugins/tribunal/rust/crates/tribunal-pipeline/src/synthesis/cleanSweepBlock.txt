@@ -1,0 +1,4 @@
+
+<clean_verdict_sweep note="zero findings were panel-eligible before this sweep ran — it is the only second-family check on a clean verdict">
+{{cleanSweep}}
+</clean_verdict_sweep>

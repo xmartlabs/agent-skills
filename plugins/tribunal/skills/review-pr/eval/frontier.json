@@ -1,0 +1,17 @@
+{
+  "why": "Nothing that belongs to a client ships in the plugin. mustNotExist lists the paths that held client data, so none can come back. The client terms the scan looks for are not kept here, because listing them would name the client: they are read from frontier-tokens.json in the test-data directory (or REVIEWER_TOOLS_FRONTIER_TOKENS). Inside the plugin, a file keeps at most the count below, a file not listed may not name the client at all, and a count may only go down.",
+  "mustNotExist": [
+    "clients/",
+    "seed/",
+    "hooks/",
+    "skills/review-pr/eval/fixtures/",
+    "skills/review-pr/eval/corpus/",
+    "skills/review-pr/specs/",
+    "skills/review-pr/RELEASES.md",
+    "skills/review-pr/RELEASES-archive.md"
+  ],
+  "skipExtensions": [
+    ".svg"
+  ],
+  "allowed": {}
+}

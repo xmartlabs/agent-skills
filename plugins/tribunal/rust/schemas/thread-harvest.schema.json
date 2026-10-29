@@ -1,0 +1,61 @@
+{
+  "type": "object",
+  "properties": {
+    "inThreadDecisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "DEFERRED",
+              "RESOLVED",
+              "BY-DESIGN",
+              "SPLIT-OUT"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "category",
+          "summary",
+          "source"
+        ]
+      }
+    },
+    "priorReviewSummaries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "number"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "summary"
+        ]
+      }
+    }
+  },
+  "required": [
+    "inThreadDecisions",
+    "priorReviewSummaries"
+  ]
+}

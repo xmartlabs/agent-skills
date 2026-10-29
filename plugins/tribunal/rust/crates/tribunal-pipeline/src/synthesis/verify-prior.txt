@@ -1,0 +1,16 @@
+A previous review of this PR raised the finding below. {{why}} Your job is exactly one question: **is it fixed at {{head}}?**
+
+FINDING (raised at {{prior8}}, severity {{severity}}):
+{{title}}
+FILE: {{file}}
+
+{{diffBody}}
+
+Read {{file}} at HEAD (`gh api repos/{{repo}}/contents/{{file}}?ref={{head}} --jq '.content' | base64 -d`, or `git show {{head}}:{{file}}`) and follow the mechanism wherever it goes — a fix often lands in a DIFFERENT file than the one the finding names (a guard extracted into a helper, a value normalised at the producer instead of the consumer). Read whatever you need at that SHA.
+
+Answer with one of exactly three verdicts:
+- FIXED — the defect described is no longer reachable. You MUST quote, word for word, the code that closes it. If the fix depends on a value defined elsewhere (a retry count, a queue option, a default), READ THAT TOO and say what it is — a fix that is only correct under an assumption you did not check is not verified.
+- STILL_OPEN — the defect is still reachable. Quote the code that still has it.
+- CANNOT_TELL — you could not settle it from what you could read. Say what you would have needed.
+
+A verdict of FIXED or STILL_OPEN **without a word-for-word quote is discarded and recorded as CANNOT_TELL**, so do not guess: an unsupported "it's fixed" retires a real defect on your say-so, which is the most expensive thing this review can do. CANNOT_TELL is an honourable answer and is treated as "still open" for the verdict — you are not being asked to clear the PR, only to report what the code says.

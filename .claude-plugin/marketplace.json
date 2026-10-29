@@ -1,0 +1,24 @@
+{
+  "name": "xmartlabs",
+  "owner": { "name": "Xmartlabs" },
+  "metadata": {
+    "description": "Claude Code plugins from Xmartlabs.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "tribunal",
+      "displayName": "Tribunal",
+      "source": "./plugins/tribunal",
+      "category": "development",
+      "description": "Adversarial pull-request review: parallel lenses plus a refutation panel that tries to kill every candidate finding."
+    },
+    {
+      "name": "homosapiens",
+      "displayName": "Homosapiens",
+      "source": "./plugins/homosapiens",
+      "category": "productivity",
+      "description": "Rewrites text so it does not read as AI-generated, without changing what it says. Used standalone, and by tribunal before it posts a review."
+    }
+  ]
+}

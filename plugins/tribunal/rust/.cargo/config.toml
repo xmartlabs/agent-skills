@@ -1,0 +1,4 @@
+# Build output stays outside the plugin directory: the plugin's frontier check
+# scans every file under it, and build artifacts embed absolute local paths.
+[build]
+target-dir = "../../../target"

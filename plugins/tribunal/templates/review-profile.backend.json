@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "project": "your-project",
+  "repo": "your-org/your-api",
+  "reviewer": "backend",
+  "baseBranch": "main",
+  "deployBranches": [],
+  "foci": {
+    "correctness": "correctness and logic (control flow, error paths, edge cases, off-by-one)",
+    "dataContract": "data contracts (request and response shapes, type coercions, schema alignment with the clients that call this API)",
+    "security": "security and authorization (auth middleware, role checks, input validation, injection)",
+    "performance": "performance (N+1 queries, unnecessary DB calls, background job efficiency)",
+    "errorHandling": "error handling and observability (error types, logging, missing catch paths)",
+    "migration": "data integrity and migration safety (rollback, backfill, nullability, destructive DDL, data loss on migrate)"
+  },
+  "highRiskSurface": "schema and migrations, auth, payments, mass delete/update",
+  "projectRules": ".claude/review-rules.md",
+  "conventionFiles": ["CLAUDE.md", ".claude/rules/*.md"],
+  "crossRepoAnchors": [],
+  "riskPaths": [
+    { "focus": "migration", "pattern": "migrations?/|schema" },
+    { "focus": "security", "pattern": "auth|authorize|jwt|role|permission" },
+    { "focus": "dataContract", "pattern": "invoice|payment|billing|money" }
+  ]
+}

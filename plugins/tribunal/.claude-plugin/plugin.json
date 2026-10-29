@@ -1,0 +1,18 @@
+{
+  "name": "tribunal",
+  "displayName": "Tribunal",
+  "description": "Adversarial pull-request review. Independent lenses run in parallel over a partition of the diff, then every serious candidate finding faces a refutation panel — including a second model family — that tries to disprove it. Only survivors are reported.",
+  "version": "110.0.0",
+  "author": {
+    "name": "Xmartlabs",
+    "url": "https://xmartlabs.com"
+  },
+  "keywords": [
+    "code-review",
+    "pull-request",
+    "adversarial",
+    "github"
+  ],
+  "license": "MIT",
+  "repository": "https://github.com/xmartlabs/agent-skills"
+}

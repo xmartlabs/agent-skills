@@ -1,0 +1,838 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Tribunal with --engine rust: one PR review, step by step",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "output": "plugins/tribunal/docs/architecture-rust.html",
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "frontend": {
+          "label": "Model call: Sonnet, through claude -p"
+        },
+        "backend": {
+          "label": "Deterministic: Rust, node, git, gh"
+        },
+        "database": {
+          "label": "Written to disk"
+        },
+        "cloud": {
+          "label": "Model call: other family, run by the binary"
+        },
+        "messagebus": {
+          "label": "Model call: Haiku, through claude -p"
+        },
+        "external": {
+          "label": "Repo, GitHub or the session"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "skill",
+      "type": "external",
+      "label": "/tribunal:review-pr",
+      "sublabel": "MODEL · your Claude Code session",
+      "tag": "with --engine rust",
+      "pos": [
+        60,
+        40
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "launcher",
+      "type": "backend",
+      "label": "rust-engine.mjs",
+      "sublabel": "DETERMINISTIC · node script",
+      "tag": "finds the binary for this machine",
+      "pos": [
+        380,
+        40
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "release",
+      "type": "external",
+      "label": "GitHub release",
+      "sublabel": "DETERMINISTIC · gh, called by the launcher",
+      "tag": "pinned in rust/release.json",
+      "pos": [
+        700,
+        40
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "workflow",
+      "type": "external",
+      "label": "the Workflow",
+      "sublabel": "fallback: the Workflow path",
+      "tag": "no build for this machine",
+      "pos": [
+        700,
+        170
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "profile",
+      "type": "external",
+      "label": "Repo profile",
+      "sublabel": "DETERMINISTIC · Rust + gh, at the base ref",
+      "tag": "rules and conventions",
+      "pos": [
+        60,
+        300
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "fetch",
+      "type": "backend",
+      "label": "fetch_pr_context",
+      "sublabel": "DETERMINISTIC · Rust + gh",
+      "tag": "PR, thread, diff, pinned sha",
+      "pos": [
+        380,
+        300
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "harvest",
+      "type": "messagebus",
+      "label": "thread harvest",
+      "sublabel": "MODEL · haiku",
+      "tag": "decisions already taken",
+      "pos": [
+        60,
+        430
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "worktree",
+      "type": "backend",
+      "label": "head worktree",
+      "sublabel": "DETERMINISTIC · Rust + git",
+      "pos": [
+        380,
+        430
+      ],
+      "size": [
+        280,
+        64
+      ],
+      "tag": "source at the pinned sha"
+    },
+    {
+      "id": "facts",
+      "type": "backend",
+      "label": "callers and attention facts",
+      "sublabel": "DETERMINISTIC · Rust + git, oxc, QuickJS",
+      "tag": "oxc, TypeScript in QuickJS",
+      "pos": [
+        700,
+        430
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "probe",
+      "type": "backend",
+      "label": "incremental probe",
+      "sublabel": "DETERMINISTIC · Rust",
+      "pos": [
+        60,
+        560
+      ],
+      "size": [
+        280,
+        64
+      ],
+      "tag": "earlier review of this PR"
+    },
+    {
+      "id": "partition",
+      "type": "backend",
+      "label": "lens plan",
+      "sublabel": "DETERMINISTIC · Rust",
+      "tag": "split by churn, riskPaths force foci",
+      "pos": [
+        380,
+        560
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "marker",
+      "type": "database",
+      "label": "start marker",
+      "sublabel": "DETERMINISTIC · written by Rust",
+      "tag": "inflight-runs.jsonl",
+      "pos": [
+        60,
+        670
+      ],
+      "size": [
+        280,
+        64
+      ]
+    },
+    {
+      "id": "lens1",
+      "type": "frontend",
+      "label": "lens 1",
+      "sublabel": "MODEL · sonnet, code-review-expert",
+      "tag": "own files, callers, facts",
+      "pos": [
+        60,
+        820
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "lensn",
+      "type": "frontend",
+      "label": "lens N",
+      "sublabel": "MODEL · sonnet, in parallel",
+      "tag": "N set by churn, in parallel",
+      "pos": [
+        380,
+        820
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "botvet",
+      "type": "frontend",
+      "label": "bot-vetting",
+      "sublabel": "MODEL · sonnet, --bot-comments only",
+      "tag": "bot comments, if asked",
+      "pos": [
+        700,
+        820
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "empty",
+      "type": "backend",
+      "label": "empty-lens check",
+      "sublabel": "DETERMINISTIC · Rust",
+      "tag": "nothing back is not a clean pass",
+      "pos": [
+        60,
+        990
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "reanchor",
+      "type": "backend",
+      "label": "out-of-diff gate",
+      "sublabel": "DETERMINISTIC · Rust",
+      "pos": [
+        380,
+        990
+      ],
+      "size": [
+        280,
+        64
+      ],
+      "tag": "re-anchor on the changed file, else drop"
+    },
+    {
+      "id": "evidence",
+      "type": "backend",
+      "label": "evidence resolver",
+      "sublabel": "DETERMINISTIC · Rust",
+      "pos": [
+        380,
+        1100
+      ],
+      "size": [
+        280,
+        64
+      ],
+      "tag": "is the quoted code really there?"
+    },
+    {
+      "id": "dedup",
+      "type": "messagebus",
+      "label": "dedup-candidates",
+      "sublabel": "MODEL · haiku, tribunal-scribe",
+      "pos": [
+        380,
+        1210
+      ],
+      "size": [
+        280,
+        64
+      ],
+      "tag": "one claim from several lenses"
+    },
+    {
+      "id": "tsc",
+      "type": "backend",
+      "label": "grounded typecheck",
+      "sublabel": "DETERMINISTIC · Rust runs tsc (npm/npx)",
+      "pos": [
+        380,
+        1326
+      ],
+      "size": [
+        280,
+        64
+      ],
+      "tag": "tsc hit confirms, clean tsc kills"
+    },
+    {
+      "id": "sweep",
+      "type": "cloud",
+      "label": "clean-verdict sweep",
+      "sublabel": "MODEL · Codex, other family",
+      "tag": "only when none reach a panel",
+      "pos": [
+        700,
+        1320
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "critic",
+      "type": "frontend",
+      "label": "completeness-critic",
+      "sublabel": "MODEL · sonnet, gaps become findings",
+      "tag": "what did no lens read?",
+      "pos": [
+        380,
+        1450
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "codex",
+      "type": "cloud",
+      "label": "Codex / Gemini",
+      "sublabel": "MODEL · Codex or Gemini",
+      "tag": "one outside vote, from its file",
+      "pos": [
+        60,
+        1620
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "claude",
+      "type": "frontend",
+      "label": "Claude refuter x 1-2",
+      "sublabel": "MODEL · sonnet, tribunal-refuter",
+      "tag": "try to kill the finding",
+      "pos": [
+        380,
+        1620
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "escalate",
+      "type": "frontend",
+      "label": "escalate, refine, debate",
+      "sublabel": "MODEL · sonnet",
+      "pos": [
+        700,
+        1620
+      ],
+      "size": [
+        280,
+        64
+      ],
+      "tag": "split or borderline votes"
+    },
+    {
+      "id": "classify",
+      "type": "backend",
+      "label": "classify artifacts",
+      "sublabel": "DETERMINISTIC · Rust",
+      "pos": [
+        60,
+        1740
+      ],
+      "size": [
+        280,
+        64
+      ],
+      "tag": "reads each outside model's file"
+    },
+    {
+      "id": "tally",
+      "type": "backend",
+      "label": "tallyVotes",
+      "sublabel": "DETERMINISTIC · Rust",
+      "tag": "weighted refute fraction, kill at 0.45",
+      "pos": [
+        380,
+        1740
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "refcheck",
+      "type": "backend",
+      "label": "wrong-ref audit",
+      "sublabel": "DETERMINISTIC · Rust reads the checkout",
+      "pos": [
+        60,
+        1910
+      ],
+      "size": [
+        280,
+        64
+      ],
+      "tag": "refutations citing missing code"
+    },
+    {
+      "id": "verdict",
+      "type": "backend",
+      "label": "verdictFor",
+      "sublabel": "DETERMINISTIC · Rust, fixed rules",
+      "tag": "APPROVE, COMMENT or REQUEST CHANGES",
+      "pos": [
+        380,
+        1910
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "anchor",
+      "type": "backend",
+      "label": "anchor resolver",
+      "sublabel": "DETERMINISTIC · Rust + gh",
+      "pos": [
+        700,
+        1910
+      ],
+      "size": [
+        280,
+        64
+      ],
+      "tag": "pins each cited line"
+    },
+    {
+      "id": "synth",
+      "type": "frontend",
+      "label": "synthesize",
+      "sublabel": "MODEL · sonnet, tribunal-scribe",
+      "tag": "writes the report around it",
+      "pos": [
+        380,
+        2030
+      ],
+      "size": [
+        280,
+        64
+      ]
+    },
+    {
+      "id": "persist",
+      "type": "backend",
+      "label": "persist",
+      "sublabel": "DETERMINISTIC · Rust",
+      "tag": "row, self-audit, vote reconciliation",
+      "pos": [
+        380,
+        2140
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "row",
+      "type": "database",
+      "label": "metrics row and run JSON",
+      "sublabel": "DETERMINISTIC · written by Rust",
+      "pos": [
+        380,
+        2270
+      ],
+      "size": [
+        280,
+        64
+      ],
+      "tag": "plus the completed marker"
+    },
+    {
+      "id": "post",
+      "type": "frontend",
+      "label": "tribunal post",
+      "sublabel": "MODEL · sonnet, then gh",
+      "tag": "homosapiens, fidelity check, footer",
+      "pos": [
+        700,
+        2140
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "github",
+      "type": "external",
+      "label": "GitHub review",
+      "sublabel": "posted through gh",
+      "pos": [
+        700,
+        2270
+      ],
+      "size": [
+        280,
+        64
+      ],
+      "tag": "on the PR"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Launch",
+      "wraps": [
+        "skill",
+        "launcher",
+        "release",
+        "workflow"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Pin and prepare",
+      "wraps": [
+        "profile",
+        "fetch",
+        "harvest",
+        "worktree",
+        "facts",
+        "probe",
+        "partition",
+        "marker"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Review",
+      "wraps": [
+        "lens1",
+        "lensn",
+        "botvet"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Check",
+      "wraps": [
+        "empty",
+        "reanchor",
+        "evidence",
+        "dedup",
+        "tsc",
+        "sweep",
+        "critic"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Refuter panel, per finding",
+      "wraps": [
+        "codex",
+        "claude",
+        "escalate",
+        "classify",
+        "tally"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Decide and write",
+      "wraps": [
+        "refcheck",
+        "verdict",
+        "anchor",
+        "synth",
+        "persist",
+        "row",
+        "post",
+        "github"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "skill-launcher",
+      "from": "skill",
+      "to": "launcher",
+      "label": "--engine rust"
+    },
+    {
+      "id": "launcher-release",
+      "from": "launcher",
+      "to": "release",
+      "label": "first run"
+    },
+    {
+      "id": "launcher-workflow",
+      "from": "launcher",
+      "to": "workflow",
+      "label": "no binary",
+      "variant": "dashed"
+    },
+    {
+      "id": "launcher-profile",
+      "from": "launcher",
+      "to": "profile",
+      "label": "runs the binary"
+    },
+    {
+      "id": "profile-fetch",
+      "from": "profile",
+      "to": "fetch",
+      "label": "profile"
+    },
+    {
+      "id": "fetch-harvest",
+      "from": "fetch",
+      "to": "harvest",
+      "label": "thread"
+    },
+    {
+      "id": "fetch-worktree",
+      "from": "fetch",
+      "to": "worktree",
+      "label": "head sha"
+    },
+    {
+      "id": "worktree-facts",
+      "from": "worktree",
+      "to": "facts"
+    },
+    {
+      "id": "facts-partition",
+      "from": "facts",
+      "to": "partition",
+      "label": "callers"
+    },
+    {
+      "id": "probe-partition",
+      "from": "probe",
+      "to": "partition",
+      "label": "scope",
+      "variant": "dashed"
+    },
+    {
+      "id": "probe-marker",
+      "from": "probe",
+      "to": "marker",
+      "label": "started"
+    },
+    {
+      "id": "partition-lens1",
+      "from": "partition",
+      "to": "lens1"
+    },
+    {
+      "id": "partition-lensn",
+      "from": "partition",
+      "to": "lensn"
+    },
+    {
+      "id": "lens1-empty",
+      "from": "lens1",
+      "to": "empty"
+    },
+    {
+      "id": "lensn-reanchor",
+      "from": "lensn",
+      "to": "reanchor",
+      "label": "findings"
+    },
+    {
+      "id": "empty-reanchor",
+      "from": "empty",
+      "to": "reanchor"
+    },
+    {
+      "id": "botvet-reanchor",
+      "from": "botvet",
+      "to": "reanchor"
+    },
+    {
+      "id": "reanchor-evidence",
+      "from": "reanchor",
+      "to": "evidence"
+    },
+    {
+      "id": "evidence-dedup",
+      "from": "evidence",
+      "to": "dedup"
+    },
+    {
+      "id": "dedup-tsc",
+      "from": "dedup",
+      "to": "tsc"
+    },
+    {
+      "id": "tsc-sweep",
+      "from": "tsc",
+      "to": "sweep"
+    },
+    {
+      "id": "tsc-critic",
+      "from": "tsc",
+      "to": "critic"
+    },
+    {
+      "id": "sweep-critic",
+      "from": "sweep",
+      "to": "critic",
+      "label": "new candidates"
+    },
+    {
+      "id": "critic-claude",
+      "from": "critic",
+      "to": "claude",
+      "label": "findings and gaps"
+    },
+    {
+      "id": "codex-classify",
+      "from": "codex",
+      "to": "classify",
+      "label": "vote file"
+    },
+    {
+      "id": "classify-tally",
+      "from": "classify",
+      "to": "tally",
+      "label": "vote"
+    },
+    {
+      "id": "claude-tally",
+      "from": "claude",
+      "to": "tally",
+      "label": "votes"
+    },
+    {
+      "id": "tally-escalate",
+      "from": "tally",
+      "to": "escalate",
+      "label": "split, close"
+    },
+    {
+      "id": "tally-verdict",
+      "from": "tally",
+      "to": "verdict",
+      "label": "kept"
+    },
+    {
+      "id": "refcheck-verdict",
+      "from": "refcheck",
+      "to": "verdict"
+    },
+    {
+      "id": "verdict-synth",
+      "from": "verdict",
+      "to": "synth",
+      "label": "verdict"
+    },
+    {
+      "id": "anchor-synth",
+      "from": "anchor",
+      "to": "synth"
+    },
+    {
+      "id": "synth-persist",
+      "from": "synth",
+      "to": "persist"
+    },
+    {
+      "id": "persist-row",
+      "from": "persist",
+      "to": "row"
+    },
+    {
+      "id": "persist-post",
+      "from": "persist",
+      "to": "post",
+      "label": "report",
+      "variant": "dashed"
+    },
+    {
+      "id": "post-github",
+      "from": "post",
+      "to": "github"
+    }
+  ]
+}

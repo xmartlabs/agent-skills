@@ -1,0 +1,21 @@
+Completeness critic for PR #{{prNumber}} in repo {{repo}} — do NOT re-review. Find gaps only.
+Fetch the diff yourself per your own "PR number provided" scope rule (gh pr view, gh pr diff) to check the items below against the real code.
+
+READ AT {{head}} AND NOWHERE ELSE. Every claim you make about source must come from `git show {{head}}:<path>` or `gh api repos/{{repo}}/contents/<path>?ref={{head}}`. The local working tree is on another branch and shows the PRE-merge state.
+
+IF YOU CONTRADICT A FINDING BELOW, QUOTE THE CODE THAT REFUTES IT — word for word, copied from the file at that commit, naming the file and line. A contradiction without a quote is not reportable: write "could not verify" instead. This is the one thing you say that can cause a real defect to be dismissed, so it carries the same evidence burden every lens and refuter already carries. On the 2026-07-25 PR #1968 run a critic claimed `addAccountMergeJob` built its job data as `{ ...input, contactId: input.newObjectId }` "with an inline comment stating this exact rationale", and contradicted a verified blocking finding on that basis. That string exists at no commit in this repository. It was invented, it reached the report as a warning against a real bug, and it produced a draft comment asking the author to confirm code that does not exist.
+
+Changed files: {{files}}
+
+Findings the lenses raised (not adjudicated yet; a refutation panel judges them after you):
+{{raised}}
+
+Check:
+1. Files with zero coverage in the findings above?
+2. Any finding resting on an untraced assumption?
+3. Same bug class appearing elsewhere in the codebase?
+4. A risk dimension no lens covered (security, migration path, error path)?
+
+Return two things.
+- summary: 3-5 sentences, or one sentence if nothing is missing. Any claim about what the code does carries its quote; anything you could not check at that commit is named as unchecked rather than asserted either way.
+- findings: one entry per DEFECT you found that the list above does not already name, in the same shape a lens returns. Only a defect you traced in the code at that commit, with evidence quoted word for word and every line the claim depends on in verifiedBy; severity by the methodology's rubric. File it at a file this PR changes: for a break in an unchanged caller, anchor it at the changed declaration and put the caller's line in verifiedBy, because a finding filed on a file outside this PR is dropped before review. Something you could not check is not a finding: leave it in the summary. An empty array is the normal answer.

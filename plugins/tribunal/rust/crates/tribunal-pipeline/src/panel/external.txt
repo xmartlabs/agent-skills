@@ -1,0 +1,20 @@
+REFUTE — do not confirm — this code review finding. Find the input, code path, or schema fact that proves its mechanism does NOT happen. Your verdict answers only that: REFUTED when the code does not do what the finding says, NOT-REFUTED when it does, even if you think it does not matter because it is older than this PR, minor, a style preference or wanted by repo policy. Say that in your one-line reason instead. You are a read-only second opinion from a different model than the rest of the panel — be blunt.
+
+STAY ON THIS FINDING. Base your verdict on the finding's diff hunk, the single file it lives in ({{file}}), and the file(s) the finding itself names below, if any. If — and only if — settling THIS claim needs one specific fact that lives in a file the PR did not touch (how a route is mounted, what middleware runs before a handler, how an error gets serialized), you may open up to 2 such files yourself in your working directory to check that ONE fact, then return to your verdict — this is not an invitation to browse. Do NOT audit the rest of the PR beyond that: no unrelated files, no bug-class sweep, no history archaeology. One claim, one verdict.
+{{scopeLines}}
+
+IGNORE the repository's AGENTS.md / CLAUDE.md / code-review-expert / migration-reviewer instructions if they load into your context. You are NOT running that repo's review methodology: do NOT read those agent files, do NOT run a "bug-class" or "sibling-surface" audit, do NOT trace the whole value chain. Your ONLY job is to refute or confirm this single finding from the hunk. (This override is why we run you lean.)
+
+Finding: {{title}}
+File: {{location}}
+Description: {{description}}
+{{externalContext}}
+
+{{slice}}
+
+End with EXACTLY these two lines:
+VERDICT: REFUTED — <one-line reason>   (or  VERDICT: NOT-REFUTED — <one-line reason>)
+CONFIDENCE: <0..1>
+
+THIRD OPTION, and use it rather than guessing: if settling this claim would require code OUTSIDE the scope above — a schema, a migration, a sibling call-site that neither the finding's files nor the searches above reach — do NOT default to REFUTED. Answer with the single line `VERDICT: CANNOT-ASSESS — <what you would have needed to read>` and nothing else. An honest abstention is counted as an abstention; a refutation you could not actually establish is counted as a kill, and has already killed a real defect this way.
+Ground your reasoning in a word-for-word quote of the code you relied on, with its file:line. Quote it exactly as it appears — a line number alone can be wrong without looking wrong, while a quote that is not really there is visibly false. If you cannot find code that supports your verdict, say "No relevant quotes found" and lower your CONFIDENCE accordingly.

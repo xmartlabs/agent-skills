@@ -1,0 +1,125 @@
+{
+  "type": "object",
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "REFUTED",
+        "NOT_REFUTED"
+      ]
+    },
+    "refutationType": {
+      "type": "string",
+      "enum": [
+        "PRE_DECIDED",
+        "TECHNICALLY_WRONG",
+        "NO_REFUTATION"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "claude",
+        "codex",
+        "gemini"
+      ]
+    },
+    "slotStatus": {
+      "type": "string",
+      "enum": [
+        "OK",
+        "UNAVAILABLE"
+      ]
+    },
+    "failureReason": {
+      "type": "string",
+      "enum": [
+        "timeout",
+        "error",
+        "quota",
+        "auth",
+        "refused",
+        "unparseable",
+        "confined"
+      ]
+    },
+    "confidence": {
+      "type": "number"
+    },
+    "coreStands": {
+      "type": "boolean"
+    },
+    "killReason": {
+      "type": "string",
+      "enum": [
+        "not-triggered",
+        "incorrect-premise"
+      ]
+    },
+    "contradiction": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "number"
+        },
+        "quote": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "quote"
+      ]
+    },
+    "introducedByPr": {
+      "type": "string",
+      "enum": [
+        "yes",
+        "no",
+        "unsure"
+      ]
+    },
+    "proposedSeverity": {
+      "type": "string",
+      "enum": [
+        "critical",
+        "important",
+        "nit"
+      ]
+    },
+    "intendedBy": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "rule": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "rule"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "decisionQuestioned": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "verdict",
+    "refutationType",
+    "confidence",
+    "reason",
+    "source",
+    "slotStatus",
+    "introducedByPr",
+    "proposedSeverity"
+  ]
+}

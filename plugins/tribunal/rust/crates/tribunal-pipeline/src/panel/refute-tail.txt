@@ -1,0 +1,21 @@
+
+
+Your vote answers two separate questions, in separate fields.
+
+THE FACT (verdict). Does the mechanism the finding describes actually happen at the pinned commit?
+- REFUTED only when it does not: killReason "not-triggered" (the code path or input the finding needs never reaches the code it names) or "incorrect-premise" (the finding misreads what the code does). Give contradiction: {file, line, quote}, where quote is the exact code, copied from the file at the pinned commit, that shows it. A REFUTED vote without that quote does not count.
+- NOT_REFUTED when you could not show the mechanism fails. That includes a real mechanism you think does not matter: older than this PR, minor, a style preference, or wanted by repo policy. Those are judgements and go in the fields below.
+- If the mechanism cannot be settled from code you can read, abstain: slotStatus "UNAVAILABLE", failureReason "confined".
+
+THE JUDGEMENT (every vote, whatever the verdict; these never change the verdict):
+- introducedByPr: "yes" when this PR's diff adds or changes the code that causes the behaviour, or makes a path reachable that was not before; "no" when the same behaviour already exists at the PR's base; "unsure" otherwise.
+- proposedSeverity: "critical" | "important" | "nit", the severity you would give it if the mechanism is real. A style preference is "nit". Repeat the finding's severity when you agree.
+- intendedBy: {file, rule} only when a rule in the repo's conventions file requires exactly the behaviour the finding calls a defect, with the rule copied word for word. Omit it otherwise.
+
+Also return:
+- refutationType: "TECHNICALLY_WRONG" on a factual REFUTED, "NO_REFUTATION" on NOT_REFUTED, "PRE_DECIDED" only as described above for decisions.
+- confidence: 0..1, how sure you are that your verdict is correct.
+- reason: what you read and why it supports your verdict and your judgement fields.
+- source: "claude"
+- slotStatus: "OK" unless you abstain as above.
+Be blunt.

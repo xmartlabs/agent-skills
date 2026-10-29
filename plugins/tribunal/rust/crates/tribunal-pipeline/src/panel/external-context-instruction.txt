@@ -1,0 +1,3 @@
+{{contextInstruction}}
+
+IMPORTANT for this slot: your verdict is REFUTED or NOT-REFUTED on the TECHNICAL merits only. Never label your answer PRE_DECIDED or cite a decision as your reason — if the finding is genuinely already-decided, say so in your one-line reason and let the orchestrator classify it.

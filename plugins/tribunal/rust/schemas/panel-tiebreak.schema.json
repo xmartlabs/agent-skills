@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "properties": {
+    "order": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      }
+    }
+  },
+  "required": [
+    "order"
+  ]
+}

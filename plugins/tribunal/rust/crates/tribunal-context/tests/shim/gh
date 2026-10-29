@@ -1,0 +1,47 @@
+#!/usr/bin/env node
+// A recorded `gh` for differential tests. Put this directory first on PATH
+// (for a script) or pass it as Tools.gh (for the Rust port), and point
+// GH_RECORDINGS at a JSON file: {"calls": [{"args": [...], "stdout": "...",
+// "stderr": "", "code": 0}]}. An exact match on the argument list answers;
+// anything else exits 99 naming the call, so a test never passes on a call
+// nobody recorded.
+//
+// GH_RECORD=1 with GH_REAL=<path to the real gh> runs the real command and
+// appends its answer to GH_RECORDINGS instead. GH_CALL_LOG, when set, gets
+// one JSON line per call, to compare which calls each side made.
+//
+// An answer sets process.exitCode rather than calling process.exit: on macOS
+// a pipe is written asynchronously, and process.exit cut anything past 64 KB.
+// The Rust side runs src/bin/tribunal-test-gh.rs, which answers as this does.
+const { readFileSync, writeFileSync, appendFileSync, existsSync } = require("node:fs");
+const { spawnSync } = require("node:child_process");
+
+const args = process.argv.slice(2);
+const file = process.env.GH_RECORDINGS;
+if (process.env.GH_CALL_LOG) appendFileSync(process.env.GH_CALL_LOG, JSON.stringify(args) + "\n");
+if (!file) {
+  process.stderr.write("gh shim: GH_RECORDINGS is not set\n");
+  process.exit(98);
+}
+const load = () => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : { calls: [] });
+const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+if (process.env.GH_RECORD === "1") {
+  const real = spawnSync(process.env.GH_REAL || "gh", args, { encoding: "utf8", maxBuffer: 256 << 20 });
+  const rec = load();
+  if (!rec.calls.some((c) => same(c.args, args)))
+    rec.calls.push({ args, stdout: real.stdout, stderr: real.stderr, code: real.status });
+  writeFileSync(file, JSON.stringify(rec, null, 1));
+  process.stdout.write(real.stdout);
+  process.stderr.write(real.stderr);
+  process.exitCode = real.status ?? 1;
+} else {
+  const hit = load().calls.find((c) => same(c.args, args));
+  if (!hit) {
+    process.stderr.write(`gh shim: unrecorded call: ${JSON.stringify(args)}\n`);
+    process.exit(99);
+  }
+  process.stdout.write(hit.stdout || "");
+  process.stderr.write(hit.stderr || "");
+  process.exitCode = hit.code ?? 0;
+}

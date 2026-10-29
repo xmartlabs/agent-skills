@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "properties": {
+    "clusters": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      }
+    }
+  },
+  "required": [
+    "clusters"
+  ]
+}
