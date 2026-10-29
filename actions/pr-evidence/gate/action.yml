@@ -1,0 +1,42 @@
+name: PR evidence gate
+description: >-
+  Decides whether the pr-evidence action would run on this pull request, without checking out or
+  installing anything. Use it in a cheap job before an expensive setup job.
+author: Xmartlabs
+
+inputs:
+  github-token:
+    description: Token for reading the pull request's files and comments.
+    default: ${{ github.token }}
+  attach-token:
+    description: Same as the pr-evidence action's input; its user's comments count as posted.
+    default: ''
+  has-claude-credential:
+    description: >-
+      `true` when the evidence job has a Claude credential, for example
+      `${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}`. Runs without one (Dependabot's) are skipped.
+    required: true
+  paths:
+    description: Same as the pr-evidence action's input.
+    default: ''
+  label:
+    description: Same as the pr-evidence action's input.
+    default: pr-evidence
+
+outputs:
+  run:
+    description: '`true` when the pr-evidence action would capture.'
+    value: ${{ steps.gate.outputs.run }}
+
+runs:
+  using: composite
+  steps:
+    - id: gate
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        ATTACH_TOKEN: ${{ inputs.attach-token }}
+        HAS_CLAUDE_AUTH: ${{ inputs.has-claude-credential }}
+        INPUT_PATHS: ${{ inputs.paths }}
+        INPUT_LABEL: ${{ inputs.label }}
+      run: bash "$GITHUB_ACTION_PATH/../run.sh" gate

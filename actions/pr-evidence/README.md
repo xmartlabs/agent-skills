@@ -46,6 +46,33 @@ jobs:
             !src/*.test.tsx
 ```
 
+### Skip the setup when there is nothing to capture
+
+The action decides whether to capture only after your setup steps ran. When they are slow (a large
+`npm ci`), put the decision in a cheap job first with the `gate` action, which reads the pull
+request through the API and checks out nothing:
+
+```yaml
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pull-requests: read }
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      - id: gate
+        uses: xmartlabs/agent-skills/actions/pr-evidence/gate@pr-evidence-v1
+        with:
+          has-claude-credential: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+          paths: src/*
+  evidence:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    # ... the job above, with the same `paths`
+```
+
+The evidence job's action checks again, with the same rules, so both agree.
+
 ## When it runs
 
 - Once per pull request, on `opened` or `ready_for_review`, never on drafts, and only when a
