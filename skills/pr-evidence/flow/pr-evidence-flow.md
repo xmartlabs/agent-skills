@@ -44,7 +44,9 @@ grounds to report "evidence pending" rather than improvise:
   never drives the *production* login flow (real magic links, real SSO, real MFA).
 - **`.pr-evidence/config.json` present** at the repo root, matching the config contract described
   in Stage 0 and Stage 2/3 below. Without it, `scripts/run.sh check` refuses to run.
-- **`playwright-cli`** available on `PATH` for browser drive/capture.
+- **`playwright-cli`** available on `PATH` for browser drive/capture, plus the browser the config's
+  `browser` key names (default `chrome`, i.e. Google Chrome; set `chromium` to use Playwright's
+  bundled Chromium).
 - **`python3`** available (used for JSON parsing throughout `scripts/run.sh`; no `jq` dependency
   is assumed).
 - **`ffmpeg`** — only required for the `recording` kind (webm → GIF + mp4 conversion). If it's
@@ -192,12 +194,21 @@ remember to remove it in Stage 7 — this routing and setup is inherently per-fe
 last time's route/selector without re-deriving them from the current diff is a common mistake to
 avoid.
 
+Resolve the browser once before the first `open` (the config's optional `browser` key, default
+`chrome`; use `chromium` on runners that only have Playwright's bundled Chromium):
+
+```bash
+BROWSER="$(scripts/run.sh browser)"
+```
+
+A non-zero exit means the config names an unsupported browser: report evidence pending.
+
 **Screenshot** — clip to the affected element when one can be identified; fall back to a
 full-page screenshot otherwise. `playwright-cli` supports the snapshot-then-act pattern (resolve
 element refs from a snapshot, then act on them):
 
 ```bash
-playwright-cli -s=$SESS open --browser=chrome "$ORIGIN<route>"
+playwright-cli -s=$SESS open --browser="$BROWSER" "$ORIGIN<route>"
 playwright-cli -s=$SESS resize 1920 1080
 playwright-cli -s=$SESS run-code "async page => {
   const el = await page.locator('<selector-for-affected-area>').first();
@@ -234,7 +245,7 @@ the layer from the changed files:
   local HTML file, open that file directly and screenshot the relevant template section:
 
   ```bash
-  playwright-cli -s=$SESS open --browser=chrome "file://$(pwd)/<preview-output>/index.html"
+  playwright-cli -s=$SESS open --browser="$BROWSER" "file://$(pwd)/<preview-output>/index.html"
   playwright-cli -s=$SESS resize 1920 1080
   playwright-cli -s=$SESS run-code "async page => {
     const el = await page.locator('<selector-for-affected-template>').first();

@@ -31,11 +31,12 @@ starting point and edit it for your project:
 | `boot` | The command that boots your app in test mode. Supports a `$PORT` placeholder. |
 | `auth.strategy` | `credentials-bypass`, `session-cookie`, `custom`, or `none` — see flow Stage 3 for what each expects. |
 | `host.target` | `github-attachment` (recommended), `git-branch` (legacy default when omitted), `user-attachments` (builtin — inline-renders on **private** repos; agent-driven only, see below), or `custom` (runs `host.upload` and uses its stdout as the artifact URL). |
+| `browser` | Optional. The `playwright-cli --browser` value used for capture: `chrome` (default), `chromium`, `msedge`, `firefox`, or `webkit`. Use `chromium` on CI runners that only have Playwright's bundled Chromium. Read by `scripts/run.sh browser`. |
 | `tracker.pr` / `tracker.issue` | Which PR host (`github`) and, optionally, which issue tracker (`jira`, `linear`, `none`) to also drop a link on. |
 
 `scripts/run.sh check` is what actually loads and validates this file at runtime (`testOrigin`
 in particular) — see [In-flow guardrail](#in-flow-guardrail) below. Note the split in who reads
-which keys: only `testOrigin` and the `host.*` keys are read by the scripts (`scripts/run.sh`,
+which keys: only `testOrigin`, `browser`, and the `host.*` keys are read by the scripts (`scripts/run.sh`,
 `scripts/host-git-branch.sh`, `scripts/host-user-attachments.sh`). The `auth.*` and `tracker.*`
 keys are **agent-consumed** — the
 agent following `flow/pr-evidence-flow.md` reads them at Stages 3 and 6 — so there is no
@@ -49,7 +50,7 @@ targets remain supported; omitting `host.target` retains the `git-branch` defaul
 
 | `host.target` | Emits | Renders inline… | Use when |
 | --- | --- | --- | --- |
-| `github-attachment` (recommended) | PR comment URL; media uploaded by `gh --attach` | Native GitHub attachments | GitHub with `gh >= 2.99.0`, repository write access, and OAuth or a classic PAT. |
+| `github-attachment` (recommended) | PR comment URL; media uploaded by `gh --attach` | Native GitHub attachments | GitHub with `gh >= 2.99.0`, repository write access, and OAuth or a classic PAT. The Actions `GITHUB_TOKEN` is rejected (`attaching files requires write access to the repository`), so use `git-branch` in CI. |
 | `git-branch` (legacy default) | SHA-pinned raw URL (`…/raw/<sha>/…`) on a dedicated hosting branch | On **public** repos for everyone; on **private** repos only for authenticated collaborators (GitHub won't proxy a private raw URL) | Public repos, or private repos where only the team needs to see it, and you want zero extra tooling. |
 | `user-attachments` | GitHub user-attachments CDN URLs (`github.com/user-attachments/assets/<uuid>`), one per file | On **private** repos too — legacy browser upload | Private/client repos where the inline GIF/screenshot must actually render in the PR (and stay access-gated to repo members). |
 | `custom` | Whatever `host.upload` prints to stdout | Depends on your uploader (e.g. an object store with signed URLs) | You want a neutral, portable store outside GitHub. |
@@ -65,6 +66,20 @@ which drives the real upload flow using a browser `user_session` cookie. That me
 - Output shape differs: because attachment URLs are opaque per-file UUIDs, this target prints a
   `basename<TAB>url` **mapping** (one line per file), not a single base URL the caller appends
   filenames to. Stage 6 composes the comment body from that mapping — see the flow doc.
+
+## Running in CI
+
+The flow also runs unattended in a GitHub Actions job, with these differences from a local run:
+
+- Pass `PR_NUMBER` and `CHANGED` explicitly. Actions checks out a merge ref, so
+  `gh pr view` without arguments cannot resolve the PR.
+- Read `.pr-evidence/config.json` from the PR's base branch, never from the PR head: its
+  `boot`, `auth.script`, and `host.upload` values run as code.
+- Publish with `host.target: git-branch` and the job's own `GITHUB_TOKEN` (`contents: write`,
+  `pull-requests: write`). `github-attachment` needs OAuth or a classic PAT and rejects
+  `GITHUB_TOKEN`. On private repos the raw URLs render inline for signed-in collaborators.
+- Set `browser` to `chromium` when the runner only has Playwright's bundled Chromium.
+- Install `gh >= 2.99.0` into a job-local path if the runner's version is older.
 
 ## Release notes
 

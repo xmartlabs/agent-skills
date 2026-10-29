@@ -110,6 +110,15 @@ cmd_host() {
   [ -n "$dry" ] && { echo "host-git-branch.sh $branch $remote $ticket $*"; return 0; }
   bash "$DIR/scripts/host-git-branch.sh" "$branch" "$remote" "$ticket" "$@"
 }
+cmd_browser() { # prints the playwright-cli --browser value; defaults to chrome
+  local cfg="${1:-$CONFIG_DEFAULT}"
+  [ -f "$cfg" ] || { echo "config not found: $cfg" >&2; return 1; }
+  local browser; browser="$(cfg_get browser "$cfg" 2>/dev/null || echo chrome)"
+  case "$browser" in
+    chrome|chromium|msedge|firefox|webkit) printf '%s\n' "$browser" ;;
+    *) echo "unsupported browser '$browser' (use chrome, chromium, msedge, firefox or webkit)" >&2; return 1 ;;
+  esac
+}
 cmd_comment() {
   local dry=""; [ "${1:-}" = "--dry-run" ] && { dry=1; shift; }
   if [ -n "$dry" ]; then bash "$DIR/scripts/comment-github.sh" --dry-run "$@"; else bash "$DIR/scripts/comment-github.sh" "$@"; fi
@@ -119,5 +128,6 @@ case "${1:-}" in
   check) shift; cmd_check "$@" ;;
   host) shift; cmd_host "$@" ;;
   comment) shift; cmd_comment "$@" ;;
-  *) echo "usage: run.sh check|host|comment [args]" >&2; exit 2 ;;
+  browser) shift; cmd_browser "$@" ;;
+  *) echo "usage: run.sh check|host|comment|browser [args]" >&2; exit 2 ;;
 esac
