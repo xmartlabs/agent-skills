@@ -1597,7 +1597,7 @@ mod tests {
             )),
             [("unawaited-enqueue", 2)]
         );
-        let sentinel = "const getByVid = async (vid) => {\n  try {\n    return await db.find(vid);\n  } catch (e) {\n    return null;\n  }\n};\n\nexport async function resolve(vid) {\n  for (let i = 0; i < 3; i++) {\n    const a = await getByVid(vid);\n    if (!a) return null;\n  }\n  return null;\n}";
+        let sentinel = "const getByExternalId = async (vid) => {\n  try {\n    return await db.find(vid);\n  } catch (e) {\n    return null;\n  }\n};\n\nexport async function resolve(vid) {\n  for (let i = 0; i < 3; i++) {\n    const a = await getByExternalId(vid);\n    if (!a) return null;\n  }\n  return null;\n}";
         assert_eq!(
             kinds_at(&facts_for_file("src/x.ts", sentinel, &Added::of(&[11]))),
             [("sentinel-from-catch", 11)]

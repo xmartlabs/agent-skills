@@ -56,15 +56,21 @@ defaults:
 env:
   CARGO_TERM_COLOR: always
 
+# Read-only by default. Only `release` writes (it creates the GitHub release),
+# and the build jobs add what signing their provenance needs.
+permissions:
+  contents: read
+
 jobs:
   linux:
     if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.RUNNER || 'ubuntu-24.04' }}
     steps:
       # The evidence-line tests replay this repository's own history.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
+          persist-credentials: false
       # The tests run git, and a self-hosted runner's git reads the operator's
       # ~/.gitconfig: a diff.noprefix there drops the b/ the evidence tests read
       # paths from. Every later step gets an empty global config instead. Not
@@ -77,7 +83,7 @@ jobs:
           echo "GIT_CONFIG_NOSYSTEM=1" >> "$GITHUB_ENV"
       # Node 23 and later compile regexp modifiers such as (?-i:...), which the
       # profile checks are measured against.
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 24
       # The differential tests run the bash with LC_ALL=en_US.UTF-8; without
@@ -164,7 +170,7 @@ jobs:
       # job, but on the self-hosted runners, which share one ~/.cargo, it
       # removed cargo from under a job running next to it.
       - if: runner.environment == 'github-hosted'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: plugins/tribunal/rust
       - run: cargo fmt --all --check
@@ -199,9 +205,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
+          persist-credentials: false
       - run: bash plugins/tribunal/rust/scripts/test-macos.sh
         working-directory: .
 
@@ -225,14 +232,16 @@ jobs:
         run: |
           git config --global core.autocrlf false
           git config --global core.longpaths true
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - name: toolchain
         run: |
           rustup show active-toolchain || rustup toolchain install
           rustup target add "$TARGET"
           channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
           echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: plugins/tribunal/rust
       - run: cargo clippy --target "$TARGET" --workspace --lib --bins --locked -- -D warnings
@@ -271,15 +280,26 @@ jobs:
           - { target: x86_64-unknown-linux-musl, stage: linux-bin, bin: tribunal, archive: tar.gz }
           - { target: x86_64-pc-windows-msvc, stage: windows-msvc-bin, bin: tribunal.exe, archive: zip }
     runs-on: ${{ vars.RELEASE_RUNNER || vars.RUNNER || 'ubuntu-24.04' }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v5
-      # The tag names the CLI crate's version, or the release is refused.
-      - name: tag matches the version
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # The tag names the CLI crate's version and a commit that is on main, or
+      # the release is refused: a tag pushed on an unreviewed branch ships
+      # nothing.
+      - name: tag matches the version and main
         run: |
           want="tribunal-rust-v$(sed -n 's/^version = "\(.*\)"/\1/p' crates/tribunal-cli/Cargo.toml | head -1)"
           if [ "$GITHUB_REF_NAME" != "$want" ]; then
             echo "the tag $GITHUB_REF_NAME is not the CLI version $want"; exit 1
           fi
+          git fetch --no-tags -q origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD || { echo "the tag's commit is not on main"; exit 1; }
       # A builder of its own and no cache: the runner also builds pull
       # requests, whose BuildKit cache mounts a release must not reuse.
       - name: build
@@ -315,7 +335,13 @@ jobs:
       # started under Wine in its container.
       - if: matrix.archive == 'tar.gz'
         run: '"$RUNNER_TEMP/bin/${{ matrix.bin }}" --version'
-      - uses: actions/upload-artifact@v6
+      # A signed statement that this workflow, at this commit, built the
+      # archive: `gh attestation verify <archive> --repo xmartlabs/agent-skills`
+      # checks it before pinning.
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: ${{ runner.temp }}/${{ env.ASSET }}
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: ${{ matrix.target }}
           path: |
@@ -330,26 +356,36 @@ jobs:
     runs-on: macos-15
     permissions:
       contents: read
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v5
-      - name: tag matches the version
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: tag matches the version and main
         run: |
           want="tribunal-rust-v$(sed -n 's/^version = "\(.*\)"/\1/p' crates/tribunal-cli/Cargo.toml | head -1)"
           if [ "$GITHUB_REF_NAME" != "$want" ]; then
             echo "the tag $GITHUB_REF_NAME is not the CLI version $want"; exit 1
           fi
+          git fetch --no-tags -q origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD || { echo "the tag's commit is not on main"; exit 1; }
       - name: build
         working-directory: .
         env:
           OUT_DIR: ${{ runner.temp }}/darwin
         run: bash plugins/tribunal/rust/scripts/build-darwin.sh
-      - uses: actions/upload-artifact@v6
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: ${{ runner.temp }}/darwin/*.tar.gz
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: aarch64-apple-darwin
           path: ${{ runner.temp }}/darwin/*-aarch64-apple-darwin.tar.gz*
           if-no-files-found: error
           retention-days: 1
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: x86_64-apple-darwin
           path: ${{ runner.temp }}/darwin/*-x86_64-apple-darwin.tar.gz*
@@ -362,7 +398,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           path: assets
           merge-multiple: true
@@ -375,10 +411,20 @@ jobs:
           # check reads the version only: the tag's own prefix has hyphens.
           pre=""
           case "${GITHUB_REF_NAME#tribunal-rust-v}" in *-*) pre=--prerelease ;; esac
+          # Notes cover what changed since the previous tribunal-rust release,
+          # not every pull request of the repository's other tools.
+          prev=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName' \
+            | grep '^tribunal-rust-v' | grep -vx "$GITHUB_REF_NAME" | head -1 || true)
+          if [ -n "$prev" ]; then
+            notes=(--generate-notes --notes-start-tag "$prev")
+          else
+            notes=(--notes "First tribunal-rust release from this repository.")
+          fi
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-            --verify-tag --generate-notes $pre assets/*
+            --verify-tag "${notes[@]}" $pre assets/*
 
-  # `macos` is skipped on most pull requests, and that passes; it failing does not.
+  # `macos` is skipped only in a private repository without MAC_RUNNER, and
+  # that passes; it failing does not.
   gate:
     needs: [macos, linux, windows]
     if: always() && github.event_name != 'push'

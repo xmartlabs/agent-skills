@@ -320,16 +320,16 @@ console.log(`\n--- goldens ---`);
     {
       category: "BY-DESIGN",
       summary:
-        "BY-DESIGN: retryDuringRedisStartup is not added to the accounts, orders, catalog_search or worker.ts workers; each accounts scheduler registration already has its own try/catch",
+        "BY-DESIGN: retryUntilRedisReady is not added to the accounts, orders, catalog_search or worker.ts workers; each accounts scheduler registration already has its own try/catch",
       source: "bob, 2026-10-16",
-      files: ["src/jobs/accounts_worker.ts", "src/jobs/orders_worker.ts", "src/jobs/worker.ts"],
+      files: ["src/jobs/profiles_worker.ts", "src/jobs/orders_worker.ts", "src/jobs/worker.ts"],
     },
   ];
   const PR = ["src/jobs/queue.ts", ...D[0].files];
   const finding = {
     file: "src/jobs/queue.ts",
     title: "Accounts schedulers bypass the new startup retry",
-    description: "registrationRemindersQueue schedulers are registered at boot without retryDuringRedisStartup",
+    description: "signupRemindersQueue schedulers are registered at boot without retryUntilRedisReady",
   };
   const vote = v("claude", "REFUTED", 0.8, {
     refutationType: "PRE_DECIDED",
@@ -372,8 +372,8 @@ console.log(`\n--- goldens ---`);
   check(
     "a path matches on a whole segment only",
     G.samePath("src/jobs/worker.ts", "worker.ts") &&
-      !G.samePath("src/jobs/accounts_worker.ts", "worker.ts") &&
-      G.preDecidedCoversFile("x", "src/jobs/accounts_worker.ts", [{ summary: "x", files: ["worker.ts"] }]) === false,
+      !G.samePath("src/jobs/profiles_worker.ts", "worker.ts") &&
+      G.preDecidedCoversFile("x", "src/jobs/profiles_worker.ts", [{ summary: "x", files: ["worker.ts"] }]) === false,
   );
 }
 {

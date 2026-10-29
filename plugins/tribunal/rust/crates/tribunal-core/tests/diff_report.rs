@@ -898,7 +898,7 @@ fn grade_input() -> impl Strategy<Value = Value> {
         0.8,
         prop_oneof![
             6 => edge,
-            1 => Just(json!("if (job && isFinalJobAttempt(job)) {")),
+            1 => Just(json!("if (job && isLastRetry(job)) {")),
             1 => Just(json!(123456789012_i64)),
             1 => Just(json!(12345678901_i64)),
             1 => Just(json!(1e21)),
@@ -940,7 +940,7 @@ fn fallback_args() -> impl Strategy<Value = Vec<Value>> {
             json!(3),
             json!(2.5),
             json!(1e21),
-            json!("0eedf726d9e0"),
+            json!("91c5e0458392"),
             json!("a diff was empty"),
             json!("tribunal-row"),
             json!([]),
@@ -1023,16 +1023,16 @@ fn carry_forward_seeds() -> Vec<Value> {
     let prior = json!([
         {"file": "src/services/v2/contactResults.ts", "title": "Redundant prisma.account lookup re-fetches data already in scope on every update/merge job outcome", "severity": "nit", "blocking": false},
         {"file": "src/controllers/v2/account.controller.ts", "title": "Enqueue-failure + partner redelivery creates a duplicate ContactResults row that is stranded in 'error' forever", "severity": "important", "blocking": true},
-        {"file": "src/jobs/accounts_worker.ts", "title": "Worker's 'failed' listener permanently flips contactResults row to error on any retryable failure", "severity": "critical", "blocking": true},
+        {"file": "src/jobs/profiles_worker.ts", "title": "Worker's 'failed' listener permanently flips contactResults row to error on any retryable failure", "severity": "critical", "blocking": true},
     ]);
     let scope = json!({
-        "changed": ["src/controllers/v2/account.controller.test.ts", "src/jobs/accounts_worker.ts"],
-        "added": ["src/jobs/jobAttempts.test.ts", "src/jobs/jobAttempts.ts"],
+        "changed": ["src/controllers/v2/account.controller.test.ts", "src/jobs/profiles_worker.ts"],
+        "added": ["src/jobs/retryState.test.ts", "src/jobs/retryState.ts"],
         "unchanged": ["src/controllers/v2/account.controller.ts", "src/controllers/v2/contactResults.ts", "src/services/v2/contactResults.ts", "src/jobs/queue.ts", "src/routes/v2/contactResults.routes.ts"],
         "gone": [],
     });
-    let current = json!([{"file": "src/jobs/accounts_worker.ts", "title": "outcome.contactName ?? undefined collapses an intentional null into 'not provided', triggering an unintended DB lookup", "severity": "nit"}]);
-    let reraise = json!({"file": "src/jobs/accounts_worker.ts", "title": "The 'failed' listener still flips the contactResults row to error on a retryable failure"});
+    let current = json!([{"file": "src/jobs/profiles_worker.ts", "title": "outcome.contactName ?? undefined collapses an intentional null into 'not provided', triggering an unintended DB lookup", "severity": "nit"}]);
+    let reraise = json!({"file": "src/jobs/profiles_worker.ts", "title": "The 'failed' listener still flips the contactResults row to error on a retryable failure"});
     let scope_2012 = json!({"changed": ["src/services/v2/accounts.ts"], "added": [], "unchanged": ["src/controllers/v2/auth.controller.ts"], "gone": []});
     let prior_2012 = json!([{"file": "src/controllers/v2/auth.controller.ts", "title": "Account-level skip pushes success:false rows for orders never attempted", "severity": "important", "blocking": true}]);
     let adjacency_2012 = json!({"src/controllers/v2/auth.controller.ts": [{"file": "src/services/v2/accounts.ts", "matchConfidence": "path"}]});
@@ -1047,7 +1047,7 @@ fn carry_forward_seeds() -> Vec<Value> {
         json!({"fn": "cfSameFinding", "args": [prior[2], current[0]]}),
         json!({"fn": "cfSameFinding", "args": [prior[2], reraise]}),
         json!({"fn": "cfSameFinding", "args": [{"file": "a.ts", "line": 100, "title": "completely unrelated words here"}, {"file": "a.ts", "line": 120, "title": "nothing in common at all"}]}),
-        json!({"fn": "gradePriorVerification", "args": [{"verdict": "FIXED", "quote": "if (job && isFinalJobAttempt(job)) {", "reason": "the flip is now gated on the final attempt"}]}),
+        json!({"fn": "gradePriorVerification", "args": [{"verdict": "FIXED", "quote": "if (job && isLastRetry(job)) {", "reason": "the flip is now gated on the final attempt"}]}),
         json!({"fn": "gradePriorVerification", "args": [{"verdict": "FIXED", "reason": "looks handled"}]}),
         json!({"fn": "gradePriorVerification", "args": [{"verdict": "PROBABLY_FINE", "quote": "some real looking code here"}]}),
         json!({"fn": "gradePriorVerification", "args": [Value::Null]}),
@@ -1055,7 +1055,7 @@ fn carry_forward_seeds() -> Vec<Value> {
         json!({"fn": "priorGrade", "args": [reinstated]}),
         json!({"fn": "verdictFor", "args": [[], ["critical"]]}),
         json!({"fn": "verdictFor", "args": [Value::Null, ["critical"]]}),
-        json!({"fn": "incrementalFallbackFor", "args": ["0eedf726d9e0", false, 0, "a diff was empty"]}),
+        json!({"fn": "incrementalFallbackFor", "args": ["91c5e0458392", false, 0, "a diff was empty"]}),
         json!({"fn": "incrementalFallbackFor", "args": ["abc", false, 3, "ignored"]}),
         json!({"fn": "unresolvedPriorBlockersFrom", "args": [[reinstated], [{"severity": "critical", "blocking": true, "verification": {"verdict": "FIXED"}}]]}),
     ]

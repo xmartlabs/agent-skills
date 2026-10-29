@@ -53,7 +53,7 @@ const ok = (label, cond) => eq(label, !!cond, true);
 eq("line suffix stripped", normalizeReadPath("scripts/orders/cancel-orders.ts:233"), "scripts/orders/cancel-orders.ts");
 eq("line range stripped", normalizeReadPath("src/a.ts:10-40"), "src/a.ts");
 eq("absolute path reduced to repo-relative", normalizeReadPath("/Users/x/repo/src/services/v2/orders.ts"), "src/services/v2/orders.ts");
-eq("git show ref:path", normalizeReadPath("272732dd:prisma/schema.prisma"), "prisma/schema.prisma");
+eq("git show ref:path", normalizeReadPath("37e7fbea:prisma/schema.prisma"), "prisma/schema.prisma");
 eq("bare basename with an extension is kept", normalizeReadPath("schema.prisma"), "schema.prisma");
 // Extensions are required. The looser pattern used by the redundancy count
 // admits non-files and inflates it (43% vs 37% on the same data); here a
@@ -104,7 +104,7 @@ eq("reads: malformed lines are skipped, not fatal", extractReads("{oops\n" + tra
 const REPO_FILES = [
   "src/services/v2/orders.ts",
   "src/services/v2/orders.update.ts",
-  "src/_helpers/v2/utilities.ts",
+  "src/lib/helpers/utilities.ts",
   "src/legacy/utilities.ts",
   "prisma/schema.prisma",
   "scripts/orders/cancel-orders.ts"

@@ -11,7 +11,7 @@
 // text, because the serialiser kept the verdict and dropped the justification.
 //
 // FIXTURES ARE REAL. Every string below was produced by an actual refuter on
-// 2026-09-11 against PR #1911 @6fed12b3. The four "phantom" identifiers were
+// 2026-09-11 against PR #1911 @7495b91f. The four "phantom" identifiers were
 // each verified absent at that commit by reading the blob, and the six sound
 // ones verified present — so this replay is scored against the repository, not
 // against my reading of it.
@@ -43,7 +43,7 @@ check("region references no run state", violations.length === 0, violations.join
 // --- verbatim from the four wrong kills -------------------------------------
 const WRONG = [
   "At HEAD the catch block checks `e instanceof RemoteOrderCountSyncError` and prints a distinct 'do NOT decrement the DB count again' message when only OpsHub failed.",
-  "Every console.log/console.warn that references prodEmail passes it through `maskEmailForLog()` imported from `./csv-safety.ts`, which masks all but the first character and domain.",
+  "Every console.log/console.warn that references prodEmail passes it through `redactEmail()` imported from `./export-sanitize.ts`, which masks all but the first character and domain.",
   "An intra-batch dedupe pass (seenOrderIds Set, lines 616-635) already runs before createMany, pushing a success:false result for any duplicate orderId within the batch.",
 ];
 // --- verbatim from the sound votes ------------------------------------------
@@ -58,8 +58,8 @@ console.log(`\n--- what a refutation names ---`);
   const a = citedIdentifiers(WRONG[0]);
   check("a PascalCase error type is picked up", a.includes("RemoteOrderCountSyncError"));
   const b = citedIdentifiers(WRONG[1]);
-  check("a camelCase helper is picked up", b.includes("maskEmailForLog"));
-  check("and so is the file it claims to import from", b.includes("csv-safety.ts"));
+  check("a camelCase helper is picked up", b.includes("redactEmail"));
+  check("and so is the file it claims to import from", b.includes("export-sanitize.ts"));
   const c = citedIdentifiers(WRONG[2]);
   check("a camelCase local is picked up", c.includes("seenOrderIds"));
 }
@@ -127,9 +127,9 @@ console.log(`\n--- the three states, kept apart ---`);
 
 console.log(`\n--- scored against the real repository ---`);
 {
-  // Verified by reading the blobs at 6fed12b3: absent there, present in the
+  // Verified by reading the blobs at 7495b91f: absent there, present in the
   // ambient checkout. This is the discrimination the detector exists for.
-  const PHANTOM = new Set(["RemoteOrderCountSyncError", "maskEmailForLog", "seenOrderIds", "csv-safety.ts"]);
+  const PHANTOM = new Set(["RemoteOrderCountSyncError", "redactEmail", "seenOrderIds", "export-sanitize.ts"]);
   const flagged = WRONG.map((t) => {
     const cited = citedIdentifiers(t);
     return refEvidenceVerdict({ ran: true, cited, missing: cited.filter((i) => PHANTOM.has(i)) });

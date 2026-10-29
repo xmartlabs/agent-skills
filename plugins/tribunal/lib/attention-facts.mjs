@@ -204,7 +204,7 @@ export function factsForFile(ts, file, content, added) {
       };
       walk(n.tryBlock);
     }
-    // BE #1996: a new loop called getAccountByVid, whose catch returns null on
+    // BE #1996: a new loop called getAccountByExternalId, whose catch returns null on
     // any database error, and read that null as "no account".
     if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && added.has(lineOf(n)) && declared.has(n.expression.text)) {
       const fn = declared.get(n.expression.text);

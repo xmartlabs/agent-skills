@@ -31,6 +31,7 @@ import {
 } from "../scripts/build-post-footer.mjs";
 import { composeBody } from "../scripts/post-review.mjs";
 import { FIXTURES_DIR } from "./paths.mjs";
+import { dataId } from "./data-ids.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(FIXTURES_DIR, "post-footer");
@@ -196,7 +197,7 @@ function runFooter(args, env = {}) {
 {
   const dir = sandboxWith("workflow-full.jsonl");
   const r = runFooter(
-    ["--mode", "workflow", "--pr", "1947", "--head-sha", "3cf9542a5e0a63f47e88b80a30be08b00b9ac9ae", "--agent-count", "36"],
+    ["--mode", "workflow", "--pr", "1947", "--head-sha", dataId("57db7090f376", 40), "--agent-count", "36"],
     { TRIBUNAL_DATA_DIR: dir }
   );
   check(
@@ -218,7 +219,7 @@ function runFooter(args, env = {}) {
 {
   const dir = sandboxWith("workflow-degraded-no-cost.jsonl");
   const r = runFooter(
-    ["--mode", "workflow", "--pr", "1935", "--head-sha", "0b8e5340b97f31f880f7ac2a55bf649701a264dd", "--agent-count", "5"],
+    ["--mode", "workflow", "--pr", "1935", "--head-sha", dataId("28a270af5861", 40), "--agent-count", "5"],
     { TRIBUNAL_DATA_DIR: dir }
   );
   const expected = skillFooter(

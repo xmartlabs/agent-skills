@@ -156,37 +156,37 @@ if (want("stages")) {
   const line = (name, fires, unit, wins, label, note) => {
     const tot = fires * unit;
     console.log(
-      `  ${name.padEnd(12)}${String(fires).padStart(4)} disparos   ${(tot / 1e6).toFixed(0).padStart(4)}M   ${String(wins).padStart(3)} ${label.padEnd(24)} ${wins ? (tot / wins / 1e6).toFixed(1) + "M c/u" : "—"}${note ? `  ${note}` : ""}`
+      `  ${name.padEnd(12)}${String(fires).padStart(4)} fires   ${(tot / 1e6).toFixed(0).padStart(4)}M   ${String(wins).padStart(3)} ${label.padEnd(24)} ${wins ? (tot / wins / 1e6).toFixed(1) + "M each" : "—"}${note ? `  ${note}` : ""}`
     );
   };
-  line("escalacion", esc.length, cost.refuter, changed, "decisiones dadas vuelta", `(${uncomputable} no computables — falta votes[].round)`);
-  line("debate", deb.length, cost.defense + cost.adjudicator, deb.filter((f) => f.debate.outcome === "flipped").length, "veredictos flipeados");
-  line("refine", ref.length, cost.strengthen + cost.refuter, ref.filter((f) => f.survived).length, "findings rescatados");
-  console.log(`\n  NO SUMABLES: refine y el triage-previo atacan poblaciones solapadas.`);
-  console.log(`  referencia: una lente entera cuesta ${(meanIn(byKind("lens")) / 1e6).toFixed(2)}M`);
+  line("escalation", esc.length, cost.refuter, changed, "decisions flipped", `(${uncomputable} not computable: votes[].round missing)`);
+  line("debate", deb.length, cost.defense + cost.adjudicator, deb.filter((f) => f.debate.outcome === "flipped").length, "verdicts flipped");
+  line("refine", ref.length, cost.strengthen + cost.refuter, ref.filter((f) => f.survived).length, "findings rescued");
+  console.log(`\n  DO NOT ADD THESE UP: refine and pre-triage act on overlapping populations.`);
+  console.log(`  reference: a whole lens costs ${(meanIn(byKind("lens")) / 1e6).toFixed(2)}M`);
 
   // Which refine trigger pays. Post-refine the panel is replaced, so round-0
-  // signals are partly gone — the "no atribuible" bucket is that loss, not noise.
+  // signals are partly gone — the "unattributable" bucket is that loss, not noise.
   const core = (f) => Array.isArray(f.votes) && f.votes.some((v) => v.coreStands === true);
-  const buckets = { "coreStands+borderline": [], "solo coreStands": [], "solo borderline": [], "no atribuible": [] };
+  const buckets = { "coreStands+borderline": [], "coreStands only": [], "borderline only": [], "unattributable": [] };
   for (const f of ref) {
     const c = core(f),
       b = !!f.borderline;
-    buckets[c && b ? "coreStands+borderline" : c ? "solo coreStands" : b ? "solo borderline" : "no atribuible"].push(f);
+    buckets[c && b ? "coreStands+borderline" : c ? "coreStands only" : b ? "borderline only" : "unattributable"].push(f);
   }
-  console.log(`\n  REFINE por señal (severidad y votos son POST-refine — ver §11.ante 2):`);
+  console.log(`\n  REFINE by signal (severity and votes are POST-refine, see §11.ante 2):`);
   for (const [k, v] of Object.entries(buckets))
-    console.log(`    ${k.padEnd(24)}${String(v.length).padStart(3)} disparos   ${String(v.filter((f) => f.survived).length).padStart(2)} rescates   ${pct(v.filter((f) => f.survived).length, v.length)}`);
+    console.log(`    ${k.padEnd(24)}${String(v.length).padStart(3)} fires   ${String(v.filter((f) => f.survived).length).padStart(2)} rescues   ${pct(v.filter((f) => f.survived).length, v.length)}`);
 }
 
 // --- 3. is the fan-out over-provisioned? ------------------------------------
 if (want("fanout")) {
-  head("FAN-OUT — ¿alcanzaba con el primer votante?");
+  head("FAN-OUT — was the first voter enough?");
   const withRf = panels.filter((f) => typeof f.refuteFraction === "number");
   const unan = withRf.filter((f) => f.refuteFraction === 0 || f.refuteFraction === 1);
-  console.log(`  paneles: ${withRf.length}   unanimes (0.00 o 1.00): ${unan.length} (${pct(unan.length, withRf.length)})`);
+  console.log(`  panels: ${withRf.length}   unanimous (0.00 or 1.00): ${unan.length} (${pct(unan.length, withRf.length)})`);
   const hard = withRf.filter((f) => f.refuteFraction > 0.35 && f.refuteFraction <= 0.55);
-  console.log(`  zona dificil (0.36-0.55): ${hard.length} (${pct(hard.length, withRf.length)})`);
+  console.log(`  hard zone (0.36-0.55): ${hard.length} (${pct(hard.length, withRf.length)})`);
   let ok = 0,
     bad = [];
   for (const f of withRf) {
@@ -195,16 +195,16 @@ if (want("fanout")) {
     const solo = (f.votes[0].verdict === "REFUTED" ? 1 : 0) >= T;
     solo === f.refuteFraction >= T ? ok++ : bad.push(f.votes[0]);
   }
-  console.log(`\n  el 1er voto solo (slot 0 = refuter Claude ronda 0) daria la MISMA decision en ${ok}/${ok + bad.length} (${pct(ok, ok + bad.length)})`);
+  console.log(`\n  the 1st vote alone (slot 0 = Claude refuter, round 0) would give the SAME decision in ${ok}/${ok + bad.length} (${pct(ok, ok + bad.length)})`);
   const conf = (v) => (typeof v.confidence === "number" ? v.confidence : 0.5);
   const mean = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
   const rightConf = withRf
     .filter((f) => Array.isArray(f.votes) && f.votes.length)
     .filter((f) => ((f.votes[0].verdict === "REFUTED" ? 1 : 0) >= (f.threshold || 0.45)) === (f.refuteFraction >= (f.threshold || 0.45)))
     .map((f) => conf(f.votes[0]));
-  console.log(`  confianza del 1er voto: acertando ${mean(rightConf).toFixed(2)}  errando ${mean(bad.map(conf)).toFixed(2)}`);
-  console.log(`  => si esos dos numeros son parecidos, la confianza NO sirve como compuerta`);
-  console.log(`     y el fan-out no se puede recortar a ciegas. Bajar el PRECIO del votante, no el numero.`);
+  console.log(`  1st vote confidence: when right ${mean(rightConf).toFixed(2)}  when wrong ${mean(bad.map(conf)).toFixed(2)}`);
+  console.log(`  => if those two numbers are close, confidence is NOT usable as a gate`);
+  console.log(`     and the fan-out cannot be cut blindly. Lower the voter PRICE, not the count.`);
 }
 
 // --- 4. break-even for a pre-assembled context ------------------------------
@@ -212,14 +212,14 @@ if (want("fanout")) {
 // generous package needs a large turn drop just to break even. This is what
 // demoted pre-assembly for lenses and promoted it for refuters.
 if (want("breakeven")) {
-  head("BREAK-EVEN DEL CONTEXTO PRE-ARMADO (el paquete se cobra cada turno)");
+  head("BREAK-EVEN OF A PRE-ASSEMBLED CONTEXT (the package is billed every turn)");
   const FLOOR = 20600; // measured: first-turn context of the shortest-prompt mechanical agents
-  console.log(`  piso por turno medido: ${n(FLOOR)} tokens\n`);
-  console.log(`  ${"clase".padEnd(22)}${"paquete".padStart(9)}${"hoy".padStart(20)}${"con paquete".padStart(14)}   veredicto`);
+  console.log(`  measured per-turn floor: ${n(FLOOR)} tokens\n`);
+  console.log(`  ${"class".padEnd(22)}${"package".padStart(9)}${"today".padStart(20)}${"with package".padStart(14)}   verdict`);
   for (const [kind, pkg, label] of [
-    ["refuter", 13000, "refuter (3 archivos)"],
-    ["lens", 135000, "lens (PR cohesivo)"],
-    ["lens", 202000, "lens (PR disperso)"]
+    ["refuter", 13000, "refuter (3 files)"],
+    ["lens", 135000, "lens (cohesive PR)"],
+    ["lens", 202000, "lens (scattered PR)"]
   ]) {
     const list = byKind(kind);
     if (!list.length) continue;
@@ -228,19 +228,19 @@ if (want("breakeven")) {
     const newPerTurn = FLOOR + pkg;
     const be = perAgent / newPerTurn;
     console.log(
-      `  ${label.padEnd(22)}${(pkg / 1000).toFixed(0).padStart(7)}k   ${(Math.round(perAgent / turns / 1000) + "k/turno · " + turns.toFixed(0) + "t").padStart(17)}${(Math.round(newPerTurn / 1000) + "k/turno").padStart(14)}   ${be >= turns ? "GANA sin bajar turnos" : `necesita ${turns.toFixed(0)}→<${be.toFixed(0)} turnos (−${(100 * (1 - be / turns)).toFixed(0)}%)`}`
+      `  ${label.padEnd(22)}${(pkg / 1000).toFixed(0).padStart(7)}k   ${(Math.round(perAgent / turns / 1000) + "k/turn · " + turns.toFixed(0) + "t").padStart(17)}${(Math.round(newPerTurn / 1000) + "k/turn").padStart(14)}   ${be >= turns ? "WINS with no fewer turns" : `needs ${turns.toFixed(0)}→<${be.toFixed(0)} turns (−${(100 * (1 - be / turns)).toFixed(0)}%)`}`
     );
   }
 }
 
 // --- 5. redundant file access -----------------------------------------------
 if (want("redundancy")) {
-  head("ACCESOS A UN PATH YA ACCEDIDO (techo de redundancia, no piso)");
-  console.log(`  CUENTA ACCESOS, NO BYTES: dos sed -n sobre rangos distintos del mismo`);
-  console.log(`  archivo cuentan como repeticion sin serlo. La redundancia en BYTES esta sin medir.`);
-  console.log(`  El path se captura sin exigir extension de archivo, asi que entran tokens que`);
-  console.log(`  no son archivos: da ~43% donde una version que exige \\.(ts|js|prisma|json) da 37%.`);
-  console.log(`  Tomar 37-43% como una banda, no como un punto.\n`);
+  head("ACCESSES TO A PATH ALREADY ACCESSED (a ceiling on redundancy, not a floor)");
+  console.log(`  COUNTS ACCESSES, NOT BYTES: two sed -n over different ranges of the same`);
+  console.log(`  file count as a repeat without being one. Redundancy in BYTES is unmeasured.`);
+  console.log(`  The path is captured without requiring a file extension, so tokens that are`);
+  console.log(`  not files get in: it gives ~43% where a version requiring \\.(ts|js|prisma|json) gives 37%.`);
+  console.log(`  Read 37-43% as a band, not a point.\n`);
   for (const kind of ["lens", "refuter"]) {
     let total = 0,
       uniq = 0,
@@ -277,13 +277,13 @@ if (want("redundancy")) {
       total += vals.reduce((s, x) => s + x, 0);
       uniq += vals.length;
     }
-    console.log(`  ${kind.padEnd(9)} n=${String(nAgents).padStart(3)}  accesos ${String(total).padStart(5)}  archivos distintos ${String(uniq).padStart(5)}  redundantes ${pct(total - uniq, total)}`);
+    console.log(`  ${kind.padEnd(9)} n=${String(nAgents).padStart(3)}  accesses ${String(total).padStart(5)}  distinct files ${String(uniq).padStart(5)}  redundant ${pct(total - uniq, total)}`);
   }
 }
 
 // --- 6. re-run share --------------------------------------------------------
 if (want("reruns")) {
-  head("RE-EJECUCIONES — cuanto del gasto fue recomputar el mismo PR");
+  head("RE-RUNS: how much of the spend recomputed the same PR");
   const byPr = {};
   for (const a of agents) (byPr[a.pr] = byPr[a.pr] || { in: 0, runs: new Set() }).in += a.inputTokens, byPr[a.pr].runs.add(a.runDir);
   const tot = Object.values(byPr).reduce((s, v) => s + v.in, 0);
@@ -296,15 +296,15 @@ if (want("reruns")) {
   console.log(`  PR      runs    input     %`);
   for (const [pr, v] of ranked.slice(0, 8))
     console.log(`  ${pr.padEnd(8)}${String(v.runs.size).padStart(3)}  ${(v.in / 1e6).toFixed(0).padStart(6)}M   ${pct(v.in, tot).padStart(4)}`);
-  if (ranked.length > 8) console.log(`  (+${ranked.length - 8} PRs mas)`);
-  console.log(`\n  re-ejecuciones ≈ ${(rework / 1e6).toFixed(0)}M de ${(tot / 1e6).toFixed(0)}M (${pct(rework, tot)})`);
-  console.log(`  CAVEAT: asume que todos los runs de un PR cuestan igual, y buena parte`);
-  console.log(`  fueron ablaciones donde re-correr ERA el objetivo. NO es un ahorro disponible.`);
+  if (ranked.length > 8) console.log(`  (+${ranked.length - 8} more PRs)`);
+  console.log(`\n  re-runs ≈ ${(rework / 1e6).toFixed(0)}M of ${(tot / 1e6).toFixed(0)}M (${pct(rework, tot)})`);
+  console.log(`  CAVEAT: assumes every run of a PR costs the same, and many of them`);
+  console.log(`  were ablations where re-running WAS the goal. This is NOT an available saving.`);
 }
 
 // --- 7. funnel --------------------------------------------------------------
 if (want("funnel")) {
-  head("EMBUDO");
+  head("FUNNEL");
   const s = rows.reduce(
     (acc, r) => {
       acc.runs++;
@@ -317,11 +317,11 @@ if (want("funnel")) {
     },
     { runs: 0, lens: 0, cand: 0, paneled: 0, killed: 0, blocking: 0 }
   );
-  console.log(`  ${s.runs} runs · ${s.lens} lentes → ${s.cand} candidatos (${(s.cand / Math.max(1, s.lens)).toFixed(2)}/lente)`);
-  console.log(`  → ${s.paneled} paneles (${pct(s.paneled, s.cand)}) → ${s.killed} matados (${pct(s.killed, s.paneled)}) → ${s.blocking} blocking (${(s.blocking / Math.max(1, s.runs)).toFixed(1)}/run)`);
-  console.log(`\n  Un tercio de lo que llega a panel muere ahi: el panel no es ceremonia.`);
+  console.log(`  ${s.runs} runs · ${s.lens} lenses → ${s.cand} candidates (${(s.cand / Math.max(1, s.lens)).toFixed(2)}/lens)`);
+  console.log(`  → ${s.paneled} panels (${pct(s.paneled, s.cand)}) → ${s.killed} killed (${pct(s.killed, s.paneled)}) → ${s.blocking} blocking (${(s.blocking / Math.max(1, s.runs)).toFixed(1)}/run)`);
+  console.log(`\n  A third of what reaches a panel dies there: the panel is not ceremony.`);
 }
 
-console.log(`\nLecturas obligadas antes de actuar sobre esto:`);
-console.log(`  specs/2026-07-25-cost-architecture-analysis.md  — §11.ante refuta partes del propio analisis`);
-console.log(`  specs/2026-07-24-cost-measurement-protocol.md   — superado, pero la disciplina A/B sigue valiendo\n`);
+console.log(`\nRead these before acting on any of this:`);
+console.log(`  specs/2026-07-25-cost-architecture-analysis.md  — §11.ante refutes parts of the analysis itself`);
+console.log(`  specs/2026-07-24-cost-measurement-protocol.md   — superseded, but its A/B discipline still holds\n`);

@@ -22,7 +22,7 @@
 // base branch into a PR moves the merge-base, so files that only the base
 // changed drop out of the PR's diff entirely — while a file whose PR-diff
 // genuinely changed, semantic conflicts included, reappears. Measured on PR
-// #1968 (0eedf726 -> d047fa9f): `git diff sha1 sha2` lists 6 files, two of them
+// #1968 (39962991 -> 83b6ecff): `git diff sha1 sha2` lists 6 files, two of them
 // merge noise; comparing PR diffs lists the 4 the author actually touched.
 //
 // Exit code is always 0. A caller that cannot narrow safely must fall back to a

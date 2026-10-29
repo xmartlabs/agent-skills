@@ -46,7 +46,10 @@ To use tribunal on a repo, that repo also needs a review profile committed to
 its base branch. The three steps (install, add two files, first review) are in
 [tribunal's quick start](plugins/tribunal/README.md#quick-start). Tribunal is
 built for JavaScript and TypeScript; on other languages it runs with less
-context ([details](plugins/tribunal/README.md#which-stacks-it-works-on)).
+context ([details](plugins/tribunal/README.md#which-stacks-it-works-on)). Its
+reviewers run shell commands while they read the PR and send the code to the
+model providers, so read [its Security section](plugins/tribunal/README.md#security)
+before pointing it at a pull request from someone you do not trust.
 
 Third-party marketplaces have auto-update off by default. To turn it on:
 `/plugin`, then **Marketplaces**, select `xmartlabs`, then **Enable

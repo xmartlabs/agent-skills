@@ -59,7 +59,7 @@ const FIXTURES = join(shim, "fixtures");
 mkdirSync(FIXTURES, { recursive: true });
 
 const REPO = "acme/widgets";
-const HEAD = "d9af65f3f4e03b40b5a7d0cde33386897dec86e6";
+const HEAD = "9ea21de88bb3b335272302eb49df878f5f9ef145";
 const BASE = "1111111111111111111111111111111111111111";
 
 const TYPES_AT_HEAD = `// a header comment added at head, shifting everything below it

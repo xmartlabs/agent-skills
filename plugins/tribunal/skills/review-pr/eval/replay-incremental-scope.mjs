@@ -9,19 +9,19 @@
 // with an INDEPENDENT oracle.
 //
 // THE GOLDEN AND WHERE IT COMES FROM. PR #1968, the last posted review
-// (`0eedf726`) against the current head (`d047fa9f`), both fetched as GitHub
+// (the baseline commit) against the current head (the head commit), both fetched as GitHub
 // three-dot compare diffs. The expected answer was computed BEFORE this code
 // existed, with `awk` to split the patches and `cmp` to compare the sections —
 // a different implementation of the same definition, which is what makes it an
 // oracle instead of a restatement:
 //
-//   NEW        src/jobs/jobAttempts.ts, src/jobs/jobAttempts.test.ts
-//   CHANGED    src/jobs/accounts_worker.ts, src/controllers/v2/account.controller.test.ts
+//   NEW        src/jobs/retryState.ts, src/jobs/retryState.test.ts
+//   CHANGED    src/jobs/profiles_worker.ts, src/controllers/v2/account.controller.test.ts
 //   UNCHANGED  12
 //   GONE       0
 //
 // The load-bearing assertion is not the count — it is that `prisma/schema.prisma`
-// and the migration are NOT in scope. `git diff 0eedf726 d047fa9f` lists them,
+// and the migration are NOT in scope. `git diff <baseline> <head>` lists them,
 // because the branch merged `development` twice; the PR's own diff does not,
 // because they belong to the base. A scope built on `sha1..sha2` would send
 // lenses to read two files the author never touched, on every re-review of every
@@ -39,12 +39,18 @@
 //
 // Usage: node eval/replay-incremental-scope.mjs
 
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadRegion } from "./extract-pure-region.mjs";
 import { scopeIncremental, splitDiffByFile as scriptSplit } from "../scripts/incremental-scope.mjs";
+import { dataId } from "./data-ids.mjs";
 import { FIXTURES_DIR, WORKFLOW } from "./paths.mjs";
+
+// The baseline and head commits of the recorded review, from the private data.
+const BASE_ID = dataId("029625130900", 8);
+const HEAD_ID = dataId("8ebd03d307b7", 8);
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIX = join(FIXTURES_DIR, "incremental-scope");
@@ -58,26 +64,30 @@ const check = (name, cond, detail) => {
   }
 };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// The fixture keeps the real paths of the repository it was recorded on, so the
+// expected file lists are compared by the sha256 of each path, sorted.
+const pathHash = (p) => createHash("sha256").update(p).digest("hex").slice(0, 12);
+const sameFiles = (actual, hashes) => same(actual.map(pathHash).sort(), [...hashes].sort());
+const NEW_FILES = ["38cd462845d1", "52da947c5a59"];
+const CHANGED_FILES = ["6e6d75968410", "031d07d66396"];
+const WORKER_FILE = "031d07d66396";
 
 console.log(`\nincremental scope — scripts/incremental-scope.mjs`);
 
-const baseline = readFileSync(join(FIX, "0eedf726.patch"), "utf8");
-const current = readFileSync(join(FIX, "d047fa9f.patch"), "utf8");
+const baseline = readFileSync(join(FIX, BASE_ID + ".patch"), "utf8");
+const current = readFileSync(join(FIX, HEAD_ID + ".patch"), "utf8");
 
-console.log(`\n--- the golden: PR #1968, 0eedf726 -> d047fa9f ---`);
+console.log(`\n--- the golden: PR #1968, ${BASE_ID} -> ${HEAD_ID} ---`);
 const s = scopeIncremental(baseline, current);
 check("usable", s.usable === true, s.reason || "");
 check(
-  "NEW is exactly the two jobAttempts files",
-  same(s.added, ["src/jobs/jobAttempts.test.ts", "src/jobs/jobAttempts.ts"]),
+  "NEW is exactly the two retryState files",
+  sameFiles(s.added, NEW_FILES),
   JSON.stringify(s.added),
 );
 check(
-  "CHANGED is exactly accounts_worker + account.controller.test",
-  same(s.changed, [
-    "src/controllers/v2/account.controller.test.ts",
-    "src/jobs/accounts_worker.ts",
-  ]),
+  "CHANGED is exactly profiles_worker + account.controller.test",
+  sameFiles(s.changed, CHANGED_FILES),
   JSON.stringify(s.changed),
 );
 check("UNCHANGED is 12", s.unchanged.length === 12, `${s.unchanged.length}`);
@@ -121,10 +131,14 @@ for (const [name, a, b] of [
 }
 // A header the splitter cannot parse means the file list is a guess. Same rule
 // the sectioning applies to itself.
-const corrupted = current.replace(
-  /^diff --git a\/src\/jobs\/accounts_worker\.ts b\/src\/jobs\/accounts_worker\.ts$/m,
-  'diff --git "a/src/jobs/weird name.ts" "b/src/jobs/weird name.ts"',
-);
+const corrupted = current
+  .split("\n")
+  .map((l) => {
+    const m = l.match(/^diff --git a\/(\S+) b\/\1$/);
+    return m && pathHash(m[1]) === WORKER_FILE ? 'diff --git "a/src/jobs/weird name.ts" "b/src/jobs/weird name.ts"' : l;
+  })
+  .join("\n");
+check("the corruption hit the worker's header", corrupted !== current);
 const c = scopeIncremental(baseline, corrupted);
 check(
   "an unparsed header makes the whole scope unusable",
@@ -140,8 +154,8 @@ check("same diff twice -> everything unchanged", idem.unchanged.length === 16, `
 console.log(`\n--- direction: reversing the pair turns NEW into GONE ---`);
 const rev = scopeIncremental(current, baseline);
 check(
-  "the two jobAttempts files are GONE, not silently dropped",
-  same(rev.gone, ["src/jobs/jobAttempts.test.ts", "src/jobs/jobAttempts.ts"]),
+  "the two retryState files are GONE, not silently dropped",
+  sameFiles(rev.gone, NEW_FILES),
   JSON.stringify(rev.gone),
 );
 

@@ -6,7 +6,7 @@
 // candidates — through the current guards, and asserts:
 //
 //   1. the cross-file guard splits [4,21,24,25,27]: only the two genuine
-//      merge-contacts.ts duplicates survive as a cluster; the exit-0 instances
+//      dedupe-contacts.ts duplicates survive as a cluster; the exit-0 instances
 //      in bulk-void-invoices.ts, update-payment-links.ts and
 //      reverse-cancelled-order.ts stay separate candidates, each reaching its
 //      own panel. Under the old code all four collapsed into the first and
@@ -133,8 +133,9 @@ for (const f of RESCUED) {
 }
 
 // 3: the one legitimate same-file, same-defect cluster still merges.
-if (!merged.some((g) => g.length >= 2 && g.every((m) => m.file === "scripts/contacts/merge-contacts.ts")))
-  failures.push("the genuine merge-contacts.ts duplicate pair no longer merges — the guards over-veto");
+const DEDUPE_FILE = fixtureFile("a82fc8817f96aff2", "the contact-merge script");
+if (!merged.some((g) => g.length >= 2 && g.every((m) => m.file === DEDUPE_FILE)))
+  failures.push("the genuine dedupe-contacts.ts duplicate pair no longer merges — the guards over-veto");
 
 // 4: a merged candidate keeps every member's location.
 for (const [n, group] of merged.entries()) {

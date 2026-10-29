@@ -68,11 +68,11 @@ console.log("\n--- real PR goldens ---");
 // alphabetical or grouped order.
 const pr2025Files = [
   { additions: 2, changeType: "MODIFIED", deletions: 0, path: "package.json" },
-  { additions: 138, changeType: "ADDED", deletions: 0, path: "src/scripts/loadtest/devTarget.ts" },
-  { additions: 234, changeType: "ADDED", deletions: 0, path: "src/scripts/loadtest/importMemoryRatchet.ts" },
-  { additions: 696, changeType: "ADDED", deletions: 0, path: "src/scripts/loadtest/invoiceImportE2E.ts" },
+  { additions: 138, changeType: "ADDED", deletions: 0, path: "src/scripts/loadtest/stagingTarget.ts" },
+  { additions: 234, changeType: "ADDED", deletions: 0, path: "src/scripts/loadtest/importMemoryCeiling.ts" },
+  { additions: 696, changeType: "ADDED", deletions: 0, path: "src/scripts/loadtest/invoiceBulkLoad.ts" },
   { additions: 5, changeType: "MODIFIED", deletions: 2, path: "src/services/v2/batchInvoice.ts" },
-  { additions: 186, changeType: "ADDED", deletions: 0, path: "src/services/v2/invoice.dump-chunking.test.ts" },
+  { additions: 186, changeType: "ADDED", deletions: 0, path: "src/services/v2/invoice.export-batching.test.ts" },
   { additions: 91, changeType: "MODIFIED", deletions: 7, path: "src/services/v2/invoice.ts" },
 ];
 checkCase("PR #2025: 7 files, 5 product, high-risk, scope <= 6 -> in-context", { files: pr2025Files }, {
@@ -80,10 +80,10 @@ checkCase("PR #2025: 7 files, 5 product, high-risk, scope <= 6 -> in-context", {
   fileCount: 7,
   scopeCount: 5,
   highRisk: true,
-  // Order per input: invoiceImportE2E.ts precedes batchInvoice.ts/invoice.ts in
+  // Order per input: invoiceBulkLoad.ts precedes batchInvoice.ts/invoice.ts in
   // pr2025Files, so that is the order routeReview must return them in.
   highRiskFiles: [
-    "src/scripts/loadtest/invoiceImportE2E.ts",
+    "src/scripts/loadtest/invoiceBulkLoad.ts",
     "src/services/v2/batchInvoice.ts",
     "src/services/v2/invoice.ts",
   ],
@@ -92,7 +92,7 @@ checkCase("PR #2025: 7 files, 5 product, high-risk, scope <= 6 -> in-context", {
 {
   const got = routeReview({ files: pr2025Files });
   const excludedPaths = got.excluded.map((e) => e.path).sort();
-  if (eqArr(excludedPaths, ["package.json", "src/services/v2/invoice.dump-chunking.test.ts"].sort())) {
+  if (eqArr(excludedPaths, ["package.json", "src/services/v2/invoice.export-batching.test.ts"].sort())) {
     ok("PR #2025: excluded exactly the test file + package.json");
   } else {
     fail("PR #2025: excluded exactly the test file + package.json", JSON.stringify(got.excluded));
@@ -104,8 +104,8 @@ checkCase("PR #2025: 7 files, 5 product, high-risk, scope <= 6 -> in-context", {
 // scope would be 5 either way, but with the rename scope becomes 7 (> 6) and
 // the same high-risk PR now correctly routes to the Workflow.
 const pr2025Renamed = pr2025Files.map((f) => {
-  if (f.path === "src/services/v2/invoice.dump-chunking.test.ts") {
-    return { ...f, path: "src/services/v2/invoice.dumpChunking.ts" };
+  if (f.path === "src/services/v2/invoice.export-batching.test.ts") {
+    return { ...f, path: "src/services/v2/invoice.exportBatching.ts" };
   }
   if (f.path === "package.json") {
     return { ...f, path: "src/services/v2/config.ts" };
@@ -121,9 +121,9 @@ checkCase(
 // PR #2049 — 11 files, raw count alone routes to the Workflow.
 const pr2049Files = [
   "prisma/migrations/20260902000000_add_payment_transactions_payments_transaction_id_index/migration.sql",
-  "prisma/migrations/20260902130000_add_payment_transactions_trans_id_index/migration.sql",
+  "prisma/migrations/20260101000000_add_payment_reference_index/migration.sql",
   "prisma/schema.prisma",
-  "src/controllers/v2/payments.types.ts",
+  "src/controllers/v2/payment-types.ts",
   "src/services/v2/payments.test.ts",
   "src/services/v2/payments.ts",
   "src/services/v2/ledger/ledgerSdk.ts",
@@ -145,10 +145,10 @@ checkCase("PR #2049: 11 files -> workflow, reason cites 11 >= 10", { files: pr20
 // script cannot see it — content-aware detection is an accepted follow-up
 // (see scripts/route-review.mjs and RELEASES.md).
 const pr1992Files = [
-  "scripts/partner/reconcile-partner-portal-data.test.ts",
-  "scripts/partner/reconcile-partner-portal-data.ts",
-  "scripts/partner/reconcileDeleteSql.test.ts",
-  "scripts/partner/reconcileDeleteSql.ts",
+  "scripts/partner/sync-partner-records.test.ts",
+  "scripts/partner/sync-partner-records.ts",
+  "scripts/partner/purgeStaleRowsSql.test.ts",
+  "scripts/partner/purgeStaleRowsSql.ts",
 ];
 checkCase(
   "PR #1992: 4 files, mass-delete script change -> in-context (KNOWN LIMITATION: content-aware mass-delete detection not implemented)",
@@ -179,8 +179,8 @@ checkCase("6 product files incl. prisma/schema.prisma -> in-context (scope 6 <= 
 });
 
 // Scripts stay in scope for the high-risk rule — deliberately not excluded.
-checkCase("only risk match is src/scripts/loadtest/invoiceImportE2E.ts -> highRisk true (scripts stay in scope)", {
-  files: ["src/scripts/loadtest/invoiceImportE2E.ts", ...genericFiles(3)],
+checkCase("only risk match is src/scripts/loadtest/invoiceBulkLoad.ts -> highRisk true (scripts stay in scope)", {
+  files: ["src/scripts/loadtest/invoiceBulkLoad.ts", ...genericFiles(3)],
 }, { highRisk: true });
 
 // A test file matching the risk regex must NOT make the PR high-risk.

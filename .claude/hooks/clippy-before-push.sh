@@ -47,6 +47,9 @@ git -C "$TOP" rev-parse --verify -q origin/main >/dev/null || exit 0
 [ -n "$(git -C "$TOP" diff --name-only origin/main...HEAD -- plugins/tribunal/rust)" ] || exit 0
 
 cd "$ENGINE" || exit 0
+# Without cargo there is nothing to run, and blocking would stop a contributor
+# who never builds the engine; CI still runs both checks.
+command -v cargo >/dev/null 2>&1 || exit 0
 if ! OUT=$(cargo fmt --all --check -- --color never 2>&1); then
   printf 'Push blocked: cargo fmt --all --check fails in %s. Run `cargo fmt --all` there and commit.\n%s\n' \
     "$ENGINE" "$(printf '%s\n' "$OUT" | head -40)" >&2

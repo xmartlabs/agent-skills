@@ -4,7 +4,7 @@
 #   plugins/tribunal/templates/check.sh                             # the shipped templates
 #   plugins/tribunal/templates/check.sh <profile.json> [<rules.md>] # your repo's own files
 #
-# Needs node. It reads no network: the base ref is passed in, so nothing is
+# Needs node and python3. It reads no network: the base ref is passed in, so nothing is
 # fetched from GitHub. It prints one line per check and exits 1 on any failure.
 set -uo pipefail
 HERE=$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)

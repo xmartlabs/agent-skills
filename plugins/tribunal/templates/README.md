@@ -16,7 +16,7 @@ that live in that repo, not in the plugin:
 | [`review-profile.frontend.json`](review-profile.frontend.json) | `.claude/review-profile.json` in a frontend repo |
 | [`review-rules.md`](review-rules.md) | `.claude/review-rules.md` |
 | [`review-harness.json`](review-harness.json) | `~/.claude/review-harness.json`, on your machine only |
-| [`check.sh`](check.sh) | nothing, run it from a clone of this repo |
+| [`check.sh`](check.sh) | nothing, run it where it is (needs `node` and `python3`) |
 
 ## Steps
 
@@ -34,14 +34,13 @@ that live in that repo, not in the plugin:
    | `repo` | `owner/name` of the repo being reviewed |
    | `reviewer` | `backend` or `frontend` |
    | `baseBranch` | The branch PRs merge into |
-   | `deployBranches` | Branches whose PRs are deployments (staging, production). The plugins refuse those. `[]` if there are none |
+   | `deployBranches` | Branches whose PRs are deployments (staging, production). Tribunal refuses those. `[]` if there are none |
    | `foci` | One sentence per lens. Required: `correctness`, `dataContract`, `security`, `performance`, `errorHandling`. Optional: `migration`. Keep the sentences different from each other, and do not add other keys |
    | `highRiskSurface` | One sentence naming what counts as high risk here |
    | `riskPaths` | `{focus, pattern}` pairs. A changed path matching `pattern` (case-insensitive regular expression) forces that focus: `migration`, `security` or `dataContract`. Without it no path is high risk |
    | `projectRules` | Path of the rules file in the repo, normally `.claude/review-rules.md`. Remove the field if you have no rules file |
    | `conventionFiles` | The repo's own policy files, such as `["CLAUDE.md", ".claude/rules/*.md"]`, which every reviewer reads. `*` only in the last segment |
    | `crossRepoAnchors` | Sibling repos a finding may point into, as `{repo, ref}`. Use it to pair a frontend with its API. `[]` if none |
-   | `tribunal.inContextRiskPaths` | Optional. Same shape as `riskPaths`, used only by tribunal's in-context path |
 
 3. **Copy the rules file and fill `intro` and `project-traps`.** Those two carry
    most of the value. Add other blocks later, when a review misses something
@@ -53,9 +52,12 @@ that live in that repo, not in the plugin:
    plugins/tribunal/templates/check.sh path/to/review-profile.json path/to/review-rules.md
    ```
 
+   Without a clone, the installed plugin has the same script at
+   `~/.claude/plugins/cache/xmartlabs/tribunal/<version>/templates/check.sh`.
    It runs tribunal's real loader and methodology assembler, and fails on a
-   profile tribunal would refuse or on a rules block that names no slot. It reads nothing from the network.
-5. **Commit both files to the repo's base branch.** The plugins read them at the
+   profile tribunal would refuse or on a rules block that names no slot. It reads
+   nothing from the network, and needs `node` and `python3`.
+5. **Commit both files to the repo's base branch.** Tribunal reads them at the
    PR's base branch, so a PR cannot change the rules it is reviewed under. If
    the base branch predates the files, as an older release branch does, they
    fall back to the repo's default branch. Until the files are merged, review
@@ -82,6 +84,6 @@ file's `stay-in-project` slot.
 ## What a profile cannot do yet
 
 A third reviewer kind (a Python service, a mobile app) needs a new persona and a
-methodology template in each plugin, not a profile. The profile loader refuses
+methodology template in tribunal, not a profile. The profile loader refuses
 any `reviewer` other than `backend` and `frontend`, so this fails loudly instead
 of borrowing another stack's reviewer.

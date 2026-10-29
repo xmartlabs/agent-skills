@@ -25,10 +25,11 @@ import { HARNESS_DATA, PLUGIN_ROOT } from "./paths.mjs";
 const SPEC = JSON.parse(readFileSync(join(PLUGIN_ROOT, "skills/review-pr/eval/frontier.json"), "utf8"));
 // The client terms are not in this repository: listing them here would name the
 // client. They live in the test-data directory as frontier-tokens.json (a JSON
-// array of regular expressions), or at REVIEWER_TOOLS_FRONTIER_TOKENS. Without the
+// array of regular expressions), or at TRIBUNAL_FRONTIER_TOKENS. Without the
 // list the scan is skipped and says so. When the test-data directory exists but
 // the list does not, that is a failure, so the full gate cannot skip it silently.
-const TOKENS_FILE = process.env.REVIEWER_TOOLS_FRONTIER_TOKENS || join(HARNESS_DATA, "frontier-tokens.json");
+const TOKENS_FILE =
+  process.env.TRIBUNAL_FRONTIER_TOKENS || process.env.REVIEWER_TOOLS_FRONTIER_TOKENS || join(HARNESS_DATA, "frontier-tokens.json");
 const TOKENS = existsSync(TOKENS_FILE) ? JSON.parse(readFileSync(TOKENS_FILE, "utf8")) : null;
 const TOKEN = TOKENS && TOKENS.length ? new RegExp(TOKENS.join("|"), "gi") : null;
 

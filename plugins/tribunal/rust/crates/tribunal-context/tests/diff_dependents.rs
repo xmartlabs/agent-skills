@@ -394,7 +394,7 @@ const HELPERS_BASE: &str = r"'use strict';
 /**
  * Runs fn over items with a concurrency cap.
  */
-exports.mapWithConcurrency = async function (items, fn) {
+exports.runWithConcurrency = async function (items, fn) {
   return Promise.all(items.map(fn));
 };
 
@@ -416,7 +416,7 @@ const HELPERS_HEAD: &str = r"'use strict';
 /**
  * Runs fn over items with a concurrency cap of four.
  */
-exports.mapWithConcurrency = async function (items, fn) {
+exports.runWithConcurrency = async function (items, fn) {
   const out = [];
   for (const item of items) out.push(await fn(item));
   return out;
@@ -443,7 +443,7 @@ const helpers = require('./helpers');
 
 async function render(inv) {
   const t = total(inv.lines);
-  await helpers.mapWithConcurrency(inv.lines, send);
+  await helpers.runWithConcurrency(inv.lines, send);
   return formatAmount(t);
 }
 
@@ -520,7 +520,7 @@ async fn blast_radius_matches_js_on_a_ts_and_commonjs_repo() {
         "enqueueSync",
         "formatAmount",
         "total",
-        "mapWithConcurrency",
+        "runWithConcurrency",
         "toCents",
         "enqueueSync -> handleWebhook",
         "toCents -> charge",

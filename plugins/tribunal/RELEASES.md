@@ -6,9 +6,11 @@ was green at that content hash.** It is not a quality claim, and no single run c
 support one: candidate generation reproduces at only 14 to 16 percent between
 identical runs.
 
-**Numbering.** Versions continue from the repository this plugin came from, which
-stopped at 98, so the first row here is `99`. The earlier rows are not part of this
-repository. This repository's history starts at the import of tribunal 98.
+**Numbering.** Tribunal was developed in a private repository before it moved
+here. Rows 99 to 110 were frozen there: their tags, commits and `#N` pull request
+numbers belong to that repository and do not exist in this one, and they are kept
+as a changelog only. This repository starts at a snapshot of tribunal 110, and its
+first freeze is 111. Rows before 99 are not included.
 
 **The Gate cell says which gate ran.**
 

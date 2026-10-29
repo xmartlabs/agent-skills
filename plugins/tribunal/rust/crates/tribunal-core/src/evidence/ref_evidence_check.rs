@@ -125,10 +125,10 @@ mod tests {
 
     #[test]
     fn helpers_and_files_are_cited() {
-        let t = json!("passes it through `maskEmailForLog()` imported from `./csv-safety.ts`");
+        let t = json!("passes it through `redactEmail()` imported from `./export-sanitize.ts`");
         assert_eq!(
             cited_identifiers(Some(&t)),
-            ["csv-safety.ts", "maskEmailForLog"]
+            ["export-sanitize.ts", "redactEmail"]
         );
     }
 

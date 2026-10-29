@@ -4,7 +4,7 @@
 // Why this exists (2026-09-09, PR #2025): the Dispatch decision in SKILL.md
 // (lines 88-114) was PROSE ONLY, applied by hand each run. On PR #2025 (7
 // changed files, 2 of them `*.test.ts`/`package.json`) the "high-risk" regex
-// matched a path named `invoice.dump-chunking.test.ts` exactly as it would a
+// matched a path named `invoice.export-batching.test.ts` exactly as it would a
 // real money-path file, and the raw file count was used for the risk rule's
 // scope too — so the PR routed to the Workflow. Counting only PRODUCT files
 // (excluding tests, fixtures, lockfiles, docs, etc. — see

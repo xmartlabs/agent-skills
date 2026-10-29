@@ -79,7 +79,7 @@ const COMMENT_LINE = /^\s*(\/\/|\/\*|\*)/;
 // `exports.name =` and `module.exports.name =` declare and export at once, and
 // `module.exports = { a, b: c }` exports declarations made above it. Until
 // 2026-10-21 none of these counted as exported, so a changed legacy helper
-// listed no callers at all: `mapWithConcurrencySettled` in the BE has three.
+// listed no callers at all: `runWithConcurrencySettled` in the BE has three.
 const CJS_DECL_RE = /^(?:module\.)?exports\.([A-Za-z_$][\w$]*)\s*=/;
 const CJS_OBJECT_START = /^module\.exports\s*=\s*\{/;
 const CJS_ENTRY = /^([A-Za-z_$][\w$]*)\s*(?::\s*([A-Za-z_$][\w$]*))?$/;

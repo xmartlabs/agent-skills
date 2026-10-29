@@ -104,7 +104,7 @@ const withFindings = parseSweepFindings(
     "Some preamble the model wrote.",
     "FINDING: important | Count push races the commit | src/services/v2/accounts.ts:585 | two invocations on one account leave the partner below the committed value",
     "EVIDENCE: const actualCount = countData",
-    "FINDING: nit | Padded names keep inner whitespace | src/_helpers/v2/textFormat.ts:41 | 'Jane ' + ' Doe' yields a doubled space",
+    "FINDING: nit | Padded names keep inner whitespace | src/lib/helpers/textFormat.ts:41 | 'Jane ' + ' Doe' yields a doubled space",
     "EVIDENCE: `${input.firstName ?? ''} ${input.lastName ?? ''}`.trim() ||",
   ].join("\n"),
 );

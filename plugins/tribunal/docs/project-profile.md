@@ -14,17 +14,17 @@ branch or a stacked feature branch does, it reads the copy on the repo's default
 branch instead. The plugin ships no profiles.
 
 Without that file the review stops; it never borrows another repo's profile. To try
-a profile before committing it, run
-`skills/review-pr/scripts/load-profile.mjs --repo <owner/name> --profile <path>`,
-which validates it and prints its sha256. Every metrics row records that sha256,
+a profile and its rules before committing them, run
+`templates/check.sh <profile.json> <rules.md>` from the plugin directory, which
+runs the same loader and methodology assembler a review does. Every metrics row records that sha256,
 so a profile edit is visible in the data.
 
 `riskPaths` says which changed paths count as high-risk and which focus each one
 forces (`migration`, `security` or `dataContract`), as `{focus, pattern}` with a
-case-insensitive regular expression. The Workflow's forced foci read it. The
-routing gate in `scripts/route-review.mjs` reads `tribunal.inContextRiskPaths`
-when the profile has one, and `riskPaths` otherwise. Without `riskPaths` no path
-is high-risk, and the loader prints a warning saying so.
+case-insensitive regular expression. The forced foci read it. Without
+`riskPaths` no path is high-risk, and the loader prints a warning saying so.
+`tribunal.inContextRiskPaths` belonged to an in-context review path that was
+removed: the loader still accepts it and nothing reads it.
 
 `projectRules` names the repo's own review rules, usually
 `.claude/review-rules.md`, read at the same ref as the profile. The plugin's
@@ -62,9 +62,9 @@ That file belongs to the machine and never ships with the plugin:
 { "defaultRepo": "your-org/your-api" }
 ```
 
-To add a repo, copy the profile of a repo that already has one, change `repo`
-and whatever differs, check it with `--profile`, and commit it to that repo as
-`.claude/review-profile.json`. One limit: the reviewer personas still carry the stack knowledge they
+To add a repo, start from the profile in [`templates/`](../templates/README.md),
+change `repo` and whatever differs, check it with `templates/check.sh`, and commit
+it to that repo as `.claude/review-profile.json`. One limit: the reviewer personas still carry the stack knowledge they
 were written for (Node, Express and Prisma for `backend`, React for
 `frontend`). A repo on another stack can have a profile, but its reviewers do
 not know that stack yet.

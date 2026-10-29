@@ -6,7 +6,7 @@ that path in `projectRules` of its `.claude/review-profile.json`.
 Each block below replaces the slot of the same name in the plugin's methodology
 for this repo's reviewer kind. A slot this file does not fill keeps the plugin's
 generic text, so fill only what you have something specific to say about.
-Text outside the blocks, like this comment, is ignored. The plugins read this
+Text outside the blocks, like this comment, is ignored. Tribunal reads this
 file at the PR's base branch, so a PR cannot change the rules it is reviewed
 under.
 

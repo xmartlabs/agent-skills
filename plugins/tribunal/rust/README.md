@@ -667,9 +667,14 @@ A release:
    `windows-msvc-bin` stages of `docker/Dockerfile` on the Linux runner. The
    two macOS archives come from `rust/scripts/build-darwin.sh`, run on a
    GitHub `macos-15` runner.
-2. `node rust/scripts/pin-release.mjs tribunal-rust-v<version> --write`
+2. Check that this repository's workflow built each archive, from a commit on
+   `main`: `gh release download tribunal-rust-v<version> --repo
+   xmartlabs/agent-skills --dir /tmp/tr`, then `gh attestation verify
+   /tmp/tr/<archive> --repo xmartlabs/agent-skills` for each one. The release
+   job refuses a tag whose commit is not on `main`.
+3. `node rust/scripts/pin-release.mjs tribunal-rust-v<version> --write`
    rewrites `release.json` from those `.sha256` files.
-3. Commit `release.json` with the plugin version that should use the binary.
+4. Commit `release.json` with the plugin version that should use the binary.
 
 `/tribunal:review-pr`, whose default engine is this binary, reads `release.json` through
 `skills/review-pr/scripts/rust-engine.mjs`, which downloads the archive for
@@ -679,7 +684,7 @@ the machine once, refuses it unless its sha256 matches, and caches it under
 
 ## Live A/B against the installed plugin (2026-10-23)
 
-PR #1935 pinned at `0b8e5340`, `--full --no-post`, two runs per arm, one at
+PR #1935 pinned at `a75eb53d`, `--full --no-post`, two runs per arm, one at
 a time. Arm A is the installed tribunal 105 run headless
 (`/tribunal:review-pr` with the plugin cache dirs stripped from `PATH`); arm R
 is this binary. Codex (`gpt-5.6-sol`) voted in every run and every external

@@ -237,7 +237,7 @@ try {
 
 // The legacy half of the BE exports with CommonJS. Until 2026-10-21 a changed
 // legacy helper listed no callers: `module.exports = {...}` and `exports.x =`
-// did not count as exports (BE `mapWithConcurrencySettled`: 0 listed, 3 real).
+// did not count as exports (BE `runWithConcurrencySettled`: 0 listed, 3 real).
 console.log("\n--- 4b. CommonJS exports ---");
 {
   const cjs = mkdtempSync(join(tmpdir(), "tribunal-blast-cjs-"));

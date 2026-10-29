@@ -785,7 +785,7 @@ fn clean_sweep_matches_js() {
 
     let mut texts: Vec<Option<String>> = vec![
         Some("I looked hard.\n\nNO FINDINGS ABOVE NIT.\n\nNits:\nnit stuff here".into()),
-        Some("FINDING: important | Count push races the commit | src/services/v2/accounts.ts:585 | two invocations\nEVIDENCE: const actualCount = countData\nFINDING: nit | Padded | src/_helpers/v2/textFormat.ts:41 | doubled space\nEVIDENCE: `${a}`.trim() ||".into()),
+        Some("FINDING: important | Count push races the commit | src/services/v2/accounts.ts:585 | two invocations\nEVIDENCE: const actualCount = countData\nFINDING: nit | Padded | src/lib/helpers/textFormat.ts:41 | doubled space\nEVIDENCE: `${a}`.trim() ||".into()),
         Some("FINDING: important | Missing guard | src/a.ts:10 | a null id reaches the write\nEVIDENCE: await write(id)\nVERIFIED: src/b.ts:4 | export function write(id: string) {\nVERIFIED: src/c.ts:9 | write(req.query.id)\nFINDING: nit | Name | src/a.ts:20 | unclear\nEVIDENCE: const x = 1".into()),
         Some("HEAD FAILURE (quota): ERROR: Your workspace is out of credits.\n".into()),
         Some("The change looks good to me overall.".into()),

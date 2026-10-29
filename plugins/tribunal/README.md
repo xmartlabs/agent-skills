@@ -12,6 +12,10 @@ Works on any open PR, including your own.
 > files, so on other languages the review runs but with less to go on. Details
 > in [Which stacks it works on](#which-stacks-it-works-on).
 
+> **It runs shell commands while it reads the PR.** Review pull requests from
+> people you do not trust only in an isolated environment: see
+> [Security](#security).
+
 **Cost scales with the PR, and the spread is wide.** Read
 [What it costs](#what-it-costs) before launching a run on anything large.
 
@@ -49,6 +53,29 @@ also has a checker that validates both files before you commit them.
 
 Drop `--no-post` once the reports look right: tribunal still asks before
 posting anything to GitHub.
+
+## Security
+
+Read this before reviewing a pull request you did not write.
+
+- **The reviewers run shell commands on your machine.** Each lens and refuter
+  is a `claude -p` process with `Read` and `Bash` pre-approved, so it can
+  follow the code without asking you. It also reads text the PR author
+  controls: the diff, the description, the comments. A PR crafted to steer the
+  model (prompt injection) can get commands run with your user's permissions,
+  including your `gh` login and anything in your environment.
+- **So review untrusted PRs in an isolated environment**: a container, a VM or
+  a cloud dev box with no credentials beyond a read-only GitHub token, and with
+  `--no-post`. PRs from your own team are the case it was built for.
+- **The code leaves your machine.** The diff and the files the reviewers read
+  go to Anthropic (Claude). Codex, on by default, sends the same context to
+  OpenAI, and `--gemini` to Google. Use `--no-codex` if your code may only go
+  to Anthropic. Codex runs with `--sandbox read-only` and Gemini with
+  `--approval-mode plan`, so neither of those two can run commands.
+- **Posting uses your GitHub identity.** The review is published with your
+  `gh` login, after you confirm it (or with `--post`).
+
+To report a vulnerability, see [SECURITY.md](../../SECURITY.md).
 
 ---
 
@@ -142,7 +169,7 @@ workflow on a small PR, so it was removed.
 
 | Case | Use instead |
 |---|---|
-| Your own uncommitted working diff | Dispatch the `code-review-expert` agent |
+| Your own uncommitted working diff | Dispatch the `tribunal:code-review-expert` agent (backend) or `tribunal:fe-code-review-expert` (frontend) |
 | Deployment PRs (base in the profile's `deployBranches`, such as `staging`/`uat`/`production`) | Nothing. Tribunal refuses these |
 
 Tribunal needs an open PR to review: it reads the diff through `gh`, and the
