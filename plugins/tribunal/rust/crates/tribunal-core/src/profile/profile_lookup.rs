@@ -14,7 +14,7 @@ use super::js_ext::{self, JsRegex};
 use crate::js;
 
 pub const PROFILE_SCHEMA_VERSION: f64 = 1.0;
-pub const PROFILE_REVIEWER_KINDS: [&str; 2] = ["backend", "frontend"];
+pub const PROFILE_REVIEWER_KINDS: [&str; 3] = ["backend", "frontend", "e2e"];
 pub const PROFILE_REQUIRED_FOCI: [&str; 5] = [
     "correctness",
     "dataContract",
@@ -417,7 +417,7 @@ mod tests {
         p["reviewer"] = json!("x");
         p["highRiskSurface"] = json!(" ");
         let err = validate_profile(&p, &Value::Null).unwrap_err();
-        assert!(err.contains("reviewer must be one of backend, frontend, got \"x\""));
+        assert!(err.contains("reviewer must be one of backend, frontend, e2e, got \"x\""));
         assert!(err.contains("highRiskSurface must be a non-empty sentence"));
     }
 

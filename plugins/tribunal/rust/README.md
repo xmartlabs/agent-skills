@@ -41,7 +41,7 @@ changes what tribunal does.
 
 | Label | Agent definition | Notes |
 |---|---|---|
-| `lens` | `code-review-expert` / `fe-code-review-expert` | cwd = head worktree; Read + Bash |
+| `lens` | `code-review-expert` / `fe-code-review-expert` / `e2e-code-review-expert` | cwd = head worktree; Read + Bash |
 | `completeness-critic` | reviewer agent | |
 | `refute`, `refute-batch` | `tribunal-refuter` | single and batched |
 | `defense`, `judge` | refuter/scribe | debate round |

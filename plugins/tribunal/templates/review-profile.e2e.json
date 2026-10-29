@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "project": "your-project",
+  "repo": "your-org/your-e2e-tests",
+  "reviewer": "e2e",
+  "baseBranch": "main",
+  "deployBranches": [],
+  "foci": {
+    "correctness": "whether each test can fail for the regression it names (one-shot reads feeding an assertion, mocks that only serve the expected state, test.fail and skip conditions, waits and races, ambiguous locators)",
+    "dataContract": "the contract with the application under test (route mocks registered before navigation, mocked payloads matching the real API, accessible names, test ids and URLs that exist in the app)",
+    "security": "secrets and personal data in traces, screenshots, videos, reports and CI artifacts, hardcoded credentials, committed storage state",
+    "performance": "suite runtime (fixed sleeps, UI login in every test, serial mode and single workers without a reason, heavy beforeEach work)",
+    "errorHandling": "cleanup that runs when a test fails, retries that repeat destructive steps, failures a person can diagnose from the report"
+  },
+  "highRiskSurface": "tests that write to a shared or real environment, authentication setup and storage state, playwright.config retries, workers and trace settings, CI workflows that upload reports",
+  "projectRules": ".claude/review-rules.md",
+  "conventionFiles": ["CLAUDE.md", ".claude/rules/*.md"],
+  "crossRepoAnchors": [
+    { "repo": "your-org/your-web-app", "ref": "main" }
+  ],
+  "riskPaths": [
+    { "focus": "security", "pattern": "auth|login|credential|secret|storage-?state|\\.env|playwright\\.config|\\.github/workflows" },
+    { "focus": "dataContract", "pattern": "mock|route|fixture|api" }
+  ]
+}

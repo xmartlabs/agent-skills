@@ -26,7 +26,7 @@ if (!prNumber) {
 const PROFILE_SCHEMA_VERSION = 1;
 const PROFILE_BRANCH_RE = /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/;
 const PROFILE_REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
-const PROFILE_REVIEWER_KINDS = ["backend", "frontend"];
+const PROFILE_REVIEWER_KINDS = ["backend", "frontend", "e2e"];
 const PROFILE_REQUIRED_FOCI = [
   "correctness",
   "dataContract",
@@ -215,6 +215,7 @@ const AGENT_NS = "tribunal:";
 const REVIEWER_AGENTS = {
   backend: `${AGENT_NS}code-review-expert`,
   frontend: `${AGENT_NS}fe-code-review-expert`,
+  e2e: `${AGENT_NS}e2e-code-review-expert`,
 };
 
 function lensAgentFor(profile) {

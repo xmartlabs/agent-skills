@@ -39,7 +39,7 @@ branch. Without the first one the review stops.
 
 | File | Start from | What to change |
 |---|---|---|
-| `.claude/review-profile.json` | [`review-profile.backend.json`](templates/review-profile.backend.json) or [`review-profile.frontend.json`](templates/review-profile.frontend.json) | `project`, `repo`, `baseBranch`, `deployBranches`, and the `riskPaths` that matter in your code |
+| `.claude/review-profile.json` | [`review-profile.backend.json`](templates/review-profile.backend.json), [`review-profile.frontend.json`](templates/review-profile.frontend.json) or [`review-profile.e2e.json`](templates/review-profile.e2e.json) | `project`, `repo`, `baseBranch`, `deployBranches`, and the `riskPaths` that matter in your code |
 | `.claude/review-rules.md` | [`review-rules.md`](templates/review-rules.md) | The `intro` and `project-traps` blocks: your stack and the mistakes your team keeps making |
 
 Every field is explained in [templates/README.md](templates/README.md), which
@@ -169,7 +169,7 @@ workflow on a small PR, so it was removed.
 
 | Case | Use instead |
 |---|---|
-| Your own uncommitted working diff | Dispatch the `tribunal:code-review-expert` agent (backend) or `tribunal:fe-code-review-expert` (frontend) |
+| Your own uncommitted working diff | Dispatch the `tribunal:code-review-expert` agent (backend), `tribunal:fe-code-review-expert` (frontend) or `tribunal:e2e-code-review-expert` (end-to-end tests) |
 | Deployment PRs (base in the profile's `deployBranches`, such as `staging`/`uat`/`production`) | Nothing. Tribunal refuses these |
 
 Tribunal needs an open PR to review: it reads the diff through `gh`, and the
@@ -266,8 +266,9 @@ A review runs against one repo, and that repo needs a profile, `.claude/review-p
 |---|---|
 | **Node and TypeScript backend** with Express and Prisma | **Tested.** The reviewers' default text was written for this stack. |
 | **React and TypeScript frontend** | **Tested.** Same. |
+| **Playwright and TypeScript end-to-end test suite** (`reviewer: "e2e"`) | **Tested on one suite.** Its reviewer checks the tests themselves: whether a test can fail for the bug it names, waits and locators, route mocks, secrets in traces, writes to real environments and retries. |
 | Another JavaScript or TypeScript stack (Nest, Fastify, Next.js, plain JavaScript, a different ORM) | Should work, **not measured**. Every step runs. The default text still talks about Prisma, Zod and BullMQ, or React, so put your stack's own traps in `review-rules.md`. |
-| Python, Java, Go, mobile, anything else | Runs if you register the repo as `backend` or `frontend`, but **no run was tried** on such a repo, three steps do nothing (below), and no reviewer is written for your language. Replace the intro and traps in your rules file. |
+| Python, Java, Go, mobile, anything else | Runs if you register the repo as `backend`, `frontend` or `e2e`, but **no run was tried** on such a repo, three steps do nothing (below), and no reviewer is written for your language. Replace the intro and traps in your rules file. |
 
 Three steps read the code itself rather than the diff, and they only
 understand JavaScript and TypeScript (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`,

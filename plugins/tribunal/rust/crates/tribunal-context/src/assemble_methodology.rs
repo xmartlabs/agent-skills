@@ -12,7 +12,7 @@ use crate::load_profile::sha256_hex;
 use crate::operator::{flag, path_join, read_file_utf8, write_file, CliOutput};
 
 pub const NAMESPACE: &str = "tribunal";
-pub const KINDS: [&str; 2] = ["backend", "frontend"];
+pub const KINDS: [&str; 3] = ["backend", "frontend", "e2e"];
 
 /// `templatePath(kind)`: `<plugin root>/methodology/templates/<kind>.md`,
 /// normalized as `path.join` normalizes it.

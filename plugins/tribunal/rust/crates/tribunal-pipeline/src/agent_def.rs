@@ -90,6 +90,7 @@ mod tests {
         for name in [
             "code-review-expert",
             "fe-code-review-expert",
+            "e2e-code-review-expert",
             "finding-verifier",
             "tribunal-mechanic",
             "tribunal-refuter",

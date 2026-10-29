@@ -11,9 +11,10 @@ HERE=$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PLUGIN=$(dirname "$HERE")
 
 if [ $# -ge 1 ]; then
-  PROFILES=("$1"); RULES="${2:-}"
+  abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$PWD" "$1" ;; esac; }
+  PROFILES=("$(abs "$1")"); RULES=""; [ -n "${2:-}" ] && RULES=$(abs "$2")
 else
-  PROFILES=("$HERE/review-profile.backend.json" "$HERE/review-profile.frontend.json"); RULES="$HERE/review-rules.md"
+  PROFILES=("$HERE/review-profile.backend.json" "$HERE/review-profile.frontend.json" "$HERE/review-profile.e2e.json"); RULES="$HERE/review-rules.md"
 fi
 
 fail=0

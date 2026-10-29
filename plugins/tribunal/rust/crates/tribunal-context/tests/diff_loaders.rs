@@ -1470,6 +1470,10 @@ async fn assemble_methodology_matches_js() {
         "<!-- slot: tribunal/a -->\n<!-- slot: tribunal/b -->\n<!-- /slot -->",
     );
     let stray = w("stray.md", "<!-- /slot -->");
+    let e2e_rules = w(
+        "e2e-rules.md",
+        "<!-- slot: tribunal/real-data-writes -->\nours\n<!-- /slot -->\n<!-- slot: tribunal/route-auth -->\nbackend only\n<!-- /slot -->\n",
+    );
     let marker = w("marker.md", "ok\n<!--  /slot  -->");
     let twice = w("twice.md", "<!-- slot: tribunal/intro -->\na\n<!-- /slot -->\n<!-- slot: tribunal/intro -->\nb\n<!-- /slot -->");
     let crlf = w(
@@ -1498,6 +1502,16 @@ async fn assemble_methodology_matches_js() {
             "\"rulesSha256\":null",
         ),
         (
+            "e2e bare",
+            vec!["--kind", "e2e", "--out", o],
+            "\"kind\":\"e2e\"",
+        ),
+        (
+            "e2e reports a backend-only slot",
+            vec!["--kind", "e2e", "--rules", &e2e_rules, "--out", o],
+            "\"filled\":[\"real-data-writes\"],\"unknown\":[\"tribunal/route-auth\"]",
+        ),
+        (
             "rules without sha",
             vec!["--kind", "frontend", "--rules", &rules, "--out", o],
             "\"filled\":[\"intro\"]",
@@ -1515,7 +1529,7 @@ async fn assemble_methodology_matches_js() {
         (
             "bad kind",
             vec!["--kind", "fullstack", "--out", o],
-            "--kind must be one of backend, frontend, got \\\"fullstack\\\"",
+            "--kind must be one of backend, frontend, e2e, got \\\"fullstack\\\"",
         ),
         ("no kind", vec!["--out", o], "got \\\"\\\""),
         (
