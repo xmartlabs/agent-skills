@@ -126,10 +126,9 @@ install_tools() {
     tar -xzf "$tools/$tgz" -C "$tools"
     ln -sf "$tools/gh_${GH_VERSION}_linux_amd64/bin/gh" "$tools/bin/gh"
   fi
-  if ! command -v claude >/dev/null; then
-    npm install --silent --no-audit --no-fund --prefix "$tools/claude" "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
-    ln -sf "$tools/claude/node_modules/.bin/claude" "$tools/bin/claude"
-  fi
+  # The pinned Claude CLI, whatever the runner has: the binary was tested against it.
+  npm install --silent --no-audit --no-fund --prefix "$tools/claude" "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+  ln -sf "$tools/claude/node_modules/.bin/claude" "$tools/bin/claude"
 }
 
 cmd_prepare() {
@@ -152,20 +151,18 @@ cmd_prepare() {
 
   # The post step rewrites the report with the homosapiens skill; without it nothing is posted.
   cp -R "$HOMOSAPIENS" "$JOB/home/.claude/skills/homosapiens"
+  install_tools # before pick_profile, which needs gh
   pick_profile
-  install_tools
   log "tribunal $tag ($asset)"
 }
 
 # Run the binary with the job's isolated environment and one Claude credential.
 tribunal() {
-  # An API key wins over the OAuth token; the binary only uses a key given as
-  # TRIBUNAL_ANTHROPIC_API_KEY, and drops any other.
-  if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-    export TRIBUNAL_ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY"
-    [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && log "both claude-token and anthropic-api-key are set; using the API key"
-    unset CLAUDE_CODE_OAUTH_TOKEN
-  fi
+  # The binary uses an API key only when it comes as TRIBUNAL_ANTHROPIC_API_KEY, and drops any
+  # other. With both credentials, both are passed: a binary that reads the key uses it (the CLI
+  # ranks a key above the login), and an older one still runs on the OAuth token.
+  if [ -n "${ANTHROPIC_API_KEY:-}" ]; then export TRIBUNAL_ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY"; fi
+  [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || unset CLAUDE_CODE_OAUTH_TOKEN
   unset ANTHROPIC_API_KEY
   export HOME="$JOB/home" TMPDIR="$JOB/tmp" TRIBUNAL_DATA_DIR="$JOB/data" TRIBUNAL_PLUGIN_ROOT="$PLUGIN"
   export PATH="$JOB/tools/bin:$PATH"
@@ -190,31 +187,36 @@ cmd_post() {
 }
 
 cmd_fallback() {
-  local reason=""
-  reason="$(python3 - "$JOB/run.json" <<'PY' 2>/dev/null
-import json, sys
+  local run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" skipped="" reason=""
+  [ -f "$JOB/run.json" ] && skipped="$(python3 -c 'import json,sys
 r = json.load(open(sys.argv[1]))
-if r.get("skipped"):
-    print(f" Tribunal skipped this pull request: {r.get('reason')}.")
-PY
-)" || reason=""
-  if [ -z "$reason" ] && [ -f "$JOB/post.log" ]; then
-    reason="$(grep -m1 '^NOT POSTED:' "$JOB/post.log" | sed 's/^/ /')"
+if r.get("skipped"): print(r.get("reason") or "no reason given")' "$JOB/run.json" 2>/dev/null)"
+  if [ -n "$skipped" ]; then
+    printf '%s\n%s\n' "$PENDING_MARKER" \
+      "**Tribunal skipped** this pull request: $skipped. ([run log]($run_url))" > "$JOB/pending.md"
+  else
+    # Why nothing was posted: the post's own line, else the last line the binary printed.
+    [ -f "$JOB/post.log" ] && reason="$(grep -m1 '^NOT POSTED:' "$JOB/post.log")"
+    [ -z "$reason" ] && [ -f "$JOB/review.log" ] && reason="$(grep '^tribunal:' "$JOB/review.log" | tail -n 1)"
+    printf '%s\n%s\n%s\n' "$PENDING_MARKER" \
+      "**Tribunal pending** — the review run ended without posting a review ([run log]($run_url)).${reason:+ $reason}" \
+      "Add the \`$INPUT_LABEL\` label again to retry." > "$JOB/pending.md"
   fi
-  local run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-  printf '%s\n%s\n%s\n' "$PENDING_MARKER" \
-    "**Tribunal pending** — the review run ended without posting a review ([run log]($run_url)).$reason" \
-    "Add the \`$INPUT_LABEL\` label again to retry." > "$JOB/pending.md"
   gh pr comment "$(pr_number)" --repo "$GITHUB_REPOSITORY" --body-file "$JOB/pending.md"
 }
 
 # The label is a one-shot request: remove it so adding it again starts a new review.
 cmd_cleanup() {
-  gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$(pr_number)/labels/$INPUT_LABEL" >/dev/null 2>&1 \
+  local label pr slug head
+  label="$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1],safe=""))' "$INPUT_LABEL")"
+  gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$(pr_number)/labels/$label" >/dev/null 2>&1 \
     || log "label '$INPUT_LABEL' was not on the pull request"
-  local slug="${GITHUB_REPOSITORY//\//-}" pr; pr="$(pr_number)"
+  # The binary's own names: the slug turns every run of non-alphanumerics into one `-`, and the
+  # vote dir carries the head commit's first 8 characters.
+  pr="$(pr_number)"; head="$(event pull_request.head.sha)"
+  slug="$(python3 -c 'import re,sys;print(re.sub(r"[^A-Za-z0-9]+","-",sys.argv[1]))' "$GITHUB_REPOSITORY")"
   rm -rf "$JOB" "$FIXED_TMP/tribunal-methodology-$slug-$pr.md" "$FIXED_TMP/tribunal-conventions-$slug-$pr.md" \
-    "$FIXED_TMP"/peer-review-votes-"$pr"-*
+    "$FIXED_TMP/peer-review-votes-$pr-${head:0:8}"
   return 0
 }
 

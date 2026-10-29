@@ -7,7 +7,7 @@ RUN="$HERE/../run.sh"
 echo "tribunal action run_test:"
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/bin" "$TMP/fx" "$TMP/fixed-tmp" "$TMP/rel"
+mkdir -p "$TMP/bin" "$TMP/ghbin" "$TMP/fx" "$TMP/fixed-tmp" "$TMP/rel"
 
 # A release archive holding a fake tribunal binary that records how it was run.
 mkdir -p "$TMP/rel/tribunal-v9-x86_64-unknown-linux-musl"
@@ -33,16 +33,27 @@ manifest() { # SHA
     "$ASSET" "$1" > "$TMP/release.json"
 }
 
-# Fake curl: serves the archive and logs the URL.
+# Fake curl: serves the tribunal archive, or gh's release and checksums, and logs the URL.
 cat > "$TMP/bin/curl" <<'SH'
 #!/usr/bin/env bash
 dest=""; url=""
 while [ $# -gt 0 ]; do case "$1" in -o) dest="$2"; shift 2 ;; -*) shift ;; *) url="$1"; shift ;; esac; done
 echo "$url" >> "$FX/curl.log"
-cp "$REL_ARCHIVE" "$dest"
+case "$url" in
+  */cli/cli/*checksums.txt) cp "$GH_SUMS" "$dest" ;;
+  */cli/cli/*) cp "$GH_ARCHIVE" "$dest" ;;
+  *) cp "$REL_ARCHIVE" "$dest" ;;
+esac
+SH
+# Fake npm: installs a stub claude where `npm install --prefix DIR` would.
+cat > "$TMP/bin/npm" <<'SH'
+#!/usr/bin/env bash
+prefix=""; while [ $# -gt 0 ]; do [ "$1" = --prefix ] && prefix="$2"; shift; done
+mkdir -p "$prefix/node_modules/.bin" && printf '#!/usr/bin/env bash\n' > "$prefix/node_modules/.bin/claude"
+chmod +x "$prefix/node_modules/.bin/claude"; echo "npm $prefix" >> "$FX/npm.log"
 SH
 # Fake gh: profile lookups answer from $FX/profile-<base|default|head>, everything is logged.
-cat > "$TMP/bin/gh" <<'SH'
+cat > "$TMP/ghbin/gh" <<'SH'
 #!/usr/bin/env bash
 echo "$*" >> "$FX/gh.log"
 case "$*" in
@@ -63,10 +74,15 @@ case "$*" in
   *) echo "unexpected gh call: $*" >&2; exit 1 ;;
 esac
 SH
-printf '#!/usr/bin/env bash\n' > "$TMP/bin/claude"
-chmod +x "$TMP/bin/curl" "$TMP/bin/gh" "$TMP/bin/claude"
+chmod +x "$TMP/bin/curl" "$TMP/bin/npm" "$TMP/ghbin/gh"
+# gh's own release archive holds the same fake gh, for runners that have none.
+mkdir -p "$TMP/rel/gh_2.103.3_linux_amd64/bin" && cp "$TMP/ghbin/gh" "$TMP/rel/gh_2.103.3_linux_amd64/bin/gh"
+tar -czf "$TMP/rel/gh_2.103.3_linux_amd64.tar.gz" -C "$TMP/rel" gh_2.103.3_linux_amd64
+GH_SUM="$( (sha256sum "$TMP/rel/gh_2.103.3_linux_amd64.tar.gz" 2>/dev/null || shasum -a 256 "$TMP/rel/gh_2.103.3_linux_amd64.tar.gz") | cut -d' ' -f1)"
+echo "$GH_SUM  gh_2.103.3_linux_amd64.tar.gz" > "$TMP/rel/gh-sums.txt"
 
-export PATH="$TMP/bin:$PATH" FX="$TMP/fx" REL_ARCHIVE="$TMP/rel/$ASSET" TRIBUNAL_TARGET=x86_64-unknown-linux-musl \
+export PATH="$TMP/bin:$TMP/ghbin:$PATH" FX="$TMP/fx" REL_ARCHIVE="$TMP/rel/$ASSET" \
+  GH_ARCHIVE="$TMP/rel/gh_2.103.3_linux_amd64.tar.gz" GH_SUMS="$TMP/rel/gh-sums.txt" TRIBUNAL_TARGET=x86_64-unknown-linux-musl \
   TRIBUNAL_RUST_MANIFEST="$TMP/release.json" TRIBUNAL_FIXED_TMP="$TMP/fixed-tmp" GITHUB_REPOSITORY=acme/web-app \
   GITHUB_RUN_ID=7 GITHUB_SERVER_URL=https://github.com GH_TOKEN=job-secret HEAD_SHA=aaaa1111
 PLUGIN_ROOT="$(cd "$HERE/../../../plugins/tribunal" && pwd)"
@@ -137,6 +153,18 @@ new_job labeled tribunal
 prepare mobile; RC=$?
 assert_ok "an unknown reviewer kind fails" test "$RC" -ne 0
 
+# A PATH with the basic tools only, so no gh from the machine running the tests leaks in.
+mkdir -p "$TMP/nogh"
+for c in bash sh env python3 tar gzip xz sha256sum shasum perl cut sed grep cat mkdir find cp ln chmod date head tail tr rm dirname basename uname sort wc awk touch ls xargs mktemp readlink tee; do
+  p="$(command -v "$c" 2>/dev/null)" && ln -sf "$p" "$TMP/nogh/$c"
+done
+new_job labeled tribunal; touch "$FX/profile-base"
+PATH="$TMP/bin:$TMP/nogh" prepare; RC=$?
+assert_eq "prepare works on a runner without gh" "0" "$RC"
+assert_ok "it installs gh from its release" grep -q "cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz" "$FX/curl.log"
+assert_ok "the installed gh is the one that reads the profile" grep -q "contents/.claude/review-profile.json" "$FX/gh.log"
+assert_ok "the pinned Claude CLI is always installed" grep -q "npm $(job)/tools/claude" "$FX/npm.log"
+
 # --- review and post ----------------------------------------------------------------------------
 review() { CLAUDE_CODE_OAUTH_TOKEN="${OAUTH-oauth-secret}" ANTHROPIC_API_KEY="${API_KEY-}" bash "$RUN" review >/dev/null 2>&1; }
 new_job labeled tribunal; touch "$FX/profile-head"; prepare
@@ -158,8 +186,8 @@ OAUTH="" API_KEY=api-secret review
 assert_ok "an API key goes in as TRIBUNAL_ANTHROPIC_API_KEY" grep -qx "TRIBUNAL_KEY=api-secret" "$FX/tribunal-review.env"
 assert_ok "ANTHROPIC_API_KEY itself is not passed" grep -qx "API_KEY=<unset>" "$FX/tribunal-review.env"
 API_KEY=api-secret review
-assert_ok "with both, the API key is used" grep -qx "TRIBUNAL_KEY=api-secret" "$FX/tribunal-review.env"
-assert_ok "with both, the OAuth token is dropped" grep -qx "OAUTH=<unset>" "$FX/tribunal-review.env"
+assert_ok "with both, the API key is passed (a binary that reads it uses it)" grep -qx "TRIBUNAL_KEY=api-secret" "$FX/tribunal-review.env"
+assert_ok "with both, the OAuth token is kept (an older binary falls back to it)" grep -qx "OAUTH=oauth-secret" "$FX/tribunal-review.env"
 
 post() { CLAUDE_CODE_OAUTH_TOKEN=oauth-secret bash "$RUN" post >/dev/null 2>&1; }
 post; RC=$?
@@ -179,23 +207,44 @@ assert_ok "it links the run" grep -qF "https://github.com/acme/web-app/actions/r
 new_job labeled tribunal; touch "$FX/profile-base"; prepare
 echo '{"skipped":true,"reason":"deployment branch"}' > "$FX/run.json"; review
 fallback
-assert_ok "a skipped run says why" grep -qF "Tribunal skipped this pull request: deployment branch." "$FX/posted-body.md"
+assert_ok "a skipped run says why" grep -qF "**Tribunal skipped** this pull request: deployment branch." "$FX/posted-body.md"
+assert_fail "a deliberate skip does not ask to retry" grep -qF "label again" "$FX/posted-body.md"
+new_job labeled tribunal; mkdir -p "$(job)"; printf 'lens:1 ok\ntribunal: cannot clone acme/web-app\n' > "$(job)/review.log"
+fallback
+assert_ok "a crashed review quotes its last tribunal line" grep -qF "tribunal: cannot clone acme/web-app" "$FX/posted-body.md"
 
 # --- cleanup ------------------------------------------------------------------------------------
 new_job labeled tribunal; touch "$FX/profile-base" "$FX/label-present"; prepare
 touch "$TMP/fixed-tmp/tribunal-methodology-acme-web-app-12.md" "$TMP/fixed-tmp/tribunal-conventions-acme-web-app-12.md" \
   "$TMP/fixed-tmp/tribunal-methodology-acme-web-app-13.md"
-mkdir -p "$TMP/fixed-tmp/peer-review-votes-12-abcd1234"
+mkdir -p "$TMP/fixed-tmp/peer-review-votes-12-aaaa1111"
 INPUT_LABEL=tribunal bash "$RUN" cleanup >/dev/null 2>&1; RC=$?
 assert_eq "cleanup exits 0" "0" "$RC"
 assert_ok "the label is removed" grep -q "api -X DELETE repos/acme/web-app/issues/12/labels/tribunal" "$FX/gh.log"
 assert_fail "the job directory is removed" test -d "$(job)"
 assert_fail "this PR's methodology file is removed" test -f "$TMP/fixed-tmp/tribunal-methodology-acme-web-app-12.md"
 assert_fail "this PR's conventions file is removed" test -f "$TMP/fixed-tmp/tribunal-conventions-acme-web-app-12.md"
-assert_fail "this PR's vote dir is removed" test -d "$TMP/fixed-tmp/peer-review-votes-12-abcd1234"
+assert_fail "this PR's vote dir is removed" test -d "$TMP/fixed-tmp/peer-review-votes-12-aaaa1111"
 assert_ok "another PR's files stay" test -f "$TMP/fixed-tmp/tribunal-methodology-acme-web-app-13.md"
 new_job opened
 INPUT_LABEL=tribunal bash "$RUN" cleanup >/dev/null 2>&1; RC=$?
 assert_eq "cleanup without the label still exits 0" "0" "$RC"
+
+new_job labeled tribunal
+touch "$TMP/fixed-tmp/tribunal-methodology-acme-web-app-12.md" "$TMP/fixed-tmp/tribunal-conventions-acme-web-app-12.md"
+GITHUB_REPOSITORY=acme/web_app.v2 INPUT_LABEL=tribunal bash "$RUN" cleanup >/dev/null 2>&1
+touch "$TMP/fixed-tmp/tribunal-methodology-acme-web-app-v2-12.md"
+GITHUB_REPOSITORY=acme/web_app.v2 INPUT_LABEL=tribunal bash "$RUN" cleanup >/dev/null 2>&1
+assert_fail "the slug follows the binary's (non-alphanumeric runs become one -)" test -f "$TMP/fixed-tmp/tribunal-methodology-acme-web-app-v2-12.md"
+
+new_job labeled tribunal
+mkdir -p "$TMP/fixed-tmp/peer-review-votes-12-aaaa1111" "$TMP/fixed-tmp/peer-review-votes-12-bbbb2222"
+INPUT_LABEL=tribunal bash "$RUN" cleanup >/dev/null 2>&1
+assert_fail "this run's vote dir is removed" test -d "$TMP/fixed-tmp/peer-review-votes-12-aaaa1111"
+assert_ok "a vote dir of another head (another repo's PR 12) stays" test -d "$TMP/fixed-tmp/peer-review-votes-12-bbbb2222"
+
+new_job labeled "needs review"; touch "$FX/label-present"
+INPUT_LABEL="needs review" bash "$RUN" cleanup >/dev/null 2>&1
+assert_ok "a label with a space is URL-encoded" grep -q "labels/needs%20review" "$FX/gh.log"
 
 finish_tests

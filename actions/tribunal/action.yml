@@ -32,8 +32,13 @@ inputs:
       `.claude/review-profile.json` of its own.
     default: frontend
   upload-run:
-    description: Upload the run record, report and transcripts as a workflow artifact.
+    description: Upload the run record, the report and the logs as a workflow artifact.
     default: 'true'
+  upload-transcripts:
+    description: >-
+      Also upload every model dispatch's transcript. Off by default: transcripts keep tool output
+      verbatim, and artifacts of a public repository can be downloaded by anyone signed in.
+    default: 'false'
 
 outputs:
   posted:
@@ -91,7 +96,15 @@ runs:
         path: |
           ${{ runner.temp }}/tribunal/run.json
           ${{ runner.temp }}/tribunal/*.log
-          ${{ runner.temp }}/tribunal/tmp/tribunal-*
+          ${{ runner.temp }}/tribunal/tmp/tribunal-report-*
+        if-no-files-found: ignore
+        retention-days: 14
+
+    - if: ${{ always() && steps.gate.outputs.run == 'true' && inputs.upload-transcripts == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: tribunal-pr-${{ github.event.pull_request.number }}-${{ github.run_attempt }}-transcripts
+        path: ${{ runner.temp }}/tribunal/tmp/tribunal-transcripts-*
         if-no-files-found: ignore
         retention-days: 14
 

@@ -11,7 +11,9 @@ disprove it, and only the survivors are reported. A review that does not post le
    - `claude-token`: an OAuth token from `claude setup-token`. Runs on that account's Claude
      subscription.
    - `anthropic-api-key`: an API key from the Anthropic Console. Billed per use, and not tied to a
-     person's account. When both are set, the API key is used.
+     person's account. It needs a tribunal binary that reads `TRIBUNAL_ANTHROPIC_API_KEY`; with an
+     older one pinned, give `claude-token` as well and the review runs on it. When both are set and
+     the binary reads the key, the API key is used.
 2. Add the workflow:
 
 ```yaml
@@ -68,14 +70,16 @@ jobs:
 | `github-token` | `github.token` | Reads the pull request and posts the review (`pull-requests: write`). |
 | `label` | `tribunal` | On a `labeled` event, only this label starts a review; it is removed at the end. |
 | `reviewer` | `frontend` | `frontend` or `backend`: the generic profile used when the repository has none. |
-| `upload-run` | `true` | Upload the run record, report and every dispatch's transcript as an artifact (14 days). |
+| `upload-run` | `true` | Upload the run record, the report and the logs as an artifact (14 days). |
+| `upload-transcripts` | `false` | Also upload every model dispatch's transcript (see Security). |
 
 ## Runner requirements
 
-Linux x64 with `bash`, `git`, `python3`, `node` and `npm`, which GitHub-hosted Ubuntu runners
-have. The action downloads the tribunal binary pinned by `plugins/tribunal/rust/release.json` at
+Linux x64 with `bash`, `git`, `curl`, `tar`, `sha256sum`, `python3` and `npm`, which
+GitHub-hosted Ubuntu runners have. The action downloads the tribunal binary pinned by `plugins/tribunal/rust/release.json` at
 the action's own ref and checks its sha256, and installs the Claude CLI (and `gh` when missing)
-into the job's temporary directory. Everything the run writes stays in that directory, so
+into the job's temporary directory; a `gh` already on the runner is used when it is 2.60 or newer.
+Everything the run writes stays in that directory, so
 self-hosted runners that share a host do not see each other's files.
 
 ## Cost
@@ -88,4 +92,10 @@ agent count, tokens and wall clock of each run.
 
 The review's model calls run shell commands in a checkout of the pull request with `github-token`
 and the Claude credential in their environment, and they read the pull request's text. Run it on
-same-repository pull requests whose code you would run with those tokens.
+same-repository pull requests whose code you would run with those tokens. Transcripts keep that
+tool output verbatim and workflow artifacts are not masked, which is why `upload-transcripts` is
+off: on a public repository anyone signed in can download a run's artifacts.
+
+When neither the base nor the default branch has a profile, the pull request's own copy is used,
+so the pull request that adds it is reviewed under its own rules. Merge the profile first if that
+matters to you.
