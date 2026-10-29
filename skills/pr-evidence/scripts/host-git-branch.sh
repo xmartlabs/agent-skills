@@ -23,12 +23,14 @@ WT="$(mktemp -d)/wt"
 cleanup() { git worktree remove "$WT" --force >/dev/null 2>&1; git worktree prune >/dev/null 2>&1; }
 trap cleanup EXIT
 
-# Start the worktree at the current tip of the hosting branch (so evidence accumulates),
-# falling back to the remote default and then local HEAD. Detached: creates no local branch.
+# Start the worktree at the current tip of the hosting branch (so evidence accumulates). A
+# missing branch is created as an orphan below, holding only evidence; the worktree then starts
+# at the remote default or local HEAD just to have a directory. Detached: creates no local branch.
 git fetch "$REMOTE" "$BRANCH" --quiet 2>/dev/null || true
+NEW=""
 if git show-ref --verify --quiet "refs/remotes/$REMOTE/$BRANCH"; then START="$REMOTE/$BRANCH"
-elif git show-ref --verify --quiet "refs/remotes/$REMOTE/HEAD"; then START="$REMOTE/HEAD"
-else START="HEAD"; fi
+elif git show-ref --verify --quiet "refs/remotes/$REMOTE/HEAD"; then START="$REMOTE/HEAD"; NEW=1
+else START="HEAD"; NEW=1; fi
 git worktree add --detach "$WT" "$START" >/dev/null 2>&1 \
   || git worktree add --detach "$WT" >/dev/null 2>&1 \
   || fail "could not create worktree"
@@ -44,14 +46,24 @@ for f in "$@"; do
 done
 [ "$copied" -gt 0 ] || fail "no artifact files to host"
 
-# Commit in the detached worktree and push straight to the branch ref — no local branch.
-git -C "$WT" add -f "$DEST" >/dev/null 2>&1 || fail "git add failed"
-git -C "$WT" commit -q -m "$TICKET PR evidence (not for merge)" >/dev/null 2>&1 || fail "git commit failed"
-git -C "$WT" push "$REMOTE" "HEAD:refs/heads/$BRANCH" -q >/dev/null 2>&1 || fail "git push failed"
+# Commit in the detached worktree and push straight to the branch ref — no local branch. A new
+# branch gets a parentless commit whose tree is only the evidence (the worktree's index is
+# emptied first), so it never carries a copy of the repository.
+MSG="$TICKET PR evidence (not for merge)"
+if [ -n "$NEW" ]; then
+  git -C "$WT" read-tree --empty >/dev/null 2>&1 || fail "could not empty the index"
+  git -C "$WT" add -f "$DEST" >/dev/null 2>&1 || fail "git add failed"
+  TREE="$(git -C "$WT" write-tree 2>/dev/null)" || fail "git write-tree failed"
+  SHA="$(git -C "$WT" commit-tree "$TREE" -m "$MSG" 2>/dev/null)" || fail "git commit failed"
+else
+  git -C "$WT" add -f "$DEST" >/dev/null 2>&1 || fail "git add failed"
+  git -C "$WT" commit -q -m "$MSG" >/dev/null 2>&1 || fail "git commit failed"
+  SHA="$(git -C "$WT" rev-parse --verify HEAD 2>/dev/null)" || fail "could not resolve commit SHA"
+fi
+git -C "$WT" push "$REMOTE" "$SHA:refs/heads/$BRANCH" -q >/dev/null 2>&1 || fail "git push failed"
 
-# The pushed commit IS the worktree HEAD — resolve it directly (never a ref-name echo-back)
-# and require a real 40-hex SHA before emitting a URL.
-SHA="$(git -C "$WT" rev-parse --verify HEAD 2>/dev/null)" || fail "could not resolve commit SHA"
+# The pushed commit is SHA, resolved from git itself (never a ref-name echo-back); require a
+# real 40-hex SHA before emitting a URL.
 case "$SHA" in ""|*[!0-9a-f]*) fail "unexpected commit SHA '$SHA'" ;; esac
 [ "${#SHA}" -eq 40 ] || fail "unexpected commit SHA length"
 

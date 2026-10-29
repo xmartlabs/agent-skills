@@ -294,8 +294,10 @@ This prints a public URL for the given files. With the `git-branch` host target 
 builtin), it pushes the artifact(s) into a dedicated hosting branch via a **throwaway git
 worktree**, so the caller's actual working checkout is never touched, staged, or dirtied by
 evidence files — the worktree is created, committed to, pushed, and torn down entirely outside
-the current branch's working tree. The resulting URL is a SHA-pinned raw content URL, so it stays
-valid even as the hosting branch continues to accumulate evidence from later runs.
+the current branch's working tree. When the hosting branch does not exist yet, it is created as an
+orphan branch that holds only `.pr-evidence/`, never a copy of the repository. The resulting URL is
+a SHA-pinned raw content URL, so it stays valid even as the hosting branch continues to accumulate
+evidence from later runs.
 
 With `host.target: user-attachments`, `scripts/run.sh host` runs the `host-user-attachments.sh`
 builtin, which uploads each artifact to the **GitHub user-attachments CDN** (via the `gh image`

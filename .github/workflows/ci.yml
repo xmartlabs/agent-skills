@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      # The tests that need gh, maestro or ffmpeg put stubs on PATH; git tests set their own
+      # identity in their fixture repos.
+      - name: Run the test suite
+        run: bash tests/run-all.sh
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: shellcheck the skill scripts
+        run: shellcheck -S warning skills/*/scripts/*.sh skills/*/scripts/lib/*.sh
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.7
+        with:
+          args: -color
