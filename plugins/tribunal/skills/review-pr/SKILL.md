@@ -1,5 +1,7 @@
 ---
 name: review-pr
+metadata:
+  internal: true
 description: "Use when reviewing an open pull request in a repo that has a review profile — anyone's, including your own — e.g. \"review PR #1851\" or /tribunal:review-pr <number>. Not for reviewing your own uncommitted working diff (dispatch the code-review-expert agent for that) and not for deployment PRs (base staging/uat/production). Takes flags for posting, external refuter heads, backlog queueing and metrics — see the quick reference table inside."
 ---
 
