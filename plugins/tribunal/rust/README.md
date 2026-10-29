@@ -648,11 +648,10 @@ script printed masked, and keeps the `plugin.json` the script read its version
 from: replaying, the port gets a plugin root holding that file, so a version
 bump needs no regeneration. Regenerate it with `--test diff_post_footer`. The
 helpers these goldens share (`module_texts`, `recorded`, `write_golden`,
-`swapped`) live in `tests/posting/mod.rs`. The `macos` job runs the whole suite on a Mac, on a
-`release/*` pull request, on one labelled `macos`, or by hand
-(`workflow_dispatch`), because a macOS run takes far longer than a Linux one.
-A label takes effect from the next push: no run starts on `labeled`, because it
-would cancel the run in progress. The job runs on the runner the `MAC_RUNNER`
+`swapped`) live in `tests/posting/mod.rs`. The `macos` job runs the whole suite on a Mac on every
+pull request that touches this directory, and by hand (`workflow_dispatch`).
+While the repository is public GitHub's Macs are free; were it private, the job
+would run only when `MAC_RUNNER` names a company Mac. The job runs on the runner the `MAC_RUNNER`
 variable names, else on GitHub's `macos-15` (always for a fork's pull request):
 it checks out the commit's whole history and runs `rust/scripts/test-macos.sh`.
 `rust/scripts/mac-setup.sh` installs the Rust toolchain and node 24 when the

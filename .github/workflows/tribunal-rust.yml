@@ -14,12 +14,9 @@
 # JavaScript and bash it replaces, run on the same machine, except the
 # classifier comparisons in diff_classify_heads.rs: their oracle is macOS's
 # BSD userland, so they read what the scripts printed there from
-# tests/goldens/ and run on Linux too. The `macos` job, a check of the suite
-# on the platform most of the team runs, starts only on a release PR, on a PR
-# labelled `macos` (from its next push), or by hand: a Mac costs far more
-# than a Linux runner. Adding a label starts no run: a run started by an
-# unrelated label would cancel the one in progress, which shares its
-# concurrency group. The release's macOS archives are built on GitHub's
+# tests/goldens/ and run on Linux too. The `macos` job runs the whole suite
+# on the platform most of the team runs, on every pull request, as `linux`
+# and `windows` do. The release's macOS archives are built on GitHub's
 # macos-15 runner. A `tribunal-rust-v*` tag builds the four release binaries
 # and attaches them, each with its sha256, to a GitHub release. `gate` sums up
 # the jobs, but runs only on pull requests that touch the paths below: making
@@ -190,14 +187,12 @@ jobs:
   # rust/scripts/test-macos.sh runs the whole suite on macOS at this job's
   # commit, with all of its history: the evidence-line tests replay this
   # repository's commits.
-  # A hosted Mac bills ten times the Linux rate while the repository is
-  # private, so then the job runs only on the company Mac MAC_RUNNER names.
+  # Hosted Macs are free for a public repository. A private one would bill ten
+  # times the Linux rate, so then the job runs only on the company Mac
+  # MAC_RUNNER names.
   macos:
     if: >-
-      (github.event_name == 'workflow_dispatch' ||
-       (github.event_name == 'pull_request' &&
-        (startsWith(github.head_ref, 'release/') ||
-         contains(github.event.pull_request.labels.*.name, 'macos')))) &&
+      github.event_name != 'push' &&
       (!github.event.repository.private || vars.MAC_RUNNER != '')
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.MAC_RUNNER || 'macos-15' }}
     timeout-minutes: 60
