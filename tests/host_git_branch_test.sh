@@ -26,12 +26,20 @@ OUT="$(bash "$HOST" pr-evidence origin PC-1 "$TMP/shot.png" 2>/dev/null)"; RC=$?
 assert_eq "new-branch host exits 0" "0" "$RC"
 assert_ok "new-branch url is github raw + 40-hex sha" \
   bash -c 'printf "%s" "$1" | grep -qE "^https://github\.com/org/repo/raw/[0-9a-f]{40}/\.pr-evidence/PC-1/"' _ "$OUT"
+# The new branch is an orphan holding only evidence, not a copy of the repo it was created from.
+hosted_files() { git --git-dir="$TMP/remote.git" ls-tree -r --name-only pr-evidence; }
+assert_eq "new branch holds the evidence" "1" "$(hosted_files | grep -c '^\.pr-evidence/PC-1/')"
+assert_eq "new branch has no repo files" "" "$(hosted_files | grep -v '^\.pr-evidence/')"
+assert_eq "new branch has no parent commit" "" "$(git --git-dir="$TMP/remote.git" rev-parse --verify -q pr-evidence^)"
 
 # 2. Branch now exists -> a second run appends and still prints a valid URL.
 OUT2="$(bash "$HOST" pr-evidence origin PC-2 "$TMP/shot.png" 2>/dev/null)"; RC2=$?
 assert_eq "existing-branch host exits 0" "0" "$RC2"
 assert_ok "existing-branch url valid" \
   bash -c 'printf "%s" "$1" | grep -qE "raw/[0-9a-f]{40}/\.pr-evidence/PC-2/"' _ "$OUT2"
+assert_eq "existing branch keeps earlier evidence" "1" "$(hosted_files | grep -c '^\.pr-evidence/PC-1/')"
+assert_eq "existing branch gains the new evidence" "1" "$(hosted_files | grep -c '^\.pr-evidence/PC-2/')"
+assert_eq "existing branch still has no repo files" "" "$(hosted_files | grep -v '^\.pr-evidence/')"
 
 # 3. Token-in-URL remote (common CI/bot form) must NOT leak the token into the printed URL.
 git remote set-url origin "https://x-access-token:SECRETTOKEN@github.com/org/repo.git"
