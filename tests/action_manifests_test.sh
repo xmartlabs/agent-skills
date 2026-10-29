@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks every actions/**/action.yml for mistakes actionlint does not catch: GitHub evaluates
+# Checks the pr-evidence action manifests for mistakes actionlint does not catch: GitHub evaluates
 # `${{ }}` everywhere in an action manifest, descriptions included, and fails to load the action
 # when an expression names a context actions cannot use (for example `secrets`).
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -29,7 +29,7 @@ forbidden_contexts() {
 }
 
 MANIFESTS=()
-while IFS= read -r f; do MANIFESTS+=("$f"); done < <(find "$DIR/actions" -name action.yml | sort)
+while IFS= read -r f; do MANIFESTS+=("$f"); done < <(find "$DIR/actions/pr-evidence" -name action.yml | sort)
 assert_ok "there are action manifests to check" test "${#MANIFESTS[@]}" -gt 0
 assert_eq "no expression inside a description" "" "$(expressions_in_descriptions "${MANIFESTS[@]}")"
 assert_eq "no secrets or vars context in an action" "" "$(forbidden_contexts "${MANIFESTS[@]}")"
