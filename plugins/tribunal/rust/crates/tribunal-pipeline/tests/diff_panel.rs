@@ -505,12 +505,46 @@ const MAIN: Span = Span {
     ret: RET,
 };
 
+/// Declared difference (`panel_gates::place_survivor`): the port records a
+/// lower severity only when two or more votes filled `introducedByPr`. Clears
+/// the Workflow's proposal where fewer did, and counts how often.
+fn two_judges_rule(js: &mut [Value]) -> usize {
+    let mut cleared = 0;
+    for v in js
+        .iter_mut()
+        .filter_map(|o| o.get_mut("verified").and_then(Value::as_array_mut))
+        .flatten()
+    {
+        let judging = v["votes"].as_array().map_or(0, |votes| {
+            votes
+                .iter()
+                .filter(|x| {
+                    x.is_object()
+                        && x["slotStatus"] != "UNAVAILABLE"
+                        && x["introducedByPr"].is_string()
+                })
+                .count()
+        });
+        let proposal = v
+            .get_mut("placement")
+            .and_then(Value::as_object_mut)
+            .and_then(|p| p.get_mut("proposedSeverity"))
+            .filter(|s| s.is_string());
+        if let (true, Some(s)) = (judging < 2, proposal) {
+            *s = Value::Null;
+            cleared += 1;
+        }
+    }
+    cleared
+}
+
 #[test]
 fn the_panel_runs_as_the_workflow_runs_it() {
     let cases = sample(case());
     let ret = RET.replace("__LOGS__", LOGS);
     let params: Vec<Value> = cases.iter().map(js_params).collect();
-    let js = span(&Span { ret: &ret, ..MAIN }, &params);
+    let mut js = span(&Span { ret: &ret, ..MAIN }, &params);
+    assert!(two_judges_rule(&mut js) > 0);
     let rt = tokio::runtime::Builder::new_current_thread()
         .build()
         .unwrap();
