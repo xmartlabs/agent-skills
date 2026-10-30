@@ -725,6 +725,9 @@ fn panel_exports() -> Vec<&'static str> {
         // See `exact_number`.
         "tallyVotesExact:(...a)=>{const t=tallyVotes(...a);t.refuteFraction=String(t.refuteFraction);return t}",
         "placeSurvivor",
+        // The port records a lower severity only with two judging votes; see
+        // `declared_difference_one_judging_vote_proposes_no_severity`.
+        "placeSurvivorTwoJudges:(v,f,a)=>{const live=(v||[]).filter(x=>x&&x.slotStatus!==\"UNAVAILABLE\"&&typeof x.introducedByPr===\"string\");const p=placeSurvivor(v,f,a);if(live.length<2)p.proposedSeverity=null;return p}",
         "factualRefutationFails",
         "contestedPreDecision",
         "preDecidedCoversFile",
@@ -808,7 +811,7 @@ fn panel_gates_matches_js() {
     let mut split = Batch::new("VERDICT_SPLIT");
     let mut under = Batch::new("UNDER_CONFIDENT");
     let mut contested = Batch::new("contestedPreDecision");
-    let mut place = Batch::new("placeSurvivor");
+    let mut place = Batch::new("placeSurvivorTwoJudges");
     let mut factual = Batch::new("factualRefutationFails");
     let mut covers = Batch::new("preDecidedCoversFile");
     let mut same = Batch::new("samePath");
@@ -1088,6 +1091,27 @@ fn panel_gates_matches_js() {
         b.push(vec![], json!(value));
         b.check("PANEL-GATES", &exports);
     }
+}
+
+/// The Workflow takes one judging vote's lower severity as the panel's. A
+/// Claude-plus-Codex panel has one judging vote, because Codex never fills
+/// `introducedByPr`, so the port asks for two.
+#[test]
+fn declared_difference_one_judging_vote_proposes_no_severity() {
+    let votes = json!([
+        {"source": "claude", "verdict": "NOT_REFUTED", "slotStatus": "OK", "introducedByPr": "yes", "proposedSeverity": "nit"},
+        {"source": "codex", "verdict": "NOT_REFUTED", "slotStatus": "OK", "confidence": 0.9}
+    ]);
+    let finding = json!({"file": "a.ts", "severity": "important"});
+    let js = oracle(
+        "PANEL-GATES",
+        &panel_exports(),
+        &[],
+        &[json!({"fn": "placeSurvivor", "args": [votes, finding, false]})],
+    );
+    assert_eq!(js[0]["proposedSeverity"], json!("nit"));
+    let p = gates::place_survivor(votes.as_array().unwrap(), &finding, false);
+    assert_eq!(p.proposed_severity, None);
 }
 
 fn token_count() -> BoxedStrategy<Option<f64>> {
