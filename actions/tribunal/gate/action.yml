@@ -1,0 +1,49 @@
+name: Tribunal review gate
+description: >-
+  Decides whether the tribunal action would review this pull request, without checking out or
+  installing anything. Use it in a cheap job before the review job.
+author: Xmartlabs
+
+inputs:
+  github-token:
+    description: Token for reading the pull request's files and reviews.
+    default: ${{ github.token }}
+  claude-token:
+    description: >-
+      Same as the tribunal action's input. Only whether it is set is read: a run without a
+      credential (Dependabot's) is skipped.
+    default: ''
+  anthropic-api-key:
+    description: Same as the tribunal action's input; only whether it is set is read.
+    default: ''
+  label:
+    description: Same as the tribunal action's input.
+    default: tribunal
+  paths:
+    description: Same as the tribunal action's input.
+    default: ''
+  once:
+    description: Same as the tribunal action's input.
+    default: 'true'
+  drafts:
+    description: Same as the tribunal action's input.
+    default: 'false'
+
+outputs:
+  run:
+    description: '`true` when the tribunal action would review.'
+    value: ${{ steps.gate.outputs.run }}
+
+runs:
+  using: composite
+  steps:
+    - id: gate
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        HAS_CLAUDE_AUTH: ${{ inputs.claude-token != '' || inputs.anthropic-api-key != '' }}
+        INPUT_LABEL: ${{ inputs.label }}
+        INPUT_PATHS: ${{ inputs.paths }}
+        INPUT_ONCE: ${{ inputs.once }}
+        INPUT_DRAFTS: ${{ inputs.drafts }}
+      run: bash "$GITHUB_ACTION_PATH/../run.sh" gate

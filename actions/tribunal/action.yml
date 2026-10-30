@@ -23,9 +23,22 @@ inputs:
     default: ${{ github.token }}
   label:
     description: >-
-      On a `labeled` event, only this label starts a review. The action removes it when it ends,
-      so adding it again starts a new review. Other events always review.
+      Adding this label forces a review, ignoring `drafts`, `paths` and `once`; another label skips.
+      The action removes it when it ends, so adding it again starts a new review.
     default: tribunal
+  paths:
+    description: >-
+      Review only when a changed file matches one of these globs, one per line (`*` also crosses
+      `/`, a leading `!` excludes). Empty reviews any change. The label ignores it.
+    default: ''
+  once:
+    description: >-
+      Skip a pull request the action already reviewed (a review of its own with tribunal's
+      footer). The label ignores it.
+    default: 'true'
+  drafts:
+    description: Also review draft pull requests. The label reviews drafts either way.
+    default: 'false'
   reviewer:
     description: >-
       `frontend` or `backend`: the reviewer kind used when the repository has no
@@ -51,8 +64,12 @@ runs:
     - id: gate
       shell: bash
       env:
+        GH_TOKEN: ${{ inputs.github-token }}
         HAS_CLAUDE_AUTH: ${{ inputs.claude-token != '' || inputs.anthropic-api-key != '' }}
         INPUT_LABEL: ${{ inputs.label }}
+        INPUT_PATHS: ${{ inputs.paths }}
+        INPUT_ONCE: ${{ inputs.once }}
+        INPUT_DRAFTS: ${{ inputs.drafts }}
       run: bash "$GITHUB_ACTION_PATH/run.sh" gate
 
     - id: node
