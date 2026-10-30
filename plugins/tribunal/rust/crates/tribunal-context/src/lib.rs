@@ -13,6 +13,7 @@ pub mod check_report_fidelity;
 pub mod classify_artifacts;
 pub mod classify_head_failure;
 pub mod classify_verdict;
+pub mod convention_sources;
 pub mod exec;
 pub mod fetch_pr_context;
 pub mod grounded_typecheck;

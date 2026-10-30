@@ -25,6 +25,7 @@ use std::process::{Command, Stdio};
 
 use serde_json::{json, Value};
 use tribunal_context::assemble_methodology as am;
+use tribunal_context::convention_sources as cs;
 use tribunal_context::exec::Tools;
 use tribunal_context::load_conventions as lc;
 use tribunal_context::load_profile as lp;
@@ -1648,6 +1649,7 @@ import { createHash } from "node:crypto";
 const root = process.argv[2];
 const mod = (p) => import(pathToFileURL(root + "/" + p).href);
 const lc = await mod("skills/review-pr/scripts/load-conventions.mjs");
+const cs = await mod("skills/review-pr/scripts/convention-sources.mjs");
 const am = await mod("skills/review-pr/scripts/assemble-methodology.mjs");
 const op = await mod("lib/operator.mjs");
 const { kind, cases } = JSON.parse(readFileSync(0, "utf8"));
@@ -1663,6 +1665,20 @@ const fns = {
   opconfig: (p) => run(() => JSON.stringify(op.readOperatorConfig(p))),
   sha: (t) => run(() => createHash("sha256").update(t).digest("hex")),
   uri: (t) => run(() => encodeURIComponent(t)),
+  scalar: (t) => run(() => cs.yamlScalar(t)),
+  okf: (t) => run(() => {
+    const o = cs.okfFrontmatter(t);
+    return { type: o.type, description: o.description, code: o.code instanceof Map ? { map: [...o.code] } : o.code };
+  }),
+  manifest: (t) => run(() => {
+    const r = cs.parseManifest(t, "m.json");
+    return r.error ? { error: r.error } : { docs: r.docs.map((d) => ({ ...d, covers: d.covers instanceof Map ? { map: [...d.covers] } : d.covers })) };
+  }),
+  select: (c) => run(() => {
+    const docs = c.docs.map((d) => ({ ...d, code: d.code && !Array.isArray(d.code) ? new Map(d.code.map) : d.code, text: "" }));
+    const r = cs.selectDocs({ ...c, docs, compileGlob: lc.globToRegExp });
+    return { loaded: r.loaded.map((l) => [l.doc.path, l.reason]), offered: r.offered.map((d) => d.path), omitted: r.omitted, bytesLoaded: r.bytesLoaded };
+  }),
 };
 process.stdout.write(JSON.stringify(cases.map(fns[kind])) + "\n");
 "#;
@@ -2793,6 +2809,984 @@ async fn load_profile_matches_js_on_validation_edges() {
         None,
         &[],
         "is not valid JSON: Unexpected token '€'",
+    )
+    .await;
+}
+
+// ---------------------------------------------------------------------------
+// convention-sources.mjs
+
+fn okf_json(o: &cs::Okf) -> Value {
+    let code = match &o.code {
+        None => Value::Null,
+        Some(cs::Code::List(l)) => json!(l),
+        Some(cs::Code::Map(m)) => {
+            json!({"map": m.iter().map(|(k, v)| json!([k, v])).collect::<Vec<_>>()})
+        }
+    };
+    json!({"type": o.type_, "description": o.description, "code": code})
+}
+
+const YAML_FRAGS: &[&str] = &[
+    "type: convention",
+    "type: concept   # one of six",
+    "type: 'feature'",
+    "type: \"howto\"",
+    "type:",
+    "description: One line.",
+    "description: >",
+    "description: |-",
+    "description: \"quoted \\\" escape\"",
+    "description: 'it''s'",
+    "description: 'open'' end",
+    "description: \"bad \\",
+    "description: a # comment",
+    "description: a#not",
+    "  folded continuation",
+    "    deeper",
+    "\tTab indented",
+    "",
+    "   ",
+    "# a comment line",
+    "code:",
+    "code: [a.ts, 'b/', \"c\"]",
+    "code: [a.ts] # note",
+    "code: [a.ts]]",
+    "code: [a\u{2028}b]",
+    "code: [x, y] z",
+    "code: plain/path.ts",
+    "code: []",
+    "  - src/routes/",
+    "  - 'server/core/x.ts'  # base",
+    "  -  spaced.ts",
+    "  -",
+    "  - # empty",
+    "  -\u{2028}x",
+    "  server:",
+    "  client: [src/x/, src/y.ts]",
+    "  server: one.ts",
+    "  2:",
+    "  __proto__:",
+    "    - deep/item.ts",
+    "  not a key",
+    "title: x",
+    "key\u{2028}: v",
+    "other : spaced",
+    "_k: v",
+    "1bad: v",
+    "type: a\rb",
+];
+
+/// Mapping-shaped `code:` blocks, spliced in so enough cases reach them.
+const CODE_MAPS: &[&str] = &[
+    "code:\n  server:\n    - server/x.ts\n  client: [src/x/]",
+    "code:\n  server: one.ts\n  server:\n    - two.ts\n  - stray.ts",
+    "code:\n  # note\n  2:\n    - n.ts\n  __proto__: [p.ts]",
+];
+
+fn okf_text(rng: &mut Rng) -> String {
+    let mut body = rng.concat(YAML_FRAGS, 9, "\n");
+    if rng.below(3) == 0 {
+        body = format!(
+            "{body}\n{}\n{}",
+            rng.pick(CODE_MAPS),
+            rng.concat(YAML_FRAGS, 3, "\n")
+        );
+    }
+    match rng.below(6) {
+        0 => body,
+        1 => format!("---\n{body}"),
+        _ => format!("---\n{body}\n---\n# Body\n"),
+    }
+}
+
+#[test]
+fn yaml_scalar_and_okf_frontmatter_match_js() {
+    let mut rng = Rng(0x0cf0_0d5e_ed00_0001);
+    let mut scalars: Vec<Value> = Vec::new();
+    let pieces = [
+        " ", "\"", "'", "''", "\\", "\\\"", "#", " #", "a", "é", "\u{2028}", "\r", "\t", "x y",
+        "]", "[",
+    ];
+    for _ in 0..1500 {
+        scalars.push(json!(rng.concat(&pieces, 6, "")));
+    }
+    let rust: Vec<Value> = scalars
+        .iter()
+        .map(|c| json!({"ok": cs::yaml_scalar(c.as_str().unwrap())}))
+        .collect();
+    compare("scalar", &scalars, &rust, &[("\"ok\":\"\"", 20)]);
+
+    let texts: Vec<Value> = (0..2500).map(|_| json!(okf_text(&mut rng))).collect();
+    let rust: Vec<Value> = texts
+        .iter()
+        .map(|t| json!({"ok": okf_json(&cs::okf_frontmatter(t.as_str().unwrap()))}))
+        .collect();
+    compare(
+        "okf",
+        &texts,
+        &rust,
+        &[
+            ("\"map\":", 50),
+            ("\"code\":[\"", 50),
+            ("\"code\":null", 50),
+            ("\"description\":\"", 50),
+        ],
+    );
+}
+
+fn manifest_json(r: Result<Vec<cs::ManifestDoc>, String>) -> Value {
+    let docs = match r {
+        Err(e) => return json!({"ok": {"error": e}}),
+        Ok(d) => d,
+    };
+    let docs: Vec<Value> = docs
+        .iter()
+        .map(|d| {
+            let covers = match &d.covers {
+                None => Value::Null,
+                Some(cs::Code::List(l)) => json!(l),
+                Some(cs::Code::Map(m)) => {
+                    json!({"map": m.iter().map(|(k, v)| json!([k, v])).collect::<Vec<_>>()})
+                }
+            };
+            json!({"path": d.path, "description": d.description, "type": d.type_, "covers": covers})
+        })
+        .collect();
+    json!({"ok": {"docs": docs}})
+}
+
+/// A manifest text from fragments: every refusal, each near the 300-unit
+/// description limit, and the shapes `covers` takes, in JSON V8 parses with
+/// its own key order and duplicate-key rule.
+fn manifest_text(rng: &mut Rng) -> String {
+    let long = |c: &str, n: usize| format!("\"{}\"", c.repeat(n));
+    let descriptions = [
+        "\"d\"".to_owned(),
+        "\"\"".to_owned(),
+        "7".to_owned(),
+        "null".to_owned(),
+        long("x", 300),
+        long("x", 301),
+        long("é", 300),
+        long("é", 301),
+        long("\u{1F600}", 150),
+        long("\u{1F600}", 151),
+        long("\\u00e9", 300),
+        long("\\ud83d\\ude00", 151),
+        // Whitespace collapses before the limit is counted.
+        "\" Route naming,\\n  the error\\ttypes.\\n\"".to_owned(),
+        format!(
+            "\"{}\\n\\n\\u00a0{}\\u2028\"",
+            "x".repeat(150),
+            "x".repeat(149)
+        ),
+        format!("\"{} \\ufeff {}\"", "x".repeat(150), "x".repeat(150)),
+        "\" \\r\\n \"".to_owned(),
+    ];
+    let covers = [
+        "null",
+        "[]",
+        "[\"src/\"]",
+        "[\"src/**/*.ts\", \"./a.ts\"]",
+        "[1]",
+        "\"src/\"",
+        "{}",
+        "{\"server\": [\"a/\"], \"client\": []}",
+        "{\"b\": [\"x\"], \"2\": [\"n\"], \"1\": [\"y\"], \"b\": [\"z\"]}",
+        "{\"__proto__\": [\"p\"]}",
+        "{\"server\": \"x\"}",
+        "{\"server\": [1]}",
+        "{\"server\": null}",
+    ];
+    let types = ["\"convention\"", "\"\"", "null", "3", "[\"guide\"]"];
+    let paths = [
+        "\"a.md\"",
+        "\"handbook/é.txt\"",
+        "\"\"",
+        "3",
+        "null",
+        "\"a.md\"",
+    ];
+    let mut docs = Vec::new();
+    for _ in 0..rng.below(4) {
+        let doc = match rng.below(12) {
+            0 => rng.pick(&["null", "[]", "{}", "\"a.md\"", "1"]).to_owned(),
+            // A doc that parses, so a manifest reaches its later docs.
+            1..=6 => format!(
+                "{{\"path\": {}, \"description\": {}, \"type\": \"convention\", \"covers\": {}}}",
+                rng.pick(&["\"a.md\"", "\"handbook/é.txt\"", "\"b/c.md\""]),
+                rng.pick(&[
+                    "\"d\"",
+                    "\"\"",
+                    &long("x", 300),
+                    &long("é", 300),
+                    &long("\u{1F600}", 150),
+                    "\" Route naming,\\n  the error\\ttypes.\\n\""
+                ]),
+                rng.pick(&[
+                    "[\"src/\"]",
+                    "{\"server\": [\"a/\"], \"client\": []}",
+                    "{\"b\": [\"x\"], \"2\": [\"n\"], \"b\": [\"z\"]}"
+                ]),
+            ),
+            _ => {
+                let mut fields = Vec::new();
+                if rng.below(8) != 0 {
+                    fields.push(format!("\"path\": {}", rng.pick(&paths)));
+                }
+                if rng.below(8) != 0 {
+                    let d = &descriptions[rng.below(descriptions.len())];
+                    fields.push(format!("\"description\": {d}"));
+                }
+                if rng.below(2) == 0 {
+                    fields.push(format!("\"type\": {}", rng.pick(&types)));
+                }
+                if rng.below(2) == 0 {
+                    fields.push(format!("\"covers\": {}", rng.pick(&covers)));
+                }
+                if rng.below(4) == 0 {
+                    fields.push("\"owner\": {\"team\": [1]}".to_owned());
+                }
+                format!("{{{}}}", fields.join(", "))
+            }
+        };
+        docs.push(doc);
+    }
+    let docs = format!("[{}]", docs.join(", "));
+    let version = rng.pick(&[
+        "1", "1", "1", "1.0", "1e0", "2", "-0", "2.5", "\"1\"", "null", "true",
+    ]);
+    match rng.below(14) {
+        0 => rng
+            .pick(&["{", "", "[]", "\"x\"", "null", "{\"schemaVersion\": 1,}"])
+            .to_owned(),
+        1 => format!("{{\"docs\": {docs}}}"),
+        2 => format!("{{\"schemaVersion\": {version}}}"),
+        3 => r#"{"schemaVersion": 1, "docs": {}}"#.to_owned(),
+        _ => format!("{{\"schemaVersion\": {version}, \"generator\": \"x\", \"docs\": {docs}}}"),
+    }
+}
+
+#[test]
+fn parse_manifest_matches_js() {
+    let mut rng = Rng(0x0cf0_0d5e_ed00_0004);
+    let texts: Vec<Value> = (0..5000).map(|_| json!(manifest_text(&mut rng))).collect();
+    let rust: Vec<Value> = texts
+        .iter()
+        .map(|t| manifest_json(cs::parse_manifest(t.as_str().unwrap(), "m.json")))
+        .collect();
+    compare(
+        "manifest",
+        &texts,
+        &rust,
+        &[
+            ("is not JSON (", 20),
+            ("has schemaVersion", 50),
+            ("must hold a docs array", 20),
+            ("needs a path and a description", 200),
+            (".type must be a string", 15),
+            (".covers must be a list", 15),
+            ("\"docs\":[{", 200),
+            ("\"map\":", 50),
+            (&"x".repeat(300), 20),
+            (&"é".repeat(300), 20),
+            ("\"description\":\"Route naming, the error types.\"", 10),
+        ],
+    );
+}
+
+fn select_case(rng: &mut Rng) -> Value {
+    let paths = [
+        "server/a.ts",
+        "server/b.ts",
+        "server/types.ts",
+        "server/routes/x.ts",
+        "tests/t.ts",
+        "lib/z.ts",
+        "é/u.ts",
+    ];
+    let entries = [
+        "server/a.ts",
+        "server/b.ts",
+        "server/types.ts",
+        "server/routes/",
+        "server/",
+        "tests/",
+        "lib/",
+        "",
+        "/",
+        "é/u.ts",
+        "server/routes/*.ts",
+        "./server/a.ts",
+        "{server,lib}/**",
+        "{a,?}",
+    ];
+    let types = ["convention", "concept", "feature", "howto"];
+    let n = 1 + rng.below(9);
+    let mut names: Vec<String> = (0..n)
+        .map(|i| {
+            format!(
+                "{}/{}{i}.md",
+                rng.pick(&types),
+                rng.pick(&["a", "b", "Z", "é"])
+            )
+        })
+        .collect();
+    names.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
+    names.dedup();
+    let docs: Vec<Value> = names
+        .iter()
+        .map(|path| {
+            let list = |rng: &mut Rng| {
+                let k = rng.below(4);
+                (0..k).map(|_| rng.pick(&entries)).collect::<Vec<_>>()
+            };
+            let code = match rng.below(5) {
+                0 => Value::Null,
+                1 => json!({"map": [["server", list(rng)], ["client", list(rng)]]}),
+                _ => json!(list(rng)),
+            };
+            json!({
+                "path": path,
+                "type": if rng.below(5) == 0 { Value::Null } else { json!(rng.pick(&types)) },
+                "description": if rng.below(4) == 0 { Value::Null } else { json!("d".repeat(rng.below(300))) },
+                "code": code,
+                "bytes": if rng.below(2) == 0 { rng.below(600) } else { rng.below(12000) },
+            })
+        })
+        .collect();
+    let included: Vec<String> = names
+        .iter()
+        .filter(|_| rng.below(3) == 0)
+        .cloned()
+        .collect();
+    let k = rng.below(paths.len() + 1);
+    let changed: Vec<&str> = paths.iter().take(k).copied().collect();
+    let budget = [0, 1000, 8000, 30000, 100_000, 100_000, 100_000][rng.below(7)];
+    json!({
+        "docs": docs,
+        "included": included,
+        "select": rng.pick(&["okf-code", "okf-code", "all"]),
+        "changed": changed,
+        "consumer": if rng.below(2) == 0 { Value::Null } else { json!(rng.pick(&["server", "client", "web"])) },
+        "budget": budget,
+        "patterns": rng.below(2) == 0,
+    })
+}
+
+fn select_rust(c: &Value) -> Value {
+    let docs: Vec<cs::Doc> = c["docs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| {
+            let strs = |v: &Value| {
+                v.as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|x| x.as_str().unwrap().to_owned())
+                    .collect::<Vec<_>>()
+            };
+            let code = match &d["code"] {
+                Value::Null => None,
+                Value::Array(_) => Some(cs::Code::List(strs(&d["code"]))),
+                m => Some(cs::Code::Map(
+                    m["map"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|kv| (kv[0].as_str().unwrap().to_owned(), strs(&kv[1])))
+                        .collect(),
+                )),
+            };
+            cs::Doc {
+                path: d["path"].as_str().unwrap().to_owned(),
+                text: String::new(),
+                bytes: usize::try_from(d["bytes"].as_u64().unwrap()).unwrap(),
+                okf: cs::Okf {
+                    type_: d["type"].as_str().map(str::to_owned),
+                    description: d["description"].as_str().map(str::to_owned),
+                    code,
+                },
+            }
+        })
+        .collect();
+    let list = |k: &str| {
+        c[k].as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    let p = cs::select_docs(
+        &docs,
+        &list("included"),
+        c["select"].as_str().unwrap(),
+        &list("changed"),
+        c["consumer"].as_str(),
+        c["budget"].as_f64().unwrap(),
+        c["patterns"].as_bool().unwrap_or(false),
+    );
+    json!({"ok": {
+        "loaded": p.loaded.iter().map(|(d, r)| json!([docs[*d].path, r])).collect::<Vec<_>>(),
+        "offered": p.offered.iter().map(|&d| docs[d].path.clone()).collect::<Vec<_>>(),
+        "omitted": p.omitted,
+        "bytesLoaded": p.bytes_loaded,
+    }})
+}
+
+#[test]
+fn select_docs_matches_js() {
+    let mut rng = Rng(0x5e1e_c7ed_0000_0002);
+    let mut cases: Vec<Value> = (0..1500).map(|_| select_case(&mut rng)).collect();
+    // A menu long enough to need cutting.
+    let many: Vec<Value> = (0..400)
+        .map(|i| json!({"path": format!("convention/n{i:03}.md"), "type": "convention", "description": "d".repeat(60), "code": [format!("server/n{i}.ts")], "bytes": 50000}))
+        .collect();
+    let changed: Vec<String> = (0..400).map(|i| format!("server/n{i}.ts")).collect();
+    cases.push(json!({"docs": many, "included": [], "select": "okf-code", "changed": changed, "consumer": null, "budget": 30000, "patterns": false}));
+    let rust: Vec<Value> = cases.iter().map(select_rust).collect();
+    compare(
+        "select",
+        &cases,
+        &rust,
+        &[
+            ("\"include\"", 30),
+            ("exact ", 100),
+            ("directory ", 100),
+            ("pattern ", 50),
+            ("\"all\"]", 30),
+            ("\"omitted\":0", 100),
+            ("more not", 0),
+        ],
+    );
+    assert!(
+        batch("select", &cases[1500..])[0]["ok"]["omitted"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+}
+
+/// The fixture the replay reads: the recorded 17-file PR and its bundle.
+fn okf_fixture() -> Value {
+    let p = root().join("skills/review-pr/eval/okf-bundle.json");
+    serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
+}
+
+/// Runs the script once against `fake-gh-okf.mjs` in record mode, so the
+/// recordings hold every answer it gave; `same` then replays them to both
+/// sides, and a call only the port makes is unrecorded.
+fn record_okf(fx: &Fx, fixture: &Value, args: &[&str]) {
+    let fixture_file = fx.dir.join("okf-fixture.json");
+    std::fs::write(&fixture_file, fixture.to_string()).unwrap();
+    let path = std::env::join_paths(std::iter::once(shim_dir()).chain(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    )))
+    .unwrap();
+    let out = Command::new("node")
+        .arg(script(LOAD_CONVENTIONS))
+        .args(args)
+        .current_dir(&fx.dir)
+        .env("PATH", path)
+        .env("GH_RECORD", "1")
+        .env(
+            "GH_REAL",
+            root().join("skills/review-pr/eval/fake-gh-okf.mjs"),
+        )
+        .env("FAKE_GH_FIXTURE", &fixture_file)
+        .env("GH_RECORDINGS", &fx.rec)
+        .env("HOME", &fx.home)
+        .env_remove("GH_CALL_LOG")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        !String::from_utf8_lossy(&out.stdout).is_empty(),
+        "record run printed nothing: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+fn okf_source() -> Value {
+    json!({"repo": "acme/handbook", "ref": "submodule:docs", "include": ["guides/review.md"], "exclude": ["guides/ui-*.md"], "consumer": "server", "budgetBytes": 30000})
+}
+
+fn okf_patch(changed: &Value) -> String {
+    changed
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            let p = p.as_str().unwrap();
+            format!("diff --git a/{p} b/{p}\n--- a/{p}\n+++ b/{p}\n")
+        })
+        .collect()
+}
+
+/// One CLI case: records, then compares script and port. `extra` follows the
+/// skill's flags.
+async fn okf_case(
+    label: &str,
+    profile: &Value,
+    fixture: &Value,
+    extra: &[&str],
+    expect: &str,
+) -> String {
+    okf_case_at(label, profile, fixture, "main", extra, expect).await
+}
+
+/// `okf_case` with the profile read at `ref_`.
+async fn okf_case_at(
+    label: &str,
+    profile: &Value,
+    fixture: &Value,
+    ref_: &str,
+    extra: &[&str],
+    expect: &str,
+) -> String {
+    let name = format!("okf-{}", label.replace(' ', "-"));
+    let c = conv_fixture(&name, vec![], profile, &okf_patch(&fixture["changed"]));
+    let o = c.out.to_str().unwrap().to_owned();
+    let mut args = vec![
+        "--profile",
+        c.profile.as_str(),
+        "--ref",
+        ref_,
+        "--diff",
+        c.diff.as_str(),
+        "--out",
+        o.as_str(),
+    ];
+    args.extend_from_slice(extra);
+    record_okf(&c.fx, fixture, &args);
+    conv_case(label, &c, &args, expect).await
+}
+
+#[tokio::test]
+async fn convention_sources_match_js_on_the_skill_path() {
+    let fx = okf_fixture();
+    let head = fx["head"].as_str().unwrap().to_owned();
+    let with_sources = |sources: Value| {
+        let mut p = without(base_profile(), "conventionFiles");
+        p["conventionSources"] = sources;
+        p
+    };
+    let out = okf_case(
+        "17 files",
+        &with_sources(json!([okf_source()])),
+        &fx,
+        &["--pr", "17"],
+        "\"pointerFrom\":\"head\"",
+    )
+    .await;
+    assert!(
+        out.contains("\"reason\":\"include\"")
+            && out.contains("\"offered\":[\"")
+            && out.contains("\"pointerFrom\":\"head\",\"pointerChanged\":true"),
+        "{out}"
+    );
+    // The PR leaves the pointer where the base has it: no warning, no
+    // pointerChanged, only the extra read.
+    let mut agree = fx.clone();
+    agree["pointers"]["docs"]["base"] = fx["pointers"]["docs"]["head"].clone();
+    let out = okf_case(
+        "pointers agree",
+        &with_sources(json!([okf_source()])),
+        &agree,
+        &["--pr", "17"],
+        "\"pointerFrom\":\"head\"",
+    )
+    .await;
+    assert!(
+        !out.contains("pointerChanged") && out.contains("\"warnings\":[]"),
+        "{out}"
+    );
+    // The base has no such submodule yet: the PR adds it.
+    let mut added = fx.clone();
+    added["pointers"]["docs"]["base"] = Value::Null;
+    okf_case(
+        "base pointer missing",
+        &with_sources(json!([okf_source()])),
+        &added,
+        &["--pr", "17"],
+        "\"pointerChanged\":true",
+    )
+    .await;
+    okf_case(
+        "head sha",
+        &with_sources(json!([okf_source()])),
+        &fx,
+        &["--head-sha", &head],
+        "\"pointerFrom\":\"head\"",
+    )
+    .await;
+
+    let mut both = base_profile();
+    both["conventionSources"] = json!([okf_source(), {"repo": "acme/handbook", "ref": "main", "select": "all", "include": ["concept/*.md"], "budgetBytes": 9000}]);
+    let mut files = fx.clone();
+    files["files"] = json!({"CLAUDE.md": ROOT_CLAUDE, "api/CLAUDE.md": API_CLAUDE});
+    okf_case(
+        "files then two sources",
+        &both,
+        &files,
+        &["--pr", "17"],
+        "\"select\":\"all\"",
+    )
+    .await;
+
+    let mut fallback = fx.clone();
+    fallback["pointers"]["docs"]["head"] = Value::Null;
+    okf_case(
+        "head pointer missing",
+        &with_sources(json!([okf_source()])),
+        &fallback,
+        &["--pr", "17"],
+        "\"pointerFrom\":\"base\"",
+    )
+    .await;
+    let mut no_head = fx.clone();
+    no_head.as_object_mut().unwrap().remove("head");
+    okf_case(
+        "pr view answers nothing",
+        &with_sources(json!([okf_source()])),
+        &no_head,
+        &["--pr", "17"],
+        "gh named no head commit",
+    )
+    .await;
+    okf_case(
+        "no pr at all",
+        &with_sources(json!([okf_source()])),
+        &fx,
+        &[],
+        "no PR head was given",
+    )
+    .await;
+
+    let mut literal = okf_source();
+    literal["ref"] = json!("main");
+    literal["include"] = json!(["convention/missing.md", "guides/rev*.md", "{?a}"]);
+    okf_case(
+        "include does not compile",
+        &with_sources(json!([literal])),
+        &fx,
+        &["--pr", "17"],
+        "Nothing to repeat",
+    )
+    .await;
+    literal["include"] = json!(["convention/missing.md", "guides/rev*.md"]);
+    okf_case(
+        "literal ref",
+        &with_sources(json!([literal])),
+        &fx,
+        &["--pr", "17"],
+        "\"missing\":[\"convention/missing.md\"]",
+    )
+    .await;
+    let mut sha_ref = okf_source();
+    sha_ref["ref"] = json!(fx["commits"]["main"]);
+    okf_case(
+        "sha ref",
+        &with_sources(json!([sha_ref])),
+        &fx,
+        &[],
+        "\"pointerFrom\":null",
+    )
+    .await;
+
+    let mut odd = fx.clone();
+    let a = fx["pointers"]["docs"]["head"].as_str().unwrap().to_owned();
+    let bundle = odd["bundles"][&a].as_object_mut().unwrap();
+    bundle.insert(
+        "concept/qu\"ote é.md".into(),
+        json!("---\ntype: concept\ndescription: 'odd'' path'\ncode: [src/models/types.ts]\n---\n"),
+    );
+    bundle.insert(
+        "concept/\u{1F600}.md".into(),
+        json!("---\ntype: convention\ncode:\n  server: [src/lib/errors.ts]\n---\nsmile\n"),
+    );
+    odd["truncated"] = json!(true);
+    okf_case(
+        "odd paths, truncated tree",
+        &with_sources(json!([okf_source()])),
+        &odd,
+        &["--pr", "17"],
+        "GitHub truncated the tree",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn convention_sources_match_js_in_the_reviewed_repo() {
+    let fx = okf_fixture();
+    let head = fx["commits"]["main"].as_str().unwrap().to_owned();
+    let with_sources = |sources: Value| {
+        let mut p = without(base_profile(), "conventionFiles");
+        p["conventionSources"] = sources;
+        p
+    };
+    // The reviewed repo holds code next to its docs, and a folder whose name
+    // only starts like the root.
+    let mut repo = fx.clone();
+    let tree = repo["bundles"][&head].as_object_mut().unwrap();
+    tree.insert("guides/tsconfig.base.json".into(), json!("{}\n"));
+    tree.insert(
+        "guides-old/x.md".into(),
+        json!("---\ntype: convention\ndescription: Superseded.\ncode: [src/models/types.ts]\n---\nold\n"),
+    );
+    let in_repo = json!({"root": "guides/", "select": "all", "budgetBytes": 30000});
+    let out = okf_case(
+        "in-repo root",
+        &with_sources(json!([in_repo])),
+        &repo,
+        &[],
+        "\"repo\":null",
+    )
+    .await;
+    assert!(
+        out.contains("\"root\":\"guides/\"") && !out.contains("guides-old/"),
+        "{out}"
+    );
+    let out = okf_case(
+        "root prefix",
+        &with_sources(json!([{"root": "guides/", "consumer": "server"}])),
+        &repo,
+        &[],
+        "guides/typescript.md",
+    )
+    .await;
+    assert!(
+        !out.contains("guides-old/") && !out.contains("tsconfig.base.json"),
+        "{out}"
+    );
+    let mut slash = repo.clone();
+    slash["commits"] = json!({"release/2.0": head});
+    okf_case_at(
+        "slash ref",
+        &with_sources(json!([in_repo])),
+        &slash,
+        "release/2.0",
+        &[],
+        "\"ref\":\"release/2.0\"",
+    )
+    .await;
+    let mut lost = repo.clone();
+    lost["commits"] = json!({});
+    okf_case(
+        "in-repo unknown ref",
+        &with_sources(json!([in_repo])),
+        &lost,
+        &[],
+        &format!("conventionSources[0] {REPO}: {REPO} has no ref main"),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn convention_sources_match_js_on_failures() {
+    let fx = okf_fixture();
+    let with_sources = |sources: Value| {
+        let mut p = without(base_profile(), "conventionFiles");
+        p["conventionSources"] = sources;
+        p
+    };
+    let fail = |m: &str, stderr: &str| {
+        let mut f = fx.clone();
+        f["fail"] = json!([{"match": m, "stderr": stderr, "code": 1}]);
+        f
+    };
+    for (label, fixture, expect) in [
+        (
+            "tree 403",
+            fail("git/trees", "HTTP 403: Resource not accessible\n"),
+            "Reviewing without it",
+        ),
+        (
+            "graphql error",
+            fail("graphql", "GraphQL: Could not resolve to a Repository\n"),
+            "Could not resolve",
+        ),
+        (
+            "pointer 500",
+            fail("contents/docs", "HTTP 500\n"),
+            "\"error\":\"HTTP 500\"",
+        ),
+        (
+            "pr view 401",
+            fail("pr view", "HTTP 401: Bad credentials\n"),
+            "Bad credentials",
+        ),
+    ] {
+        okf_case(
+            label,
+            &with_sources(json!([okf_source()])),
+            &fixture,
+            &["--pr", "17"],
+            expect,
+        )
+        .await;
+    }
+    // The include paths found absent before the read failed stay in the
+    // failed source's missing, as the script keeps them.
+    let mut absent = okf_source();
+    absent["include"] = json!(["guides/review.md", "convention/missing.md"]);
+    okf_case(
+        "graphql error after a missing include",
+        &with_sources(json!([absent])),
+        &fail("graphql", "GraphQL: Could not resolve to a Repository\n"),
+        &["--pr", "17"],
+        "\"missing\":[\"convention/missing.md\"],\"error\":\"GraphQL: Could not resolve",
+    )
+    .await;
+    let mut not_sub = fx.clone();
+    not_sub["pointers"] = json!({});
+    not_sub["anyPointer"] = Value::Null;
+    okf_case(
+        "no such submodule",
+        &with_sources(json!([okf_source()])),
+        &not_sub,
+        &["--pr", "17"],
+        "does not exist at main",
+    )
+    .await;
+    // Docs over the batch cap are dropped before the read, in one warning.
+    let mut large = fx.clone();
+    let head_ptr = fx["pointers"]["docs"]["head"].as_str().unwrap().to_owned();
+    let huge = format!(
+        "---\ntype: convention\ndescription: Too big.\ncode: [src/lib/errors.ts]\n---\n{}",
+        "x".repeat(300_001)
+    );
+    for p in ["guides/huge.md", "concept/huge.md"] {
+        large["bundles"][&head_ptr][p] = json!(huge);
+    }
+    let mut with_huge = okf_source();
+    with_huge["include"] = json!(["guides/review.md", "guides/huge.md"]);
+    let out = okf_case(
+        "docs too large",
+        &with_sources(json!([with_huge])),
+        &large,
+        &["--pr", "17"],
+        "too large to load (over 300000 bytes): concept/huge.md, guides/huge.md",
+    )
+    .await;
+    assert!(out.contains("\"missing\":[]"), "{out}");
+    let mut empty = fx.clone();
+    let a = fx["pointers"]["docs"]["head"].as_str().unwrap().to_owned();
+    empty["bundles"][&a] = json!({"concept/x.md": "---\ntype: concept\ncode: [lib/]\n---\n"});
+    okf_case(
+        "nothing loads",
+        &with_sources(json!([okf_source()])),
+        &empty,
+        &["--pr", "17"],
+        "no doc loaded (0 offered)",
+    )
+    .await;
+    let mut no_ref = with_sources(json!([okf_source()]));
+    no_ref["repo"] = json!(REPO);
+    let c = conv_fixture("okf-no-ref", vec![], &no_ref, PATCH);
+    let o = c.out.to_str().unwrap();
+    conv_case(
+        "sources need --ref",
+        &c,
+        &["--profile", &c.profile, "--diff", &c.diff, "--out", o],
+        "required when the profile lists conventionSources",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn convention_sources_match_js_for_a_manifest() {
+    let fx = okf_fixture();
+    let sha = fx["commits"]["manifest"].as_str().unwrap().to_owned();
+    let with_sources = |sources: Value| {
+        let mut p = without(base_profile(), "conventionFiles");
+        p["conventionSources"] = sources;
+        p
+    };
+    let source = json!({"repo": "acme/handbook", "ref": "manifest", "select": "manifest", "manifest": "review-manifest.json", "consumer": "server"});
+    let out = okf_case(
+        "manifest",
+        &with_sources(json!([source])),
+        &fx,
+        &[],
+        "\"manifest\":\"review-manifest.json\"",
+    )
+    .await;
+    assert!(
+        out.contains("handbook/glossary.txt")
+            && out.contains("\"reason\":\"pattern ")
+            && out.contains("\"missing\":[\"handbook/retired.md\"]")
+            && out.contains("not loaded, outside root or not a doc: review-manifest.json"),
+        "{out}"
+    );
+    let mut web = source.clone();
+    web["consumer"] = json!("web");
+    // A consumer the covers object has no key for: the convention is offered.
+    okf_case(
+        "manifest other consumer",
+        &with_sources(json!([web])),
+        &fx,
+        &[],
+        "\"offered\":[\"handbook/storage.md\"]",
+    )
+    .await;
+    let with_manifest = |text: &str| {
+        let mut f = fx.clone();
+        f["bundles"][&sha]["review-manifest.json"] = json!(text);
+        f
+    };
+    okf_case(
+        "manifest bad json",
+        &with_sources(json!([source])),
+        &with_manifest("{"),
+        &[],
+        "the manifest review-manifest.json is not JSON (",
+    )
+    .await;
+    okf_case(
+        "manifest wrong version",
+        &with_sources(json!([source])),
+        &with_manifest(r#"{"schemaVersion": "1", "docs": []}"#),
+        &[],
+        r#"has schemaVersion \"1\"; this loader reads 1"#,
+    )
+    .await;
+    okf_case(
+        "manifest too large",
+        &with_sources(json!([source])),
+        &with_manifest(
+            &json!({"schemaVersion": 1, "docs": [], "pad": "x".repeat(300_000)}).to_string(),
+        ),
+        &[],
+        "the manifest review-manifest.json is too large to read (over 300000 bytes)",
+    )
+    .await;
+    let mut elsewhere = source.clone();
+    elsewhere["manifest"] = json!("docs/review-manifest.json");
+    okf_case(
+        "manifest missing",
+        &with_sources(json!([elsewhere])),
+        &fx,
+        &[],
+        &format!("the manifest docs/review-manifest.json does not exist at {sha}"),
+    )
+    .await;
+    let mut rooted_fx = fx.clone();
+    let text = fx["bundles"][&sha]["review-manifest.json"].clone();
+    rooted_fx["bundles"][&sha]["handbook/review-manifest.json"] = text;
+    let mut rooted = source.clone();
+    rooted["root"] = json!("handbook/");
+    rooted["manifest"] = json!("handbook/review-manifest.json");
+    rooted["include"] = json!(["handbook/tests.md", "handbook/none.md"]);
+    rooted["exclude"] = json!(["handbook/services.md"]);
+    okf_case(
+        "manifest under root",
+        &with_sources(json!([rooted])),
+        &rooted_fx,
+        &[],
+        "\"missing\":[\"handbook/none.md\",\"handbook/retired.md\"]",
     )
     .await;
 }

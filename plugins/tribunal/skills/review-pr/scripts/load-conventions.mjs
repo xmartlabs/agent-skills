@@ -17,18 +17,26 @@
 // stops the run, since reviewing without the policy is the failure this exists
 // to prevent.
 //
+// profile.conventionSources names documentation bundles in other repos
+// (convention-sources.mjs). Their docs are appended after the files; a source
+// that cannot be read is a warning, never a refusal.
+//
 // Usage:
 //   node load-conventions.mjs --profile <saved profile> --repo <owner/name> --ref <ref> --diff <patch> --out <file>
-// Prints ONE line of JSON: {ok, out, sha256, ref, files, skipped, missing}, where
-// files and skipped are [{path, sha256, bytes, scope, matched?}], or
-// {ok: true, out: null, files: []} when the profile lists no convention files
-// (nothing is written), or {ok: false, error} and exits 1.
+//     [--head-sha <sha>] [--pr <n>]
+// --head-sha (else the head of --pr) is where a `submodule:` source reads its
+// pointer. Prints ONE line of JSON: {ok, out, sha256, ref, files, skipped,
+// missing}, plus {sources, warnings} when the profile lists conventionSources,
+// where files and skipped are [{path, sha256, bytes, scope, matched?}], or
+// {ok: true, out: null, files: []} when the profile lists neither (nothing is
+// written), or {ok: false, error} and exits 1.
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ghRepoFile, readProfileFile } from "./load-profile.mjs";
+import { ghApi, loadSources } from "./convention-sources.mjs";
 
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 
@@ -113,14 +121,20 @@ export function scopeOf(text) {
   return globs;
 }
 
-export function loadConventions({ profile, repo, ref, changed, gh = ghRepoFile, ghDir = ghRepoDir }) {
+export function loadConventions({ profile, repo, ref, changed, headSha = "", pr = "", gh = ghRepoFile, ghDir = ghRepoDir, api = ghApi }) {
   const entries = profile.conventionFiles;
-  if (!entries || !entries.length) return { ok: true, files: [], skipped: [], missing: [], text: null };
-  if (!ref) return { ok: false, error: "--ref <the ref the profile was read at> is required when the profile lists conventionFiles" };
+  const noFiles = !entries || !entries.length;
+  const sources = Array.isArray(profile.conventionSources) ? profile.conventionSources : [];
+  if (noFiles && !sources.length) return { ok: true, files: [], skipped: [], missing: [], text: null };
+  if (!ref)
+    return {
+      ok: false,
+      error: `--ref <the ref the profile was read at> is required when the profile lists ${noFiles ? "conventionSources" : "conventionFiles"}`,
+    };
   const seen = new Set();
   const read = [];
   const missing = [];
-  for (const entry of entries) {
+  for (const entry of noFiles ? [] : entries) {
     const slash = entry.lastIndexOf("/");
     const dir = slash === -1 ? "" : entry.slice(0, slash);
     const base = entry.slice(slash + 1);
@@ -166,7 +180,10 @@ export function loadConventions({ profile, repo, ref, changed, gh = ghRepoFile, 
     else skipped.push({ ...meta, scope: "paths" });
   }
   const text = render({ repo, ref, files, skipped, missing });
-  return { ok: true, files: files.map(({ text: _t, ...m }) => m), skipped, missing, text };
+  const meta = { ok: true, files: files.map(({ text: _t, ...m }) => m), skipped, missing };
+  if (!sources.length) return { ...meta, text };
+  const got = loadSources({ sources, repo, ref, headSha, pr, changed, api, compileGlob: globToRegExp });
+  return { ...meta, sources: got.sources, warnings: got.warnings, text: `${text}\n${got.text}` };
 }
 
 function render({ repo, ref, files, skipped, missing }) {
@@ -218,7 +235,14 @@ if (isMain) {
   } catch (err) {
     done({ ok: false, error: `could not read --diff ${diffPath}: ${err.message}` });
   }
-  const got = loadConventions({ profile: prof.profile, repo, ref: flag("--ref"), changed: changedPaths(patch) });
+  const got = loadConventions({
+    profile: prof.profile,
+    repo,
+    ref: flag("--ref"),
+    changed: changedPaths(patch),
+    headSha: flag("--head-sha"),
+    pr: flag("--pr"),
+  });
   if (!got.ok) done(got);
   const { text, ...out } = got;
   if (text === null) done({ ok: true, out: null, sha256: null, ref: null, ...out });

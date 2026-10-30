@@ -205,6 +205,35 @@ for (const [list, ok] of [
   check(`conventionFiles ${JSON.stringify(list)} is ${ok ? "accepted" : "refused"}`, ok ? r.ok : !r.ok && /conventionFiles must be/.test(r.error), r.error);
 }
 
+console.log("\n--- the profile validates conventionSources ---");
+for (const [list, ok, why] of [
+  [undefined, true],
+  [[], true],
+  [[{ repo: "acme/handbook", ref: "submodule:docs" }], true],
+  [[{ repo: "acme/handbook", ref: "v2", select: "all", include: ["convention/*.md"], exclude: ["**/ui-*.md"], consumer: "server", budgetBytes: 30000, later: 1 }], true],
+  [[{ root: "docs/", select: "manifest", manifest: "docs/m.json" }], true],
+  [[{ repo: "acme/handbook", ref: "main", select: "manifest", manifest: "m.json" }], true],
+  ["acme/handbook", false, /conventionSources must be an array/],
+  [[{ ref: "main" }], false, /needs a repo/],
+  [[{ root: "docs" }], false, /\.root must be/],
+  [[{ select: "manifest" }], false, /\.manifest must be a path/],
+  [[{ root: "docs/", select: "manifest", manifest: "m.json" }], false, /must lie under root docs\//],
+  [[null], false, /conventionSources\[0\] must be an object/],
+  [[{ repo: "acme", ref: "main" }], false, /conventionSources\[0\]\.repo/],
+  [[{ repo: "acme/handbook" }], false, /\.ref must be a git ref/],
+  [[{ repo: "acme/handbook", ref: "submodule:../x" }], false, /\.ref must be a git ref/],
+  [[{ repo: "acme/handbook", ref: "submodule:docs/" }], false, /\.ref must be a git ref/],
+  [[{ repo: "acme/handbook", ref: "main", select: "some" }], false, /\.select must be "okf-code", "all" or "manifest"/],
+  [[{ repo: "acme/handbook", ref: "main", include: ["../x.md"] }], false, /\.include must be/],
+  [[{ repo: "acme/handbook", ref: "main", exclude: "x.md" }], false, /\.exclude must be/],
+  [[{ repo: "acme/handbook", ref: "main", consumer: "a/b" }], false, /\.consumer must be/],
+  [[{ repo: "acme/handbook", ref: "main", budgetBytes: 0 }], false, /\.budgetBytes must be/],
+  [[{ repo: "acme/handbook", ref: "main", budgetBytes: 2.5 }], false, /\.budgetBytes must be/],
+]) {
+  const r = loadProfile({ repo: "acme/api", ref: "main", gh: () => ({ found: true, text: JSON.stringify(profile(list === undefined ? {} : { conventionSources: list })) }) });
+  check(`conventionSources ${JSON.stringify(list)} is ${ok ? "accepted" : "refused"}`, ok ? r.ok : !r.ok && why.test(r.error), r.error);
+}
+
 console.log("\n--- the command line, end to end through a fake gh ---");
 {
   const dir = mkdtempSync(join(tmpdir(), "load-conventions-"));

@@ -74,6 +74,54 @@ function riskPathProblems(list, where) {
   return problems;
 }
 
+// conventionSources names documentation bundles kept outside the reviewed
+// repo, often a submodule (scripts/load-conventions.mjs reads them). Optional:
+// absent means no bundle, as before the field existed. A key a source does not
+// know is ignored, as everywhere in the shared file outside foci.
+function conventionSourceProblems(list) {
+  if (list === undefined) return [];
+  if (!Array.isArray(list)) return ["conventionSources must be an array of {repo, ref} documentation sources"];
+  const problems = [];
+  const isGlob = (g) => typeof g === "string" && /^[A-Za-z0-9._*?{},\/-]+$/.test(g) && !g.startsWith("/") && !g.split("/").includes("..");
+  list.forEach((s, i) => {
+    const at = `conventionSources[${i}]`;
+    if (!s || typeof s !== "object" || Array.isArray(s)) {
+      problems.push(`${at} must be an object`);
+      return;
+    }
+    const hasRepo = s.repo !== undefined;
+    if (hasRepo && (typeof s.repo !== "string" || !PROFILE_REPO_RE.test(s.repo))) problems.push(`${at}.repo must be owner/name`);
+    if (hasRepo) {
+      const sub = typeof s.ref === "string" && s.ref.startsWith("submodule:") ? s.ref.slice("submodule:".length) : null;
+      if (
+        sub === null
+          ? typeof s.ref !== "string" || !PROFILE_BRANCH_RE.test(s.ref)
+          : !/^[A-Za-z0-9._-][A-Za-z0-9._\/-]*$/.test(sub) || sub.split("/").includes("..") || sub.endsWith("/")
+      )
+        problems.push(`${at}.ref must be a git ref, or submodule:<path> naming a submodule of this repo`);
+    } else if (s.ref !== undefined)
+      problems.push(`${at}.ref needs a repo: without one the source is the reviewed repo, read at the profile's ref`);
+    if (s.root !== undefined && (typeof s.root !== "string" || !/^[A-Za-z0-9._-][A-Za-z0-9._\/-]*\/$/.test(s.root) || s.root.split("/").includes("..")))
+      problems.push(`${at}.root must be a folder inside the repo, ending in /`);
+    if (s.select !== undefined && s.select !== "okf-code" && s.select !== "all" && s.select !== "manifest")
+      problems.push(`${at}.select must be "okf-code", "all" or "manifest"`);
+    if (s.select === "manifest") {
+      const m = s.manifest;
+      if (typeof m !== "string" || !/^[A-Za-z0-9._-][A-Za-z0-9._\/-]*$/.test(m) || m.split("/").includes("..") || m.endsWith("/"))
+        problems.push(`${at}.manifest must be a path inside the docs repo`);
+      else if (typeof s.root === "string" && !m.startsWith(s.root)) problems.push(`${at}.manifest must lie under root ${s.root}`);
+    }
+    for (const k of ["include", "exclude"])
+      if (s[k] !== undefined && (!Array.isArray(s[k]) || !s[k].every(isGlob)))
+        problems.push(`${at}.${k} must be an array of paths or globs inside the docs repo`);
+    if (s.consumer !== undefined && (typeof s.consumer !== "string" || !/^[A-Za-z0-9_.-]+$/.test(s.consumer)))
+      problems.push(`${at}.consumer must be a key of a mapping-shaped code: field`);
+    if (s.budgetBytes !== undefined && (!Number.isInteger(s.budgetBytes) || s.budgetBytes < 1))
+      problems.push(`${at}.budgetBytes must be a positive integer`);
+  });
+  return problems;
+}
+
 function riskRulesOf(list) {
   return (Array.isArray(list) ? list : [])
     .filter((r) => PROFILE_RISK_FOCI.includes(r.focus))
@@ -196,6 +244,7 @@ function validateProfile(raw, expectedRepo) {
       ))
   )
     errors.push('conventionFiles must be an array of paths inside the repo, with `*` only in the last segment, such as ["CLAUDE.md", ".claude/rules/*.md"]');
+  errors.push(...conventionSourceProblems(p.conventionSources));
   if (p.tribunal !== undefined) {
     if (!p.tribunal || typeof p.tribunal !== "object" || Array.isArray(p.tribunal))
       errors.push("tribunal must be an object");
@@ -2133,17 +2182,20 @@ const ASSEMBLE_BASH = `M=$(node "$(tribunal-root)"/skills/review-pr/scripts/asse
 // definition (agents/*code-review-expert.md) reads its methodology from it.
 const METHODOLOGY_LINE = `METHODOLOGY FILE: ${METHODOLOGY_PATH}`;
 // ===== BEGIN CONVENTIONS-CHANNEL =====
-// The repo's own convention files (profile.conventionFiles): scripts/load-conventions.mjs
-// reads them at the profile's ref, keeps the scoped rules the PR's paths select,
-// and SKILL.md passes the file it wrote with its sha256 and manifest. fetch-pr's
-// bash checks the bytes before any lens is dispatched. A profile that lists no
-// convention files adds no line, so its prompts are the ones it had before.
+// The repo's own convention files (profile.conventionFiles) and documentation
+// bundles (profile.conventionSources): scripts/load-conventions.mjs reads them,
+// keeps the scoped rules and docs the PR's paths select, and SKILL.md passes
+// the file it wrote with its sha256 and manifest. fetch-pr's bash checks the
+// bytes before any lens is dispatched. A profile that lists neither adds no
+// line, so its prompts are the ones it had before.
 function conventionsChannel(args, profile) {
   const path = typeof args.conventionsPath === "string" ? args.conventionsPath : "";
   const sha256 = typeof args.conventionsSha256 === "string" ? args.conventionsSha256 : null;
-  if (Array.isArray(profile.conventionFiles) && profile.conventionFiles.length && !path)
+  const lists = (k) => Array.isArray(profile[k]) && profile[k].length;
+  const listed = lists("conventionFiles") ? "conventionFiles" : lists("conventionSources") ? "conventionSources" : null;
+  if (listed && !path)
     throw new Error(
-      "tribunal: the profile lists conventionFiles, but args carry no conventionsPath. SKILL.md runs load-conventions.mjs after the diff is fetched and passes conventionsPath, conventionsSha256 and conventions.",
+      `tribunal: the profile lists ${listed}, but args carry no conventionsPath. SKILL.md runs load-conventions.mjs after the diff is fetched and passes conventionsPath, conventionsSha256 and conventions.`,
     );
   if (path && (!/^(?:\/[A-Za-z0-9._\/-]+|[A-Za-z]:[\\/][A-Za-z0-9._~\\/-]+)$/.test(path) || !/^[0-9a-f]{64}$/.test(sha256 || "")))
     throw new Error(`tribunal: args.conventionsPath must be an absolute path with its conventionsSha256, got ${JSON.stringify([path, sha256])}`);
@@ -2159,6 +2211,9 @@ function conventionsChannel(args, profile) {
       skipped: Array.isArray(c.skipped) ? c.skipped.map((f) => f.path) : null,
       missing: Array.isArray(c.missing) ? c.missing : null,
     };
+    // Per source: what was loaded, offered and missing, as load-conventions
+    // recorded it. Absent for a profile without conventionSources.
+    if (Array.isArray(c.sources)) manifest.sources = c.sources;
   }
   return {
     manifest,

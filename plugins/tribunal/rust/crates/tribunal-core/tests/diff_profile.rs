@@ -25,8 +25,8 @@ use tribunal_core::profile::high_risk_surface::{
 use tribunal_core::profile::lens_foci::{foci_for, foci_label_for, select_foci};
 use tribunal_core::profile::lens_routing::{lens_agent_for, AGENT_NS, REVIEWER_AGENTS};
 use tribunal_core::profile::profile_lookup::{
-    in_context_risk_path_rules, profile_warnings, risk_path_problems, risk_path_rules,
-    validate_profile, RiskRule,
+    convention_source_problems, in_context_risk_path_rules, profile_warnings, risk_path_problems,
+    risk_path_rules, validate_profile, RiskRule,
 };
 
 const COMPOSITE: &str = r#"
@@ -1392,6 +1392,12 @@ fn mostly_valid_profile() -> impl Strategy<Value = Value> {
                 json!(["CLAUDE.md", ".claude/rules/*.md"]),
             );
         }
+        if extras >= 2 {
+            m.insert(
+                "conventionSources".into(),
+                json!([{"repo": "acme/handbook", "ref": "submodule:docs", "include": ["guides/review.md"], "consumer": "server", "budgetBytes": 30000}]),
+            );
+        }
         if let Some(r) = in_context {
             m.insert("tribunal".into(), json!({"inContextRiskPaths": r}));
         }
@@ -1417,6 +1423,144 @@ fn expected_repo() -> impl Strategy<Value = Value> {
         s("acme/api "),
     ])
     .prop_map(Option::unwrap)
+}
+
+/// One `conventionSources` entry, valid more often than not.
+fn convention_source() -> impl Strategy<Value = Value> {
+    let globs = || {
+        pick(vec![
+            None,
+            None,
+            Some(json!(["guides/review.md"])),
+            Some(json!(["convention/*.md", "**/ui-*.md", "{a,b}/?.md"])),
+            Some(json!([])),
+            Some(json!(["/abs.md"])),
+            Some(json!(["../x.md"])),
+            Some(json!(["a b.md"])),
+            Some(json!([""])),
+            Some(json!([5])),
+            s("convention/x.md"),
+            Some(Value::Null),
+        ])
+    };
+    (
+        pick(vec![
+            s("acme/handbook"),
+            s("acme/handbook"),
+            s("acme"),
+            s(""),
+            Some(json!(5)),
+            None,
+            None,
+        ]),
+        pick(vec![
+            s("submodule:docs"),
+            s("submodule:docs"),
+            s("main"),
+            s("v1.2"),
+            s("0123456789abcdef0123456789abcdef01234567"),
+            s("submodule:"),
+            s("submodule:../x"),
+            s("submodule:docs/"),
+            s("submodule:/abs"),
+            s("submodule:a b"),
+            s("-x"),
+            s("main\n"),
+            s(""),
+            Some(json!(5)),
+            None,
+        ]),
+        pick(vec![
+            None,
+            None,
+            s("okf-code"),
+            s("all"),
+            s("ALL"),
+            s("manifest"),
+            Some(Value::Null),
+            Some(json!(1)),
+        ]),
+        pick(vec![
+            None,
+            None,
+            s("docs/"),
+            s("docs"),
+            s("../x/"),
+            s("a b/"),
+        ]),
+        pick(vec![
+            None,
+            s("docs/review-manifest.json"),
+            s("review-manifest.json"),
+            s("docs/"),
+            s("../m.json"),
+        ]),
+        globs(),
+        globs(),
+        pick(vec![
+            None,
+            None,
+            s("server"),
+            s("app.v2"),
+            s(""),
+            s("a/b"),
+            Some(json!(["server"])),
+        ]),
+        pick(vec![
+            None,
+            None,
+            Some(json!(30000)),
+            Some(json!(1)),
+            Some(json!(1.0)),
+            Some(json!(0)),
+            Some(json!(-5)),
+            Some(json!(2.5)),
+            Some(json!(1e300)),
+            s("30000"),
+            Some(json!(true)),
+            Some(Value::Null),
+        ]),
+    )
+        .prop_map(
+            |(repo, r, select, root, manifest, include, exclude, consumer, budget)| {
+                obj(vec![
+                    ("repo", repo),
+                    ("ref", r),
+                    ("select", select),
+                    ("root", root),
+                    ("manifest", manifest),
+                    ("include", include),
+                    ("exclude", exclude),
+                    ("consumer", consumer),
+                    ("budgetBytes", budget),
+                ])
+            },
+        )
+}
+
+#[test]
+fn convention_source_problems_matches_js() {
+    let lists = sample(prop_oneof![
+        8 => prop::collection::vec(
+            prop_oneof![8 => convention_source(), 1 => pick(vec![Some(Value::Null), Some(json!([])), s("x"), Some(json!(5))]).prop_map(Option::unwrap)],
+            0..4,
+        )
+        .prop_map(|v| Some(Value::Array(v))),
+        1 => pick(vec![None, Some(Value::Null), s("x"), Some(json!({}))]),
+    ]);
+    let calls: Vec<Value> = lists
+        .iter()
+        .map(|l| match l {
+            Some(l) => json!({"fn": "conventionSourceProblems", "args": [l]}),
+            None => json!({"fn": "conventionSourceProblems", "args": []}),
+        })
+        .collect();
+    let rust: Vec<Value> = lists
+        .iter()
+        .map(|l| json!(convention_source_problems(l.as_ref())))
+        .collect();
+    let js = oracle("PROFILE-LOOKUP", &["conventionSourceProblems"], &[], &calls);
+    same("conventionSourceProblems", &calls, &rust, &js);
 }
 
 #[test]
@@ -1965,18 +2109,36 @@ fn conventions_channel_matches_js() {
             list(conventions_entry().boxed()),
             list(conventions_entry().boxed()),
             list(missing_item.boxed()),
+            pick(vec![
+                None,
+                None,
+                Some(json!([])),
+                Some(json!([{"repo": "acme/handbook", "ref": "submodule:docs", "resolvedSha": "1".repeat(40), "pointerFrom": "head", "select": "okf-code", "loaded": [{"path": "convention/a.md", "bytes": 10, "reason": "include"}], "offered": ["b.md"], "bytesLoaded": 10, "budgetBytes": 30000, "missing": []}])),
+                Some(json!([{"error": "HTTP 403", "2": 1}, null])),
+                s("x"),
+                Some(Value::Null),
+            ]),
         )
-            .prop_map(|(r, f, sk, mi)| Some(obj(vec![("ref", r), ("files", f), ("skipped", sk), ("missing", mi)]))),
+            .prop_map(|(r, f, sk, mi, so)| Some(obj(vec![("ref", r), ("files", f), ("skipped", sk), ("missing", mi), ("sources", so)]))),
     ];
-    let profile = pick(vec![
-        None,
-        Some(json!([])),
-        Some(json!(["CLAUDE.md"])),
-        s("x"),
-        Some(Value::Null),
-        Some(json!([5])),
-    ])
-    .prop_map(|cf| obj(vec![("conventionFiles", cf)]));
+    let profile = (
+        pick(vec![
+            None,
+            Some(json!([])),
+            Some(json!(["CLAUDE.md"])),
+            s("x"),
+            Some(Value::Null),
+            Some(json!([5])),
+        ]),
+        pick(vec![
+            None,
+            None,
+            Some(json!([])),
+            Some(json!([{"repo": "acme/handbook", "ref": "main"}])),
+            s("x"),
+        ]),
+    )
+        .prop_map(|(cf, so)| obj(vec![("conventionFiles", cf), ("conventionSources", so)]));
     let cases = sample((
         (path, sha, conventions).prop_map(|(p, h, c)| {
             obj(vec![

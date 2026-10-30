@@ -101,10 +101,12 @@ pub fn conventions_channel(args: &Value, profile: &Value) -> Result<ConventionsC
         Some(Value::String(s)) => Some(s.as_str()),
         _ => None,
     };
-    let lists_files =
-        matches!(js::get(profile, "conventionFiles"), Some(Value::Array(fs)) if !fs.is_empty());
-    if lists_files && path.is_empty() {
-        return Err("tribunal: the profile lists conventionFiles, but args carry no conventionsPath. SKILL.md runs load-conventions.mjs after the diff is fetched and passes conventionsPath, conventionsSha256 and conventions.".into());
+    let lists = |k: &str| matches!(js::get(profile, k), Some(Value::Array(fs)) if !fs.is_empty());
+    let listed = ["conventionFiles", "conventionSources"]
+        .into_iter()
+        .find(|k| lists(k));
+    if let (Some(listed), true) = (listed, path.is_empty()) {
+        return Err(format!("tribunal: the profile lists {listed}, but args carry no conventionsPath. SKILL.md runs load-conventions.mjs after the diff is fetched and passes conventionsPath, conventionsSha256 and conventions."));
     }
     if !path.is_empty() && (!is_absolute_path(path) || !is_sha256(sha256.unwrap_or_default())) {
         let got = Value::Array(vec![
@@ -160,6 +162,9 @@ pub fn conventions_channel(args: &Value, profile: &Value) -> Result<ConventionsC
     manifest.insert("files".into(), files);
     manifest.insert("skipped".into(), skipped);
     manifest.insert("missing".into(), missing);
+    if let Some(sources @ Value::Array(_)) = field("sources") {
+        manifest.insert("sources".into(), js_ext::js_order(sources));
+    }
     Ok(ConventionsChannel {
         manifest: Some(Value::Object(manifest)),
         line: format!("CONVENTIONS FILE: {path}"),
