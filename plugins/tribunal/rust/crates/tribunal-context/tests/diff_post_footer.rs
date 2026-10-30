@@ -5,12 +5,16 @@
 //! the current time; that one segment is compared by shape, and the port's
 //! is checked against the clock.
 //!
-//! The script's side of the generated cases is read from
-//! `tests/goldens/build-post-footer.json`, which keeps the text of the script
-//! and of every module it imports, a hash of each case's input, and the
-//! `plugin.json` it read its version from. The port is given a plugin root
-//! holding that `plugin.json`, so a release does not need a regeneration;
-//! changing a module or the generators does:
+//! Nothing here runs node outside a regeneration. The script's side of the
+//! generated cases is read from `tests/goldens/build-post-footer.json`, which
+//! keeps the text of the script and of every module it imports, a hash of
+//! each case's input, and the `plugin.json` it read its version from. The
+//! port is given a plugin root holding that `plugin.json`, so a release does
+//! not need a regeneration; changing a module or the generators does. A module
+//! no longer on disk was retired with the Workflow: its check is skipped and
+//! the golden is final. What `toISOString()` printed for the clock check is
+//! read from `tests/goldens/build-post-footer-fixed.json`, with the probe's
+//! hash. Regenerate after changing them, over the whole binary:
 //! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_post_footer`.
 
 mod posting;
@@ -330,8 +334,7 @@ fn build_post_footer_matches_js_on_generated_rows_and_flags() {
     ];
     let plugin_json =
         std::fs::read_to_string(plugin_root().join(".claude-plugin/plugin.json")).unwrap();
-    let with = json!(module_texts(SCRIPT));
-    let golden = recorded(GOLDEN, &with, REGENERATE);
+    let golden = recorded(GOLDEN, REGENERATE, |w| stale_modules(w, SCRIPT));
     let replay: Option<&Vec<Value>> = golden.as_ref().map(|g| {
         let recorded = g["cases"].as_array().unwrap();
         assert_eq!(
@@ -430,7 +433,12 @@ fn build_post_footer_matches_js_on_generated_rows_and_flags() {
     });
     let (diffs, kept): (Vec<Option<String>>, Vec<Value>) = runs.into_iter().unzip();
     if replay.is_none() {
-        write_golden_with(GOLDEN, with, kept, json!({"pluginJson": plugin_json}));
+        write_golden_with(
+            GOLDEN,
+            json!(module_texts(SCRIPT)),
+            kept,
+            json!({"pluginJson": plugin_json}),
+        );
     }
     eprintln!("{:?}", seen.lock().unwrap());
     assert_same("build-post-footer", &diffs);
@@ -465,12 +473,13 @@ fn build_post_footer_matches_js_on_generated_rows_and_flags() {
     }
 }
 
+/// The probe `iso_timestamp_matches_to_iso_string` runs under node.
+const ISO_PROBE: &str = "for (const ms of process.argv.slice(2)) console.log(new Date(Number(ms)).toISOString().replace(/\\.\\d{3}Z$/, \"Z\"));";
+
 /// The clock reading itself: the port's `iso_timestamp` agrees with
 /// `toISOString()` without milliseconds across eras.
 #[test]
 fn iso_timestamp_matches_to_iso_string() {
-    let dir = scratch("footer-iso");
-    let probe = dir.join("iso.cjs");
     let millis: Vec<u64> = vec![
         0,
         951_782_400_000,
@@ -478,16 +487,26 @@ fn iso_timestamp_matches_to_iso_string() {
         4_102_444_799_000,
         253_402_300_799_000,
     ];
-    std::fs::write(
-        &probe,
-        "for (const ms of process.argv.slice(2)) console.log(new Date(Number(ms)).toISOString().replace(/\\.\\d{3}Z$/, \"Z\"));",
-    )
-    .unwrap();
-    let args: Vec<String> = millis.iter().map(u64::to_string).collect();
-    let js = node(&probe, &args, Path::new(&dir), &[], &safe_path(None));
+    let recorded = fixed(
+        "build-post-footer-fixed.json",
+        "iso_timestamp_matches_to_iso_string",
+        REGENERATE,
+        &[json!({"probe": sha(ISO_PROBE), "millis": millis})],
+        || json!({}),
+        |_| Vec::new(),
+        || {
+            let dir = scratch("footer-iso");
+            let probe = dir.join("iso.cjs");
+            std::fs::write(&probe, ISO_PROBE).unwrap();
+            let args: Vec<String> = millis.iter().map(u64::to_string).collect();
+            let js = node(&probe, &args, Path::new(&dir), &[], &safe_path(None));
+            assert_eq!(js.code, 0, "{}", js.stderr);
+            vec![json!(js.stdout)]
+        },
+    );
     let rs: String = millis
         .iter()
         .map(|ms| post_footer::iso_timestamp(UNIX_EPOCH + Duration::from_millis(*ms)) + "\n")
         .collect();
-    assert_eq!(js.stdout, rs);
+    assert_eq!(recorded[0], json!(rs));
 }

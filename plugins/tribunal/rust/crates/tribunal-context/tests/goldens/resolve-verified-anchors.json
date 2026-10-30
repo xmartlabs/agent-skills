@@ -25964,5 +25964,156 @@
       },
       "jsText": "{\"ran\":false,\"reason\":\"findings-not-an-array\",\"ref\":\"abc1234\",\"repo\":\"acme/api\",\"results\":[]}"
     }
-  ]
+  ],
+  "witnesses": {
+    "gh-enoent": {
+      "input": {
+        "args": [
+          "<SCRATCH>/anchors.json",
+          "main",
+          "--repo",
+          "o/r",
+          "--relay"
+        ],
+        "anchors": "[{\"verifiedBy\":[{\"file\":\"src/a.ts\",\"line\":1,\"quote\":\"const total = 1;\"}]}]"
+      },
+      "run": {
+        "code": 0,
+        "stdout": "RELAY-CRC 9a2ad896:267\n{\"ran\":true,\"ref\":\"main\",\"repo\":\"o/r\",\"anchors\":1,\"resolved\":0,\"unresolved\":1,\"suspectLookup\":true,\"results\":[{\"findingIndex\":0,\"anchorIndex\":0,\"file\":\"src/a.ts\",\"claimedLine\":1,\"resolvedLine\":null,\"delta\":null,\"note\":\"spawnSync gh ENOENT\",\"status\":\"lookup-failed\"}]}\n",
+        "stderr": ""
+      }
+    },
+    "cut-in-pair": {
+      "input": {
+        "args": [
+          "<SCRATCH>/anchors.json",
+          "main",
+          "--repo",
+          "o/r",
+          "--relay"
+        ],
+        "anchors": "[{\"verifiedBy\":[{\"file\":\"src/a.ts\",\"line\":1,\"quote\":\"const total = 1;\"}]}]",
+        "calls": [
+          {
+            "args": [
+              "api",
+              "-H",
+              "Accept: application/vnd.github.raw",
+              "repos/o/r/contents/src/a.ts?ref=main"
+            ],
+            "stdout": "",
+            "stderr": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀 tail",
+            "code": 1
+          }
+        ]
+      },
+      "run": {
+        "code": 0,
+        "stdout": "RELAY-CRC 1e5e46d6:453\n{\"ran\":true,\"ref\":\"main\",\"repo\":\"o/r\",\"anchors\":1,\"resolved\":0,\"unresolved\":1,\"suspectLookup\":true,\"results\":[{\"findingIndex\":0,\"anchorIndex\":0,\"file\":\"src/a.ts\",\"claimedLine\":1,\"resolvedLine\":null,\"delta\":null,\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\ud83d\",\"status\":\"lookup-failed\"}]}\n",
+        "stderr": ""
+      }
+    },
+    "infinite-quote": {
+      "input": {
+        "args": [
+          "<SCRATCH>/anchors.json",
+          "main",
+          "--repo",
+          "o/r",
+          "--relay"
+        ],
+        "anchors": "[{\"verifiedBy\":[{\"file\":\"src/a.ts\",\"line\":1,\"quote\":1e400}]}]",
+        "calls": [
+          {
+            "args": [
+              "api",
+              "-H",
+              "Accept: application/vnd.github.raw",
+              "repos/o/r/contents/src/a.ts?ref=main"
+            ],
+            "stdout": "x = Infinity;\n",
+            "stderr": "",
+            "code": 0
+          }
+        ]
+      },
+      "run": {
+        "code": 0,
+        "stdout": "RELAY-CRC 73acff54:237\n{\"ran\":true,\"ref\":\"main\",\"repo\":\"o/r\",\"anchors\":1,\"resolved\":1,\"unresolved\":0,\"suspectLookup\":false,\"results\":[{\"findingIndex\":0,\"anchorIndex\":0,\"file\":\"src/a.ts\",\"claimedLine\":1,\"resolvedLine\":1,\"delta\":0,\"note\":null,\"status\":\"found\"}]}\n",
+        "stderr": ""
+      }
+    },
+    "stdout-33554432": {
+      "input": {
+        "args": [
+          "<SCRATCH>/anchors.json",
+          "main",
+          "--repo",
+          "o/r",
+          "--relay"
+        ],
+        "anchors": "[{\"verifiedBy\":[{\"file\":\"src/a.ts\",\"line\":1,\"quote\":\"aaaaaaaaaaaa\"}]}]",
+        "gh": "#!/bin/sh\n(head -c 33554432 /dev/zero | tr '\\000' a; printf '') >&1\n"
+      },
+      "run": {
+        "code": 0,
+        "stdout": "RELAY-CRC 73acff54:237\n{\"ran\":true,\"ref\":\"main\",\"repo\":\"o/r\",\"anchors\":1,\"resolved\":1,\"unresolved\":0,\"suspectLookup\":false,\"results\":[{\"findingIndex\":0,\"anchorIndex\":0,\"file\":\"src/a.ts\",\"claimedLine\":1,\"resolvedLine\":1,\"delta\":0,\"note\":null,\"status\":\"found\"}]}\n",
+        "stderr": ""
+      }
+    },
+    "stderr-404": {
+      "input": {
+        "args": [
+          "<SCRATCH>/anchors.json",
+          "main",
+          "--repo",
+          "o/r",
+          "--relay"
+        ],
+        "anchors": "[{\"verifiedBy\":[{\"file\":\"src/a.ts\",\"line\":1,\"quote\":\"aaaaaaaaaaaa\"}]}]",
+        "gh": "#!/bin/sh\n(head -c 33554433 /dev/zero | tr '\\000' a; printf '(HTTP 404)') >&2\n"
+      },
+      "run": {
+        "code": 0,
+        "stdout": "RELAY-CRC 6f725f73:448\n{\"ran\":true,\"ref\":\"main\",\"repo\":\"o/r\",\"anchors\":1,\"resolved\":0,\"unresolved\":1,\"suspectLookup\":true,\"results\":[{\"findingIndex\":0,\"anchorIndex\":0,\"file\":\"src/a.ts\",\"claimedLine\":1,\"resolvedLine\":null,\"delta\":null,\"note\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"status\":\"lookup-failed\"}]}\n",
+        "stderr": ""
+      }
+    },
+    "stdout-decoded": {
+      "input": {
+        "args": [
+          "<SCRATCH>/anchors.json",
+          "main",
+          "--repo",
+          "o/r",
+          "--relay"
+        ],
+        "anchors": "[{\"verifiedBy\":[{\"file\":\"src/a.ts\",\"line\":1,\"quote\":\"aaaaaaaaaaaa\"}]}]",
+        "gh": "#!/bin/sh\n(head -c 33554431 /dev/zero | tr '\\000' a; printf '\\377') >&1\n"
+      },
+      "run": {
+        "code": 0,
+        "stdout": "RELAY-CRC 73acff54:237\n{\"ran\":true,\"ref\":\"main\",\"repo\":\"o/r\",\"anchors\":1,\"resolved\":1,\"unresolved\":0,\"suspectLookup\":false,\"results\":[{\"findingIndex\":0,\"anchorIndex\":0,\"file\":\"src/a.ts\",\"claimedLine\":1,\"resolvedLine\":1,\"delta\":0,\"note\":null,\"status\":\"found\"}]}\n",
+        "stderr": ""
+      }
+    },
+    "stdout-33554433": {
+      "input": {
+        "args": [
+          "<SCRATCH>/anchors.json",
+          "main",
+          "--repo",
+          "o/r",
+          "--relay"
+        ],
+        "anchors": "[{\"verifiedBy\":[{\"file\":\"src/a.ts\",\"line\":1,\"quote\":\"aaaaaaaaaaaa\"}]}]",
+        "gh": "#!/bin/sh\n(head -c 33554433 /dev/zero | tr '\\000' a; printf '') >&1\n"
+      },
+      "run": {
+        "code": 0,
+        "stdout": "RELAY-CRC 6dde3cb4:268\n{\"ran\":true,\"ref\":\"main\",\"repo\":\"o/r\",\"anchors\":1,\"resolved\":0,\"unresolved\":1,\"suspectLookup\":true,\"results\":[{\"findingIndex\":0,\"anchorIndex\":0,\"file\":\"src/a.ts\",\"claimedLine\":1,\"resolvedLine\":null,\"delta\":null,\"note\":\"spawnSync gh ENOBUFS\",\"status\":\"lookup-failed\"}]}\n",
+        "stderr": ""
+      }
+    }
+  }
 }

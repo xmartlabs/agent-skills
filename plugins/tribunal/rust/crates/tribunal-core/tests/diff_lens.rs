@@ -9,6 +9,13 @@ use common::*;
 // writes as `{}`. The oracle builds its export list into the region's own
 // scope (`return { <exports> }`), so an export can be a `name:arrow` wrapper
 // that spreads the collection into an array; the region code runs unchanged.
+//
+// The JavaScript's side is read from `tests/goldens/oracle/diff_lens.json`
+// (see `common`): the workflow is being retired, so a run starts only the
+// port. The file keeps each call's results under a SHA-256 of its inputs and a
+// SHA-256 of every region's text, so a region edited without regenerating
+// fails here; with the workflow gone the golden is final. Regenerate:
+// `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-core --test diff_lens`.
 
 use proptest::prelude::*;
 use serde_json::{json, Map, Value};

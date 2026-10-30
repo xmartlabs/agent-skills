@@ -1,5 +1,11 @@
 //! `run::apply_evidence` against the workflow's handling of the evidence
 //! resolver's answer.
+//!
+//! The workflow's side is read from `tests/goldens/span/diff_evidence.json`
+//! (see `common`), with a SHA-256 of the workflow code each span came from, so
+//! an edit there without regenerating fails here.
+//! Regenerate after changing a span, its cases or the workflow:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-pipeline --test diff_evidence`.
 
 mod common;
 

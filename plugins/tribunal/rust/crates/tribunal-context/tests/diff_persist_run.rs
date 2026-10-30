@@ -8,7 +8,9 @@
 //! the script for every case made this the slowest test binary. The file keeps
 //! the text of the scripts it was recorded from and the clock the cases were
 //! generated against, so a script or generator edited without a regeneration
-//! fails here. Regenerate after changing either:
+//! fails here; a script no longer on disk has been retired and the golden is
+//! final for it. Nothing runs the script outside a regeneration. Regenerate
+//! after changing either:
 //! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_persist_run`.
 mod common;
 #[path = "../../tribunal-core/tests/common/mod.rs"]
@@ -17,7 +19,7 @@ mod core_common;
 use common::{plugin_root, scratch};
 use core_common::{assert_same, sample};
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -534,6 +536,33 @@ fn regenerating() -> bool {
     std::env::var("TRIBUNAL_REGEN_GOLDENS").is_ok_and(|v| v == "1")
 }
 
+/// The scripts in `recorded` (`{path: text}`) or `scripts` whose text under
+/// `root` is not what was recorded. A script no longer on disk was retired
+/// with the Workflow and its golden is final, so it is skipped; when
+/// `scripts[0]`, the one the cases run, is gone, the rest are only what it
+/// ran and are skipped too.
+fn stale_scripts(recorded: &Value, scripts: &[&str], root: &Path) -> Vec<String> {
+    let on_disk = |s: &str| match std::fs::read_to_string(root.join(s)) {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => panic!("{s}: {e}"),
+    };
+    if on_disk(scripts[0]).is_none() {
+        return Vec::new();
+    }
+    let mut names: BTreeSet<String> = scripts.iter().map(|s| (*s).to_owned()).collect();
+    names.extend(
+        recorded
+            .as_object()
+            .into_iter()
+            .flat_map(|m| m.keys().cloned()),
+    );
+    names
+        .into_iter()
+        .filter(|s| on_disk(s).is_some_and(|text| recorded.get(s) != Some(&json!(text))))
+        .collect()
+}
+
 /// The golden, checked against the scripts on disk; `None` when regenerating.
 fn recorded() -> Option<Value> {
     if regenerating() {
@@ -543,9 +572,10 @@ fn recorded() -> Option<Value> {
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("{}: {e}; {REGENERATE}", path.display()));
     let golden: Value = serde_json::from_str(&text).unwrap();
+    let stale = stale_scripts(&golden["scripts"], &SCRIPTS, &plugin_root());
     assert!(
-        golden["scripts"] == script_texts(),
-        "a script changed since {} was recorded; {REGENERATE}",
+        stale.is_empty(),
+        "{stale:?} changed since {} was recorded; {REGENERATE}",
         path.display()
     );
     Some(golden)
@@ -692,4 +722,30 @@ fn the_generated_cases_reach_every_outcome() {
         thin.is_empty(),
         "branches under 3 hits: {thin:?}\nall: {seen:?}"
     );
+}
+
+/// The staleness check on a tree of its own: a script edited since the
+/// recording is stale, one deleted (retired with the Workflow) is not, and
+/// with the script the cases run deleted nothing is.
+#[test]
+fn a_retired_script_is_not_stale() {
+    let root = scratch("persist-run-retired");
+    std::fs::create_dir_all(root.join("lib")).unwrap();
+    let write = |name: &str, text: &str| std::fs::write(root.join(name), text).unwrap();
+    write("lib/run.sh", "run");
+    write("lib/dep.mjs", "dep edited");
+    let recorded = json!({"lib/run.sh": "run", "lib/dep.mjs": "dep", "lib/gone.mjs": "gone"});
+    let scripts = ["lib/run.sh", "lib/dep.mjs", "lib/gone.mjs"];
+    assert_eq!(stale_scripts(&recorded, &scripts, &root), ["lib/dep.mjs"]);
+    write("lib/dep.mjs", "dep");
+    assert!(stale_scripts(&recorded, &scripts, &root).is_empty());
+    write("lib/new.mjs", "new");
+    assert_eq!(
+        stale_scripts(&recorded, &["lib/run.sh", "lib/new.mjs"], &root),
+        ["lib/new.mjs"]
+    );
+    std::fs::remove_file(root.join("lib/run.sh")).unwrap();
+    write("lib/dep.mjs", "dep edited again");
+    assert!(stale_scripts(&recorded, &scripts, &root).is_empty());
+    let _ = std::fs::remove_dir_all(&root);
 }
