@@ -227,19 +227,109 @@ fn rust_plan(p: &Value) -> Value {
     build_plan(&input).expect("plan").to_value()
 }
 
-#[test]
-fn plan_matches_the_workflow_glue() {
-    let cases = sample(case());
+fn js_plans(cases: &[Value]) -> Vec<Value> {
     let ret = PLAN_SPAN.ret.replace("__LOGS__", LOGS);
-    let js = span(
+    span(
         &Span {
             ret: &ret,
             ..PLAN_SPAN
         },
-        &cases,
-    );
+        cases,
+    )
+}
+
+/// The declared differences, both about forced foci:
+///
+/// - When they outnumber the lens budget, the Workflow caps the lens count at
+///   the budget and the foci past it reach no lens; the Rust engine gives
+///   every forced focus a lens.
+/// - When they fill every slot, the Workflow drops `correctness`; the Rust
+///   engine adds it after them, with a lens of its own.
+///
+/// Returns the foci and lens count the Rust engine should plan when the case
+/// is one of them, `None` when both sides must agree.
+fn declared(js: &Value, case: &Value) -> Option<(Value, f64)> {
+    if !js["lensesOverride"].is_null() {
+        return None;
+    }
+    let mut foci = js["foci"].as_array().unwrap().clone();
+    let correctness = &case["PROFILE"]["foci"]["correctness"];
+    if correctness.is_string() && !foci.contains(correctness) {
+        foci.push(correctness.clone());
+    }
+    let count = js["lensCount"].as_f64().unwrap();
+    let past = foci.len() as f64 > count;
+    past.then(|| (Value::from(foci.clone()), count.max(foci.len() as f64)))
+}
+
+#[test]
+fn plan_matches_the_workflow_glue() {
+    let cases = sample(case());
+    let js = js_plans(&cases);
     let rust: Vec<Value> = cases.iter().map(rust_plan).collect();
-    assert_same("lens plan", &cases, &rust, &js);
+    let (mut same, mut differs) = (Vec::new(), 0);
+    for i in 0..cases.len() {
+        match declared(&js[i], &cases[i]) {
+            Some((foci, count)) => {
+                differs += 1;
+                assert_eq!(rust[i]["foci"], foci, "case {i}");
+                assert_eq!(rust[i]["lensCount"].as_f64(), Some(count), "case {i}");
+            }
+            None => same.push(i),
+        }
+    }
+    assert!(differs > 20, "{differs}");
+    let pick = |v: &[Value]| same.iter().map(|&i| v[i].clone()).collect::<Vec<_>>();
+    assert_same("lens plan", &pick(&cases), &pick(&rust), &pick(&js));
+}
+
+fn witness(files: &[&str]) -> Value {
+    json!({
+        "contextBookkeeping": null,
+        "wantsProbe": false,
+        "prContext": {"files": files, "fileCount": files.len(), "additions": 10, "deletions": 0},
+        "forceFullReview": true,
+        "pinnedSha": "",
+        "parsedArgs": {},
+        "PROFILE": {
+            "schemaVersion": 1, "project": "Widgets", "repo": "acme/widgets-api",
+            "reviewer": "backend", "baseBranch": "main", "deployBranches": ["production"],
+            "foci": {
+                "correctness": "c", "dataContract": "d", "security": "s",
+                "performance": "p", "errorHandling": "e", "migration": "m",
+            },
+            "highRiskSurface": "auth",
+            "riskPaths": [
+                {"focus": "migration", "pattern": "prisma/migrations"},
+                {"focus": "security", "pattern": "auth"},
+            ],
+        },
+        "log": LOG_FN,
+    })
+}
+
+/// Witness: two files force migration and security on a budget of one lens.
+#[test]
+fn declared_forced_foci_past_the_budget() {
+    let case = witness(&["prisma/migrations/001/migration.sql", "src/auth/login.ts"]);
+    let js = &js_plans(std::slice::from_ref(&case))[0];
+    let rust = rust_plan(&case);
+    assert_eq!(js["foci"], json!(["m", "s"]));
+    assert_eq!(js["lensCount"].as_f64(), Some(1.0));
+    assert_eq!(rust["foci"], json!(["m", "s", "c"]));
+    assert_eq!(rust["lensCount"].as_f64(), Some(3.0));
+}
+
+/// Witness: one forced focus fills a budget of one lens.
+#[test]
+fn declared_correctness_kept() {
+    let case = witness(&["src/auth/login.ts"]);
+    let js = &js_plans(std::slice::from_ref(&case))[0];
+    let rust = rust_plan(&case);
+    assert_eq!(js["foci"], json!(["s"]));
+    assert_eq!(js["lensCount"].as_f64(), Some(1.0));
+    assert_eq!(rust["foci"], json!(["s", "c"]));
+    assert_eq!(rust["lensCount"].as_f64(), Some(2.0));
 }
 
 #[test]
