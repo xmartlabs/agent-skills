@@ -37,8 +37,13 @@ is accepted, and the fix is a new binary, not a JavaScript version.
   not added to the `templates/` profiles, which people copy as they are.
 - **A Rust change reaches users only with a new binary:** a
   `tribunal-rust-v*` tag, its pin in `rust/release.json` and a `tribunal/vN`
-  freeze. A feature PR says which release ships it, and that release is cut
-  right after the merge.
+  freeze. Merged Rust changes wait for the next binary release, which ships
+  them together; cut one right after a merge only when users are blocked
+  without it. A change to the methodology templates or other plugin files
+  needs only a `tribunal/vN` freeze, since the binary reads them from the
+  plugin root. While a merged Rust change waits, the release gate refuses
+  every freeze (`docs/maintaining.md`, "What the gate checks"), so a
+  template change that must ship before then needs that binary release first.
 - **A fix to a rule both sides already share goes in Rust.** Leave the script
   as it is and declare the difference in the `diff_*.rs` test that compares
   them, with a witness input.
