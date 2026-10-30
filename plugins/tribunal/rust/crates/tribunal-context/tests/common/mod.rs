@@ -96,18 +96,6 @@ pub fn run_script(
     recordings: &Path,
     stdin: Option<&str>,
 ) -> ScriptRun {
-    run_script_env(script, args, cwd, recordings, stdin, &[])
-}
-
-/// [`run_script`] with `env` added to the script's environment.
-pub fn run_script_env(
-    script: &str,
-    args: &[&str],
-    cwd: &Path,
-    recordings: &Path,
-    stdin: Option<&str>,
-    env: &[(&str, &str)],
-) -> ScriptRun {
     use std::io::Write;
     let path = std::env::join_paths(std::iter::once(shim_dir()).chain(std::env::split_paths(
         &std::env::var_os("PATH").unwrap_or_default(),
@@ -119,7 +107,6 @@ pub fn run_script_env(
         .current_dir(cwd)
         .env("PATH", path)
         .env("GH_RECORDINGS", recordings)
-        .envs(env.iter().copied())
         .env_remove("CLAUDE_PLUGIN_ROOT")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())

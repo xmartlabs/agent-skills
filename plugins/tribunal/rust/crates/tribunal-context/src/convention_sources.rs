@@ -1,24 +1,18 @@
-//! Port of `skills/review-pr/scripts/convention-sources.mjs`: the
-//! documentation bundles a profile names in `conventionSources`, read at a
-//! pinned commit and selected for one PR by their OKF `code:` frontmatter.
-//! `load_conventions` appends what this renders to the conventions file.
-//!
-//! The script's regexes are small and anchored, so each is written out as a
-//! scan here, with the same treatment of line terminators (`.` stops at them)
-//! and of JavaScript whitespace (`\s`).
+//! The documentation bundles a profile names in `conventionSources`, read at a
+//! pinned commit and selected for one PR by their OKF `code:` frontmatter, a
+//! manifest's `covers`, or an `include` list. `load_conventions` appends what
+//! this renders to the conventions file.
 
 use std::collections::{HashMap, HashSet};
 
 use serde_json::{Map, Value};
 use tribunal_core::js;
-use tribunal_core::profile::js_ext;
 
 use crate::exec::Tools;
 use crate::load_conventions::Glob;
 use crate::load_profile::{
     encode_uri_component, exec_file_sync, first_line_or_gh_failed, is_not_found,
 };
-use crate::operator::json_parse;
 
 pub const DEFAULT_BUDGET: f64 = 30000.0;
 pub const MENU_BYTES: usize = 15000;
@@ -37,11 +31,6 @@ fn is_ws(c: char) -> bool {
 
 fn has_lt(s: &str) -> bool {
     s.chars().any(js::is_line_terminator)
-}
-
-/// `a.path < b.path`: UTF-16 order, as JavaScript compares strings.
-fn utf16_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    a.encode_utf16().cmp(b.encode_utf16())
 }
 
 /// What `ghApi` returns.
@@ -150,14 +139,14 @@ fn strip_comment(v: &str) -> &str {
 /// `yamlScalar(raw)`.
 #[must_use]
 pub fn yaml_scalar(raw: &str) -> String {
-    let v = js::trim(raw);
+    let v = raw.trim();
     if let Some(body) = double_quoted(v) {
         return unescape(body);
     }
     if let Some(body) = single_quoted(v) {
         return body.replace("''", "'");
     }
-    js::trim(strip_comment(v)).to_owned()
+    strip_comment(v).trim().to_owned()
 }
 
 /// `/^\s*(?:#.*)?$/` on what follows a flow list's `]`.
@@ -168,7 +157,7 @@ fn flow_tail_ok(s: &str) -> bool {
 
 /// `flowList(raw)`.
 fn flow_list(raw: &str) -> Option<Vec<String>> {
-    let t = js::trim(raw);
+    let t = raw.trim();
     let body = t.strip_prefix('[')?;
     let end = body
         .char_indices()
@@ -267,7 +256,7 @@ pub fn okf_frontmatter(text: &str) -> Okf {
             continue;
         };
         let mut j = i + 1;
-        while j < lines.len() && (indented(lines[j]) || js::trim(lines[j]).is_empty()) {
+        while j < lines.len() && (indented(lines[j]) || lines[j].trim().is_empty()) {
             j += 1;
         }
         let body = &lines[i + 1..j];
@@ -278,7 +267,7 @@ pub fn okf_frontmatter(text: &str) -> Okf {
                 && (fb.len() == 1 || (fb.len() == 2 && matches!(fb[1], b'+' | b'-')));
             let rest: Vec<&str> = body
                 .iter()
-                .map(|l| js::trim(l))
+                .map(|l| l.trim())
                 .filter(|l| !l.is_empty() && !l.starts_with('#'))
                 .collect();
             let mut parts: Vec<&str> = Vec::new();
@@ -287,7 +276,7 @@ pub fn okf_frontmatter(text: &str) -> Okf {
             }
             parts.extend(rest);
             let joined = collapse_ws(&parts.join(" "));
-            let v = js::trim(&joined).to_owned();
+            let v = joined.trim().to_owned();
             let v = (!v.is_empty()).then_some(v);
             if name == "type" {
                 out.type_ = v;
@@ -312,7 +301,7 @@ fn code_field(inline: &str, body: &[&str]) -> Code {
     let mut mapped = false;
     let mut current: Option<usize> = None;
     for l in body {
-        let t = js::trim(l);
+        let t = l.trim();
         if t.is_empty() || t.starts_with('#') {
             continue;
         }
@@ -385,12 +374,13 @@ pub struct ManifestDoc {
 /// `parseManifest(text, path)`: the docs, or the message that refuses it.
 /// Unknown keys are ignored.
 pub fn parse_manifest(text: &str, path: &str) -> Result<Vec<ManifestDoc>, String> {
-    let v = json_parse(text).map_err(|e| format!("the manifest {path} is not JSON ({e})"))?;
+    let v = serde_json::from_str::<Value>(text)
+        .map_err(|e| format!("the manifest {path} is not JSON ({e})"))?;
     let version = js::get(&v, "schemaVersion");
     if !matches!(version, Some(Value::Number(n)) if n.as_f64() == Some(1.0)) {
         return Err(format!(
             "the manifest {path} has schemaVersion {}; this loader reads 1",
-            js_ext::json_stringify(version)
+            version.map_or_else(|| "undefined".to_owned(), Value::to_string)
         ));
     }
     let Some(Value::Array(items)) = js::get(&v, "docs") else {
@@ -410,8 +400,8 @@ pub fn parse_manifest(text: &str, path: &str) -> Result<Vec<ManifestDoc>, String
             return Err(need(path, i));
         };
         // `.replace(/\s+/g, " ").trim()`, before the limit is counted.
-        let description = js::trim(&collapse_ws(description)).to_owned();
-        if p.is_empty() || description.encode_utf16().count() > 300 {
+        let description = collapse_ws(description).trim().to_owned();
+        if p.is_empty() || description.chars().count() > 300 {
             return Err(need(path, i));
         }
         let type_ = match js::get(d, "type") {
@@ -428,8 +418,7 @@ pub fn parse_manifest(text: &str, path: &str) -> Result<Vec<ManifestDoc>, String
             Some(c) => Some(
                 match c {
                     Value::Array(_) => strings(c).map(Code::List),
-                    Value::Object(m) => js_ext::ordered_entries(m)
-                        .into_iter()
+                    Value::Object(m) => m.iter()
                         .map(|(k, v)| strings(v).map(|l| (k.clone(), l)))
                         .collect::<Option<Vec<_>>>()
                         .map(Code::Map),
@@ -566,7 +555,7 @@ pub fn rank_matches(
                     a.kind
                         .cmp(&b.kind)
                         .then(ac.cmp(bc))
-                        .then_with(|| utf16_cmp(&a.path, &b.path))
+                        .then_with(|| a.path.cmp(&b.path))
                 })
                 .expect("non-empty");
             Match {
@@ -586,7 +575,7 @@ pub fn rank_matches(
             .then(a.claims.cmp(&b.claims))
             .then(type_rank(a).cmp(&type_rank(b)))
             .then(b.matched.cmp(&a.matched))
-            .then_with(|| utf16_cmp(&docs[a.doc].path, &docs[b.doc].path))
+            .then_with(|| docs[a.doc].path.cmp(&docs[b.doc].path))
     });
     ranked
 }
@@ -725,7 +714,7 @@ async fn submodule_pointer(
         Gh::NotFound => return Err(format!("{path} does not exist at {ref_}")),
         Gh::Found(t) => t,
     };
-    let v = json_parse(&text)?;
+    let v = serde_json::from_str::<Value>(&text).map_err(|e| e.to_string())?;
     if !v.is_object() || !matches!(js::get(&v, "type"), Some(Value::String(t)) if t == "submodule")
     {
         return Err(format!("{path} is not a submodule at {ref_}"));
@@ -745,7 +734,7 @@ async fn resolve_commit(tools: &Tools, repo: &str, ref_: &str) -> Result<String,
         Gh::Error(e) => Err(e),
         Gh::NotFound => Err(format!("{repo} has no ref {ref_}")),
         Gh::Found(t) => {
-            let sha = js::trim(&t);
+            let sha = t.trim();
             if is_sha(sha) {
                 Ok(sha.to_owned())
             } else {
@@ -797,7 +786,7 @@ async fn list_blobs(
         Gh::NotFound => return Err(format!("{repo} has no tree at {sha}")),
         Gh::Found(t) => t,
     };
-    let v = json_parse(&text)?;
+    let v = serde_json::from_str::<Value>(&text).map_err(|e| e.to_string())?;
     let Some(Value::Array(tree)) = js::get(&v, "tree") else {
         return Err(format!("{repo} answered no tree at {sha}"));
     };
@@ -826,7 +815,7 @@ async fn list_blobs(
 }
 
 fn js_string(s: &str) -> String {
-    js_ext::json_stringify(Some(&Value::String(s.to_owned())))
+    Value::String(s.to_owned()).to_string()
 }
 
 /// `readBlobs(api, repo, sha, blobs, cache)`.
@@ -881,7 +870,7 @@ async fn read_blobs(
             Gh::NotFound => return Err(format!("{repo} is not readable through GraphQL")),
             Gh::Found(t) => t,
         };
-        let v = json_parse(&text)?;
+        let v = serde_json::from_str::<Value>(&text).map_err(|e| e.to_string())?;
         let r = js::get(&v, "data")
             .filter(|d| js::truthy(Some(d)))
             .and_then(|d| js::get(d, "repository"))
@@ -1253,7 +1242,7 @@ pub async fn load_source(
         .filter(|b| !exclude.iter().any(|re| re.test(&b.path)))
         .copied()
         .collect();
-    kept.sort_by(|a, b| utf16_cmp(&a.path, &b.path));
+    kept.sort_by(|a, b| a.path.cmp(&b.path));
     let included: Vec<String> = kept
         .iter()
         .filter(|b| include.iter().any(|re| re.test(&b.path)))
@@ -1481,7 +1470,7 @@ pub async fn load_sources(
                 )
                 .await;
                 let sha = match &got {
-                    Gh::Found(t) => js::trim(t).to_owned(),
+                    Gh::Found(t) => t.trim().to_owned(),
                     _ => String::new(),
                 };
                 if is_sha(&sha) {
@@ -1726,7 +1715,7 @@ mod tests {
     }
 
     #[test]
-    fn a_manifest_is_refused_with_the_scripts_messages() {
+    fn a_manifest_is_refused_with_a_message_naming_the_problem() {
         let at = "the manifest m.json";
         let err = |t: &str| parse_manifest(t, "m.json").unwrap_err();
         let need = |i: usize| {
@@ -1758,11 +1747,16 @@ mod tests {
             "x".repeat(301)
         );
         assert_eq!(one(&x301), need(0));
-        let emoji151 = format!(
+        let emoji301 = format!(
             r#"{{"path": "a.md", "description": "{}"}}"#,
-            "\u{1F600}".repeat(151)
+            "\u{1F600}".repeat(301)
         );
-        assert_eq!(one(&emoji151), need(0));
+        assert_eq!(one(&emoji301), need(0));
+        let emoji300 = format!(
+            r#"{{"schemaVersion": 1, "docs": [{{"path": "a.md", "description": "{}"}}]}}"#,
+            "\u{1F600}".repeat(300)
+        );
+        assert!(parse_manifest(&emoji300, "m.json").is_ok());
         assert_eq!(
             one(r#"{"path": "a.md", "description": "d", "type": 3}"#),
             format!("{at}: docs[0].type must be a string")
@@ -1796,8 +1790,8 @@ mod tests {
         assert_eq!(
             docs[2].covers,
             Some(Code::Map(vec![
-                ("2".into(), strs(&["n"])),
                 ("server".into(), strs(&["a/"])),
+                ("2".into(), strs(&["n"])),
                 ("client".into(), vec![]),
             ]))
         );

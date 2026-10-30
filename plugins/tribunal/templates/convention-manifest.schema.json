@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "convention-manifest.schema.json",
   "title": "Convention manifest",
-  "description": "The docs a conventionSources entry with select \"manifest\" reads, committed to the docs repo and read at the same pinned commit. The loader's own parser is the authority (templates/check.sh --manifest <file> runs it); this schema documents the same shape for editors and generators. Unknown keys are ignored, at the top level and in a doc.",
+  "description": "The docs a conventionSources entry with select \"manifest\" reads, committed to the docs repo and read at the same pinned commit. The Rust engine's parser is the authority; this schema documents the same shape for editors, generators and CI. The loader collapses whitespace in a description before it counts the 300 characters. Unknown keys are ignored, at the top level and in a doc.",
   "type": "object",
   "required": ["schemaVersion", "docs"],
   "properties": {

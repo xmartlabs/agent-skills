@@ -51,7 +51,8 @@ file that every reviewer and Claude refuter reads. The row records which files
 were read, which scoped rules were left out, and any named file the repo does
 not have. Without `conventionFiles` the prompts carry no conventions line.
 
-`conventionSources` names documentation bundles: kept in another repo, such as
+`conventionSources` (Rust engine only; the Workflow prints a warning and skips
+it) names documentation bundles: kept in another repo, such as
 a docs repo mounted as a git submodule (which the contents API cannot read
 through the reviewed repo), or in a folder of the reviewed repo itself. Each
 entry is
@@ -131,7 +132,7 @@ fields it reads), and every field is optional except that `ref` goes with
   ```
 
   `path` (required) is a file in the docs repo; `description` (required, at
-  most 300 characters, counted in UTF-16 code units) is the menu line; `type` (optional) `convention` keeps a
+  most 300 characters) is the menu line; `type` (optional) `convention` keeps a
   doc that matches nothing in the menu; `covers` (optional) is a list of paths,
   directories or globs, or an object of such lists keyed by consumer, read
   through `consumer` like `code:`. Without `covers` a doc is reached only
@@ -141,12 +142,11 @@ fields it reads), and every field is optional except that `ref` goes with
   one outside `root` is not loaded either.
 
   Any non-OKF documentation format is supported this way: generate the
-  manifest in the docs repo's own CI and commit it, and check the file with
-  `templates/check.sh --manifest <file>` before committing. The check runs the
-  loader's own parser,
-  `node "$(tribunal-root)"/skills/review-pr/scripts/convention-sources.mjs --check-manifest <file>`,
-  which prints `{"ok":true,"docs":N}` and exits 0, or
-  `{"ok":false,"error":"..."}` and exits 1.
+  manifest in the docs repo's own CI and commit it. The JSON Schema
+  `templates/convention-manifest.schema.json` describes the file, so the docs
+  repo's CI can validate it with any JSON Schema validator. The loader is
+  stricter in one place: it collapses whitespace in a `description` before it
+  counts the 300 characters, and refuses the manifest when one is over.
 - `include` lists paths or globs loaded first, whether they match or not;
   `exclude` lists paths or globs never loaded or offered.
 - `budgetBytes` (default 30000) caps the verbatim text per source, includes

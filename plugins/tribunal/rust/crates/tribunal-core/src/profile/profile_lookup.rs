@@ -261,110 +261,6 @@ fn is_convention_file(s: &str) -> bool {
         && !s.ends_with('/')
 }
 
-/// `isGlob` in `conventionSourceProblems`: an include or exclude entry.
-fn is_source_glob(v: &Value) -> bool {
-    matches!(v, Value::String(g) if !g.is_empty()
-        && g.bytes().all(|c| ascii_in(c, b"._*?{},/-"))
-        && !g.starts_with('/')
-        && !has_dotdot_segment(g))
-}
-
-/// Ports `conventionSourceProblems`: what is wrong with
-/// `profile.conventionSources`, empty when it is absent.
-pub fn convention_source_problems(list: Option<&Value>) -> Vec<String> {
-    let Some(list) = list else {
-        return Vec::new();
-    };
-    let Value::Array(list) = list else {
-        return vec![
-            "conventionSources must be an array of {repo, ref} documentation sources".into(),
-        ];
-    };
-    let mut problems = Vec::new();
-    for (i, s) in list.iter().enumerate() {
-        let at = format!("conventionSources[{i}]");
-        if !s.is_object() {
-            problems.push(format!("{at} must be an object"));
-            continue;
-        }
-        let get = |k: &str| js::get(s, k);
-        let has_repo = get("repo").is_some();
-        if has_repo && !matches!(get("repo"), Some(Value::String(r)) if is_repo(r)) {
-            problems.push(format!("{at}.repo must be owner/name"));
-        }
-        if has_repo {
-            let ref_ok = match get("ref") {
-                Some(Value::String(r)) => match r.strip_prefix("submodule:") {
-                    Some(sub) => is_project_path(sub) && !sub.ends_with('/'),
-                    None => is_branch(r),
-                },
-                _ => false,
-            };
-            if !ref_ok {
-                problems.push(format!(
-                    "{at}.ref must be a git ref, or submodule:<path> naming a submodule of this repo"
-                ));
-            }
-        } else if get("ref").is_some() {
-            problems.push(format!(
-                "{at}.ref needs a repo: without one the source is the reviewed repo, read at the profile's ref"
-            ));
-        }
-        if let Some(root) = get("root") {
-            let ok = matches!(root, Value::String(r) if r.strip_suffix('/').is_some_and(is_project_path));
-            if !ok {
-                problems.push(format!(
-                    "{at}.root must be a folder inside the repo, ending in /"
-                ));
-            }
-        }
-        if let Some(sel) = get("select") {
-            if !matches!(sel, Value::String(v) if v == "okf-code" || v == "all" || v == "manifest")
-            {
-                problems.push(format!(
-                    "{at}.select must be \"okf-code\", \"all\" or \"manifest\""
-                ));
-            }
-        }
-        if matches!(get("select"), Some(Value::String(v)) if v == "manifest") {
-            match get("manifest") {
-                Some(Value::String(m)) if is_project_path(m) && !m.ends_with('/') => {
-                    if let Some(Value::String(root)) = get("root") {
-                        if !m.starts_with(root.as_str()) {
-                            problems.push(format!("{at}.manifest must lie under root {root}"));
-                        }
-                    }
-                }
-                _ => problems.push(format!("{at}.manifest must be a path inside the docs repo")),
-            }
-        }
-        for k in ["include", "exclude"] {
-            if let Some(v) = get(k) {
-                if !matches!(v, Value::Array(gs) if gs.iter().all(is_source_glob)) {
-                    problems.push(format!(
-                        "{at}.{k} must be an array of paths or globs inside the docs repo"
-                    ));
-                }
-            }
-        }
-        if let Some(c) = get("consumer") {
-            let ok = matches!(c, Value::String(c) if !c.is_empty() && c.bytes().all(|b| ascii_in(b, b"_.-")));
-            if !ok {
-                problems.push(format!(
-                    "{at}.consumer must be a key of a mapping-shaped code: field"
-                ));
-            }
-        }
-        if let Some(b) = get("budgetBytes") {
-            let ok = matches!(b, Value::Number(n) if n.as_f64().is_some_and(|f| f.is_finite() && f.fract() == 0.0 && f >= 1.0));
-            if !ok {
-                problems.push(format!("{at}.budgetBytes must be a positive integer"));
-            }
-        }
-    }
-    problems
-}
-
 /// Ports `validateProfile`. `expected_repo` is the run's `repo` argument
 /// (`null` when absent). Returns the profile with its keys in JavaScript
 /// order, as the workflow holds it.
@@ -466,7 +362,6 @@ pub fn validate_profile(raw: &Value, expected_repo: &Value) -> Result<Value, Str
             errors.push("conventionFiles must be an array of paths inside the repo, with `*` only in the last segment, such as [\"CLAUDE.md\", \".claude/rules/*.md\"]".into());
         }
     }
-    errors.extend(convention_source_problems(get("conventionSources")));
     if let Some(tribunal) = get("tribunal") {
         match tribunal {
             Value::Object(_) => errors.extend(risk_path_problems(

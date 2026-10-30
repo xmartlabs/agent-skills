@@ -245,29 +245,20 @@ the pinned sha and `compare/<branch>...<sha>` comes back empty. Do not read the
 patch into your own context: scanning it is a script's job.
 
 **Then load the repo's conventions, when the profile lists any.** Skip this
-when both `profile.conventionFiles` and `profile.conventionSources` are absent
-or empty.
+when `profile.conventionFiles` is absent or empty.
+Only the Rust engine loads `profile.conventionSources`; this path prints a warning and skips them.
 
 ```bash
 node "$(tribunal-root)"/skills/review-pr/scripts/load-conventions.mjs --profile "${TMPDIR:-/tmp}/review-profile-<n>.json" \
-  --ref <load-profile's profileRef> --diff "$PATCH" --out /tmp/tribunal-conventions-<owner>-<name>-<n>.md \
-  --pr <n> [--head-sha <sha>, only when --head-sha was passed]
+  --ref <load-profile's profileRef> --diff "$PATCH" --out /tmp/tribunal-conventions-<owner>-<name>-<n>.md
 ```
 
 It reads each convention file (the repo's `CLAUDE.md`, its `.claude/rules/*.md`)
 at the ref the profile was read at, and keeps a rule scoped with `paths:` only
-when the patch changes a matching path. Each documentation bundle the profile
-names in `conventionSources` is read at its pinned commit (a `submodule:` ref
-reads the pointer at the PR head, which `--head-sha` or `--pr` gives), and the
-docs chosen by the source's selector (OKF `code:` frontmatter, a manifest's
-`covers`, or all docs `include` names) are appended, up to the source's
-budget, with a menu of the rest. It prints `{ok, out, sha256, ref,
-files, skipped, missing}`, plus `{sources, warnings}` when the profile has
-sources; on `ok: false` stop and show the error. Show `missing` to the user
-when it is not empty: the profile names a file the repo does not have. Show
-every `warnings` entry too: a source that could not be read, or that loaded
-no doc, is reported there and the review goes on without it. Keep the whole
-output as `conventions`. Every reviewer and
+when the patch changes a matching path. It prints `{ok, out, sha256, ref,
+files, skipped, missing}`; on `ok: false` stop and show the error. Show
+`missing` to the user when it is not empty: the profile names a file the repo
+does not have. Keep the whole output as `conventions`. Every reviewer and
 refuter dispatch of the run reads that file, because no subagent loads the
 repo's `CLAUDE.md` on its own when the session started elsewhere, and a scoped
 rule loads only when the Read tool opens a matching path (report section 7.4).

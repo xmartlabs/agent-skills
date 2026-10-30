@@ -16,15 +16,6 @@
   "highRiskSurface": "schema and migrations, auth, payments, mass delete/update",
   "projectRules": ".claude/review-rules.md",
   "conventionFiles": ["CLAUDE.md", ".claude/rules/*.md"],
-  "conventionSources": [
-    {
-      "repo": "your-org/your-docs",
-      "ref": "submodule:docs",
-      "include": ["guides/review.md"],
-      "consumer": "server",
-      "budgetBytes": 30000
-    }
-  ],
   "crossRepoAnchors": [],
   "riskPaths": [
     { "focus": "migration", "pattern": "migrations?/|schema" },

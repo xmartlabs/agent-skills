@@ -102,16 +102,6 @@ console.log("\n--- without conventions, nothing changes ---");
 
 console.log("\n--- refusals ---");
 check("a profile that lists conventionFiles with no conventionsPath is refused", /lists conventionFiles, but args carry no conventionsPath/.test(refused({})));
-check("a profile that lists only conventionSources with no conventionsPath is refused too", /lists conventionSources, but args carry no conventionsPath/.test(refused({}, { conventionSources: [{ repo: "acme/handbook", ref: "main" }] })));
-{
-  const source = { repo: "acme/handbook", ref: "main", resolvedSha: "1".repeat(40), pointerFrom: null, loaded: [{ path: "convention/a.md", bytes: 10, reason: "include" }], offered: [], bytesLoaded: 10, budgetBytes: 30000, missing: [] };
-  const w = load({ ...ARGS, conventions: { ...ARGS.conventions, sources: [source] } });
-  check("the row records each documentation source as load-conventions reported it", JSON.stringify(w.manifest.sources) === JSON.stringify([source]));
-  check("a run without sources records no sources key", !("sources" in load(ARGS).manifest));
-  const inRepo = { repo: null, ref: "main", resolvedSha: "2".repeat(40), pointerFrom: null, select: "manifest", root: "docs/", manifest: "docs/m.json", loaded: [{ path: "docs/a.md", bytes: 10, reason: "manifest" }], offered: ["docs/b.md"], bytesLoaded: 10, budgetBytes: 30000, missing: [] };
-  const w2 = load({ ...ARGS, conventions: { ...ARGS.conventions, sources: [inRepo] } });
-  check("an in-repo manifest source (repo null, root, manifest) reaches the row unchanged", JSON.stringify(w2.manifest.sources) === JSON.stringify([inRepo]), JSON.stringify(w2.manifest.sources));
-}
 check("a relative conventionsPath is refused", /must be an absolute path/.test(refused({ ...ARGS, conventionsPath: "conv.md" })));
 check("a conventionsPath with no sha256 is refused", /must be an absolute path with its conventionsSha256/.test(refused({ ...ARGS, conventionsSha256: undefined })));
 check("a path with shell metacharacters is refused", /must be an absolute path/.test(refused({ ...ARGS, conventionsPath: "/tmp/x$(id).md" })));
