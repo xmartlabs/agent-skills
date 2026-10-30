@@ -52,13 +52,26 @@ prefix=""; while [ $# -gt 0 ]; do [ "$1" = --prefix ] && prefix="$2"; shift; don
 mkdir -p "$prefix/node_modules/.bin" && printf '#!/usr/bin/env bash\n' > "$prefix/node_modules/.bin/claude"
 chmod +x "$prefix/node_modules/.bin/claude"; echo "npm $prefix" >> "$FX/npm.log"
 SH
-# Fake gh: profile lookups answer from $FX/profile-<base|default|head>, everything is logged.
+# Fake gh: profile lookups answer from $FX/profile-<base|default|head>; the pull request's files,
+# its reviews and the token's user from $FX/files.json, reviews.json and user.json through --jq.
+# Everything is logged.
 cat > "$TMP/ghbin/gh" <<'SH'
 #!/usr/bin/env bash
 echo "$*" >> "$FX/gh.log"
+jq_expr=""; prev=""
+for a in "$@"; do [ "$prev" = --jq ] && jq_expr="$a"; prev="$a"; done
+emit() { # FIXTURE: the fixture through --jq, an empty list when it is missing
+  if [ -f "$1" ]; then jq -r "${jq_expr:-.}" < "$1"; else echo '[]' | jq -r "${jq_expr:-.}"; fi
+}
 case "$*" in
   "--version") echo "gh version 2.103.3" ;;
   "auth setup-git") ;;
+  "api user"*) [ -f "$FX/user.json" ] || { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
+    emit "$FX/user.json" ;;
+  *repos/acme/web-app/pulls/12/files*) emit "$FX/files.json" ;;
+  *repos/acme/web-app/pulls/12/reviews*)
+    [ -f "$FX/reviews-error" ] && { echo "gh: Server Error (HTTP 502)" >&2; exit 1; }
+    emit "$FX/reviews.json" ;;
   "pr comment"*)
     while [ $# -gt 0 ]; do [ "$1" = --body-file ] && cp "$2" "$FX/posted-body.md"; shift; done ;;
   "api -X DELETE"*) [ -f "$FX/label-present" ] || { echo "HTTP 404" >&2; exit 1; } ;;
@@ -87,22 +100,39 @@ export PATH="$TMP/bin:$TMP/ghbin:$PATH" FX="$TMP/fx" REL_ARCHIVE="$TMP/rel/$ASSE
   GITHUB_RUN_ID=7 GITHUB_SERVER_URL=https://github.com GH_TOKEN=job-secret HEAD_SHA=aaaa1111
 PLUGIN_ROOT="$(cd "$HERE/../../../plugins/tribunal" && pwd)"
 
-# new_job ACTION [LABEL] [HEAD_REPO]
+# new_job ACTION [LABEL] [HEAD_REPO]; DRAFT=true makes the pull request a draft.
 new_job() {
   rm -rf "$TMP/runner" "${FX:?}"/*; mkdir -p "$TMP/runner"
   export RUNNER_TEMP="$TMP/runner" GITHUB_OUTPUT="$TMP/runner/out" GITHUB_PATH="$TMP/runner/path"
   export GITHUB_EVENT_PATH="$TMP/runner/event.json"
-  python3 - "$GITHUB_EVENT_PATH" "$1" "${2:-}" "${3:-acme/web-app}" <<'PY'
+  python3 - "$GITHUB_EVENT_PATH" "$1" "${2:-}" "${3:-acme/web-app}" "${DRAFT:-false}" <<'PY'
 import json, sys
-path, action, label, head = sys.argv[1:]
-e = {"action": action, "pull_request": {"number": 12, "base": {"ref": "main"},
+path, action, label, head, draft = sys.argv[1:]
+e = {"action": action, "pull_request": {"number": 12, "base": {"ref": "main"}, "draft": draft == "true",
      "head": {"sha": "aaaa1111", "repo": {"full_name": head}}}}
 if label: e["label"] = {"name": label}
 json.dump(e, open(path, "w"))
 PY
   manifest "$SHA"
 }
-gate() { : > "$GITHUB_OUTPUT"; HAS_CLAUDE_AUTH="${HAS:-true}" INPUT_LABEL=tribunal bash "$RUN" gate 2>/dev/null; sed -n 's/^run=//p' "$GITHUB_OUTPUT"; }
+# gate: the action's defaults unless PATHS, ONCE or DRAFTS say otherwise.
+gate() {
+  : > "$GITHUB_OUTPUT"
+  HAS_CLAUDE_AUTH="${HAS:-true}" INPUT_LABEL=tribunal INPUT_PATHS="${PATHS:-}" INPUT_ONCE="${ONCE:-true}" \
+    INPUT_DRAFTS="${DRAFTS:-false}" bash "$RUN" gate 2>/dev/null
+  sed -n 's/^run=//p' "$GITHUB_OUTPUT"
+}
+files() { python3 -c 'import json,sys;print(json.dumps([{"filename": f} for f in sys.argv[1:]]))' "$@" > "$FX/files.json"; }
+review_by() { # LOGIN BODY: append a review to the pull request's reviews
+  python3 - "$FX/reviews.json" "$1" "$2" <<'PY'
+import json, os, sys
+path, login, body = sys.argv[1:]
+r = json.load(open(path)) if os.path.exists(path) else []
+r.append({"id": len(r) + 1, "user": {"login": login}, "body": body, "state": "COMMENTED"})
+json.dump(r, open(path, "w"))
+PY
+}
+FOOTER='<sub>tribunal v111 · 9 agents · 1.2M tokens · 14m</sub>'
 prepare() { INPUT_REVIEWER="${1:-frontend}" bash "$RUN" prepare 2>/dev/null; }
 job() { echo "$TMP/runner/tribunal"; }
 args() { tr '\n' ' ' < "$(job)/profile-args"; }
@@ -113,6 +143,49 @@ new_job labeled bug;       assert_eq "another label does not" "false" "$(gate)"
 new_job opened;            assert_eq "other events review (the caller chose them)" "true" "$(gate)"
 new_job labeled tribunal someone/fork; assert_eq "fork PRs do not run" "false" "$(gate)"
 new_job labeled tribunal;  assert_eq "no Claude credential: no run" "false" "$(HAS=false gate)"
+new_job labeled tribunal;  gate >/dev/null
+assert_fail "a label run reads nothing from the API (as before the contract)" test -s "$FX/gh.log"
+
+# Drafts.
+DRAFT=true new_job opened; assert_eq "a draft does not run" "false" "$(gate)"
+DRAFT=true new_job opened; assert_eq "a draft runs with drafts: true" "true" "$(DRAFTS=true gate)"
+DRAFT=true new_job labeled tribunal; assert_eq "the label forces a draft" "true" "$(gate)"
+
+# Paths.
+new_job opened; files src/app/main.ts README.md
+assert_eq "a changed file matching paths runs (* crosses /)" "true" "$(PATHS='src/*' gate)"
+assert_ok "the changed files come from the pull request" grep -q "repos/acme/web-app/pulls/12/files" "$FX/gh.log"
+new_job opened; files README.md docs/guide.md
+assert_eq "no changed file matching paths: no run" "false" "$(PATHS='src/*' gate)"
+new_job opened; files src/app.test.ts
+assert_eq "a file that only matches an exclusion does not count" "false" "$(PATHS=$'src/*\n!src/*.test.ts' gate)"
+new_job opened; files src/app.test.ts src/app.ts
+assert_eq "another file that is not excluded still runs" "true" "$(PATHS=$'src/*\n!src/*.test.ts' gate)"
+new_job opened; files README.md
+gate >/dev/null
+assert_fail "empty paths means any file (the files are not read)" grep -q "pulls/12/files" "$FX/gh.log"
+
+# Once.
+new_job opened; review_by "github-actions[bot]" "## Peer review"$'\n\n'"$FOOTER"
+assert_eq "a pull request the action already reviewed does not run again" "false" "$(gate)"
+assert_ok "the reviews come from the pull request" grep -q "repos/acme/web-app/pulls/12/reviews" "$FX/gh.log"
+new_job opened; review_by "github-actions[bot]" "## Peer review"$'\n\n'"$FOOTER"
+assert_eq "once: false reviews again" "true" "$(ONCE=false gate)"
+new_job opened; review_by dev "## Peer review"$'\n\n'"$FOOTER"
+assert_eq "a review by another user does not count" "true" "$(gate)"
+new_job opened; review_by "github-actions[bot]" "Looks good to me"
+assert_eq "an own review without tribunal's footer does not count" "true" "$(gate)"
+new_job opened; echo '{"login":"review-bot"}' > "$FX/user.json"; review_by review-bot "$FOOTER"
+assert_eq "a review by the github-token's user counts" "false" "$(gate)"
+new_job opened; touch "$FX/reviews-error"
+: > "$GITHUB_OUTPUT"
+HAS_CLAUDE_AUTH=true INPUT_LABEL=tribunal INPUT_ONCE=true bash "$RUN" gate >/dev/null 2>&1; RC=$?
+assert_ok "the gate fails when it cannot list the reviews" test "$RC" -ne 0
+assert_eq "and does not decide to run" "" "$(sed -n 's/^run=//p' "$GITHUB_OUTPUT")"
+
+# The label ignores paths and once.
+new_job labeled tribunal; files README.md; review_by "github-actions[bot]" "$FOOTER"
+assert_eq "the label forces a review over paths and an earlier one" "true" "$(PATHS='src/*' gate)"
 
 # --- prepare ------------------------------------------------------------------------------------
 new_job labeled tribunal; touch "$FX/profile-base"

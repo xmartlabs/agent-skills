@@ -48,20 +48,83 @@ jobs:
 
 ## When it runs
 
-- Adding the `tribunal` label starts a review. The action removes the label when it ends, so
-  adding it again starts a new one. Other events you trigger the workflow on (for example
-  `opened`) always review.
+Your workflow's `on:` decides which events reach the action; the action then applies these rules,
+in order:
+
+1. An event that is not a pull request's, a fork pull request, or a run without a Claude
+   credential (Dependabot's, for example) is skipped: they get no secrets.
+2. A `labeled` event with the action's `label` (`tribunal` by default) forces a review, ignoring
+   `drafts`, `paths` and `once`. The action removes the label when it ends, so adding it again
+   starts a new review.
+3. A `labeled` event with another label is skipped.
+4. Any other event (for example `opened` or `ready_for_review`) reviews, unless the pull request
+   is a draft and `drafts` is `false`; `paths` is set and no changed file matches it; or `once` is
+   `true` and the action already reviewed the pull request.
+
+"Already reviewed" means a review on the pull request, by one of the action's own identities, that
+carries tribunal's footer (`<sub>tribunal v…`). The action's identities are `github-actions[bot]`
+and the `github-token` user when that token can read its own user (a PAT or an App's user token).
+
 - One review per pull request at a time with the `concurrency` block above: a newer request
   cancels a running one. A cancelled run posts nothing, and neither does a job that hits its
   `timeout-minutes`.
 - A push during a review makes its post refuse (the head moved): add the label again.
-- Fork pull requests and runs without a Claude credential (Dependabot's) never run: they get no
-  secrets.
 - Each run writes a job summary on its Actions page: whether the review was posted (with a link),
   skipped or held and why, followed by the report itself.
 - The review is always posted as a comment, never as an approval or a change request. The
   report's own suggestion is in the body. The Actions token cannot tell which earlier reviews are
   its own, so each run posts the full review over any standing one.
+
+### Skip the setup when there is nothing to review
+
+The review job's `concurrency` block cancels a running review whenever a newer event arrives,
+even one the action would skip, and the job takes a runner either way. When the workflow listens
+to more than the label (`opened`, `ready_for_review`, `synchronize`), put the decision in a cheap
+job first with the `gate` action, which reads the pull request through the API and checks out
+nothing. Define `paths` and the credential once and pass the same `with:` to both:
+
+```yaml
+# .github/workflows/tribunal.yml
+name: Tribunal
+on:
+  pull_request:
+    types: [opened, ready_for_review, labeled]
+env:
+  CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+  REVIEW_PATHS: |
+    src/*
+    !src/*.test.ts
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pull-requests: read }
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      - id: gate
+        uses: xmartlabs/agent-skills/actions/tribunal/gate@tribunal-action-v1
+        with:
+          claude-token: ${{ env.CLAUDE_TOKEN }}
+          paths: ${{ env.REVIEW_PATHS }}
+  review:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      pull-requests: write
+    concurrency:
+      group: tribunal-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - uses: xmartlabs/agent-skills/actions/tribunal@tribunal-action-v1
+        with:
+          claude-token: ${{ env.CLAUDE_TOKEN }}
+          paths: ${{ env.REVIEW_PATHS }}
+```
+
+The review job's action checks again, with the same rules, so both agree.
 
 ## Inputs
 
@@ -70,7 +133,10 @@ jobs:
 | `claude-token` | empty | Claude Code OAuth token (subscription). This or `anthropic-api-key` is required. |
 | `anthropic-api-key` | empty | Anthropic API key (billed per use). Wins over `claude-token` when both are set. |
 | `github-token` | `github.token` | Reads the pull request and posts the review (`pull-requests: write`). |
-| `label` | `tribunal` | On a `labeled` event, only this label starts a review; it is removed at the end. |
+| `label` | `tribunal` | Adding this label forces a review (ignores `drafts`, `paths` and `once`); another label skips. It is removed at the end. |
+| `paths` | empty | Review only when a changed file matches one of these globs, one per line (`*` also crosses `/`, `!` excludes). Empty reviews any change. |
+| `once` | `true` | Skip a pull request the action already reviewed (a review of its own with tribunal's footer). |
+| `drafts` | `false` | Also review draft pull requests. |
 | `reviewer` | `frontend` | `frontend` or `backend`: the generic profile used when the repository has none. |
 | `upload-run` | `true` | Upload the run record, the report and the logs as an artifact (14 days). |
 | `upload-transcripts` | `false` | Also upload every model dispatch's transcript (see Security). |

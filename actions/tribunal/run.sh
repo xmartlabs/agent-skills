@@ -34,6 +34,41 @@ PY
 
 pr_number() { event pull_request.number; }
 
+# matches_paths FILE_LIST PATTERNS: exit 0 when a listed file matches an include pattern and no
+# exclude pattern (`!glob`). fnmatch semantics: `*` also crosses `/`.
+matches_paths() {
+  python3 - "$1" "$2" <<'PY'
+import fnmatch, sys
+files = [l.strip() for l in open(sys.argv[1]) if l.strip()]
+pats = [p.strip() for p in sys.argv[2].splitlines() if p.strip()]
+inc = [p for p in pats if not p.startswith('!')]
+exc = [p[1:] for p in pats if p.startswith('!')]
+ok = any(any(fnmatch.fnmatch(f, p) for p in inc) and not any(fnmatch.fnmatch(f, p) for p in exc)
+         for f in files)
+sys.exit(0 if ok else 1)
+PY
+}
+
+changed_files() { # FILE
+  gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$(pr_number)/files?per_page=100" \
+    --jq '.[].filename' > "$1"
+}
+
+# own_reviews FILE: the ids of the pull request's reviews that carry the footer the binary signs
+# its posts with, written by the action's own identities: github-actions[bot] and the
+# github-token's user when it can read one (a PAT or an App's user token; the Actions token cannot).
+own_reviews() {
+  local own=("github-actions[bot]") login logins
+  login="$(gh api user --jq .login 2>/dev/null)" && [ -n "$login" ] && own+=("$login")
+  logins="$(python3 -c 'import json,sys;print(json.dumps(sys.argv[1:]))' "${own[@]}")"
+  gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$(pr_number)/reviews?per_page=100" \
+    --jq ".[] | select((.user.login as \$l | $logins | index(\$l)) and ((.body // \"\") | contains(\"<sub>tribunal v\"))) | .id" \
+    > "$1"
+}
+
+# The rules, in order: no pull request, a fork or no credential skips; the action's label forces a
+# review and another label skips; any other event (the caller's `on:` chose it) runs unless the
+# pull request is a draft, no changed file matches `paths`, or `once` and the action reviewed it.
 cmd_gate() {
   decide() { log "gate: $1"; out run "$2"; }
   [ -n "$(pr_number)" ] || { decide "not a pull_request event" false; return 0; }
@@ -42,8 +77,25 @@ cmd_gate() {
   # Dependabot and similar runs get no secrets: without Claude credentials there is nothing to run.
   [ "${HAS_CLAUDE_AUTH:-}" = true ] \
     || { decide "no claude-token or anthropic-api-key (secrets are not available to this run)" false; return 0; }
-  if [ "$(event action)" = labeled ] && [ "$(event label.name)" != "$INPUT_LABEL" ]; then
-    decide "label '$(event label.name)' is not '$INPUT_LABEL'" false; return 0
+  if [ "$(event action)" = labeled ]; then
+    if [ "$(event label.name)" = "$INPUT_LABEL" ]; then decide "label '$INPUT_LABEL' forces a review" true
+    else decide "label '$(event label.name)' is not '$INPUT_LABEL'" false; fi
+    return 0
+  fi
+  if [ "$(event pull_request.draft)" = true ] && [ "${INPUT_DRAFTS:-false}" != true ]; then
+    decide "draft pull request (drafts: false); add the '$INPUT_LABEL' label to review it" false; return 0
+  fi
+  mkdir -p "$JOB"
+  if [ -n "${INPUT_PATHS:-}" ]; then
+    changed_files "$JOB/changed-files.txt" || { log "gate: could not list the pull request's files"; return 1; }
+    matches_paths "$JOB/changed-files.txt" "$INPUT_PATHS" \
+      || { decide "no changed file matches 'paths'" false; return 0; }
+  fi
+  if [ "${INPUT_ONCE:-true}" = true ]; then
+    own_reviews "$JOB/own-reviews.txt" || { log "gate: could not list the pull request's reviews"; return 1; }
+    if [ -s "$JOB/own-reviews.txt" ]; then
+      decide "already reviewed (once: true); add the '$INPUT_LABEL' label to review again" false; return 0
+    fi
   fi
   decide "$(event action)" true
 }
