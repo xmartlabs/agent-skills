@@ -1,5 +1,13 @@
 //! The full text a lens is dispatched with, against the workflow's own
 //! `reviewerAgent(lensPrompt({... diffBlock: lensDiffBlockFor(files) ...}))`.
+//!
+//! The workflow's side is read from `tests/goldens/span/diff_prompts.json`
+//! (see `common`), with a SHA-256 of the workflow code each span came from, so
+//! an edit there without regenerating fails here. Each sampled prompt is over
+//! 1 KiB, so the file keeps a SHA-256 of each; the recipients constant is kept
+//! whole.
+//! Regenerate after changing a span, its cases or the workflow:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-pipeline --test diff_prompts`.
 
 mod common;
 

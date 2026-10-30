@@ -2,10 +2,16 @@
 //! generated `metrics.jsonl` and arguments on both sides, compared on stdout,
 //! stderr and exit status; the lock in each state it can find on disk.
 //!
-//! The script's side of the generated ledgers is read from
-//! `tests/goldens/locate-last-row.json`, which keeps the text of the script
-//! and of every module it imports, and a hash of each case's input. Regenerate
-//! after changing them:
+//! Nothing here runs the scripts outside a regeneration. The script's side of
+//! the generated ledgers is read from `tests/goldens/locate-last-row.json`,
+//! which keeps the text of the script and of every module it imports, and a
+//! hash of each case's input. The fixed cases (the scan window, the lone
+//! surrogate, the lock in each state and the lock wait) are read from
+//! `tests/goldens/ledger-fixed.json`, one entry per test, with a SHA-256 of
+//! each module the script imports, each case's input, and the lock's end
+//! state on disk. A module no longer on disk was retired with the Workflow:
+//! its check is skipped and the golden is final. Regenerate after changing
+//! them, over the whole binary:
 //! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_ledger`.
 
 mod posting;
@@ -22,7 +28,9 @@ use tribunal_context::harness_version::sha256_hex;
 use tribunal_context::ledger::{self, LedgerEnv};
 
 const GOLDEN: &str = "locate-last-row.json";
+const FIXED: &str = "ledger-fixed.json";
 const LOCATE: &str = "skills/review-pr/scripts/locate-last-row.mjs";
+const LOCK: &str = "skills/review-pr/scripts/ledger-lock.mjs";
 const REGENERATE: &str =
     "regenerate: TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_ledger";
 
@@ -216,8 +224,7 @@ fn locate_last_row_matches_js_on_generated_ledgers() {
         ("<SCRATCH>", scratch_text.as_str()),
         ("<PLUGIN>", plugin_text.as_str()),
     ];
-    let with = json!(module_texts(LOCATE));
-    let golden = recorded(GOLDEN, &with, REGENERATE);
+    let golden = recorded(GOLDEN, REGENERATE, |w| stale_modules(w, LOCATE));
     let replay: Option<&Vec<Value>> = golden.as_ref().map(|g| {
         let recorded = g["cases"].as_array().unwrap();
         assert_eq!(
@@ -268,7 +275,7 @@ fn locate_last_row_matches_js_on_generated_ledgers() {
     });
     let (diffs, kept): (Vec<Option<String>>, Vec<Value>) = runs.into_iter().unzip();
     if replay.is_none() {
-        write_golden(GOLDEN, with, kept);
+        write_golden(GOLDEN, json!(module_texts(LOCATE)), kept);
     }
     eprintln!("{:?}", seen.lock().unwrap());
     assert_same("locate-last-row", &diffs);
@@ -300,6 +307,31 @@ fn ledger_row(line: &str) -> String {
         .unwrap_or_default()
 }
 
+/// The script's side of `test`'s fixed cases, from `ledger-fixed.json`, with
+/// the modules `entry` reaches; `run` records them when regenerating.
+fn fixed_js(
+    test: &str,
+    entry: &str,
+    inputs: &[Value],
+    run: impl FnOnce() -> Vec<Value>,
+) -> Vec<Value> {
+    fixed(
+        FIXED,
+        test,
+        REGENERATE,
+        inputs,
+        || module_shas(entry),
+        |w| stale_module_shas(w, entry),
+        run,
+    )
+}
+
+fn window_ledger(dir: &Path, after: usize) {
+    let mut lines = vec!["{\"pr\":7}".to_owned()];
+    lines.extend((0..after).map(|i| format!("{{\"pr\":{}}}", 100 + i)));
+    std::fs::write(dir.join("data/metrics.jsonl"), lines.join("\n")).unwrap();
+}
+
 /// A row beyond the 50 the scan reads is not found, even when it matches.
 #[test]
 fn locate_last_row_scans_only_the_last_fifty_rows() {
@@ -308,17 +340,35 @@ fn locate_last_row_scans_only_the_last_fifty_rows() {
     let argv = vec!["--pr".to_owned(), "7".to_owned()];
     // The run's row 50th from the end is found, 51st is not: either side of
     // the window, so neither a smaller nor a larger one passes.
-    for (after, found) in [(49, true), (50, false)] {
-        let mut lines = vec!["{\"pr\":7}".to_owned()];
-        lines.extend((0..after).map(|i| format!("{{\"pr\":{}}}", 100 + i)));
-        std::fs::write(dir.join("data/metrics.jsonl"), lines.join("\n")).unwrap();
-        let js = node(
-            &script("locate-last-row.mjs"),
-            &argv,
-            &dir,
-            &vars,
-            &safe_path(None),
-        );
+    let windows = [(49, true), (50, false)];
+    let inputs: Vec<Value> = windows
+        .iter()
+        .map(|(after, _)| json!({"after": after, "argv": argv}))
+        .collect();
+    let recorded = fixed_js(
+        "locate_last_row_scans_only_the_last_fifty_rows",
+        LOCATE,
+        &inputs,
+        || {
+            windows
+                .iter()
+                .map(|(after, _)| {
+                    window_ledger(&dir, *after);
+                    let js = node(
+                        &script("locate-last-row.mjs"),
+                        &argv,
+                        &dir,
+                        &vars,
+                        &safe_path(None),
+                    );
+                    to_placeholders(&run_json(&js), &dir)
+                })
+                .collect()
+        },
+    );
+    for ((after, found), js) in windows.into_iter().zip(&recorded) {
+        let js = run_from(&from_placeholders(js, &dir));
+        window_ledger(&dir, after);
         let rs = ledger::run(&argv, &env);
         if found {
             assert_eq!((js.code, js.stdout.as_str()), (0, "{\"pr\":7}\n"), "{js:?}");
@@ -417,75 +467,115 @@ fn lock_setup(dir: &Path, state: LockState) -> String {
     path.to_string_lossy().into_owned()
 }
 
-/// One lock state on both sides. A held lock gets the short wait on both, so
-/// the test does not sit out the real 15 s; the other states never reach it.
-fn lock_case(root: &Path, state: LockState, throw: bool) -> (LockResult, LockResult, Duration) {
-    let short = state == LockState::Held;
-    let wait = if short {
+/// A held lock gets the short wait on both sides, so the test does not sit
+/// out the real 15 s; the other states never reach it.
+fn short_wait(state: LockState) -> bool {
+    state == LockState::Held
+}
+
+fn lock_result(out: String, dir: &Path, path: &str) -> LockResult {
+    LockResult {
+        out: out.replace(&dir.to_string_lossy().into_owned(), "<dir>"),
+        ran: dir.join("marker").exists(),
+        lock_left: Path::new(&format!("{path}.lock")).exists(),
+    }
+}
+
+/// The script's side of one lock state, as the golden keeps it: its exit
+/// status, what `lock_case` compares, and, for a held lock, whether it
+/// waited out the short wait (`null` otherwise, so a regeneration does not
+/// record the timing of the other states).
+fn js_lock(root: &Path, state: LockState, throw: bool) -> Value {
+    let harness = root.join("harness.mjs");
+    std::fs::write(&harness, LOCK_HARNESS).unwrap();
+    let module = script("ledger-lock.mjs").to_string_lossy().into_owned();
+    let js_dir = root.join(format!("js-{state:?}-{throw}"));
+    let js_path = lock_setup(&js_dir, state);
+    let mut vars = vec![("HOME", root.to_string_lossy().into_owned())];
+    if throw {
+        vars.push(("LOCK_THROW", "1".into()));
+    }
+    if short_wait(state) {
+        vars.push(("TRIBUNAL_LEDGER_LOCK_WAIT_MS", LOCK_WAIT_MS.to_string()));
+    }
+    let started = Instant::now();
+    let js = node(
+        &harness,
+        &[
+            module,
+            js_path.clone(),
+            js_dir.join("marker").to_string_lossy().into_owned(),
+        ],
+        root,
+        &vars,
+        &safe_path(None),
+    );
+    let waited =
+        short_wait(state).then(|| started.elapsed() >= Duration::from_millis(LOCK_WAIT_MS));
+    let r = lock_result(js.stdout, &js_dir, &js_path);
+    to_placeholders(
+        &json!({"code": js.code, "stderr": js.stderr, "out": r.out, "ran": r.ran, "lockLeft": r.lock_left, "waited": waited}),
+        root,
+    )
+}
+
+/// One lock state: the script's side as recorded, the port's run now, and
+/// how long the port took.
+fn lock_case(
+    root: &Path,
+    js: &Value,
+    state: LockState,
+    throw: bool,
+) -> (LockResult, LockResult, Duration) {
+    let js = from_placeholders(js, root);
+    assert_eq!(js["code"], json!(0), "{js}");
+    let wait = if short_wait(state) {
         Duration::from_millis(LOCK_WAIT_MS)
     } else {
         ledger::WAIT
     };
-    let harness = root.join("harness.mjs");
-    std::fs::write(&harness, LOCK_HARNESS).unwrap();
-    let module = script("ledger-lock.mjs").to_string_lossy().into_owned();
-    let tag = format!("{state:?}-{throw}");
-    let js_dir = root.join(format!("js-{tag}"));
-    let rs_dir = root.join(format!("rs-{tag}"));
-    let js_path = lock_setup(&js_dir, state);
+    let rs_dir = root.join(format!("rs-{state:?}-{throw}"));
     let rs_path = lock_setup(&rs_dir, state);
     let started = Instant::now();
-    let (js, rs) = std::thread::scope(|s| {
-        let js = s.spawn(|| {
-            let mut vars = vec![("HOME", root.to_string_lossy().into_owned())];
-            if throw {
-                vars.push(("LOCK_THROW", "1".into()));
-            }
-            if short {
-                vars.push(("TRIBUNAL_LEDGER_LOCK_WAIT_MS", LOCK_WAIT_MS.to_string()));
-            }
-            node(
-                &harness,
-                &[
-                    module.clone(),
-                    js_path.clone(),
-                    js_dir.join("marker").to_string_lossy().into_owned(),
-                ],
-                root,
-                &vars,
-                &safe_path(None),
-            )
-        });
-        let rs = s.spawn(|| rust_lock(&rs_path, &rs_dir.join("marker"), throw, wait));
-        (js.join().unwrap(), rs.join().unwrap())
-    });
+    let rs = rust_lock(&rs_path, &rs_dir.join("marker"), throw, wait);
     let elapsed = started.elapsed();
-    assert_eq!(js.code, 0, "{js:?}");
-    let result = |out: String, dir: &Path, path: &str| LockResult {
-        out: out.replace(&dir.to_string_lossy().into_owned(), "<dir>"),
-        ran: dir.join("marker").exists(),
-        lock_left: Path::new(&format!("{path}.lock")).exists(),
+    let js = LockResult {
+        out: js["out"].as_str().unwrap().to_owned(),
+        ran: js["ran"].as_bool().unwrap(),
+        lock_left: js["lockLeft"].as_bool().unwrap(),
     };
-    (
-        result(js.stdout, &js_dir, &js_path),
-        result(rs, &rs_dir, &rs_path),
-        elapsed,
-    )
+    (js, lock_result(rs, &rs_dir, &rs_path), elapsed)
 }
 
 #[test]
 fn ledger_lock_matches_js_in_every_state() {
     let root = scratch("lock");
-    let mut held_waited = Duration::ZERO;
-    for (state, throw) in [
+    let states = [
         (LockState::Free, false),
         (LockState::Free, true),
         (LockState::Stale, false),
         (LockState::ReleasedSoon, false),
         (LockState::NoParent, false),
         (LockState::Held, false),
-    ] {
-        let (js, rs, elapsed) = lock_case(&root, state, throw);
+    ];
+    let inputs: Vec<Value> = states
+        .iter()
+        .map(|(state, throw)| json!({"state": format!("{state:?}"), "throw": throw, "harness": sha(LOCK_HARNESS), "waitMs": LOCK_WAIT_MS}))
+        .collect();
+    let recorded = fixed_js(
+        "ledger_lock_matches_js_in_every_state",
+        LOCK,
+        &inputs,
+        || {
+            states
+                .iter()
+                .map(|(state, throw)| js_lock(&root, *state, *throw))
+                .collect()
+        },
+    );
+    let mut held_waited = Duration::ZERO;
+    for ((state, throw), recorded) in states.into_iter().zip(&recorded) {
+        let (js, rs, elapsed) = lock_case(&root, recorded, state, throw);
         assert_eq!(js, rs, "{state:?} throw={throw}");
         match state {
             LockState::Free | LockState::Stale | LockState::ReleasedSoon => {
@@ -501,6 +591,7 @@ fn ledger_lock_matches_js_in_every_state() {
             }
             LockState::Held => {
                 held_waited = elapsed;
+                assert_eq!(recorded["waited"], json!(true), "the script did not wait");
                 assert!(!js.ran && js.lock_left, "{js:?}");
                 assert!(
                     js.out.contains(&format!("within {LOCK_WAIT_MS} ms")),
@@ -515,19 +606,17 @@ fn ledger_lock_matches_js_in_every_state() {
     );
 }
 
+/// The probe `the_lock_wait_reads_the_variable_as_the_script_does` runs, with
+/// `MODULE` standing for the module's path.
+const LOCK_WAIT_PROBE: &str =
+    "const m = await import(MODULE); process.stdout.write(`${m.DEFAULT_WAIT_MS} ${m.WAIT_MS}`);";
+
 /// The wait the script reads from `TRIBUNAL_LEDGER_LOCK_WAIT_MS` against the
 /// port's `lock_wait_from`, the 15 s default included, so shortening it for
 /// the tests above cannot hide a change to the real wait.
 #[test]
 fn the_lock_wait_reads_the_variable_as_the_script_does() {
-    let module = script("ledger-lock.mjs").to_string_lossy().into_owned();
-    let probe = format!(
-        "const m = await import({module:?}); process.stdout.write(`${{m.DEFAULT_WAIT_MS}} ${{m.WAIT_MS}}`);"
-    );
-    let root = scratch("lock-wait");
-    let probe_path = root.join("probe.mjs");
-    std::fs::write(&probe_path, probe).unwrap();
-    for v in [
+    let values = [
         None,
         Some(""),
         Some("300"),
@@ -539,18 +628,41 @@ fn the_lock_wait_reads_the_variable_as_the_script_does() {
         Some("1e3"),
         Some(" 300"),
         Some("abc"),
-    ] {
-        let vars: Vec<(&str, String)> = v
-            .map(|v| ("TRIBUNAL_LEDGER_LOCK_WAIT_MS", v.to_owned()))
-            .into_iter()
-            .collect();
-        let js = node(&probe_path, &[], &root, &vars, &safe_path(None));
+    ];
+    let inputs: Vec<Value> = values
+        .iter()
+        .map(|v| json!({"value": v, "probe": sha(LOCK_WAIT_PROBE)}))
+        .collect();
+    let recorded = fixed_js(
+        "the_lock_wait_reads_the_variable_as_the_script_does",
+        LOCK,
+        &inputs,
+        || {
+            let module = script("ledger-lock.mjs").to_string_lossy().into_owned();
+            let probe = LOCK_WAIT_PROBE.replace("MODULE", &format!("{module:?}"));
+            let root = scratch("lock-wait");
+            let probe_path = root.join("probe.mjs");
+            std::fs::write(&probe_path, probe).unwrap();
+            values
+                .iter()
+                .map(|v| {
+                    let vars: Vec<(&str, String)> = v
+                        .map(|v| ("TRIBUNAL_LEDGER_LOCK_WAIT_MS", v.to_owned()))
+                        .into_iter()
+                        .collect();
+                    let js = node(&probe_path, &[], &root, &vars, &safe_path(None));
+                    to_placeholders(&json!({"stdout": js.stdout, "stderr": js.stderr}), &root)
+                })
+                .collect()
+        },
+    );
+    for (v, js) in values.into_iter().zip(&recorded) {
         let rust = format!(
             "{} {}",
             ledger::WAIT.as_millis(),
             ledger::lock_wait_from(v).as_millis()
         );
-        assert_eq!(js.stdout, rust, "{v:?}: {}", js.stderr);
+        assert_eq!(js["stdout"], json!(rust), "{v:?}: {}", js["stderr"]);
     }
 }
 
@@ -560,20 +672,58 @@ fn the_lock_wait_reads_the_variable_as_the_script_does() {
 fn a_lone_surrogate_row_is_a_declared_difference() {
     let dir = scratch("locate-witness");
     let (env, vars) = env_for(&dir);
-    std::fs::write(
-        dir.join("data/metrics.jsonl"),
-        "{\"pr\":7,\"x\":\"\\ud800\"}\n",
-    )
-    .unwrap();
+    let row = "{\"pr\":7,\"x\":\"\\ud800\"}\n";
+    std::fs::write(dir.join("data/metrics.jsonl"), row).unwrap();
     let argv = vec!["--pr".to_owned(), "7".to_owned()];
-    let js = node(
-        &script("locate-last-row.mjs"),
-        &argv,
-        &dir,
-        &vars,
-        &safe_path(None),
+    let recorded = fixed_js(
+        "a_lone_surrogate_row_is_a_declared_difference",
+        LOCATE,
+        &[json!({"row": row, "argv": argv})],
+        || {
+            let js = node(
+                &script("locate-last-row.mjs"),
+                &argv,
+                &dir,
+                &vars,
+                &safe_path(None),
+            );
+            vec![to_placeholders(&run_json(&js), &dir)]
+        },
     );
+    let js = run_from(&from_placeholders(&recorded[0], &dir));
     let rs = ledger::run(&argv, &env);
     assert_eq!(js.stdout, "{\"pr\":7,\"x\":\"\\ud800\"}\n");
     assert_eq!(rs.stdout, "{\"pr\":7,\"x\":\"\u{FFFD}\"}\n");
+}
+
+/// The staleness check on a tree of its own: a module edited since the
+/// recording is stale, as is one newly imported or one dropped from the
+/// imports while still on disk; one deleted (retired with the Workflow) is
+/// not, and with the entry script deleted nothing is.
+#[test]
+fn a_retired_module_is_not_stale() {
+    let root = scratch("ledger-retired");
+    std::fs::create_dir_all(root.join("s")).unwrap();
+    let write = |name: &str, text: &str| std::fs::write(root.join(name), text).unwrap();
+    let entry = "import { a } from \"./dep.mjs\";\nimport { b } from \"./gone.mjs\";\n";
+    write("s/run.mjs", entry);
+    write("s/dep.mjs", "dep");
+    let recorded = json!({"s/run.mjs": entry, "s/dep.mjs": "dep", "s/gone.mjs": "gone"});
+    let keep = |t: &str| json!(t);
+    let stale = |r: &Value| stale_modules_in(&root, r, "s/run.mjs", keep);
+    assert!(stale(&recorded).is_empty());
+    write("s/dep.mjs", "dep edited");
+    assert_eq!(stale(&recorded), ["s/dep.mjs"]);
+    write("s/dep.mjs", "dep");
+    let more = format!("{entry}import {{ c }} from \"./new.mjs\";\n");
+    write("s/run.mjs", &more);
+    write("s/new.mjs", "new");
+    assert_eq!(stale(&recorded), ["s/new.mjs", "s/run.mjs"]);
+    write("s/run.mjs", "import { b } from \"./gone.mjs\";\n");
+    let dropped = json!({"s/run.mjs": "import { b } from \"./gone.mjs\";\n", "s/dep.mjs": "dep", "s/gone.mjs": "gone"});
+    assert_eq!(stale(&dropped), ["s/dep.mjs"]);
+    std::fs::remove_file(root.join("s/run.mjs")).unwrap();
+    write("s/dep.mjs", "dep edited again");
+    assert!(stale(&recorded).is_empty());
+    let _ = std::fs::remove_dir_all(&root);
 }

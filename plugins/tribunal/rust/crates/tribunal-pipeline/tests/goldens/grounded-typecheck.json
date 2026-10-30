@@ -1,0 +1,171 @@
+{
+  "recordedWith": {
+    "lib/relay.mjs": "bb05411e6b51cb228b4eb0769c1c42640cc346536092261c126192f04b395b7d",
+    "rust/oracle/span-oracle.mjs": "743d242f99cf629907da52eb254c024fc78d6b7e96983885c0954bf58869fff3",
+    "skills/review-pr/eval/extract-pure-region.mjs": "97769df2f5f39666765504272b70c273ed213da3b17d4bdc6e081f150979c98c",
+    "workflow-src/tribunal.js": "d225e8260cb0040309ffa97c3f05ee723416c53104f19eb0bab84c00cc82b746"
+  },
+  "typescript": "6.0.3",
+  "cases": [
+    {
+      "input": {
+        "name": "diagnostics",
+        "remote": "https://github.com/Acme/Widgets.git",
+        "files": [
+          [
+            "tsconfig.json",
+            "{\"compilerOptions\": {\"strict\": true, \"noEmit\": true, \"skipLibCheck\": true}, \"include\": [\"src\"]}"
+          ],
+          [
+            "src/a.ts",
+            "export const n: number = 'x';\nexport const m: string = 3;\n"
+          ],
+          [
+            "src/b.ts",
+            "export const ok = 1;\n"
+          ],
+          [
+            "scripts/x.ts",
+            "const y: number = 'z';\n"
+          ]
+        ],
+        "dirty": [],
+        "prFiles": [
+          "src/a.ts",
+          "scripts/x.ts"
+        ]
+      },
+      "js": {
+        "bash": "AMBIENT_MATCH=$(git remote get-url origin 2>/dev/null | grep -qi \"acme/widgets\" && echo yes || echo no)\nif [ \"$AMBIENT_MATCH\" != yes ]; then echo \"DEGRADED_WRONG_REPO\"; exit 0; fi\nREPO=$(git rev-parse --show-toplevel)\nif [ ! -f \"$REPO/tsconfig.json\" ]; then echo \"NO_TSCONFIG\"; exit 0; fi\nWT=$(mktemp -d \"${TMPDIR:-/tmp}/peer-review-wt-77-XXXXXX\") && rmdir \"$WT\"\ngit worktree add --force --detach \"$WT\" <SHA> >/dev/null 2>&1 || { git fetch origin <SHA> >/dev/null 2>&1; git worktree add --force --detach \"$WT\" <SHA> >/dev/null 2>&1; }\nif ! git -C \"$WT\" rev-parse HEAD >/dev/null 2>&1; then echo \"DEGRADED_NO_WORKTREE\"; exit 0; fi\necho \"CREATED_WORKTREE $WT\"\nif { [ -f \"$REPO/prisma/schema.prisma\" ] || [ -f \"$WT/prisma/schema.prisma\" ]; } && ! cmp -s \"$REPO/prisma/schema.prisma\" \"$WT/prisma/schema.prisma\"; then echo \"DEGRADED_SCHEMA_DRIFT\"; exit 0; fi\n[ -e \"$WT/node_modules\" ] || ln -s \"$REPO/node_modules\" \"$WT/node_modules\" 2>/dev/null || true\ncd \"$WT\" || { echo \"DEGRADED_NO_CD\"; exit 0; }\nif [ -f package.json ] && grep -q '\"typecheck\"' package.json; then\n  OUT=$(npm run --silent typecheck 2>&1)\nelse\n  OUT=$(npx tsc --noEmit --pretty false 2>&1)\nfi\n# Not LINES: zsh, the Bash tool's shell on macOS, treats LINES as an integer\n# and evaluates the assignment, which aborts on the first diagnostic and turns\n# a clean run into \"0\". The grounded check read \"degraded\" on every such run.\nTSC_LINES=$(printf '%s\n' \"$OUT\" | grep -E '\\): error TS' | head -500)\nif [ -z \"$TSC_LINES\" ]; then echo \"NO_DIAGNOSTICS\"; else printf '%s\n' \"$TSC_LINES\"; fi\n# Which files the typecheck actually COMPILED. \"No diagnostics\" is only evidence\n# about files inside the program: this repo's tsconfig includes src/** only, so\n# a PR living entirely under scripts/ typechecks \"clean\" without a single line\n# of it having been read. --showConfig expands include/exclude into a concrete\n# file list without doing any checking, so it is cheap.\nCOV=$(npx tsc --showConfig 2>/dev/null | PYTHONUTF8=1 python3 -c \"import sys,json\ntry: d=json.load(sys.stdin)\nexcept Exception: sys.exit(0)\nfor f in d.get('files',[]): print(f[2:] if f.startswith('./') else f)\" 2>/dev/null)\nPRF=$(mktemp \"${TMPDIR:-/tmp}/tribunal-prfiles-XXXXXX\")\ncat > \"$PRF\" <<'__PR_FILES__'\nsrc/a.ts\nscripts/x.ts\n__PR_FILES__\nif node \"$(tribunal-root)\"/lib/relay.mjs check \"$PRF\" 6b7e52a0:21 >/dev/null; then\n  printf '%s\\n' \"---COVERED--- $(printf '%s\\n' \"$COV\" | grep -c .)\"\n  printf '%s\\n' \"$COV\" | grep -F -x -f \"$PRF\"\nelse\n  printf '%s\\n' \"---COVERED--- 0\"\nfi\nrm -f \"$PRF\"",
+        "text": "CREATED_WORKTREE <wt>\nsrc/a.ts(1,14): error TS2322: Type 'string' is not assignable to type 'number'.\nsrc/a.ts(2,14): error TS2322: Type 'number' is not assignable to type 'string'.\n---COVERED--- 2\nsrc/a.ts"
+      }
+    },
+    {
+      "input": {
+        "name": "clean",
+        "remote": "https://github.com/Acme/Widgets.git",
+        "files": [
+          [
+            "tsconfig.json",
+            "{\"compilerOptions\": {\"strict\": true, \"noEmit\": true, \"skipLibCheck\": true}, \"include\": [\"src\"]}"
+          ],
+          [
+            "src/a.ts",
+            "export const n = 1;\n"
+          ]
+        ],
+        "dirty": [],
+        "prFiles": [
+          "src/a.ts"
+        ]
+      },
+      "js": {
+        "bash": "AMBIENT_MATCH=$(git remote get-url origin 2>/dev/null | grep -qi \"acme/widgets\" && echo yes || echo no)\nif [ \"$AMBIENT_MATCH\" != yes ]; then echo \"DEGRADED_WRONG_REPO\"; exit 0; fi\nREPO=$(git rev-parse --show-toplevel)\nif [ ! -f \"$REPO/tsconfig.json\" ]; then echo \"NO_TSCONFIG\"; exit 0; fi\nWT=$(mktemp -d \"${TMPDIR:-/tmp}/peer-review-wt-77-XXXXXX\") && rmdir \"$WT\"\ngit worktree add --force --detach \"$WT\" <SHA> >/dev/null 2>&1 || { git fetch origin <SHA> >/dev/null 2>&1; git worktree add --force --detach \"$WT\" <SHA> >/dev/null 2>&1; }\nif ! git -C \"$WT\" rev-parse HEAD >/dev/null 2>&1; then echo \"DEGRADED_NO_WORKTREE\"; exit 0; fi\necho \"CREATED_WORKTREE $WT\"\nif { [ -f \"$REPO/prisma/schema.prisma\" ] || [ -f \"$WT/prisma/schema.prisma\" ]; } && ! cmp -s \"$REPO/prisma/schema.prisma\" \"$WT/prisma/schema.prisma\"; then echo \"DEGRADED_SCHEMA_DRIFT\"; exit 0; fi\n[ -e \"$WT/node_modules\" ] || ln -s \"$REPO/node_modules\" \"$WT/node_modules\" 2>/dev/null || true\ncd \"$WT\" || { echo \"DEGRADED_NO_CD\"; exit 0; }\nif [ -f package.json ] && grep -q '\"typecheck\"' package.json; then\n  OUT=$(npm run --silent typecheck 2>&1)\nelse\n  OUT=$(npx tsc --noEmit --pretty false 2>&1)\nfi\n# Not LINES: zsh, the Bash tool's shell on macOS, treats LINES as an integer\n# and evaluates the assignment, which aborts on the first diagnostic and turns\n# a clean run into \"0\". The grounded check read \"degraded\" on every such run.\nTSC_LINES=$(printf '%s\n' \"$OUT\" | grep -E '\\): error TS' | head -500)\nif [ -z \"$TSC_LINES\" ]; then echo \"NO_DIAGNOSTICS\"; else printf '%s\n' \"$TSC_LINES\"; fi\n# Which files the typecheck actually COMPILED. \"No diagnostics\" is only evidence\n# about files inside the program: this repo's tsconfig includes src/** only, so\n# a PR living entirely under scripts/ typechecks \"clean\" without a single line\n# of it having been read. --showConfig expands include/exclude into a concrete\n# file list without doing any checking, so it is cheap.\nCOV=$(npx tsc --showConfig 2>/dev/null | PYTHONUTF8=1 python3 -c \"import sys,json\ntry: d=json.load(sys.stdin)\nexcept Exception: sys.exit(0)\nfor f in d.get('files',[]): print(f[2:] if f.startswith('./') else f)\" 2>/dev/null)\nPRF=$(mktemp \"${TMPDIR:-/tmp}/tribunal-prfiles-XXXXXX\")\ncat > \"$PRF\" <<'__PR_FILES__'\nsrc/a.ts\n__PR_FILES__\nif node \"$(tribunal-root)\"/lib/relay.mjs check \"$PRF\" c2ed2ac1:8 >/dev/null; then\n  printf '%s\\n' \"---COVERED--- $(printf '%s\\n' \"$COV\" | grep -c .)\"\n  printf '%s\\n' \"$COV\" | grep -F -x -f \"$PRF\"\nelse\n  printf '%s\\n' \"---COVERED--- 0\"\nfi\nrm -f \"$PRF\"",
+        "text": "CREATED_WORKTREE <wt>\nNO_DIAGNOSTICS\n---COVERED--- 1\nsrc/a.ts"
+      }
+    },
+    {
+      "input": {
+        "name": "script",
+        "remote": "https://github.com/Acme/Widgets.git",
+        "files": [
+          [
+            "tsconfig.json",
+            "{\"compilerOptions\": {\"strict\": true, \"noEmit\": true, \"skipLibCheck\": true}, \"include\": [\"src\"]}"
+          ],
+          [
+            "package.json",
+            "{\"name\": \"w\", \"scripts\": {\"typecheck\": \"echo 'lint error: not a diagnostic' && tsc --noEmit --pretty false\"}}"
+          ],
+          [
+            "src/a.ts",
+            "export const n: number = 'x';\n"
+          ]
+        ],
+        "dirty": [],
+        "prFiles": []
+      },
+      "js": {
+        "bash": "AMBIENT_MATCH=$(git remote get-url origin 2>/dev/null | grep -qi \"acme/widgets\" && echo yes || echo no)\nif [ \"$AMBIENT_MATCH\" != yes ]; then echo \"DEGRADED_WRONG_REPO\"; exit 0; fi\nREPO=$(git rev-parse --show-toplevel)\nif [ ! -f \"$REPO/tsconfig.json\" ]; then echo \"NO_TSCONFIG\"; exit 0; fi\nWT=$(mktemp -d \"${TMPDIR:-/tmp}/peer-review-wt-77-XXXXXX\") && rmdir \"$WT\"\ngit worktree add --force --detach \"$WT\" <SHA> >/dev/null 2>&1 || { git fetch origin <SHA> >/dev/null 2>&1; git worktree add --force --detach \"$WT\" <SHA> >/dev/null 2>&1; }\nif ! git -C \"$WT\" rev-parse HEAD >/dev/null 2>&1; then echo \"DEGRADED_NO_WORKTREE\"; exit 0; fi\necho \"CREATED_WORKTREE $WT\"\nif { [ -f \"$REPO/prisma/schema.prisma\" ] || [ -f \"$WT/prisma/schema.prisma\" ]; } && ! cmp -s \"$REPO/prisma/schema.prisma\" \"$WT/prisma/schema.prisma\"; then echo \"DEGRADED_SCHEMA_DRIFT\"; exit 0; fi\n[ -e \"$WT/node_modules\" ] || ln -s \"$REPO/node_modules\" \"$WT/node_modules\" 2>/dev/null || true\ncd \"$WT\" || { echo \"DEGRADED_NO_CD\"; exit 0; }\nif [ -f package.json ] && grep -q '\"typecheck\"' package.json; then\n  OUT=$(npm run --silent typecheck 2>&1)\nelse\n  OUT=$(npx tsc --noEmit --pretty false 2>&1)\nfi\n# Not LINES: zsh, the Bash tool's shell on macOS, treats LINES as an integer\n# and evaluates the assignment, which aborts on the first diagnostic and turns\n# a clean run into \"0\". The grounded check read \"degraded\" on every such run.\nTSC_LINES=$(printf '%s\n' \"$OUT\" | grep -E '\\): error TS' | head -500)\nif [ -z \"$TSC_LINES\" ]; then echo \"NO_DIAGNOSTICS\"; else printf '%s\n' \"$TSC_LINES\"; fi\n# Which files the typecheck actually COMPILED. \"No diagnostics\" is only evidence\n# about files inside the program: this repo's tsconfig includes src/** only, so\n# a PR living entirely under scripts/ typechecks \"clean\" without a single line\n# of it having been read. --showConfig expands include/exclude into a concrete\n# file list without doing any checking, so it is cheap.\nCOV=$(npx tsc --showConfig 2>/dev/null | PYTHONUTF8=1 python3 -c \"import sys,json\ntry: d=json.load(sys.stdin)\nexcept Exception: sys.exit(0)\nfor f in d.get('files',[]): print(f[2:] if f.startswith('./') else f)\" 2>/dev/null)\nPRF=$(mktemp \"${TMPDIR:-/tmp}/tribunal-prfiles-XXXXXX\")\ncat > \"$PRF\" <<'__PR_FILES__'\n\n__PR_FILES__\nif node \"$(tribunal-root)\"/lib/relay.mjs check \"$PRF\" 00000000:0 >/dev/null; then\n  printf '%s\\n' \"---COVERED--- $(printf '%s\\n' \"$COV\" | grep -c .)\"\n  printf '%s\\n' \"$COV\" | grep -F -x -f \"$PRF\"\nelse\n  printf '%s\\n' \"---COVERED--- 0\"\nfi\nrm -f \"$PRF\"",
+        "text": "CREATED_WORKTREE <wt>\nsrc/a.ts(1,14): error TS2322: Type 'string' is not assignable to type 'number'.\n---COVERED--- 1"
+      }
+    },
+    {
+      "input": {
+        "name": "no-tsconfig",
+        "remote": "https://github.com/Acme/Widgets.git",
+        "files": [
+          [
+            "src/a.ts",
+            "export const n = 1;\n"
+          ]
+        ],
+        "dirty": [],
+        "prFiles": [
+          "src/a.ts"
+        ]
+      },
+      "js": {
+        "bash": "AMBIENT_MATCH=$(git remote get-url origin 2>/dev/null | grep -qi \"acme/widgets\" && echo yes || echo no)\nif [ \"$AMBIENT_MATCH\" != yes ]; then echo \"DEGRADED_WRONG_REPO\"; exit 0; fi\nREPO=$(git rev-parse --show-toplevel)\nif [ ! -f \"$REPO/tsconfig.json\" ]; then echo \"NO_TSCONFIG\"; exit 0; fi\nWT=$(mktemp -d \"${TMPDIR:-/tmp}/peer-review-wt-77-XXXXXX\") && rmdir \"$WT\"\ngit worktree add --force --detach \"$WT\" <SHA> >/dev/null 2>&1 || { git fetch origin <SHA> >/dev/null 2>&1; git worktree add --force --detach \"$WT\" <SHA> >/dev/null 2>&1; }\nif ! git -C \"$WT\" rev-parse HEAD >/dev/null 2>&1; then echo \"DEGRADED_NO_WORKTREE\"; exit 0; fi\necho \"CREATED_WORKTREE $WT\"\nif { [ -f \"$REPO/prisma/schema.prisma\" ] || [ -f \"$WT/prisma/schema.prisma\" ]; } && ! cmp -s \"$REPO/prisma/schema.prisma\" \"$WT/prisma/schema.prisma\"; then echo \"DEGRADED_SCHEMA_DRIFT\"; exit 0; fi\n[ -e \"$WT/node_modules\" ] || ln -s \"$REPO/node_modules\" \"$WT/node_modules\" 2>/dev/null || true\ncd \"$WT\" || { echo \"DEGRADED_NO_CD\"; exit 0; }\nif [ -f package.json ] && grep -q '\"typecheck\"' package.json; then\n  OUT=$(npm run --silent typecheck 2>&1)\nelse\n  OUT=$(npx tsc --noEmit --pretty false 2>&1)\nfi\n# Not LINES: zsh, the Bash tool's shell on macOS, treats LINES as an integer\n# and evaluates the assignment, which aborts on the first diagnostic and turns\n# a clean run into \"0\". The grounded check read \"degraded\" on every such run.\nTSC_LINES=$(printf '%s\n' \"$OUT\" | grep -E '\\): error TS' | head -500)\nif [ -z \"$TSC_LINES\" ]; then echo \"NO_DIAGNOSTICS\"; else printf '%s\n' \"$TSC_LINES\"; fi\n# Which files the typecheck actually COMPILED. \"No diagnostics\" is only evidence\n# about files inside the program: this repo's tsconfig includes src/** only, so\n# a PR living entirely under scripts/ typechecks \"clean\" without a single line\n# of it having been read. --showConfig expands include/exclude into a concrete\n# file list without doing any checking, so it is cheap.\nCOV=$(npx tsc --showConfig 2>/dev/null | PYTHONUTF8=1 python3 -c \"import sys,json\ntry: d=json.load(sys.stdin)\nexcept Exception: sys.exit(0)\nfor f in d.get('files',[]): print(f[2:] if f.startswith('./') else f)\" 2>/dev/null)\nPRF=$(mktemp \"${TMPDIR:-/tmp}/tribunal-prfiles-XXXXXX\")\ncat > \"$PRF\" <<'__PR_FILES__'\nsrc/a.ts\n__PR_FILES__\nif node \"$(tribunal-root)\"/lib/relay.mjs check \"$PRF\" c2ed2ac1:8 >/dev/null; then\n  printf '%s\\n' \"---COVERED--- $(printf '%s\\n' \"$COV\" | grep -c .)\"\n  printf '%s\\n' \"$COV\" | grep -F -x -f \"$PRF\"\nelse\n  printf '%s\\n' \"---COVERED--- 0\"\nfi\nrm -f \"$PRF\"",
+        "text": "NO_TSCONFIG"
+      }
+    },
+    {
+      "input": {
+        "name": "wrong-repo",
+        "remote": "https://github.com/other/thing.git",
+        "files": [
+          [
+            "tsconfig.json",
+            "{\"compilerOptions\": {\"strict\": true, \"noEmit\": true, \"skipLibCheck\": true}, \"include\": [\"src\"]}"
+          ],
+          [
+            "src/a.ts",
+            "export const n = 1;\n"
+          ]
+        ],
+        "dirty": [],
+        "prFiles": [
+          "src/a.ts"
+        ]
+      },
+      "js": {
+        "bash": "AMBIENT_MATCH=$(git remote get-url origin 2>/dev/null | grep -qi \"acme/widgets\" && echo yes || echo no)\nif [ \"$AMBIENT_MATCH\" != yes ]; then echo \"DEGRADED_WRONG_REPO\"; exit 0; fi\nREPO=$(git rev-parse --show-toplevel)\nif [ ! -f \"$REPO/tsconfig.json\" ]; then echo \"NO_TSCONFIG\"; exit 0; fi\nWT=$(mktemp -d \"${TMPDIR:-/tmp}/peer-review-wt-77-XXXXXX\") && rmdir \"$WT\"\ngit worktree add --force --detach \"$WT\" <SHA> >/dev/null 2>&1 || { git fetch origin <SHA> >/dev/null 2>&1; git worktree add --force --detach \"$WT\" <SHA> >/dev/null 2>&1; }\nif ! git -C \"$WT\" rev-parse HEAD >/dev/null 2>&1; then echo \"DEGRADED_NO_WORKTREE\"; exit 0; fi\necho \"CREATED_WORKTREE $WT\"\nif { [ -f \"$REPO/prisma/schema.prisma\" ] || [ -f \"$WT/prisma/schema.prisma\" ]; } && ! cmp -s \"$REPO/prisma/schema.prisma\" \"$WT/prisma/schema.prisma\"; then echo \"DEGRADED_SCHEMA_DRIFT\"; exit 0; fi\n[ -e \"$WT/node_modules\" ] || ln -s \"$REPO/node_modules\" \"$WT/node_modules\" 2>/dev/null || true\ncd \"$WT\" || { echo \"DEGRADED_NO_CD\"; exit 0; }\nif [ -f package.json ] && grep -q '\"typecheck\"' package.json; then\n  OUT=$(npm run --silent typecheck 2>&1)\nelse\n  OUT=$(npx tsc --noEmit --pretty false 2>&1)\nfi\n# Not LINES: zsh, the Bash tool's shell on macOS, treats LINES as an integer\n# and evaluates the assignment, which aborts on the first diagnostic and turns\n# a clean run into \"0\". The grounded check read \"degraded\" on every such run.\nTSC_LINES=$(printf '%s\n' \"$OUT\" | grep -E '\\): error TS' | head -500)\nif [ -z \"$TSC_LINES\" ]; then echo \"NO_DIAGNOSTICS\"; else printf '%s\n' \"$TSC_LINES\"; fi\n# Which files the typecheck actually COMPILED. \"No diagnostics\" is only evidence\n# about files inside the program: this repo's tsconfig includes src/** only, so\n# a PR living entirely under scripts/ typechecks \"clean\" without a single line\n# of it having been read. --showConfig expands include/exclude into a concrete\n# file list without doing any checking, so it is cheap.\nCOV=$(npx tsc --showConfig 2>/dev/null | PYTHONUTF8=1 python3 -c \"import sys,json\ntry: d=json.load(sys.stdin)\nexcept Exception: sys.exit(0)\nfor f in d.get('files',[]): print(f[2:] if f.startswith('./') else f)\" 2>/dev/null)\nPRF=$(mktemp \"${TMPDIR:-/tmp}/tribunal-prfiles-XXXXXX\")\ncat > \"$PRF\" <<'__PR_FILES__'\nsrc/a.ts\n__PR_FILES__\nif node \"$(tribunal-root)\"/lib/relay.mjs check \"$PRF\" c2ed2ac1:8 >/dev/null; then\n  printf '%s\\n' \"---COVERED--- $(printf '%s\\n' \"$COV\" | grep -c .)\"\n  printf '%s\\n' \"$COV\" | grep -F -x -f \"$PRF\"\nelse\n  printf '%s\\n' \"---COVERED--- 0\"\nfi\nrm -f \"$PRF\"",
+        "text": "DEGRADED_WRONG_REPO"
+      }
+    },
+    {
+      "input": {
+        "name": "schema-drift",
+        "remote": "https://github.com/Acme/Widgets.git",
+        "files": [
+          [
+            "tsconfig.json",
+            "{\"compilerOptions\": {\"strict\": true, \"noEmit\": true, \"skipLibCheck\": true}, \"include\": [\"src\"]}"
+          ],
+          [
+            "prisma/schema.prisma",
+            "model A { id Int @id }\n"
+          ],
+          [
+            "src/a.ts",
+            "export const n = 1;\n"
+          ]
+        ],
+        "dirty": [
+          [
+            "prisma/schema.prisma",
+            "model B { id Int @id }\n"
+          ]
+        ],
+        "prFiles": [
+          "src/a.ts"
+        ]
+      },
+      "js": {
+        "bash": "AMBIENT_MATCH=$(git remote get-url origin 2>/dev/null | grep -qi \"acme/widgets\" && echo yes || echo no)\nif [ \"$AMBIENT_MATCH\" != yes ]; then echo \"DEGRADED_WRONG_REPO\"; exit 0; fi\nREPO=$(git rev-parse --show-toplevel)\nif [ ! -f \"$REPO/tsconfig.json\" ]; then echo \"NO_TSCONFIG\"; exit 0; fi\nWT=$(mktemp -d \"${TMPDIR:-/tmp}/peer-review-wt-77-XXXXXX\") && rmdir \"$WT\"\ngit worktree add --force --detach \"$WT\" <SHA> >/dev/null 2>&1 || { git fetch origin <SHA> >/dev/null 2>&1; git worktree add --force --detach \"$WT\" <SHA> >/dev/null 2>&1; }\nif ! git -C \"$WT\" rev-parse HEAD >/dev/null 2>&1; then echo \"DEGRADED_NO_WORKTREE\"; exit 0; fi\necho \"CREATED_WORKTREE $WT\"\nif { [ -f \"$REPO/prisma/schema.prisma\" ] || [ -f \"$WT/prisma/schema.prisma\" ]; } && ! cmp -s \"$REPO/prisma/schema.prisma\" \"$WT/prisma/schema.prisma\"; then echo \"DEGRADED_SCHEMA_DRIFT\"; exit 0; fi\n[ -e \"$WT/node_modules\" ] || ln -s \"$REPO/node_modules\" \"$WT/node_modules\" 2>/dev/null || true\ncd \"$WT\" || { echo \"DEGRADED_NO_CD\"; exit 0; }\nif [ -f package.json ] && grep -q '\"typecheck\"' package.json; then\n  OUT=$(npm run --silent typecheck 2>&1)\nelse\n  OUT=$(npx tsc --noEmit --pretty false 2>&1)\nfi\n# Not LINES: zsh, the Bash tool's shell on macOS, treats LINES as an integer\n# and evaluates the assignment, which aborts on the first diagnostic and turns\n# a clean run into \"0\". The grounded check read \"degraded\" on every such run.\nTSC_LINES=$(printf '%s\n' \"$OUT\" | grep -E '\\): error TS' | head -500)\nif [ -z \"$TSC_LINES\" ]; then echo \"NO_DIAGNOSTICS\"; else printf '%s\n' \"$TSC_LINES\"; fi\n# Which files the typecheck actually COMPILED. \"No diagnostics\" is only evidence\n# about files inside the program: this repo's tsconfig includes src/** only, so\n# a PR living entirely under scripts/ typechecks \"clean\" without a single line\n# of it having been read. --showConfig expands include/exclude into a concrete\n# file list without doing any checking, so it is cheap.\nCOV=$(npx tsc --showConfig 2>/dev/null | PYTHONUTF8=1 python3 -c \"import sys,json\ntry: d=json.load(sys.stdin)\nexcept Exception: sys.exit(0)\nfor f in d.get('files',[]): print(f[2:] if f.startswith('./') else f)\" 2>/dev/null)\nPRF=$(mktemp \"${TMPDIR:-/tmp}/tribunal-prfiles-XXXXXX\")\ncat > \"$PRF\" <<'__PR_FILES__'\nsrc/a.ts\n__PR_FILES__\nif node \"$(tribunal-root)\"/lib/relay.mjs check \"$PRF\" c2ed2ac1:8 >/dev/null; then\n  printf '%s\\n' \"---COVERED--- $(printf '%s\\n' \"$COV\" | grep -c .)\"\n  printf '%s\\n' \"$COV\" | grep -F -x -f \"$PRF\"\nelse\n  printf '%s\\n' \"---COVERED--- 0\"\nfi\nrm -f \"$PRF\"",
+        "text": "CREATED_WORKTREE <wt>\nDEGRADED_SCHEMA_DRIFT"
+      }
+    }
+  ]
+}

@@ -6,6 +6,17 @@
 //! of `trim`, line terminators other than `\n`, non-ASCII case folding, and
 //! JSON values of the wrong type. The generator is deterministic, so a failure
 //! reproduces.
+//!
+//! The JavaScript's side is read from `tests/goldens/oracle/differential.json`
+//! (see `common`): the workflow is being retired, so a run starts only the
+//! port. The file keeps each call's results under a SHA-256 of its inputs and
+//! a SHA-256 of every region's text, so a region edited without regenerating
+//! fails here; with the workflow gone the golden is final. The last tests
+//! check that record and replay machinery itself. Regenerate:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-core --test differential`.
+//! The ignored recorded-reports test is not in the golden: its inputs live
+//! outside this repository and are not to be copied into it, so with the
+//! golden in place it fails asking for a regeneration.
 
 mod common;
 
@@ -246,4 +257,86 @@ fn report_verdict_matches_js_on_recorded_reports() {
     }
     let js = oracle("REPORT-VERDICT", &["pinReportVerdict"], &[], &calls);
     assert_same("pinReportVerdict (recorded)", &calls, &rust, &js);
+}
+
+#[test]
+fn sha256_matches_node() {
+    assert_eq!(
+        sha256_hex(b""),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+    assert_eq!(
+        sha256_hex(b"abc"),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    assert_eq!(
+        sha256_hex(&[b'a'; 1000]),
+        "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3"
+    );
+}
+
+/// The staleness check on a tree of its own: a region or oracle file edited
+/// since the recording is stale, an oracle file gone is not, and with the
+/// workflow gone (retired) nothing is.
+#[test]
+fn a_retired_oracle_is_not_stale() {
+    let root = std::env::temp_dir().join(format!("tribunal-oracle-retired-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let write = |name: &str, text: &str| {
+        let at = root.join(name);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::fs::write(at, text).unwrap();
+    };
+    let workflow = "x\n// ===== BEGIN R =====\nconst a = 1;\n// ===== END R =====\ny\n// ===== BEGIN R =====\nconst b = 2;\n// ===== END R =====\n";
+    write(ORACLE_WORKFLOW, workflow);
+    for f in ORACLE_FILES {
+        write(f, "oracle");
+    }
+    let recorded = json!(oracle_sources(&root, &["R"])
+        .into_iter()
+        .map(|(k, sha)| (k, sha.unwrap()))
+        .collect::<std::collections::BTreeMap<_, _>>());
+    assert_eq!(
+        recorded[format!("{ORACLE_WORKFLOW}#R")],
+        json!(sha256_hex(b"\nconst a = 1;\n\n\nconst b = 2;\n"))
+    );
+    assert!(oracle_stale(&recorded, &root).is_empty());
+    write(ORACLE_WORKFLOW, &format!("{workflow}// unrelated edit\n"));
+    assert!(oracle_stale(&recorded, &root).is_empty());
+    write(
+        ORACLE_WORKFLOW,
+        &workflow.replace("const b = 2", "const b = 3"),
+    );
+    assert_eq!(
+        oracle_stale(&recorded, &root),
+        [format!("{ORACLE_WORKFLOW}#R")]
+    );
+    write(ORACLE_WORKFLOW, workflow);
+    write(ORACLE_FILES[0], "edited");
+    assert_eq!(oracle_stale(&recorded, &root), [ORACLE_FILES[0]]);
+    std::fs::remove_file(root.join(ORACLE_FILES[0])).unwrap();
+    std::fs::remove_file(root.join(ORACLE_FILES[1])).unwrap();
+    assert!(oracle_stale(&recorded, &root).is_empty());
+    write(ORACLE_FILES[0], "edited");
+    std::fs::remove_file(root.join(ORACLE_WORKFLOW)).unwrap();
+    assert!(oracle_stale(&recorded, &root).is_empty());
+    assert!(oracle_sources(&root, &["R"]).values().any(Option::is_none));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A replay returns what was recorded for the same call, and a call the
+/// golden lacks fails with the regeneration command instead of running node.
+#[test]
+#[should_panic(
+    expected = "TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-core --test differential"
+)]
+fn a_call_missing_from_the_golden_fails() {
+    let calls = [json!({"fn": "f", "args": [1]})];
+    let key = oracle_call_key("R", &["f"], &[], &calls);
+    let golden = json!({"calls": {key: {"region": "R", "results": [{"ok": 2}]}}});
+    assert_eq!(
+        oracle_replay(&golden, "R", &["f"], &[], &calls),
+        [json!({"ok": 2})]
+    );
+    oracle_replay(&golden, "R", &["f"], &["D"], &calls);
 }
