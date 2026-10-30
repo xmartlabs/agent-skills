@@ -70,10 +70,27 @@ push.
 ./release.sh 31 --portable             # no test-data directory on this machine
 ```
 
-**Which gate runs.** With `TRIBUNAL_HARNESS_DATA` set, the full battery. Without it,
-`release.sh` refuses, unless you pass `--portable`: then only the replays that need no
-data run, and the row says `portable (N need data, not run)` instead of `full`. The log
-is the plugin's own `RELEASES.md`, and its notes stay generic.
+**What the gate checks.** The binary is the default engine, so the gate tests the
+binary, from `rust/`: `cargo fmt --check`, `cargo clippy -D warnings` and
+`cargo test --workspace --locked`. It then checks the pin. The tag in
+`rust/release.json` has to be in the clone, and nothing that ships in the binary may
+have changed since that tag. That means everything under `rust/` except Markdown,
+`crates/*/tests/` and `release.json`, plus the files outside `rust/` that the crates
+compile in with `include_str!`. The pinned archive is then downloaded into an empty
+directory, checked against its sha256, and has to print the tag's version. A Rust
+change merged without a release turns the gate red with the list of files, so cut a
+binary first (`rust/README.md`, "A release"). Last come the two replays of
+JavaScript the Rust path still runs: `replay-rust-engine.mjs` (the launcher) and
+`replay-frontier.mjs` (the client-name ratchet). The Workflow's own replays are not
+in the gate. Run them by hand, as above, when a change touches the Workflow or its
+scripts.
+
+**Which gate runs.** With `TRIBUNAL_HARNESS_DATA` set, the full gate. Without it,
+`release.sh` refuses unless you pass `--portable`: then the client-name scan cannot
+run, and the row says `portable (client-name scan not run)` instead of `full`. The
+log is the plugin's own `RELEASES.md`, and its notes stay generic. Rows recorded
+since the gate moved to the Rust suite name a `rust-battery-` id, and the older ones
+a `pr-battery-` id.
 
 **`TRIBUNAL_TS_FROM`.** `replay-attention-facts.mjs` and `replay-binding-graph.mjs` parse their fixtures with the
 `typescript` package, which this plugin does not ship; at review time the reviewed
@@ -108,7 +125,7 @@ The order it enforces, and why each step sits where it does:
 
 # 1. Record — the row it appends to RELEASES.md is part of what the commit
 #    freezes. Commit first and the commit lacks its own record. Refuses outright
-#    if the offline battery is red, if --notes-file is missing, or if that file
+#    if the gate is red, if --notes-file is missing, or if that file
 #    is empty. --tag is passed in because the tag does not exist until step 4,
 #    so release.mjs cannot derive it without naming the PREVIOUS release.
 node eval/release.mjs --record --tag tribunal/v31 --notes-file <path>   # from skills/review-pr
