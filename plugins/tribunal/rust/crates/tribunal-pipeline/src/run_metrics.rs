@@ -7,12 +7,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde_json::{json, Map, Value};
-use tribunal_agent::DispatchResult;
+use tribunal_agent::{DispatchResult, Exit};
 use tribunal_context::inflight;
 use tribunal_context::ledger::LedgerEnv;
 use tribunal_context::persist_run::{self, PersistRun};
 use tribunal_context::review_record;
 use tribunal_core::js;
+use tribunal_core::lens::coverage_gaps::kind_counts;
 use tribunal_core::lens::js_ext::to_js_string;
 use tribunal_core::profile::lens_foci::foci_label_for;
 use tribunal_core::profile::profile_lookup::risk_path_rules;
@@ -442,6 +443,55 @@ fn last_row(data_dir: &Path) -> Option<Value> {
     }))
 }
 
+/// Why a lens dispatch came back without an answer, read from its exit and
+/// what the CLI printed: `rate-limit`, `overloaded`, `auth`, `timeout`,
+/// `killed`, `spawn-failed`, `no-answer` (it exited 0 with no schema'd
+/// answer) or `error`.
+fn failure_class(d: &DispatchResult) -> &'static str {
+    let said = format!(
+        "{} {}",
+        d.stderr_tail,
+        d.output
+            .as_ref()
+            .and_then(|o| o.result.as_deref())
+            .unwrap_or("")
+    )
+    .to_lowercase();
+    let has = |words: &[&str]| words.iter().any(|w| said.contains(w));
+    match &d.exit {
+        Exit::TimedOut => "timeout",
+        Exit::Killed(_) => "killed",
+        Exit::SpawnFailed(_) => "spawn-failed",
+        _ if has(&["429", "rate limit", "rate_limit", "usage limit"]) => "rate-limit",
+        _ if has(&["529", "overloaded"]) => "overloaded",
+        _ if has(&[
+            "401",
+            "403",
+            "authentication",
+            "not logged in",
+            "invalid api key",
+        ]) =>
+        {
+            "auth"
+        }
+        Exit::Code(0) => "no-answer",
+        Exit::Code(_) => "error",
+    }
+}
+
+/// The lens dispatches that returned no answer, by lens and cause: the
+/// row's `lensFailures`.
+fn lens_failures(labels: &[String], lenses: &[DispatchResult]) -> Value {
+    Value::Array(
+        labels
+            .iter()
+            .zip(lenses)
+            .filter(|(_, d)| d.structured().is_none())
+            .map(|(l, d)| json!({"lens": l, "cause": failure_class(d)}))
+            .collect(),
+    )
+}
+
 /// The end of the Synthesize phase: build the row, write the payload files,
 /// run `persist-run`, fold what it prints back into the row, and check the
 /// row landed.
@@ -484,6 +534,12 @@ pub fn persist_phase(
     metrics["pluginVersion"] =
         tribunal_context::post_footer::own_plugin_version(&rt.plugin_root.to_string_lossy())
             .unwrap_or(Value::Null);
+    metrics["lensNotReachedKinds"] = kind_counts(&review.candidates.lens_gaps);
+    metrics["unreadRiskFiles"] = json!(synthesis.unread_risk_files);
+    metrics["lensFailures"] = lens_failures(
+        &review.labels,
+        &review.dispatches[..lenses.min(review.dispatches.len())],
+    );
     // `agentsActual` stays null through the self-audit, as the workflow's row
     // does, and is patched in afterwards the way SKILL.md's Step 4 patches it.
     let agent_count = labelled.len();

@@ -16,9 +16,12 @@ use tribunal_context::heads::{self, HeadSetup};
 use tribunal_context::{resolve_evidence_line, resolve_verified_anchors};
 use tribunal_core::evidence::line_correction::apply_line_correction;
 use tribunal_core::js;
+use tribunal_core::lens::coverage_gaps::{coverage_banner, unread_risk_files};
 use tribunal_core::lens::js_ext::{to_js_string, utf16_prefix_lossy};
 use tribunal_core::profile::lens_foci::foci_label_for;
 use tribunal_core::profile::lens_routing::lens_agent_for;
+use tribunal_core::profile::profile_lookup::risk_path_rules;
+use tribunal_core::report::draft_comments_strip::strip_draft_comments_from_body;
 use tribunal_core::votes::evidence_resolver_degrade::evidence_resolver_failure;
 
 use crate::agent_def::{self, AgentDef};
@@ -38,7 +41,7 @@ use crate::synthesize::{
     anchored_payload, baseline_description, dispatch_failed, finish_report, graded,
     missing_identifiers, prior_check, prior_re_examined, ref_evidence, ref_evidence_targets,
     side_payloads, surviving_for_synthesis, synthesis_prompt, verdict, verified_anchors,
-    verify_prior_prompt, PriorCheck, Relay, Report, SynthesisInput, Verdict,
+    verify_prior_prompt, with_banners, PriorCheck, Relay, Report, SynthesisInput, Verdict,
 };
 use crate::verify::{
     apply_dedup, apply_typecheck_result, dedup_prompt, grounded_gate, partition_results, Dedup,
@@ -619,6 +622,9 @@ pub struct SynthesisOutcome {
     pub verdict: Verdict,
     pub prompt: String,
     pub report: Report,
+    /// The `riskPaths` files every lens that held them left unread for
+    /// budget, which keep the verdict from APPROVE.
+    pub unread_risk_files: Vec<String>,
     pub dispatches: Vec<(String, DispatchResult)>,
 }
 
@@ -770,7 +776,7 @@ pub async fn synthesize_phase<A: Agent>(
         }
         _ => json!({"ran": false, "checkedVotes": 0, "suspectVotes": 0, "suspects": []}),
     };
-    let verdict = verdict(
+    let mut verdict = verdict(
         &prior.outcome.carried,
         &re_examined,
         &surviving,
@@ -778,6 +784,19 @@ pub async fn synthesize_phase<A: Agent>(
         verify.panel.clean_sweep.as_ref(),
         review.lenses_unreturned.len(),
     )?;
+    let scopes: Vec<Option<Vec<String>>> = plan.lens_plan.iter().map(|s| s.files.clone()).collect();
+    let unread_risk = unread_risk_files(
+        &review.candidates.lens_gaps,
+        &scopes,
+        &risk_path_rules(profile)?,
+    );
+    if !unread_risk.is_empty() {
+        logs.push(format!(
+            "No lens read {} (risk path) within its budget; the verdict cannot be APPROVE",
+            unread_risk.join(", ")
+        ));
+    }
+    verdict.guess = gated_by_coverage(verdict.guess, &unread_risk);
     let prior_reviews = Value::Array(
         rc.decisions
             .prior_reviews
@@ -841,6 +860,10 @@ pub async fn synthesize_phase<A: Agent>(
         review.labels.len(),
         logs,
     )?;
+    let report = with_coverage(
+        report,
+        &coverage_banner(&review.candidates.lens_gaps, &unread_risk),
+    );
     Ok(SynthesisOutcome {
         prior,
         prior_re_examined: re_examined,
@@ -850,8 +873,33 @@ pub async fn synthesize_phase<A: Agent>(
         verdict,
         prompt,
         report,
+        unread_risk_files: unread_risk,
         dispatches,
     })
+}
+
+/// APPROVE becomes COMMENT when a `riskPaths` file went unread for budget,
+/// as it does when a lens returned nothing.
+fn gated_by_coverage(guess: &'static str, unread_risk: &[String]) -> &'static str {
+    if guess == "APPROVE" && !unread_risk.is_empty() {
+        "COMMENT"
+    } else {
+        guess
+    }
+}
+
+/// The report with the coverage lists above its draft comments, and the body
+/// as posted recomputed from it.
+fn with_coverage(report: Report, banner: &str) -> Report {
+    if banner.is_empty() {
+        return report;
+    }
+    let text = with_banners(&report.report, banner);
+    Report {
+        as_posted: strip_draft_comments_from_body(&text),
+        report: text,
+        corrected: report.corrected,
+    }
 }
 
 /// A whole review, from the operator's arguments to the report.
@@ -968,4 +1016,36 @@ pub async fn run_full<A: Agent>(
         persisted,
         post,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_unread_risk_file_turns_approve_into_comment_only() {
+        let unread = ["src/auth/token.ts".to_owned()];
+        assert_eq!(gated_by_coverage("APPROVE", &unread), "COMMENT");
+        assert_eq!(
+            gated_by_coverage("REQUEST_CHANGES", &unread),
+            "REQUEST_CHANGES"
+        );
+        assert_eq!(gated_by_coverage("APPROVE", &[]), "APPROVE");
+    }
+
+    #[test]
+    fn the_coverage_lists_go_above_the_draft_comments_and_are_posted() {
+        let body = "## Verdict: COMMENT\n\nSummary.\n\n### Draft comments\n\n- src/a.ts:3 x";
+        let r = Report {
+            report: body.to_owned(),
+            corrected: None,
+            as_posted: strip_draft_comments_from_body(body),
+        };
+        let out = with_coverage(r.clone(), "\n\n---\n\n**Check by hand.** x");
+        let at_list = out.report.find("Check by hand").unwrap();
+        assert!(at_list < out.report.find("### Draft comments").unwrap());
+        assert!(out.as_posted.contains("Check by hand"));
+        assert!(!out.as_posted.contains("### Draft comments"));
+        assert_eq!(with_coverage(r.clone(), ""), r);
+    }
 }

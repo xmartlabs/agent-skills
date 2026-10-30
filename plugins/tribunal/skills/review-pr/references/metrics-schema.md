@@ -163,7 +163,7 @@ All required, never omitted. Rationale for each is in
 | `droppedPrePanelItems` | v81 on. `[{title, file}]` for each candidate the pre-panel gate dropped as out of the diff, `[{title, file, severity}]` from 2026-10-21; `droppedPrePanel` stays the count. Since 2026-10-21 a candidate outside the diff is first re-anchored onto a changed file its `verifiedBy` or a `<dependents>` entry names (`findings[].reanchored`), so only one tied to nothing lands here. **Workflow only.** |
 | `inThreadDecisions` | v81 on. The decisions harvested from the PR's thread, `[{category, summary, source, files}]`, exactly as the PRE_DECIDED gate checked citations against them. `eval/replay-gates.mjs` needs them to reproduce a `citation-does-not-cover-finding` discard. |
 | `findings[].possiblyPreDecided` | v81 on. `{voteSource, decisionSource, summary, files}` when a vote the tally set aside as `citation-does-not-cover-finding` matched a decision whose files, like the finding's, are all in this PR (BE #2167-B4, 2026-10-18). `survived` stays true, because the panel kept it, but the finding is reported under "Pre-decided" as POSSIBLY PRE-DECIDED and is not counted toward the verdict. `null` otherwise. |
-| `findings[].placement` | v91 on. `{placement, intendedBy, proposedSeverity}` from placeSurvivor for a finding the panel kept, `null` for one it killed. `placement` is `"pre-existing"` (a strict majority of the v91 votes said `introducedByPr: "no"` and the diff does not add the finding's line), `"intended"` (a majority quoted a conventions rule, kept in `intendedBy`), or `null`. A placed finding keeps `survived: true`, is reported in its own section and is not counted toward the verdict. `proposedSeverity` is a majority's lower severity, recorded and never applied. Absent on earlier rows. |
+| `findings[].placement` | v91 on. `{placement, intendedBy, proposedSeverity}` from placeSurvivor for a finding the panel kept, `null` for one it killed. `placement` is `"pre-existing"` (a strict majority of the v91 votes said `introducedByPr: "no"` and the diff does not add the finding's line), `"intended"` (a majority quoted a conventions rule, kept in `intendedBy`), or `null`. A placed finding keeps `survived: true`, is reported in its own section and is not counted toward the verdict. `proposedSeverity` is a majority's lower severity, recorded and never applied. Only votes that filled `introducedByPr` count, and Codex never does, so on the Workflow a Claude-plus-Codex panel recorded one Claude vote's proposal as the panel's. Rust rows from the release after `tribunal-rust-v0.1.4` record it only with two or more such votes. Absent on earlier rows. |
 | `placedAside` | v91 on. How many kept findings placeSurvivor moved out of the verdict. Absent on earlier rows. |
 | `persistRelayFirstModel` | `"haiku"` or `"sonnet"`: the model the first persist relay ran on. The workflow picks it from the total bytes of the heredoc bodies the relay has to copy, sonnet above `PERSIST_HAIKU_MAX_BYTES` (32,000 since v77; 16,000 in v76). Read it with `persistRelayRetries` to see whether the threshold is in the right place: retries on `"haiku"` rows near the threshold say it is too high. Absent before v76 and again from v81, where every part is written on haiku first. **Workflow only.** |
 | `reportVerdictCorrected` | `null` when the report's "Verdict suggestion" line already named the row's `verdict`. Otherwise `{from, to, reason}`: the workflow rewrote the line to `to` (the row's `verdict`), `from` is what the report had said (`null` when unreadable or missing), and `reason` is `"mismatch"`, `"unreadable"` (no single verdict on the line, such as the unfilled template), `"multiple"` or `"missing"`. A non-null value fails the self-audit (`report-verdict-corrected`), because the prose around the line was written for the other verdict. Since v79 the verdict is decided before the report is written and printed into its template; this field measures how often the writer still disagrees. Absent before v79. **Workflow only.** |
@@ -574,6 +574,26 @@ truncated, so a lens stopped at 40 may not deliver what the 50–80 band deliver
 Regression cover: `eval/replay-lens-budget.mjs` (0 tokens) — the `notReached`
 plumbing against crashed and absent results, the union into `notChecked`, and the
 budget pinned between its measured failure floor (30) and efficiency knee (50).
+
+## Fields added for kinded gaps (Rust rows only): `lensNotReachedKinds`, `unreadRiskFiles`, `lensFailures`
+
+The Rust engine asks each lens to file a `notReached` entry as
+`{surface, file, kind}`. Rows from earlier runs, and Workflow rows, have plain
+strings, so `lensBudgetSkips` there counts everything a lens left unchecked,
+not only what it ran out of budget for. Reading 30 such entries by hand, 6
+were code a second read could cover; the rest were outside the lens's focus,
+needed running something, or sat outside the PR.
+
+| Field | Meaning |
+|---|---|
+| `lensNotReachedKinds` | `{budget, outOfFocus, needsExecution, outsidePr, unstated}`: how many entries of each kind the lenses filed. `budget` is the only kind that is a hole in coverage. `unstated` counts plain strings. |
+| `unreadRiskFiles` | The files matching a `riskPaths` rule that every lens holding them left unread for budget. A non-empty list keeps the verdict from APPROVE (it becomes COMMENT), as an unreturned lens does, and the report names the files. |
+| `lensFailures` | `[{lens, cause}]` for each lens dispatch that returned no answer. `cause` is `rate-limit`, `overloaded`, `auth`, `timeout`, `killed`, `spawn-failed`, `no-answer` or `error`, read from the exit and what the CLI printed. Recorded so a retry is built for the causes that happen, if any do. |
+
+`notChecked` keeps one string per entry: a kinded entry is written as
+`surface (kind)`. The report lists the `budget` entries and the
+`needs-execution` ones ("Check by hand") itself, after the report's text, so
+they no longer depend on the report's writer including them.
 
 ## Field added 2026-07-24 (the other 84% of the bill) — `agentCost`
 

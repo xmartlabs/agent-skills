@@ -83,7 +83,31 @@
     "notReached": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "object",
+        "properties": {
+          "surface": {
+            "type": "string"
+          },
+          "file": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "budget",
+              "out-of-focus",
+              "needs-execution",
+              "outside-pr"
+            ]
+          }
+        },
+        "required": [
+          "surface",
+          "kind"
+        ]
       }
     }
   },

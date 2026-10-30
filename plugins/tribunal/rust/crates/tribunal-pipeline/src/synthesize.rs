@@ -13,6 +13,7 @@ use serde_json::{json, Map, Value};
 use tribunal_core::evidence::ref_evidence_check::{cited_identifiers, ref_evidence_verdict};
 use tribunal_core::js;
 use tribunal_core::lens::js_ext::{to_js_string, utf16_prefix_lossy};
+use tribunal_core::panel::panel_gates::lower_severity_votes;
 use tribunal_core::profile::high_risk_surface::with_risk_path_surface;
 use tribunal_core::profile::profile_lookup::risk_path_rules;
 use tribunal_core::report::carry_forward::{
@@ -337,6 +338,14 @@ pub fn surviving_for_synthesis(surviving: &[Value]) -> Vec<Value> {
                     Value::Null
                 },
             );
+            if js::truthy(proposed) {
+                let finding = js::get(v, "finding").unwrap_or(&Value::Null);
+                let (lower, judging) = lower_severity_votes(votes_of(v), finding);
+                m.insert(
+                    "panelProposedSeverityVotes".into(),
+                    json!(format!("{lower} of {judging} refuters")),
+                );
+            }
             for k in ["failedSlots", "failedSlotsDetail", "discardedVotes"] {
                 let x = js::get(v, k);
                 m.insert(
