@@ -7,7 +7,7 @@ use serde_json::{json, Map, Value};
 use tribunal_core::js;
 use tribunal_core::lens::js_ext::to_js_string;
 use tribunal_core::profile::file_partition::partition_files_by_churn;
-use tribunal_core::profile::lens_foci::{foci_for, select_foci};
+use tribunal_core::profile::lens_foci::{foci_for, keep_correctness, lens_count_for, select_foci};
 use tribunal_core::profile::profile_lookup::risk_path_rules;
 use tribunal_core::report::carry_forward::incremental_fallback_for;
 
@@ -276,12 +276,11 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
         _ => Map::new(),
     };
     let rules = risk_path_rules(input.profile)?;
-    let foci = select_foci(&files, lens_budget, &foci_map, &rules);
-    let lens_count = match lenses_override {
-        Some(o) => o,
-        None if group_count > 1.0 => lens_budget.max(group_count),
-        None => lens_budget.min(foci.len() as f64),
-    };
+    let mut foci = select_foci(&files, lens_budget, &foci_map, &rules);
+    if lenses_override.is_none() {
+        foci = keep_correctness(foci, &foci_map);
+    }
+    let lens_count = lens_count_for(lenses_override, group_count, lens_budget, foci.len() as f64);
     if let Some(o) = lenses_override {
         logs.push(format!(
             "LENS ABLATION — lens count forced to {}, file partition collapsed to {} group(s) so coverage stays total. This run is one ARM of a deliberate A/B; its findings are not comparable to a normal run except against the other arm.",

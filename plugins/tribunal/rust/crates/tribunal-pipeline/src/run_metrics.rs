@@ -7,13 +7,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde_json::{json, Map, Value};
-use tribunal_agent::DispatchResult;
+use tribunal_agent::{DispatchResult, Exit};
 use tribunal_context::inflight;
 use tribunal_context::ledger::LedgerEnv;
 use tribunal_context::persist_run::{self, PersistRun};
 use tribunal_context::review_record;
 use tribunal_core::js;
+use tribunal_core::lens::coverage_gaps::kind_counts;
 use tribunal_core::lens::js_ext::to_js_string;
+use tribunal_core::profile::lens_foci::foci_label_for;
+use tribunal_core::profile::profile_lookup::risk_path_rules;
 
 use crate::context::{RunArgs, Runtime};
 use crate::metrics::{metrics_row, MetricsScope};
@@ -281,6 +284,7 @@ struct Tally {
     cache_creation: u64,
     output: u64,
     tool_uses: u64,
+    cost_usd: f64,
 }
 
 impl Tally {
@@ -288,6 +292,7 @@ impl Tally {
         self.agents += 1;
         self.turns += d.output.as_ref().map_or(0, |o| u64::from(o.num_turns));
         self.tool_uses += d.tool_calls.len() as u64;
+        self.cost_usd += cost_of(d);
         for u in d.model_usage().into_values() {
             self.fresh += u.input_tokens;
             self.cache_read += u.cache_read_input_tokens;
@@ -311,8 +316,66 @@ impl Tally {
             "agents": self.agents, "turns": self.turns, "inputTokens": self.input(),
             "outputTokens": self.output, "inputUnits": self.units(),
             "toolUses": self.tool_uses, "toolTurns": null, "toolUsesPerTurn": null,
+            "costUsd": usd(self.cost_usd),
         })
     }
+}
+
+/// The CLI's own estimate of a dispatch's price, at list price: what it
+/// prints as `total_cost_usd`, not a bill.
+fn cost_of(d: &DispatchResult) -> f64 {
+    d.output.as_ref().map_or(0.0, |o| o.total_cost_usd)
+}
+
+fn usd(x: f64) -> f64 {
+    (x * 10_000.0).round() / 10_000.0
+}
+
+/// One row per lens: the focus it ran, why the plan had it, and what it cost.
+/// `forced` when a risk path the PR touches forces that focus, `default`
+/// otherwise; `overBudget` when the lens sits past the size-based budget, so
+/// it exists only because the forced foci needed more lenses than the PR's
+/// size gave. A lens whose focus is not one of the profile's sentences is
+/// `unknown`.
+#[must_use]
+pub fn lens_cost(
+    foci: &[Value],
+    files: &[String],
+    lens_budget: f64,
+    overridden: bool,
+    profile: &Value,
+    lenses: &[DispatchResult],
+) -> Value {
+    let labels = foci_label_for(profile).unwrap_or_default();
+    let forced: BTreeSet<String> = risk_path_rules(profile)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|r| files.iter().any(|f| r.re.test(f)))
+        .map(|r| r.focus)
+        .collect();
+    let rows = foci
+        .iter()
+        .zip(lenses)
+        .enumerate()
+        .map(|(i, (focus, d))| {
+            let lens = focus
+                .as_str()
+                .and_then(|s| labels.get(s))
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            let output: u64 = d.model_usage().values().map(|u| u.output_tokens).sum();
+            json!({
+                "lens": lens,
+                "why": if forced.contains(lens) { "forced" } else { "default" },
+                "overBudget": !overridden && i as f64 >= lens_budget,
+                "costUsd": usd(cost_of(d)),
+                "toolUses": d.tool_calls.len(),
+                "turns": d.output.as_ref().map_or(0, |o| o.num_turns),
+                "outputTokens": output,
+            })
+        })
+        .collect();
+    Value::Array(rows)
 }
 
 /// `agentCost` in the schema's shape, from the CLI's own usage figures. The
@@ -349,6 +412,7 @@ pub fn agent_cost(dispatches: &[(&str, &DispatchResult)]) -> Value {
         "toolTurns": null,
         "toolUsesPerTurn": null,
         "agents": total.agents,
+        "costUsd": usd(total.cost_usd),
         "missingTranscripts": 0,
         "byKind": by_kind.iter().map(|(k, t)| ((*k).to_owned(), t.entry())).collect::<Map<_, _>>(),
         "byModel": by_model.iter().map(|(k, t)| (k.clone(), t.entry())).collect::<Map<_, _>>(),
@@ -379,6 +443,55 @@ fn last_row(data_dir: &Path) -> Option<Value> {
     }))
 }
 
+/// Why a lens dispatch came back without an answer, read from its exit and
+/// what the CLI printed: `rate-limit`, `overloaded`, `auth`, `timeout`,
+/// `killed`, `spawn-failed`, `no-answer` (it exited 0 with no schema'd
+/// answer) or `error`.
+fn failure_class(d: &DispatchResult) -> &'static str {
+    let said = format!(
+        "{} {}",
+        d.stderr_tail,
+        d.output
+            .as_ref()
+            .and_then(|o| o.result.as_deref())
+            .unwrap_or("")
+    )
+    .to_lowercase();
+    let has = |words: &[&str]| words.iter().any(|w| said.contains(w));
+    match &d.exit {
+        Exit::TimedOut => "timeout",
+        Exit::Killed(_) => "killed",
+        Exit::SpawnFailed(_) => "spawn-failed",
+        _ if has(&["429", "rate limit", "rate_limit", "usage limit"]) => "rate-limit",
+        _ if has(&["529", "overloaded"]) => "overloaded",
+        _ if has(&[
+            "401",
+            "403",
+            "authentication",
+            "not logged in",
+            "invalid api key",
+        ]) =>
+        {
+            "auth"
+        }
+        Exit::Code(0) => "no-answer",
+        Exit::Code(_) => "error",
+    }
+}
+
+/// The lens dispatches that returned no answer, by lens and cause: the
+/// row's `lensFailures`.
+fn lens_failures(labels: &[String], lenses: &[DispatchResult]) -> Value {
+    Value::Array(
+        labels
+            .iter()
+            .zip(lenses)
+            .filter(|(_, d)| d.structured().is_none())
+            .map(|(l, d)| json!({"lens": l, "cause": failure_class(d)}))
+            .collect(),
+    )
+}
+
 /// The end of the Synthesize phase: build the row, write the payload files,
 /// run `persist-run`, fold what it prints back into the row, and check the
 /// row landed.
@@ -406,11 +519,27 @@ pub fn persist_phase(
         .chain(synthesis.dispatches.iter().map(|(l, d)| (l.as_str(), d)))
         .collect();
     metrics["agentCost"] = agent_cost(&labelled);
+    let plan = &review.context.plan;
+    let foci: Vec<Value> = plan.lens_plan.iter().map(|s| s.focus.clone()).collect();
+    metrics["lensCost"] = lens_cost(
+        &foci,
+        &plan.files,
+        plan.lens_budget,
+        plan.lenses_override.is_some(),
+        &review.prepared.profile,
+        &review.dispatches[..lenses.min(review.dispatches.len())],
+    );
     metrics["engine"] = json!("rust");
     metrics["engineVersion"] = json!(ENGINE_VERSION);
     metrics["pluginVersion"] =
         tribunal_context::post_footer::own_plugin_version(&rt.plugin_root.to_string_lossy())
             .unwrap_or(Value::Null);
+    metrics["lensNotReachedKinds"] = kind_counts(&review.candidates.lens_gaps);
+    metrics["unreadRiskFiles"] = json!(synthesis.unread_risk_files);
+    metrics["lensFailures"] = lens_failures(
+        &review.labels,
+        &review.dispatches[..lenses.min(review.dispatches.len())],
+    );
     // `agentsActual` stays null through the self-audit, as the workflow's row
     // does, and is patched in afterwards the way SKILL.md's Step 4 patches it.
     let agent_count = labelled.len();
@@ -535,4 +664,93 @@ pub fn persist_phase(
         verified,
         detail,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+    use tribunal_agent::{CliResult, Exit, ModelUsage};
+
+    fn dispatch(cost: f64, tools: usize, output: u64) -> DispatchResult {
+        DispatchResult {
+            exit: Exit::Code(0),
+            output: Some(CliResult {
+                subtype: "success".into(),
+                is_error: false,
+                result: None,
+                structured_output: None,
+                num_turns: 3,
+                session_id: None,
+                duration_ms: 0,
+                total_cost_usd: cost,
+                model_usage: BTreeMap::from([(
+                    "claude-sonnet-5-5".to_owned(),
+                    ModelUsage {
+                        input_tokens: 0,
+                        output_tokens: output,
+                        cache_read_input_tokens: 0,
+                        cache_creation_input_tokens: 0,
+                        cost_usd: cost,
+                    },
+                )]),
+                permission_denials: Vec::new(),
+            }),
+            stderr_tail: String::new(),
+            tool_calls: vec!["Read".to_owned(); tools],
+            transcript: None,
+        }
+    }
+
+    fn profile() -> Value {
+        json!({
+            "foci": {"correctness": "c", "security": "s", "migration": "m"},
+            "riskPaths": [{"focus": "migration", "pattern": "^tests/signup"}],
+        })
+    }
+
+    #[test]
+    fn agent_cost_adds_up_dollars_per_kind() {
+        let (a, b, c) = (
+            dispatch(0.25, 1, 10),
+            dispatch(0.5, 2, 20),
+            dispatch(0.125, 0, 5),
+        );
+        let cost = agent_cost(&[("lens", &a), ("lens", &b), ("synthesize", &c)]);
+        assert_eq!(cost["costUsd"], json!(0.875));
+        assert_eq!(cost["byKind"]["lens"]["costUsd"], json!(0.75));
+        assert_eq!(cost["byKind"]["synthesize"]["costUsd"], json!(0.125));
+    }
+
+    #[test]
+    fn lens_cost_names_each_lens_and_why_it_ran() {
+        let foci = [json!("m"), json!("s"), json!("c")];
+        let files = ["tests/signup.spec.ts".to_owned()];
+        let lenses = [
+            dispatch(0.3, 8, 100),
+            dispatch(0.2, 5, 50),
+            dispatch(0.11119, 21, 70),
+        ];
+        let rows = lens_cost(&foci, &files, 2.0, false, &profile(), &lenses);
+        assert_eq!(
+            rows,
+            json!([
+                {"lens": "migration", "why": "forced", "overBudget": false, "costUsd": 0.3,
+                 "toolUses": 8, "turns": 3, "outputTokens": 100},
+                {"lens": "security", "why": "default", "overBudget": false, "costUsd": 0.2,
+                 "toolUses": 5, "turns": 3, "outputTokens": 50},
+                {"lens": "correctness", "why": "default", "overBudget": true, "costUsd": 0.1112,
+                 "toolUses": 21, "turns": 3, "outputTokens": 70},
+            ])
+        );
+    }
+
+    #[test]
+    fn an_overridden_count_is_never_over_budget() {
+        let foci = [json!("c"), json!("x")];
+        let lenses = [dispatch(0.1, 1, 1), dispatch(0.1, 1, 1)];
+        let rows = lens_cost(&foci, &[], 1.0, true, &profile(), &lenses);
+        assert_eq!(rows[1]["overBudget"], json!(false));
+        assert_eq!(rows[1]["lens"], json!("unknown"));
+    }
 }

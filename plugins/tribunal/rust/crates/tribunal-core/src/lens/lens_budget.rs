@@ -7,8 +7,19 @@ use serde_json::Value;
 use super::js_ext;
 use crate::js;
 
+/// `surface (kind)` for an entry with a string `surface`, which the Workflow's
+/// lenses never write and would print as `[object Object]`.
+fn kinded(s: &Value) -> Option<String> {
+    let surface = s.get("surface")?.as_str()?;
+    Some(match s.get("kind").and_then(Value::as_str) {
+        Some(kind) => format!("{surface} ({kind})"),
+        None => surface.to_owned(),
+    })
+}
+
 /// Ports `collectNotReached`. `results` is the review phase's result array as
 /// returned (a crashed lens is null); only the first `lens_count` are lenses.
+/// An entry with a `surface` is written as `surface (kind)`.
 pub fn collect_not_reached(results: &Value, lens_count: usize) -> Vec<String> {
     let results = match results {
         Value::Array(r) => r.as_slice(),
@@ -25,7 +36,7 @@ pub fn collect_not_reached(results: &Value, lens_count: usize) -> Vec<String> {
         for s in items {
             let s = match s {
                 Value::Null => String::new(),
-                s => js_ext::to_js_string(Some(s)),
+                s => kinded(s).unwrap_or_else(|| js_ext::to_js_string(Some(s))),
             };
             let s = js::trim(&s);
             if !s.is_empty() && !out.iter().any(|o| o == s) {
@@ -67,6 +78,19 @@ mod tests {
         let r = json!([null, {"notReached": "a.ts"}, {"notReached": ["  b.ts ", null, "b.ts"]}]);
         assert_eq!(collect_not_reached(&r, 3), ["b.ts"]);
         assert!(collect_not_reached(&r, 2).is_empty());
+    }
+
+    #[test]
+    fn a_kinded_entry_reads_as_its_surface_and_kind() {
+        let r = json!([{"notReached": [
+            {"surface": "callers of f", "file": "src/a.ts", "kind": "budget"},
+            {"surface": "callers of f", "file": "src/a.ts", "kind": "budget"},
+            {"surface": "the CI secret"}
+        ]}]);
+        assert_eq!(
+            collect_not_reached(&r, 1),
+            ["callers of f (budget)", "the CI secret"]
+        );
     }
 
     #[test]

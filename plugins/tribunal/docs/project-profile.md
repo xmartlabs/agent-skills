@@ -21,8 +21,12 @@ so a profile edit is visible in the data.
 
 `riskPaths` says which changed paths count as high-risk and which focus each one
 forces (`migration`, `security` or `dataContract`), as `{focus, pattern}` with a
-case-insensitive regular expression. The forced foci read it. Without
-`riskPaths` no path is high-risk, and the loader prints a warning saying so.
+case-insensitive regular expression. The forced foci read it. A rule naming any
+other focus is ignored. Without `riskPaths` no path is high-risk, and the loader
+prints a warning saying so. On the Rust engine, every forced focus gets a lens
+of its own and a forced focus never takes the place of `correctness`: when the
+forced foci fill the lens budget, the run adds lenses for them instead. The
+Workflow caps the lens count at the budget and drops what does not fit.
 `tribunal.inContextRiskPaths` belonged to an in-context review path that was
 removed: the loader still accepts it and nothing reads it.
 

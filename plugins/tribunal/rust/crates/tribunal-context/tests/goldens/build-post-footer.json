@@ -11,7 +11,7 @@
       "input": "134b867980e87cfb4699260662f66106fec42f1802dd129098e7d9cd920e2aa8",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex a, b · 0 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex a, b · 0 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -20,7 +20,7 @@
       "input": "6a6abb16da8bd3c64c3440d9a4408fed58f9f19885d1212301c78d81cfec95cc",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 1000 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 1000 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -29,7 +29,7 @@
       "input": "bba621c33765e2bc5f07dc8807204938fb6fbc9d1334f4ec6431d82f0b928df7",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex 7 · 0 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex 7 · 0 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -47,7 +47,7 @@
       "input": "4670bf10b41b25cebd437c58bf9f2d892290764179e9208031f29d65e021dd8f",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex [object Object] · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex [object Object] · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -74,7 +74,7 @@
       "input": "e649e21ca59e951970845a1b370ce66aa0c1f44c999f719936a571550ab5b4a6",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · 1 agent · 3m wall · 2025-01-02T03:04:05Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · 1 agent · 3m wall · 2025-01-02T03:04:05Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -110,7 +110,7 @@
       "input": "cb4b320192aa005701d9ec9f550d104c405230e703e2d23829d702ecd9adc303",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex 7 · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex 7 · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -128,7 +128,7 @@
       "input": "2df73b1f154c2d75a6cc37a21904ef0e6a7fe5adfe7f1d3aa100ed7c5812e849",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex 7 · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex 7 · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -146,7 +146,7 @@
       "input": "71c00a495d6c5000b727664ca505c09dcf726af32ea46a0fb25da1dcaf82bdf4",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex a, b · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex a, b · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -236,7 +236,7 @@
       "input": "b699424033937161f0925a163452b9b25456e43ef59400ddd5f902406ffb98db",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex 7 · 7 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex 7 · 7 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -272,7 +272,7 @@
       "input": "1ac30211f9ebd39c6df44471ade034764d13b113309a9626620d92a0dfe7c613",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · a,,b · full review · 3 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · a,,b · full review · 3 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -308,7 +308,7 @@
       "input": "915029c232ea640f350db38ccd87af792cdbf9b793ac12788df50826a2b068c2",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 1000 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 1000 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -335,7 +335,7 @@
       "input": "45fafd932335e0f351b1d1a0b68b69fdd6a786ae00e3caca40bf9dea982c39be",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 3 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 3 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -416,7 +416,7 @@
       "input": "01985c428ec9f1bb1fe2dcdba8fe9a5a96b3bf3f25c4bbe82fd1f96877a436e2",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex [object Object] · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex [object Object] · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -434,7 +434,7 @@
       "input": "8e0c19fd1579cd806b2fc635a610a5b103d1037ca4b6acff00ac40d6260f49a2",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex a, b · 3 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex a, b · 3 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -443,7 +443,7 @@
       "input": "cb382dbe2cbd7317a3b48085dda317715e629b4e5686870c850a27816cbb16e8",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex a, b · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex a, b · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -533,7 +533,7 @@
       "input": "0690ef865329e6ab0c2435aa8064f42c91f51f7b3a5ef339f9dc6e714ef205f4",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (rust 7) · tribunal-v105 · full review · codex gpt-5 · 3 agents · 30s wall · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (rust 7) · tribunal-v105 · full review · codex gpt-5 · 3 agents · 30s wall · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -542,7 +542,7 @@
       "input": "df31f3740c85cde4dcb90fded822c6a919e46d9d0e541b716eb926d7ef8917af",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -551,7 +551,7 @@
       "input": "3f31f01b6da7c3f5c1d5753f6a5e4ab091ffd56d0528ff5041530d39d0d62f3a",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · incremental review · 1000 agents · 3m wall · 2025-01-02T03:04:05Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · incremental review · 1000 agents · 3m wall · 2025-01-02T03:04:05Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -704,7 +704,7 @@
       "input": "61d1b7024aa38028b1488e5583b526a46c73d6d69e8ec19e0b88b269b75b1863",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 7 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 7 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -722,7 +722,7 @@
       "input": "045de6a90fe78b1ac698e35417aa1eaf1517c29db92a1e7e19dfbed47ff21a3a",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex true · 7 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex true · 7 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -857,7 +857,7 @@
       "input": "5aecb80cda541415e31ef441e6565656d8fd4d983823b512b5c8c8f742832507",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex 7 · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex 7 · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -938,7 +938,7 @@
       "input": "a0a9fb2e5522e69a2bb91a8d1483b883114f64a89a10a2a61b25687e9ab48383",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 7 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 7 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -956,7 +956,7 @@
       "input": "84d1218ff86a3b62303c9e32468d7cf049f37295726cc03d2231714690bab4ff",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · codex a, b · 7 agents · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · codex a, b · 7 agents · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -974,7 +974,7 @@
       "input": "0eb59ef27457e3bdee49269f754370f6cd6ceafb798cf666b8cd64e55423f922",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex gpt-5 · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex gpt-5 · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -983,7 +983,7 @@
       "input": "96bd1821010f55f95abb67c67532227247f43971bd8684bcd1ce49865ebbd6e6",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 0 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 0 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -1010,7 +1010,7 @@
       "input": "25c9c46e4a807af910a530ba80069548bac32b78286bc09a2c0139f6cc3e4f6b",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex 7 · 1 agent · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex 7 · 1 agent · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -1019,7 +1019,7 @@
       "input": "c2dd9a09b2e3c0ec482f1a99cee50dee95bab40a3c608bd2f078f95aeefe5b9f",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · incremental review · codex gpt-5 · 0 agents · 1m wall · 2025-01-02T03:04:05Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · incremental review · codex gpt-5 · 0 agents · 1m wall · 2025-01-02T03:04:05Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -1037,7 +1037,7 @@
       "input": "3bdd5c8ec98ab7a438b1718754b98b5b252164ad124421632d875a1674aab3bd",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -1064,7 +1064,7 @@
       "input": "384dddc5bf62f1880119726655549e1124fceb2a6ae8bba7821086b87d1a1183",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -1127,7 +1127,7 @@
       "input": "671805f431a1eb2903e4d9d12972a2e488ca6fb3135a59bcb023aa375bd41bc5",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · incremental review · 36 agents · 12.3K in / ≥1.5 out tokens · 3m wall · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · incremental review · 36 agents · 12.3K in / ≥1.5 out tokens · 3m wall · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -1154,7 +1154,7 @@
       "input": "7907a5e705298237e4b47762f681a14b55431346e73a609787c3f2b7bdd0c34d",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 1000 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 1000 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -1163,7 +1163,7 @@
       "input": "50e316270e3d7041a45d56f99ce39cfafb5bc30a5fbb14ab8799571260e2434a",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (rust rust-0123456789ab) · tribunal-v105 · incremental review · 7 agents · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (rust rust-0123456789ab) · tribunal-v105 · incremental review · 7 agents · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -1199,7 +1199,7 @@
       "input": "e0f2e548c2f630a0c89fe9bc7e5fe64b7e933b040e7dc4d56c8d102e75648cc1",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 1 agent · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 1 agent · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -1208,7 +1208,7 @@
       "input": "6d5aec722b2c2d362663f46394adf169e25da3eac539a786ca40d997673087cb",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 0 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 0 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -1253,7 +1253,7 @@
       "input": "dfee5a50a8c2e89eecaf941ef7e2a60acf54016450a35f5152730229f3d1f1d4",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (rust rust-0123456789ab) · tribunal-v105 · incremental review · 36 agents · 2025-01-02T03:04:05Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (rust rust-0123456789ab) · tribunal-v105 · incremental review · 36 agents · 2025-01-02T03:04:05Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -1271,7 +1271,7 @@
       "input": "b1fd8d298b569a77dcc96e472b58fd7a59f7feb8992ef20b355d569b18010161",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · incremental review · codex gpt-5 · 1000 agents · 999.5 in / ≥1.0K out tokens · -5s wall · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · incremental review · codex gpt-5 · 1000 agents · 999.5 in / ≥1.0K out tokens · -5s wall · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -1307,7 +1307,7 @@
       "input": "f6ce76386f1fb74676b48dd4b91bc3280a3943298288c2cd71b5b15927a410e1",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -1451,7 +1451,7 @@
       "input": "af095b07ca32c5cbea1ac6448b5648badec95caded4d179b17eb3c7ddf07d57c",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex [object Object] · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex [object Object] · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -1505,7 +1505,7 @@
       "input": "69e2b600cad67c0dcc4665fcceaf6a70984a3a5c4a873884ad107b3d14f7f335",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -1514,7 +1514,7 @@
       "input": "b956f0d871a9d5c02fcf64fe423284224c5503bf1190ec1c2ee60d3811131157",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 1000 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 1000 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -1532,7 +1532,7 @@
       "input": "21f0f4408f3165e6f11c42b0d08f596474fc4da4b866de0167256abd3b16f28f",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex a, b · 1 agent · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex a, b · 1 agent · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -1577,7 +1577,7 @@
       "input": "213268370cf7ae6f5b738f8bd059a7fc0fcfef25af6c7313e0316e770cdc0503",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (rust) · tribunal-v105 · incremental review · 36 agents · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (rust) · tribunal-v105 · incremental review · 36 agents · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -1586,7 +1586,7 @@
       "input": "d175b8d4dfe95f84873b6ca12380c6483a7189137a60ccb2674a970ce6189698",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 3 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 3 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -1595,7 +1595,7 @@
       "input": "a392ccb3b7b29a38a627e856b0cdc96d7ae5ed6f7b485e4f725404f0c26daba7",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex gpt-5 · 1 agent · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex gpt-5 · 1 agent · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -1613,7 +1613,7 @@
       "input": "1e53565e97a22a991d15a16a77677e9ca7d1d79443c7980411bc47876acea759",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · a,,b · incremental review · 7 agents · 2m wall · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · a,,b · incremental review · 7 agents · 2m wall · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -1622,7 +1622,7 @@
       "input": "28d3fee4d79f8726adedbd9d3348411491af9cb5d460943f3d82b7c0404ef823",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (rust) · tribunal-v105 · full review · codex a, b · 7 agents · 1.0K in / ≥1.0M out tokens · 1m wall · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (rust) · tribunal-v105 · full review · codex a, b · 7 agents · 1.0K in / ≥1.0M out tokens · 1m wall · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -1640,7 +1640,7 @@
       "input": "e81029ec663888ac971db99c80382fdc17b172dc2a51153921aac6336c926d3e",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 3 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 3 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -1649,7 +1649,7 @@
       "input": "f8c8ee6bd3d022954958dc47ddf7c46e5ad26f8c20ceda11d771c6cfdd916d84",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · incremental review · codex a, b · 1 agent · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · incremental review · codex a, b · 1 agent · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -1658,7 +1658,7 @@
       "input": "0f04c5a53a38afe46f432d168175a080b078d9e22336a3e5b9bb2745c7c84664",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex a, b · 7 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex a, b · 7 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -1667,7 +1667,7 @@
       "input": "3f7e3620a39fe822f8fcf3d77332457571d8dac26209f04ba0efb9d2214831c1",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex a, b · 0 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex a, b · 0 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -1703,7 +1703,7 @@
       "input": "c53000a1f2228b5f82eebd06ba5f8178b2d890adb3468ce1a097418e45d61c48",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (rust 7) · tribunal-v105 · full review · codex a, b · 1 agent · 1m wall · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (rust 7) · tribunal-v105 · full review · codex a, b · 1 agent · 1m wall · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -1730,7 +1730,7 @@
       "input": "ac0c9ea7d0a64b3cb97923d942cbe4f5b1dcb212073e90465fc1a5296e2f72be",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · 36 agents · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · 36 agents · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -1892,7 +1892,7 @@
       "input": "11dcae441c34ee458b574a71e19c18b1a5ffde34e9ad7d3d71b07f2ef579f028",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 1000 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 1000 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -1919,7 +1919,7 @@
       "input": "288535cdeaaa9d411ba9f96e595a9a01fb0b0efc2dfdcf470d18d899d2d5dbfc",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex a, b · 1000 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex a, b · 1000 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -1973,7 +1973,7 @@
       "input": "a26db1045eb3d26fccc82f2f0872d2abd8776078b967d74bf1b09d550694ada6",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -1982,7 +1982,7 @@
       "input": "8eadc462fd548b69d29aabdaa8d04baf4481e5600106c53821e98ce93007d462",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex gpt-5 · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex gpt-5 · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -2000,7 +2000,7 @@
       "input": "334f67f94317963de98a8751a17c3659387fb32bcb4aa38fb54f73d943a20c60",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex [object Object] · 3 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex [object Object] · 3 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2045,7 +2045,7 @@
       "input": "a52d256ccdd9253818f6ebbc5e6f52d43cd1859af029cf9a27b5abbae47214b3",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · 1 agent · 1m wall · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · 1 agent · 1m wall · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2054,7 +2054,7 @@
       "input": "09aae16ff40bd41d0337975f77c406584868442efbbaf1aa61de335d63a2795e",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · codex gpt-5 · 1 agent · 999.9K in / ≥12.3K out tokens · 3m wall · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · codex gpt-5 · 1 agent · 999.9K in / ≥12.3K out tokens · 3m wall · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2063,7 +2063,7 @@
       "input": "7367a5abbd7c64706bb2b20c855dcbb0d1e2cf964ea85266b3599730a8e840b0",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex a, b · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex a, b · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -2108,7 +2108,7 @@
       "input": "0a2ab7f6fdb58af340a7a43544a299991c2273e15d656c8310e6d619fc1a840d",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex a, b · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex a, b · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2117,7 +2117,7 @@
       "input": "6fec50975a99ba197b701edea607879dd08daf90cd046c88c86802800523caf4",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -2153,7 +2153,7 @@
       "input": "eec315483f4b9ee4d4c31180599e29f08f5b8f827bc2ee6f7b4c48c6eb239ef6",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2162,7 +2162,7 @@
       "input": "22064fa9f5dd7ecd88473fa096f50b09abb0502e3c3d24de8f88827a9636ba45",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2189,7 +2189,7 @@
       "input": "7b79946f05c803bc9853457f6c4831a3a19e9eec0c5c99c109143a78ff06400d",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (rust rust-0123456789ab) · tribunal-v105 · full review · codex gpt-5 · 7 agents · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (rust rust-0123456789ab) · tribunal-v105 · full review · codex gpt-5 · 7 agents · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2198,7 +2198,7 @@
       "input": "cb2b492c0ddf27d4709f7dfcaf340346243f7a54f8a3a94257e46f26c3497015",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · codex gpt-5 · 1000 agents · 999.9K in / ≥2500.0M out tokens · 2m wall · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · codex gpt-5 · 1000 agents · 999.9K in / ≥2500.0M out tokens · 2m wall · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -2252,7 +2252,7 @@
       "input": "90a04ae52e59209f58237bfc8a689947aef7c01bfc687a5a59e5725b7f4bb0c5",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · codex gpt-5 · 36 agents · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · codex gpt-5 · 36 agents · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2270,7 +2270,7 @@
       "input": "ae3709af9b3365126a6c61b37a306fc5e2091c4f969e5b24f2f7d675b098fc09",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex [object Object] · 7 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex [object Object] · 7 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2297,7 +2297,7 @@
       "input": "e215478f0a87f23c1f6d6163165c523fe4b84ebd28f5293f972afde03e3dd7f1",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · incremental review · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · incremental review · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -2351,7 +2351,7 @@
       "input": "8648f256b83364856487fb55637931ce741994fa5a2e83e472f5de14de818150",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 0 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 0 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -2378,7 +2378,7 @@
       "input": "963530f46550eb6f6dcfa3a6768b05e2ff77435ccc65a40bef24894068509d59",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 0 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 0 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2414,7 +2414,7 @@
       "input": "476f3b2a802f8e6095d34435177e8d345ba128331888525bcc6f146b0dadaad3",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex [object Object] · 1 agent · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex [object Object] · 1 agent · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -2495,7 +2495,7 @@
       "input": "027e79bf8cc48fbea569048e10eed53fcabd18f26fa45d0fa611b3c7c0d3455e",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 3 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 3 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -2540,7 +2540,7 @@
       "input": "7963884be30b82994ad493e5c8333cf78ccf29e994c68abafeabde47ab4f26a9",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex gpt-5 · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex gpt-5 · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2558,7 +2558,7 @@
       "input": "3ef65aace6b613082b5dac31691bfb9a0f149c4631c27a9c9f4744a53ae13ef8",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · codex a, b · 1 agent · 1.0M in / ≥0 out tokens · 3m wall · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · codex a, b · 1 agent · 1.0M in / ≥0 out tokens · 3m wall · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2567,7 +2567,7 @@
       "input": "8d592b68629eab108881468083139ac92ed831e5d5e736d5edcfe5ba60d7a895",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · 0 agents · 2m wall · 2025-01-02T03:04:05Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · 0 agents · 2m wall · 2025-01-02T03:04:05Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2612,7 +2612,7 @@
       "input": "a8587de64f55f52041ee5c8823e9c0104e6228354b930b6042b44d0d7f5d1a25",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (rust rust-0123456789ab) · tribunal-v105 · incremental review · 36 agents · 3m wall · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (rust rust-0123456789ab) · tribunal-v105 · incremental review · 36 agents · 3m wall · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -2729,7 +2729,7 @@
       "input": "858f05352af3887e63bc0a1265e271c7e3db1bbffb02b8d5849e23e18b991a19",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex gpt-5 · 3 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex gpt-5 · 3 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -2765,7 +2765,7 @@
       "input": "888fbf77f371371e0a952a9a75a30ddede5c5a4b2b32df43d4ecda450b1a1123",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · 7 agents · 2m wall · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · 7 agents · 2m wall · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2792,7 +2792,7 @@
       "input": "29caaad4777f41fa879a0adcf2b1caf59d186233b58fe34b3e2d13046dd40c2f",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex gpt-5 · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex gpt-5 · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -2801,7 +2801,7 @@
       "input": "3a46954aa4abe6c4659692ade95c9a779f205c3ab8fffa3f3d5f04467e8d27af",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex [object Object] · 1000 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex [object Object] · 1000 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2819,7 +2819,7 @@
       "input": "a14df3d2cfdee03a30c1dc54cf1b62f54b3e774d33342e795ea6373d99ada145",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -2909,7 +2909,7 @@
       "input": "4572dc034f8e72fc109ac4d337ccc14130eb882c63e22b24ccbb1a163c79def2",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · 5 · incremental review · codex a, b · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · 5 · incremental review · codex a, b · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -2963,7 +2963,7 @@
       "input": "5f36601b748e2cbac58d5a80d6676ce0e29739e4a73c2545fa0708dc8150b35c",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · codex gpt-5 · 3 agents · 1.5 in / ≥54.3K out tokens · 59.5s wall · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · codex gpt-5 · 3 agents · 1.5 in / ≥54.3K out tokens · 59.5s wall · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2972,7 +2972,7 @@
       "input": "12d621cbd19341a28ab062c9c767bd8ee87ac66455cf19d4f1b6d9b01b786f63",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 7 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 7 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2981,7 +2981,7 @@
       "input": "199b509ff591eba5a49c891449dcd8754968c6219dd25ee6ca4409b787d04d1a",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (rust) · tribunal-v105 · full review · 1 agent · 1.2M in / ≥1000000000000000.0M out tokens · 3m wall · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (rust) · tribunal-v105 · full review · 1 agent · 1.2M in / ≥1000000000000000.0M out tokens · 3m wall · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -2999,7 +2999,7 @@
       "input": "2656d128fe5db5fdf6696d2e2da5adb12f71923bffaf206215b647f86d96bfb9",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex gpt-5 · 0 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex gpt-5 · 0 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3044,7 +3044,7 @@
       "input": "62210f1c7836e10da0a98f5b56ed032537563f67e0fd901e94ba1e0138af3c72",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · incremental review · codex gpt-5 · 3 agents · -5s wall · 2025-01-02T03:04:05Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · incremental review · codex gpt-5 · 3 agents · -5s wall · 2025-01-02T03:04:05Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -3053,7 +3053,7 @@
       "input": "4997184205627e191956e39a24b4c590ccf71276c69289eaa8bb5595f2d8acc0",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex a, b · 1000 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex a, b · 1000 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3080,7 +3080,7 @@
       "input": "bb6684975b85769d9aee7b624eb92e82cd61fb31ed811b37fc0164dc17b5755d",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · incremental review · codex a, b · 3 agents · 54.3K in / ≥0 out tokens · 1m wall · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · incremental review · codex a, b · 3 agents · 54.3K in / ≥0 out tokens · 1m wall · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -3098,7 +3098,7 @@
       "input": "54adcf1e1e03e2e4e6976dcaa9a108eb5c7d820300b7b587f731bcad5c484968",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3116,7 +3116,7 @@
       "input": "e0687d08eb6863d35c76d49edda127ec45eb7ec948491d43430f76d2d2d5d58a",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 1 agent · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 1 agent · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3161,7 +3161,7 @@
       "input": "7cf96b709909803b20d534c8e56ff57505aaa7da183f579954f16b85afcd13ab",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -3197,7 +3197,7 @@
       "input": "614a1cb1ec17929f5d82f790ec3b394d7d2708191b3cbffd27349a1102901184",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -3215,7 +3215,7 @@
       "input": "d78cb7967f21a6cef3fd7bf798ae87e8e99c5fa05591176ee08a02ade259c126",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 3 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 3 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3233,7 +3233,7 @@
       "input": "f08bbbf2f7b989034b90c94eaf09b50b293a6639c5b98ca61f1ec00d76b8f609",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex gpt-5 · 7 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex gpt-5 · 7 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3269,7 +3269,7 @@
       "input": "2cd847bff8a88b64ef48aed709875c728762cb545a4a64c5354e66b5bef8bd83",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex [object Object] · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex [object Object] · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3278,7 +3278,7 @@
       "input": "51e6ce2c9b46f6d8761ca301941666849eb6df2a2206108cd29aeadd8d47c9fc",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex a, b · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex a, b · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -3296,7 +3296,7 @@
       "input": "eba02ce6d410018427831f2dda714b67d2a002880f749281d2efe50f0088f5bc",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex a, b · 7 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex a, b · 7 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3332,7 +3332,7 @@
       "input": "700d8c511bc54a563e5d532a1a40a38dfb465061ea447871fe2bf15be94e1be1",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (rust) · tribunal-v105 · incremental review · codex a, b · 1 agent · 30s wall · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (rust) · tribunal-v105 · incremental review · codex a, b · 1 agent · 30s wall · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -3350,7 +3350,7 @@
       "input": "6c95e466779aa1ca8d9d1c0265f371ba381a7437ef549baead5da44e1e2cf3e2",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -3359,7 +3359,7 @@
       "input": "b8dc48f9c44d88636ec0b27b987e91b13960716c108f712406bc3b3d9982d9bf",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · codex gpt-5 · 1000 agents · 1.5 in / ≥1.5 out tokens · 59.5s wall · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · codex gpt-5 · 1000 agents · 1.5 in / ≥1.5 out tokens · 59.5s wall · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3368,7 +3368,7 @@
       "input": "e1a4f12a5f1033e7231017abc30203ad266b03d3266da676ad310cd8ec6a9c71",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex [object Object] · 3 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex [object Object] · 3 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3386,7 +3386,7 @@
       "input": "8ff42a8595ba25407f5fc591a0089f23af6805c6cf7eb1f7d7401fa10d3677a4",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 3 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 3 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3404,7 +3404,7 @@
       "input": "a9de5c7e8d6a699726c1eeec6c9bd88856518d0dbb457ca201568b5b209c42b2",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex a, b · 0 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex a, b · 0 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -3413,7 +3413,7 @@
       "input": "0923c208407865545bec45c7040a45fd9393858e9c00d3f78c81f60ca360e184",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex gpt-5 · 1000 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex gpt-5 · 1000 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -3467,7 +3467,7 @@
       "input": "d501988f6675cf34216f6413a997e1301c760e0354430f239b41397e6f4ee149",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex 7 · 1000 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex 7 · 1000 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3503,7 +3503,7 @@
       "input": "225a9c910f26a4737a34488fadc8852043094d42199badaf3982ac4839542517",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex [object Object] · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex [object Object] · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -3521,7 +3521,7 @@
       "input": "74a1b012ce5b4bd3048426b3243d5c60bd0d97ee386dc3bbc02d9c8ccd515cc7",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex 7 · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex 7 · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3539,7 +3539,7 @@
       "input": "859900806258cda7f6bd00b0f6fad5c22a869a6dbe30f79448a783e8c129dbc7",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex gpt-5 · 7 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex gpt-5 · 7 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3557,7 +3557,7 @@
       "input": "f76ba978d0f164fdf78ca3afdc18b47fe21babf47e1a7c456849d8fea8aaa3c2",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex [object Object] · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex [object Object] · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -3575,7 +3575,7 @@
       "input": "beca851eb57ee71e8f1d140dc9b3467f92ffe9a5399d500ff3a9578e384c1f9b",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 7 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 7 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -3584,7 +3584,7 @@
       "input": "3cd0a84b334a6266b9cc1d26c4516816ee6b67337a66522a4b41a7f90359ee60",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · incremental review · 3 agents · 30s wall · 2025-01-02T03:04:05Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · incremental review · 3 agents · 30s wall · 2025-01-02T03:04:05Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -3620,7 +3620,7 @@
       "input": "ffd5dc5c0a487f3f51bdfbc54f03ff6c9615b8cf3ef6c5e0ab2cf46b4892cf5d",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex true · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex true · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -3638,7 +3638,7 @@
       "input": "c778d088b7410255ce1df8ca9d284d440f4deaf6c12d5e9981c86edaca7317f9",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · 0 agents · 1m wall · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · 0 agents · 1m wall · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3683,7 +3683,7 @@
       "input": "78b746d218f859a56eb1c6d13bdd4d3aec6823d97e757ec28a9bc032375c529a",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 1 agent · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 1 agent · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3710,7 +3710,7 @@
       "input": "a33cf0200235e569d7b3ed00125f6eb8d39b9a24ed2b54cf3e20efd6aa20ca17",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · 3 agents · 59.5s wall · 2025-01-02T03:04:05Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · 3 agents · 59.5s wall · 2025-01-02T03:04:05Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -3782,7 +3782,7 @@
       "input": "fe74a319458ece8942837f8c6603a0053fd3b337947fd5d9c1842cbde6eedf9d",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 1 agent · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 1 agent · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3872,7 +3872,7 @@
       "input": "ca8e07dae3fdf50f7ac1e8056e68d1abf20de33bad7072e0b25f5831b4a4838f",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (rust) · tribunal-v105 · full review · 3 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (rust) · tribunal-v105 · full review · 3 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3935,7 +3935,7 @@
       "input": "de84ec329e9ff9175edc343d526c06a783d62bf878f815a8173b779d9f6df50e",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex a, b · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex a, b · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -3953,7 +3953,7 @@
       "input": "34c2f39b6d1ad39d53f01b71226ca9d75de2f83e0100fb1ed23558015500e5ca",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · incremental review · codex gpt-5 · 1 agent · 1000000000000000.0M in / ≥999.5 out tokens · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · incremental review · codex gpt-5 · 1 agent · 1000000000000000.0M in / ≥999.5 out tokens · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -3998,7 +3998,7 @@
       "input": "d3027ac700af868596d6aa05282e6aba0fc2b59521d8cd0b5fe27326900bd189",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex 7 · 0 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex 7 · 0 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -4043,7 +4043,7 @@
       "input": "024f84fc37adf1b5922c8dd9b06ad5ea4417f2f272b37fdd0bf92fd4aecd4e13",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 1000 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 1000 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4070,7 +4070,7 @@
       "input": "68f12782a696589451d418f8bb1a04edd6222efaa733fb5c1be0bfe5aae74a88",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex 7 · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex 7 · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -4079,7 +4079,7 @@
       "input": "fff2de8bd8c1dc33ffbd59b69c87a52ceff76cf40f448f28f745dadd0194f1e3",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · 1 agent · 1.5 in / ≥-1.0M out tokens · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · 1 agent · 1.5 in / ≥-1.0M out tokens · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4115,7 +4115,7 @@
       "input": "6c81ee459d60a3d94b4894c17f3dd7c4ffe9716b07f76d81126d9bbd392f3df0",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex [object Object] · 1 agent · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex [object Object] · 1 agent · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4178,7 +4178,7 @@
       "input": "9cdb548bc9cce0174925c0fc2f9eb34a86ed44bbccfda6902ab916d7d4f0d6d3",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (rust rust-0123456789ab) · tribunal-v105 · full review · 36 agents · -5s wall · 2025-01-02T03:04:05Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (rust rust-0123456789ab) · tribunal-v105 · full review · 36 agents · -5s wall · 2025-01-02T03:04:05Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -4304,7 +4304,7 @@
       "input": "478a8c7db0b5de3f8f3813fec9aea5e0d52084a015e7ca135b44ee61aa59a491",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex 7 · 1 agent · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex 7 · 1 agent · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4322,7 +4322,7 @@
       "input": "81e5c9eb56e3638692f1279bdd2369cf5e2362d2feacde4dd8f831ed62155055",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 1 agent · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 1 agent · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4331,7 +4331,7 @@
       "input": "e6cd8001cda96b26e26887ec346d6174efae1d90a59c9439b9bddd266e658e65",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex a, b · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex a, b · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4349,7 +4349,7 @@
       "input": "3b39ba2b0fd1fdb58d75485aac56b45c22bb7d87a75870a124d39517d3845ceb",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (rust) · tribunal-v105 · full review · 1 agent · 2500.0M in / ≥-1.5K out tokens · 3m wall · 2025-01-02T03:04:05Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (rust) · tribunal-v105 · full review · 1 agent · 2500.0M in / ≥-1.5K out tokens · 3m wall · 2025-01-02T03:04:05Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -4376,7 +4376,7 @@
       "input": "56371dcf5bf192d49212b73c83aa427a6e586447d5fb0024da2fde622564c25f",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 7 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 7 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4385,7 +4385,7 @@
       "input": "8eaed2a203125355a9036ec9bc401607020782b1f6388e936784959437140084",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex a, b · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex a, b · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4394,7 +4394,7 @@
       "input": "6f525aad817e654665d4ac545fafdf41c21684fa0537357fe914c3a4b5c0c791",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -4421,7 +4421,7 @@
       "input": "3259808cbe9bfa428d144202096c44acfc0f8af8794246a2f724c40bfa9b9ba7",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex a, b · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex a, b · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -4457,7 +4457,7 @@
       "input": "f0b62e9ce31842e657af839e5b99644754aa1ee8fed75fb7dad3844877b26823",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · incremental review · codex gpt-5 · 36 agents · 30s wall · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · incremental review · codex gpt-5 · 36 agents · 30s wall · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4466,7 +4466,7 @@
       "input": "e6ec711c8db352e26248ace4d542d2f97ad4cfa05449f67ec4a8a4981be03d22",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 1 agent · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 1 agent · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4475,7 +4475,7 @@
       "input": "459f1fbc9fb973ebd5f10fa76a1fc28503d4233fafa01da6464d4515757a7298",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 0 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 0 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -4502,7 +4502,7 @@
       "input": "b195dde761d15638d74da91c78c1c4184354c95e4544a35d2c6c8b61d5ba5dbe",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex 7 · 0 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex 7 · 0 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4538,7 +4538,7 @@
       "input": "285ef3968e6f954331f98bc18d47aa012f910af4df5837d086f00d387ae06450",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · 36 agents · 1m wall · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · 36 agents · 1m wall · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4583,7 +4583,7 @@
       "input": "5f33642b3753e265424b5940ba1feed841c0d74f0a9cef33a132796572b41283",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · 36 agents · 59.5s wall · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · 36 agents · 59.5s wall · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4601,7 +4601,7 @@
       "input": "11ca78430c2e44d58a30d92b740fb93a695a1973affc4b6e2c23f24ad8dd4d4c",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4610,7 +4610,7 @@
       "input": "6d4978de4a6dbf1d4c0de02e32f0d79e53ddfc5b2da602da67296322a7393a8e",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex 7 · 3 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex 7 · 3 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4619,7 +4619,7 @@
       "input": "28095265fe0be7c25a85df3d9de34b06607474dc3189b86f9156ec1255e80eb2",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · codex a, b · 1 agent · -5s wall · 2025-01-02T03:04:05Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · codex a, b · 1 agent · -5s wall · 2025-01-02T03:04:05Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -4673,7 +4673,7 @@
       "input": "cee6d7e015ff2b9b5b4d9baa199058b4ddc369b0a7a78ade8feaf55ac7c40117",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4709,7 +4709,7 @@
       "input": "d91743da4d640360258132d26c6b28ea6940783baaf22a49525f9be8ac1c6e00",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 3 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 3 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4772,7 +4772,7 @@
       "input": "964b636ed8424183bbd92045d0de8237236372a7e3ed6c5d62c3ce81c27c0a4f",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 36 agents · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -4871,7 +4871,7 @@
       "input": "546398bed992b8f25ed803178b3aeb7256982df822536be7458c06b90d96c75a",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex 7 · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex 7 · 1 agent · 2024-05-06T07:08:09Z</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -4880,7 +4880,7 @@
       "input": "a6a72cffe3f6ec48ad938059b666e171064614e651c9dcc7c6d38f27d070e687",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 7 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 7 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4889,7 +4889,7 @@
       "input": "5379b4630ae248ff2734d8c8ef3802937fd78bd158c749b8259520cf6aa1f497",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex [object Object] · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex [object Object] · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -4916,7 +4916,7 @@
       "input": "5754f8ce64b390fbdebb67c6da439f23b293e283847958bc9eae823b18fdfa59",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (rust) · tribunal-v105 · full review · 3 agents · 1m wall · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (rust) · tribunal-v105 · full review · 3 agents · 1m wall · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -4970,7 +4970,7 @@
       "input": "3aa2d5f58d87ddc559b30b2d471418513899f8d44c4009ff32153fb3628cfa68",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · codex 7 · 36 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · codex 7 · 36 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -5069,7 +5069,7 @@
       "input": "a4b0572c0b15450649b2b48713e2f8d834729693ffc220f1b5579c9108305a5a",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 0 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 0 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -5087,7 +5087,7 @@
       "input": "275f204977ea1c09469fad809c0aa1297db7fc55ea2ab13baa9b4bb403982132",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 7 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 7 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -5114,7 +5114,7 @@
       "input": "335bce41197dd5950fd7f1ccf00a9f68b53882cd91e92cf7ee6fdaf2c8ebce4d",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · codex gpt-5 · 0 agents · -1.0M in / ≥999.5 out tokens · 30s wall · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · codex gpt-5 · 0 agents · -1.0M in / ≥999.5 out tokens · 30s wall · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -5123,7 +5123,7 @@
       "input": "86c6e8753c8caba343195d14964e9404541b046d7f9318fa61b80655f404db87",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · codex 7 · 1 agent · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · codex 7 · 1 agent · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -5132,7 +5132,7 @@
       "input": "30db02df92d82d7f23d24c58c630333ef1a08b7c110e0d5f136563917de31d83",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · full review · 1000 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · full review · 1000 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -5177,7 +5177,7 @@
       "input": "e2bee277b5c5a4b8d41cb4d78d12ea5406e6610e8225eed9c4313012b8d5dba9",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 0 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 0 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -5276,7 +5276,7 @@
       "input": "da001d524737e8132cf4585cd109f8d9b014442ab408e9f5b41c828082a15fc3",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · incremental review · 1 agent · 54.3K in / ≥12.3K out tokens · 1m wall · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · incremental review · 1 agent · 54.3K in / ≥12.3K out tokens · 1m wall · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -5294,7 +5294,7 @@
       "input": "79a0bf9eb1cd70e134a9d8c9adb957d13308976da8fde31720100948582b0a26",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · incremental review · codex a, b · 36 agents · 2.5M in / ≥12.3K out tokens · -5s wall · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · incremental review · codex a, b · 36 agents · 2.5M in / ≥12.3K out tokens · -5s wall · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -5312,7 +5312,7 @@
       "input": "f7e9842abd36d45edf608521c10817d377407aa9a9ef22499c1010d74872648c",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · incremental review · 1 agent · 12.3K in / ≥1.2M out tokens · 59.5s wall · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · incremental review · 1 agent · 12.3K in / ≥1.2M out tokens · 59.5s wall · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -5357,7 +5357,7 @@
       "input": "6a094d58ec302ea50c1b5f05c2cdbe0be1379cb973ce99daf413a22e39e0b847",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · full review · codex gpt-5 · 7 agents · 30s wall · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · full review · codex gpt-5 · 7 agents · 30s wall · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -5384,7 +5384,7 @@
       "input": "b1806fedc02e97450cb6b2148580885f0dce366a45666dae972d36e0f11996ce",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 1000 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 1000 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
@@ -5393,7 +5393,7 @@
       "input": "01d745ab92a4ae208e6463ff63846f2aea1bc4e2cc006ecd9df8039be0786675",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · tribunal-v105 · incremental review · 1 agent · 1m wall · 5</sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · tribunal-v105 · incremental review · 1 agent · 1m wall · 5</sub>\n",
         "stderr": "",
         "clocked": false
       }
@@ -5402,11 +5402,11 @@
       "input": "40bbc978270916a005536da8d3613fa8a64e18de317d59013b51db336042e157",
       "js": {
         "code": 0,
-        "stdout": "<sub>tribunal v110 (skill) · pr-harness-1 · incremental review · 3 agents · <now></sub>\n",
+        "stdout": "<sub>tribunal v111 (skill) · pr-harness-1 · incremental review · 3 agents · <now></sub>\n",
         "stderr": "",
         "clocked": true
       }
     }
   ],
-  "pluginJson": "{\n  \"name\": \"tribunal\",\n  \"displayName\": \"Tribunal\",\n  \"description\": \"Adversarial pull-request review. Independent lenses run in parallel over a partition of the diff, then every serious candidate finding faces a refutation panel — including a second model family — that tries to disprove it. Only survivors are reported.\",\n  \"version\": \"110.0.0\",\n  \"author\": {\n    \"name\": \"Xmartlabs\",\n    \"url\": \"https://xmartlabs.com\"\n  },\n  \"keywords\": [\n    \"code-review\",\n    \"pull-request\",\n    \"adversarial\",\n    \"github\"\n  ],\n  \"license\": \"MIT\",\n  \"repository\": \"https://github.com/xmartlabs/agent-skills\"\n}\n"
+  "pluginJson": "{\n  \"name\": \"tribunal\",\n  \"displayName\": \"Tribunal\",\n  \"description\": \"Adversarial pull-request review. Independent lenses run in parallel over a partition of the diff, then every serious candidate finding faces a refutation panel — including a second model family — that tries to disprove it. Only survivors are reported.\",\n  \"version\": \"111.0.0\",\n  \"author\": {\n    \"name\": \"Xmartlabs\",\n    \"url\": \"https://xmartlabs.com\"\n  },\n  \"keywords\": [\n    \"code-review\",\n    \"pull-request\",\n    \"adversarial\",\n    \"github\"\n  ],\n  \"license\": \"MIT\",\n  \"repository\": \"https://github.com/xmartlabs/agent-skills\"\n}\n"
 }

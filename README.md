@@ -20,13 +20,15 @@ npx skills add xmartlabs/agent-skills --skill pr-evidence --skill release-notes
 ## Use in CI
 
 Two of the tools run as GitHub Actions in any repository, from any organization: one workflow
-file, one secret with a Claude credential, and a label. Each action's README has the setup, step
-by step, and what to do when something does not work.
+file, one secret with a Claude credential, and a label. Both follow the same rules: your
+workflow's `on:` picks the events, the label forces a run, and `paths`, `once` and `drafts` decide
+the rest. Each action's README has the setup, step by step, and what to do when something does
+not work.
 
 | Action | What it does |
 | --- | --- |
-| [`actions/pr-evidence`](actions/pr-evidence) | Runs the `pr-evidence` skill with Claude on every pull request that changes UI, and posts the evidence on it. See its [README](actions/pr-evidence/README.md). |
-| [`actions/tribunal`](actions/tribunal) | Runs the tribunal review on a pull request when it gets the `tribunal` label, and posts it as a comment review. See its [README](actions/tribunal/README.md). |
+| [`actions/pr-evidence`](actions/pr-evidence) | Runs the `pr-evidence` skill with Claude on pull requests that change UI, once each by default, and posts the evidence on it. See its [README](actions/pr-evidence/README.md). |
+| [`actions/tribunal`](actions/tribunal) | Runs the tribunal review on a pull request, once by default, or again when it gets the `tribunal` label, and posts it as a comment review. See its [README](actions/tribunal/README.md). |
 
 Each action runs its tool at its own ref, so `@pr-evidence-v1` pins the skill and the action
 together, and `@tribunal-action-v1` the plugin, its binary and the action. Those tags move with

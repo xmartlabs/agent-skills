@@ -11,6 +11,16 @@ use common::*;
 // `voteCorrections` (an array the region pushes to) and `PANEL_TIEBREAK_CAP`.
 // The oracle builds its export object as `{ <exports> }`, so a
 // `name: () => expr` entry reads them from inside the region.
+//
+// The JavaScript's side is read from `tests/goldens/oracle/diff_votes.json`
+// (see `common`): the workflow is being retired, so a run starts only the
+// port. The file keeps each call's results under a SHA-256 of its inputs and a
+// SHA-256 of every region's text, so a region edited without regenerating
+// fails here; with the workflow gone the golden is final. Regenerate:
+// `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-core --test diff_votes`.
+// The ignored recorded-fixtures test is not in the golden: its inputs live
+// outside this repository and are not to be copied into it, so with the
+// golden in place it fails asking for a regeneration.
 
 use std::num::NonZeroUsize;
 use std::path::PathBuf;

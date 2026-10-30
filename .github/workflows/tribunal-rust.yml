@@ -25,10 +25,13 @@
 name: tribunal-rust
 
 on:
+  # A Markdown file under rust/ (its README) is read by no build or test, so
+  # editing one alone runs nothing.
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
       - "plugins/tribunal/rust/**"
+      - "!plugins/tribunal/rust/**/*.md"
       - "plugins/tribunal/lib/**"
       - ".github/workflows/tribunal-rust.yml"
   # A merge to main runs the linux job once more, so main holds a warm cargo
@@ -39,6 +42,7 @@ on:
     branches: [main]
     paths:
       - "plugins/tribunal/rust/**"
+      - "!plugins/tribunal/rust/**/*.md"
       - "plugins/tribunal/lib/**"
       - ".github/workflows/tribunal-rust.yml"
     tags: ["tribunal-rust-v*"]

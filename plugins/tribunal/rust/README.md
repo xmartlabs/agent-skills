@@ -110,6 +110,10 @@ Each region gets a small JS shim: read JSON from stdin, call the region via
 (fixtures plus generated cases) and fails on any difference. Declared
 differences need a witness input.
 
+This applies to code ported from the Workflow and its scripts. Code written
+after the port has no JavaScript twin and is tested in Rust alone, without
+`node` (see `../CLAUDE.md`).
+
 ## Ported so far
 
 All 37 decision regions are ported. Each region is one module, and each
@@ -612,52 +616,31 @@ run call it), a C linker, Docker with buildx (the release's `build` job), and th
 `en_US.UTF-8` locale, which the differential tests set; the job checks for
 the locale and installs rustup when it is missing. It must not run as root:
 the tests that `chmod 000` a file expect the read to fail. The differential tests compare the port
-against the JavaScript and bash it replaces on the same machine, and the port
-matches them as they run on macOS. The classifier comparisons in
-`diff_classify_heads.rs` depend on macOS's userland: GNU `cut -c` counts bytes
-and splits a character, mawk folds case byte by byte, and glibc collates
-`*.out` in another order. So they compare the port with what the scripts
-printed on macOS, kept in `crates/tribunal-context/tests/goldens/` together
-with the scripts' text and every generated input; a script or generator edited
-without regenerating fails the test everywhere. Regenerate on a Mac with
-`TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test
-diff_classify_heads`. `diff_persist_run.rs` reads `lib/persist-run.sh`'s output
-from `goldens/persist-run.json` the same way, together with the clock its cases
-were generated against, because running the script for every case made it the
-slowest test binary; regenerate it with `--test diff_persist_run`.
-`diff_post_review.rs` reads `post-review.mjs`'s output for its generated review
-lists from `goldens/post-review.json`, for the same reason, together with the
-text of the fake `gh` it was recorded with; regenerate it with
-`--test diff_post_review`. `diff_resolve_verified_anchors.rs` reads
-`lib/resolve-verified-anchors.mjs`'s output from
-`goldens/resolve-verified-anchors.json` the same way, together with the text of
-`tests/shim/gh`; regenerate it with `--test diff_resolve_verified_anchors`.
-`diff_fetch.rs` reads the script's side of every case that goes through `same`
-from `goldens/fetch-pr-context.json`, keyed by the case's name; the cases that
-choose their own temp dirs, and the 60,000-byte diffs at the window edges,
-still run the script. Regenerate it with `--test diff_fetch`, over the whole
-binary, so that every case is recorded. `diff_harness_version.rs` reads
-`harness-version.mjs`'s output for its generated plugin trees from
-`goldens/harness-version.json`, with the scratch directory and the plugin root,
-which node's stack traces name, stored as placeholders; regenerate it with
-`--test diff_harness_version`. `diff_review_record.rs` reads
-`persist-review-record.mjs`'s output for its generated runs from
-`goldens/persist-review-record.json`. It keeps the text of every module the
-script reaches through a relative import and of the three `workflows/tribunal.js`
-regions `loadChecks` slices, so an edit elsewhere in the workflow needs no
-regeneration; each case's input is kept as a SHA-256, since the generated
-transcripts would be most of the file. Regenerate it with
-`--test diff_review_record`. `diff_ledger.rs` reads `locate-last-row.mjs`'s
-output for its generated ledgers from `goldens/locate-last-row.json`, keeping
-the text of every module the script reaches through a relative import and a
-SHA-256 of each case's input; regenerate it with `--test diff_ledger`.
-`diff_post_footer.rs` reads `build-post-footer.mjs`'s output from
-`goldens/build-post-footer.json` the same way, with the clock segment the
-script printed masked, and keeps the `plugin.json` the script read its version
-from: replaying, the port gets a plugin root holding that file, so a version
-bump needs no regeneration. Regenerate it with `--test diff_post_footer`. The
-helpers these goldens share (`module_texts`, `recorded`, `write_golden`,
-`swapped`) live in `tests/posting/mod.rs`. The `macos` job runs the whole suite on a Mac on every
+with what the JavaScript and bash it replaces printed, recorded on macOS in
+each crate's `tests/goldens/`. No test runs those scripts unless it is
+regenerating its golden. A golden keeps the text or SHA-256 of every script,
+module and Workflow region it was recorded from, and each case's input or its
+SHA-256, so a script or generator edited without regenerating fails the test
+with the command that regenerates it. A recorded script that no longer exists
+is retired: its golden is final and the comparison still runs. Regenerate one
+test binary at a time, over the whole binary so that every case is recorded:
+`TRIBUNAL_REGEN_GOLDENS=1 cargo test -p <crate> --test <name>`. The
+classifier goldens of `diff_classify_heads.rs` regenerate only on a Mac,
+because the scripts depend on macOS's userland: GNU `cut -c` counts bytes and
+splits a character, mawk folds case byte by byte, and glibc collates `*.out`
+in another order. `tribunal-core`'s `common::oracle` and
+`tribunal-pipeline`'s `common::span`, which evaluate a region or a span of
+the Workflow, record and replay per test binary: a binary with
+`tests/goldens/oracle/<name>.json` (or `span/<name>.json`) replays it and
+fails on a call it does not hold, and a binary without one runs node as
+before. `diff_profile.rs`, `diff_plan.rs` and `diff_loaders.rs` have no golden
+yet. To start recording a binary, create its golden as `{}` and regenerate.
+`diff_resolve_evidence.rs` and `diff_section_diff.rs` read commits of this
+repository's history: their goldens keep the commit SHAs and replay them with
+`git show`, so they need the full history. The `#[ignore]` tests that compare
+against data outside this repository (`TRIBUNAL_HARNESS_DATA`,
+`TRIBUNAL_AST_CORPUS`) still run the scripts. The helpers the
+`tribunal-context` goldens share live in `tests/posting/mod.rs`. The `macos` job runs the whole suite on a Mac on every
 pull request that touches this directory, and by hand (`workflow_dispatch`).
 While the repository is public GitHub's Macs are free; were it private, the job
 would run only when `MAC_RUNNER` names a company Mac. The job runs on the runner the `MAC_RUNNER`

@@ -11,6 +11,7 @@ use serde_json::{json, Map, Value};
 use tokio::sync::Semaphore;
 use tribunal_agent::{Agent, DispatchRequest, DispatchResult};
 use tribunal_core::js;
+use tribunal_core::lens::coverage_gaps::{collect_gaps, Gap};
 use tribunal_core::lens::js_ext::{js_key_order, to_js_string};
 use tribunal_core::lens::lens_budget::collect_not_reached;
 use tribunal_core::lens::out_of_diff::reanchor_out_of_diff;
@@ -113,6 +114,8 @@ pub fn check_lenses_returned(
 pub struct Candidates {
     pub lens_findings: Vec<Value>,
     pub lens_not_reached: Vec<String>,
+    /// The same gaps with their kinds, for the coverage gate and banner.
+    pub lens_gaps: Vec<Gap>,
     pub valid_bot_findings: Vec<Value>,
     pub all_candidates: Vec<Value>,
     pub dropped_pre_panel: Vec<Value>,
@@ -177,6 +180,7 @@ pub fn collect_candidates(
             .collect::<Vec<_>>(),
     );
     let lens_not_reached = collect_not_reached(&as_array, lens_count);
+    let lens_gaps = collect_gaps(results, lens_count);
     if !lens_not_reached.is_empty() {
         logs.push(format!(
             "Lenses reported {} surface(s) not reached within budget",
@@ -273,6 +277,7 @@ pub fn collect_candidates(
     Ok(Candidates {
         lens_findings,
         lens_not_reached,
+        lens_gaps,
         valid_bot_findings,
         all_candidates,
         dropped_pre_panel,

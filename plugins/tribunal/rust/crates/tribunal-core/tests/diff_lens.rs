@@ -9,6 +9,13 @@ use common::*;
 // writes as `{}`. The oracle builds its export list into the region's own
 // scope (`return { <exports> }`), so an export can be a `name:arrow` wrapper
 // that spreads the collection into an array; the region code runs unchanged.
+//
+// The JavaScript's side is read from `tests/goldens/oracle/diff_lens.json`
+// (see `common`): the workflow is being retired, so a run starts only the
+// port. The file keeps each call's results under a SHA-256 of its inputs and a
+// SHA-256 of every region's text, so a region edited without regenerating
+// fails here; with the workflow gone the golden is final. Regenerate:
+// `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-core --test diff_lens`.
 
 use proptest::prelude::*;
 use serde_json::{json, Map, Value};
@@ -1105,9 +1112,20 @@ fn lens_prompt_matches_js() {
         .iter()
         .map(|p| json!({"fn": "lensPrompt", "args": [p]}))
         .collect();
+    // Declared difference: the port's `notReached` paragraph asks for each
+    // gap's kind. Each port prompt carries it once; with the Workflow's
+    // paragraph put back, the prompt is the Workflow's.
     let rust: Vec<Value> = params
         .iter()
-        .map(|p| as_result(lens_prompt::lens_prompt(p).map(Value::String)))
+        .map(|p| {
+            as_result(lens_prompt::lens_prompt(p).map(|text| {
+                assert_eq!(text.matches(lens_prompt::NOT_REACHED_PARAGRAPH).count(), 1);
+                Value::String(text.replace(
+                    lens_prompt::NOT_REACHED_PARAGRAPH,
+                    lens_prompt::WORKFLOW_NOT_REACHED_PARAGRAPH,
+                ))
+            }))
+        })
         .collect();
     let js: Vec<Value> = oracle_raw("LENS-PROMPT", &["lensPrompt"], &[], &calls)
         .into_iter()
@@ -1208,6 +1226,24 @@ fn lens_budget_matches_js() {
     reach(&calls, &rust, "mergeNotChecked", "a null entry", |v| {
         v.as_array().is_some_and(|a| a.contains(&json!("null")))
     });
+}
+
+/// Declared difference: an entry with a string `surface`, which only the
+/// port's lenses write, is `surface (kind)` in the port and `[object Object]`
+/// in the Workflow. Any other object reads the same on both sides.
+#[test]
+fn declared_difference_a_kinded_entry_reads_as_its_surface() {
+    let results = json!([{"findings": [], "notReached": [
+        {"surface": "callers of f", "file": "src/a.ts", "kind": "budget"},
+        {"a": 1}
+    ]}]);
+    let calls = vec![json!({"fn": "collectNotReached", "args": [results, 1]})];
+    let js = js_results("LENS-BUDGET", &["collectNotReached"], &calls);
+    assert_eq!(js[0], json!(["[object Object]"]));
+    assert_eq!(
+        lens_budget::collect_not_reached(&results, 1),
+        ["callers of f (budget)", "[object Object]"]
+    );
 }
 
 // ---------------------------------------------------------------- LENS-YIELD

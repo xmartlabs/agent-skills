@@ -163,13 +163,14 @@ All required, never omitted. Rationale for each is in
 | `droppedPrePanelItems` | v81 on. `[{title, file}]` for each candidate the pre-panel gate dropped as out of the diff, `[{title, file, severity}]` from 2026-10-21; `droppedPrePanel` stays the count. Since 2026-10-21 a candidate outside the diff is first re-anchored onto a changed file its `verifiedBy` or a `<dependents>` entry names (`findings[].reanchored`), so only one tied to nothing lands here. **Workflow only.** |
 | `inThreadDecisions` | v81 on. The decisions harvested from the PR's thread, `[{category, summary, source, files}]`, exactly as the PRE_DECIDED gate checked citations against them. `eval/replay-gates.mjs` needs them to reproduce a `citation-does-not-cover-finding` discard. |
 | `findings[].possiblyPreDecided` | v81 on. `{voteSource, decisionSource, summary, files}` when a vote the tally set aside as `citation-does-not-cover-finding` matched a decision whose files, like the finding's, are all in this PR (BE #2167-B4, 2026-10-18). `survived` stays true, because the panel kept it, but the finding is reported under "Pre-decided" as POSSIBLY PRE-DECIDED and is not counted toward the verdict. `null` otherwise. |
-| `findings[].placement` | v91 on. `{placement, intendedBy, proposedSeverity}` from placeSurvivor for a finding the panel kept, `null` for one it killed. `placement` is `"pre-existing"` (a strict majority of the v91 votes said `introducedByPr: "no"` and the diff does not add the finding's line), `"intended"` (a majority quoted a conventions rule, kept in `intendedBy`), or `null`. A placed finding keeps `survived: true`, is reported in its own section and is not counted toward the verdict. `proposedSeverity` is a majority's lower severity, recorded and never applied. Absent on earlier rows. |
+| `findings[].placement` | v91 on. `{placement, intendedBy, proposedSeverity}` from placeSurvivor for a finding the panel kept, `null` for one it killed. `placement` is `"pre-existing"` (a strict majority of the v91 votes said `introducedByPr: "no"` and the diff does not add the finding's line), `"intended"` (a majority quoted a conventions rule, kept in `intendedBy`), or `null`. A placed finding keeps `survived: true`, is reported in its own section and is not counted toward the verdict. `proposedSeverity` is a majority's lower severity, recorded and never applied. Only votes that filled `introducedByPr` count, and Codex never does, so on the Workflow a Claude-plus-Codex panel recorded one Claude vote's proposal as the panel's. Rust rows from the release after `tribunal-rust-v0.1.4` record it only with two or more such votes. Absent on earlier rows. |
 | `placedAside` | v91 on. How many kept findings placeSurvivor moved out of the verdict. Absent on earlier rows. |
 | `persistRelayFirstModel` | `"haiku"` or `"sonnet"`: the model the first persist relay ran on. The workflow picks it from the total bytes of the heredoc bodies the relay has to copy, sonnet above `PERSIST_HAIKU_MAX_BYTES` (32,000 since v77; 16,000 in v76). Read it with `persistRelayRetries` to see whether the threshold is in the right place: retries on `"haiku"` rows near the threshold say it is too high. Absent before v76 and again from v81, where every part is written on haiku first. **Workflow only.** |
 | `reportVerdictCorrected` | `null` when the report's "Verdict suggestion" line already named the row's `verdict`. Otherwise `{from, to, reason}`: the workflow rewrote the line to `to` (the row's `verdict`), `from` is what the report had said (`null` when unreadable or missing), and `reason` is `"mismatch"`, `"unreadable"` (no single verdict on the line, such as the unfilled template), `"multiple"` or `"missing"`. A non-null value fails the self-audit (`report-verdict-corrected`), because the prose around the line was written for the other verdict. Since v79 the verdict is decided before the report is written and printed into its template; this field measures how often the writer still disagrees. Absent before v79. **Workflow only.** |
 | `diffMode` | `"path"` \| `"self-fetch"` — how the lenses received the diff. `"self-fetch"` means fetch-pr returned no patch path and the run degraded. Rows before v80 can also carry `"inject"`: the diff text was copied back through fetch-pr's agent and pasted into prompts, a mode v80 removed. |
 | `lensGroups` | How many file partitions the lenses were split across (`1` = unpartitioned). |
 | `lensYield` | Array of `{ lens, dispatches, files, candidates, survivedToReport, crashed, notReached }`, **one entry per planned lens including the ones that produced nothing** — that inclusion is the field's whole reason to exist. `lensCount: 2` with `findings: 0` cannot distinguish a lens that looked and found nothing from a lens that never answered, and the only way to tell used to be reopening 250 KB of transcripts. `crashed` is a COUNT of dispatches whose result was null (agent died/skipped), never the same as returning an empty `findings` array. `files` is `null` on an unpartitioned run (every lens sees the whole diff) and a file count when scoped — `0` means an empty scope, which is a real claim. Entries are grouped by lens LABEL, so a focus dispatched twice (when `lensCount` exceeds the focus list) is one entry with `dispatches: 2` rather than two entries each claiming the other's candidates. **`survivedToReport` is a per-lens attribution, not a total**: a merged finding credits every lens in its `mergedFrom` so a cluster does not zero its contributors, which means the column can sum to MORE than `findings.length` — comparing the two is a category error. Findings whose `lens` is not in the plan (`bot-comments`, carried-forward) credit nobody and create no entry. Computed by the `LENS-YIELD` marked region, guarded by `eval/replay-lens-yield.mjs`. **In-context: `null`.** |
+| `lensCost` | Field added 2026-10-30, Rust engine only. Array of `{ lens, why, overBudget, costUsd, toolUses, turns, outputTokens }`, one entry per lens dispatch in plan order. `lens` is the focus key (`unknown` when the focus is not one of the profile's sentences). `why` is `forced` when a `riskPaths` rule the PR touches forces that focus, else `default`. `overBudget` is `true` when the lens sits past the size-based `lensBudget`, so it exists only because forced foci needed more lenses (never on a `--lenses` run). `costUsd` follows `agentCost.costUsd`. Join it with `lensYield` by `lens` for cost per surviving finding, as `tribunal cost` does. A Workflow row never has it. |
 | `churn` | `additions + deletions`. Half of the lens-budget decision; without it `lensCount` is uninterpretable. |
 | `crossFileClustersRejected` | How many candidates the same-file guard rescued from a cross-file dedup merge. Non-zero means the dedup model tried to delete distinct defects. |
 | `findings[].forcedPanel` | The finding reached the panel because `--context` named it for re-test, not because of its severity. |
@@ -574,6 +575,26 @@ Regression cover: `eval/replay-lens-budget.mjs` (0 tokens) — the `notReached`
 plumbing against crashed and absent results, the union into `notChecked`, and the
 budget pinned between its measured failure floor (30) and efficiency knee (50).
 
+## Fields added for kinded gaps (Rust rows only): `lensNotReachedKinds`, `unreadRiskFiles`, `lensFailures`
+
+The Rust engine asks each lens to file a `notReached` entry as
+`{surface, file, kind}`. Rows from earlier runs, and Workflow rows, have plain
+strings, so `lensBudgetSkips` there counts everything a lens left unchecked,
+not only what it ran out of budget for. Reading 30 such entries by hand, 6
+were code a second read could cover; the rest were outside the lens's focus,
+needed running something, or sat outside the PR.
+
+| Field | Meaning |
+|---|---|
+| `lensNotReachedKinds` | `{budget, outOfFocus, needsExecution, outsidePr, unstated}`: how many entries of each kind the lenses filed. `budget` is the only kind that is a hole in coverage. `unstated` counts plain strings. |
+| `unreadRiskFiles` | The files matching a `riskPaths` rule that every lens holding them left unread for budget. A non-empty list keeps the verdict from APPROVE (it becomes COMMENT), as an unreturned lens does, and the report names the files. |
+| `lensFailures` | `[{lens, cause}]` for each lens dispatch that returned no answer. `cause` is `rate-limit`, `overloaded`, `auth`, `timeout`, `killed`, `spawn-failed`, `no-answer` or `error`, read from the exit and what the CLI printed. Recorded so a retry is built for the causes that happen, if any do. |
+
+`notChecked` keeps one string per entry: a kinded entry is written as
+`surface (kind)`. The report lists the `budget` entries and the
+`needs-execution` ones ("Check by hand") itself, after the report's text, so
+they no longer depend on the report's writer including them.
+
 ## Field added 2026-07-24 (the other 84% of the bill) — `agentCost`
 
 `claudeOutputTokens` counts **output only**, and output is the minority term.
@@ -631,6 +652,7 @@ and survives only as a manual backup. `agentsActual` can be recovered from
 | `unclassified` | Agents whose prompt matched no known pattern. Above ~5% of input, the `byKind` breakdown is not trustworthy. Reported rather than folded into the nearest bucket: a first pass caught 1 lens in 8 and swept the rest into "refuter". |
 | `byKind` | `lens` / `refuter` / `strengthen` / `defense` / `adjudicator` / `dedup` / `bot-vetting` / `critic` / `synthesize` / `external-heads` / `mechanical` — plus `harness-audit`, which marks agents from a **different workflow** sharing the session tree and must stay out of any per-lens average. Each entry also carries `toolUses`/`toolTurns`/`toolUsesPerTurn` since 2026-08-20. |
 | `byModel` | From each agent's `.meta.json`. `unknown` where the sidecar is missing (older runs) — on this corpus that is ~20% of input, priced by assumption. Each entry also carries `toolUses`/`toolTurns`/`toolUsesPerTurn` since 2026-08-20. |
+| `costUsd` | Field added 2026-10-30, Rust engine only. Dollars at list price: the sum of each dispatch's `total_cost_usd` as the Claude CLI reports it, rounded to 4 decimals. On `agentCost` itself and on every `byKind` and `byModel` entry. It is the CLI's estimate, not a bill, and a Workflow row never has it. `tribunal cost` reads it. |
 
 Measured breakdown as of 2026-07-24 (42 runs, `eval/analyze-agent-cost.mjs`):
 **lenses are 46% of input** at 38.4 turns/agent and 87k per turn, refuters 31%,
@@ -756,8 +778,19 @@ by. `readOverride` returns such an annotation as **INVALID and reports it**
 rather than dropping it, because an override the operator believes they recorded
 and the scorer silently ignores is the worst of the three outcomes.
 
-**How to patch a row** (after verifying the finding by hand — never from a
-model's second opinion):
+**How to patch a row** (after verifying the finding by hand, never from a
+model's second opinion): run `tribunal override`, which finds the row by its
+`ts` and the finding by a title prefix, refuses unless exactly one finding
+matches, applies the consistency rule above, and rewrites only that line
+under the ledger lock a run takes to append:
+
+```bash
+tribunal override --ts "<the row ts>" --title "<enough of the title to be unique>" \
+  --direction reinstated --reason "<how it was verified>" --by <login> --verified-at <sha>
+```
+
+`--dry-run` prints the annotation without writing it. The snippet below is the
+older way, kept for a machine without the binary:
 
 ```bash
 cd ${CLAUDE_PLUGIN_ROOT}/skills/review-pr
@@ -791,7 +824,7 @@ a title prefix that matches two findings, or none, silently mislabels ground
 truth. Re-run `score.mjs` afterwards — if the override does not appear in its
 `operator overrides` section, it was not recorded the way you think.
 
-**Follow-up candidate, not built yet:** this is the same "should be a script,
+**Built as `tribunal override`** (above). The original note: this is the same "should be a script,
 not an inline `node -e`" pattern that `scripts/persist-review-record.mjs` and
 `scripts/post-review.mjs` now cover for Step 4's posting/metrics-persistence
 snippets. A `scripts/patch-operator-override.mjs --ts <ts> --title-prefix
@@ -816,6 +849,31 @@ a rate computed over them is not the panel's error rate. Use them to find
 Regression cover: `eval/replay-operator-override.mjs` (0 tokens) — 36 asserts
 over the two directions, the consistency rule in both directions, malformed
 annotations, and the warning cases.
+
+## Field added for severity calls (Rust only): `findings[].operatorSeverity`
+
+A person's call that a finding is real but less severe than reported. It is not
+a panel error, so it is not an `operatorOverride` direction: the scorer's
+direction list and its rates stay as they are, and `eval/score.mjs` ignores the
+field.
+
+```json
+"operatorSeverity": {
+  "severity": "nit",
+  "from": "important",
+  "by": "<github login>",
+  "at": "<ISO 8601>",
+  "verifiedAt": "<full sha the hand check was done against>",
+  "reason": "<what was read, and why it is less severe>"
+}
+```
+
+Written by `tribunal override --severity nit|important`, which refuses a
+severity that is not lower than the finding's own, a finding the panel killed,
+and a call without a reason. On an incremental re-review a carried-forward
+finding with this field no longer blocks and grades at the new severity. The
+Workflow does not read it. These calls are the human label for whether reviews
+block too much: count them per repo before changing a repo's severity rules.
 
 ## Field added 2026-07-24 (re-review state) — `priorOpenReviews`
 

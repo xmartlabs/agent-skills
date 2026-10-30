@@ -3,11 +3,16 @@
 //! arguments on both sides, run as the workflow runs it (`--relay`), against
 //! the same recorded `gh`, compared on the relayed JSON.
 //!
-//! The script's side of the generated cases is read from
-//! `tests/goldens/resolve-verified-anchors.json`: running the script for
-//! every case made this one of the slowest test binaries. The file keeps the
-//! text of the scripts and of the recorded `gh` it was made with, so editing
-//! either without a regeneration fails here. Regenerate after changing them:
+//! The script's side of every case is read from
+//! `tests/goldens/resolve-verified-anchors.json`, so a run starts only the
+//! port: the generated cases under `cases`, and the witnesses (a `gh` that
+//! cannot start or prints past the buffer, the declared differences) under
+//! `witnesses`, by name, each with the input it ran on and the scratch
+//! directory as `<SCRATCH>`. The file keeps the text of the scripts and of the
+//! recorded `gh` it was made with, so editing either without a regeneration
+//! fails here; once any of them is deleted the script is retired, that check
+//! is skipped and the recorded outputs are final. Regenerate the whole binary
+//! at once after changing them, so every witness is recorded:
 //! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_resolve_verified_anchors`.
 mod common;
 #[path = "../../tribunal-core/tests/common/mod.rs"]
@@ -760,31 +765,48 @@ fn check(
     }
 }
 
-/// What the script reads besides its input: itself, what it imports, and the
-/// recorded `gh` it calls.
-const RECORDED_WITH: [&str; 3] = [
-    "lib/resolve-verified-anchors.mjs",
-    "lib/relay.mjs",
-    "gh shim",
-];
 const REGENERATE: &str = "regenerate: TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_resolve_verified_anchors";
 
 fn golden_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/goldens/resolve-verified-anchors.json")
 }
 
-fn recorded_with() -> Value {
-    let texts: BTreeMap<&str, String> = RECORDED_WITH
-        .iter()
-        .map(|s| {
-            let path = match *s {
-                "gh shim" => shim_dir().join("gh"),
-                lib => plugin_root().join(lib),
-            };
-            (*s, std::fs::read_to_string(path).unwrap())
-        })
-        .collect();
-    json!(texts)
+/// What the script reads besides its input, under the plugin `root`: itself,
+/// every module it reaches through a relative import, and the recorded `gh`
+/// it calls. `None` once any of them is gone from disk: the script is retired
+/// and the golden is final, so there is nothing left to hold it to.
+fn oracle_texts(root: &Path, shim: &Path) -> Option<BTreeMap<String, String>> {
+    let import = regex::Regex::new(r#"(?:from|import)\s*\(?\s*"(\.{1,2}/[^"]+)""#).unwrap();
+    let root = root.canonicalize().ok()?;
+    let mut texts = BTreeMap::new();
+    let mut todo = vec![root.join(SCRIPT)];
+    while let Some(file) = todo.pop() {
+        let file = file.canonicalize().ok()?;
+        let key = file
+            .strip_prefix(&root)
+            .ok()?
+            .to_string_lossy()
+            .into_owned();
+        if texts.contains_key(&key) {
+            continue;
+        }
+        let text = std::fs::read_to_string(&file).ok()?;
+        let dir = file.parent().unwrap();
+        todo.extend(import.captures_iter(&text).map(|m| dir.join(&m[1])));
+        texts.insert(key, text);
+    }
+    texts.insert("gh shim".into(), std::fs::read_to_string(shim).ok()?);
+    Some(texts)
+}
+
+fn recorded_with() -> Option<BTreeMap<String, String>> {
+    oracle_texts(&plugin_root(), &shim_dir().join("gh"))
+}
+
+/// Whether the oracle is still on disk and differs from what the golden was
+/// recorded with. A retired oracle is never stale.
+fn stale(recorded_with: &Value, now: Option<&BTreeMap<String, String>>) -> bool {
+    now.is_some_and(|t| *recorded_with != json!(t))
 }
 
 fn regenerating() -> bool {
@@ -792,20 +814,40 @@ fn regenerating() -> bool {
 }
 
 /// The golden, checked against the scripts on disk; `None` when regenerating.
-fn recorded() -> Option<Value> {
-    if regenerating() {
-        return None;
-    }
-    let path = golden_path();
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("{}: {e}; {REGENERATE}", path.display()));
-    let golden: Value = serde_json::from_str(&text).unwrap();
-    assert!(
-        golden["recordedWith"] == recorded_with(),
-        "a script or the gh shim changed since {} was recorded; {REGENERATE}",
-        path.display()
-    );
-    Some(golden)
+fn recorded() -> Option<&'static Value> {
+    static GOLDEN: OnceLock<Option<Value>> = OnceLock::new();
+    GOLDEN
+        .get_or_init(|| {
+            if regenerating() {
+                return None;
+            }
+            let path = golden_path();
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{}: {e}; {REGENERATE}", path.display()));
+            let golden: Value = serde_json::from_str(&text).unwrap();
+            assert!(
+                !stale(&golden["recordedWith"], recorded_with().as_ref()),
+                "a script or the gh shim changed since {} was recorded; {REGENERATE}",
+                path.display()
+            );
+            Some(golden)
+        })
+        .as_ref()
+}
+
+/// Changes the golden this run is regenerating and writes it out. The
+/// generated cases and each witness come from different tests, so the file is
+/// rewritten after each and is whole once the binary has run.
+fn save(change: impl FnOnce(&mut Value)) {
+    static GOLDEN: Mutex<Option<Value>> = Mutex::new(None);
+    let mut golden = GOLDEN.lock().unwrap();
+    let golden = golden.get_or_insert_with(|| {
+        let with = recorded_with().expect("the script and the gh shim, to record them");
+        json!({"recordedWith": with, "cases": [], "witnesses": {}})
+    });
+    change(golden);
+    let text = serde_json::to_string_pretty(golden).unwrap();
+    std::fs::write(golden_path(), text + "\n").unwrap();
 }
 
 /// A value as the golden keeps it. Inputs name the anchors file, and the
@@ -826,8 +868,7 @@ fn outcomes() -> &'static [Outcome] {
         let cases = sample(case());
         let root = scratch("verified-anchors-gen");
         let root_text = root.to_string_lossy().into_owned();
-        let golden = recorded();
-        let replay: Option<Vec<&Value>> = golden.as_ref().map(|g| {
+        let replay: Option<Vec<&Value>> = recorded().map(|g| {
             let recorded = g["cases"].as_array().unwrap();
             assert_eq!(
                 recorded.len(),
@@ -887,11 +928,7 @@ fn outcomes() -> &'static [Outcome] {
                         })
                     })
                     .collect();
-                let text = serde_json::to_string_pretty(
-                    &json!({"recordedWith": recorded_with(), "cases": cases}),
-                )
-                .unwrap();
-                std::fs::write(golden_path(), text + "\n").unwrap();
+                save(|g| g["cases"] = Value::Array(cases));
             }
         }
         out
@@ -1040,7 +1077,8 @@ fn the_generated_cases_reach_every_branch() {
 
 // ---------------------------------------------------------------------------
 // Witnesses: a `gh` the recordings cannot stand in for, and the declared
-// differences.
+// differences. The script's side of each is kept in the golden's
+// `witnesses`, by name, with the input it ran on.
 
 fn node_bin() -> PathBuf {
     std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
@@ -1066,6 +1104,37 @@ fn script_with_path(args: &[&str], cwd: &Path, bin: &Path) -> ScriptRun {
     }
 }
 
+/// The script's run for witness `name`: under regeneration `run` starts it
+/// and the golden keeps what it printed, with `dir` as `<SCRATCH>`;
+/// otherwise it is read back, and `input` must be what it was recorded on.
+fn witness(name: &str, dir: &Path, input: Value, run: impl FnOnce() -> ScriptRun) -> ScriptRun {
+    let root = dir.to_string_lossy().into_owned();
+    let input = portable(&input, &root);
+    if let Some(golden) = recorded() {
+        let w = &golden["witnesses"][name];
+        assert!(!w.is_null(), "{name}: not in the golden; {REGENERATE}");
+        assert_eq!(
+            w["input"], input,
+            "{name}: the witness changed; {REGENERATE}"
+        );
+        let r = local(&w["run"], &root);
+        return ScriptRun {
+            code: r["code"].as_i64().map(|c| i32::try_from(c).unwrap()),
+            stdout: r["stdout"].as_str().unwrap().to_owned(),
+            stderr: r["stderr"].as_str().unwrap().to_owned(),
+        };
+    }
+    let js = run();
+    let kept = json!({"code": js.code, "stdout": js.stdout, "stderr": js.stderr});
+    let kept = portable(&kept, &root);
+    assert!(
+        !kept.to_string().contains(&root),
+        "{name}: the script's side names the scratch directory, which the golden cannot keep"
+    );
+    save(|g| g["witnesses"][name] = json!({"input": input, "run": kept}));
+    js
+}
+
 fn plain_tools(gh: &Path) -> Tools {
     Tools {
         gh: gh.to_string_lossy().into_owned(),
@@ -1088,7 +1157,10 @@ async fn a_gh_that_cannot_start_matches_js() {
     std::fs::create_dir_all(&bin).unwrap();
     let anchors = write_anchors(&dir, "const total = 1;");
     let args = [anchors.as_str(), "main", "--repo", "o/r", "--relay"];
-    let js = script_with_path(&args, &dir, &bin);
+    let input = json!({"args": args, "anchors": std::fs::read_to_string(&anchors).unwrap()});
+    let js = witness("gh-enoent", &dir, input, || {
+        script_with_path(&args, &dir, &bin)
+    });
     let (js, js_text) = js_value(&js);
     let rust = run(&args, "", &plain_tools(&bin.join("gh"))).await;
     let (rust, rust_text) = rust_value(rust);
@@ -1099,20 +1171,26 @@ async fn a_gh_that_cannot_start_matches_js() {
 
 /// Both sides with `gh` replaced by a shell script that prints `n` bytes of
 /// `a` and then `tail` (a `printf` format), to stderr when `fd` is 2.
-async fn with_big_gh(dir: &Path, n: usize, tail: &str, fd: u8) -> (Value, Value) {
+async fn with_big_gh(name: &str, dir: &Path, n: usize, tail: &str, fd: u8) -> (Value, Value) {
     let anchors = write_anchors(dir, "aaaaaaaaaaaa");
     let args = [anchors.as_str(), "main", "--repo", "o/r", "--relay"];
     let bin = dir.join(format!("bin-{n}-{fd}"));
     std::fs::create_dir_all(&bin).unwrap();
     let gh = bin.join("gh");
-    std::fs::write(
-        &gh,
-        format!("#!/bin/sh\n(head -c {n} /dev/zero | tr '\\000' a; printf '{tail}') >&{fd}\n"),
-    )
-    .unwrap();
+    let gh_text =
+        format!("#!/bin/sh\n(head -c {n} /dev/zero | tr '\\000' a; printf '{tail}') >&{fd}\n");
+    std::fs::write(&gh, &gh_text).unwrap();
     std::fs::set_permissions(&gh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     let path = format!("{}:/usr/bin:/bin", bin.display());
-    let (js, js_text) = js_value(&script_with_path(&args, dir, Path::new(&path)));
+    let input = json!({
+        "args": args,
+        "anchors": std::fs::read_to_string(&anchors).unwrap(),
+        "gh": gh_text,
+    });
+    let js = witness(name, dir, input, || {
+        script_with_path(&args, dir, Path::new(&path))
+    });
+    let (js, js_text) = js_value(&js);
     let (rust, rust_text) = rust_value(run(&args, "", &plain_tools(&gh)).await);
     assert!(js_text.is_some() && rust_text.is_some(), "{js} {rust}");
     (js, rust)
@@ -1124,7 +1202,7 @@ async fn with_big_gh(dir: &Path, n: usize, tail: &str, fd: u8) -> (Value, Value)
 async fn output_past_the_buffer_matches_js() {
     let dir = scratch("verified-anchors-enobufs");
     for (n, status) in [(33_554_432, "found"), (33_554_433, "lookup-failed")] {
-        let (js, rust) = with_big_gh(&dir, n, "", 1).await;
+        let (js, rust) = with_big_gh(&format!("stdout-{n}"), &dir, n, "", 1).await;
         assert_eq!(js["results"][0]["status"], status, "{js}");
         assert_eq!(rust, js);
     }
@@ -1135,7 +1213,7 @@ async fn output_past_the_buffer_matches_js() {
 #[tokio::test]
 async fn the_buffer_counting_decoded_text_is_a_declared_difference() {
     let dir = scratch("verified-anchors-enobufs-decoded");
-    let (js, rust) = with_big_gh(&dir, 33_554_431, "\\377", 1).await;
+    let (js, rust) = with_big_gh("stdout-decoded", &dir, 33_554_431, "\\377", 1).await;
     assert_eq!(js["results"][0]["status"], "found", "{js}");
     assert_eq!(rust["results"][0]["note"], "spawnSync gh ENOBUFS", "{rust}");
 }
@@ -1144,11 +1222,12 @@ async fn the_buffer_counting_decoded_text_is_a_declared_difference() {
 /// reads all of it, so only the port sees a 404 written past 32 MiB. Whether
 /// Node gets the overflow before the 404 depends on how the pipe delivers the
 /// last chunks, so on a loaded machine it sometimes reads the 404 too and
-/// answers like the port; only the port's side is asserted strictly.
+/// answers like the port; only the port's side is asserted strictly. The
+/// golden keeps whichever of the two the regenerating run saw.
 #[tokio::test]
 async fn stderr_past_the_buffer_is_a_declared_difference() {
     let dir = scratch("verified-anchors-enobufs-stderr");
-    let (js, rust) = with_big_gh(&dir, 33_554_433, "(HTTP 404)", 2).await;
+    let (js, rust) = with_big_gh("stderr-404", &dir, 33_554_433, "(HTTP 404)", 2).await;
     assert_eq!(rust["results"][0]["status"], "file-not-at-ref", "{rust}");
     let js_status = js["results"][0]["status"].as_str();
     assert!(
@@ -1165,17 +1244,22 @@ async fn a_detail_cut_inside_a_pair_is_a_declared_difference() {
     let dir = scratch("verified-anchors-cut");
     let anchors = write_anchors(&dir, "const total = 1;");
     let stderr = format!("{}😀 tail", "x".repeat(199));
-    let rec = recordings(
-        &dir,
-        vec![gh_answer(
-            gh_args("o/r", "main", "src/a.ts"),
-            "",
-            &stderr,
-            1,
-        )],
-    );
+    let calls = vec![gh_answer(
+        gh_args("o/r", "main", "src/a.ts"),
+        "",
+        &stderr,
+        1,
+    )];
+    let rec = recordings(&dir, calls.clone());
     let args = [anchors.as_str(), "main", "--repo", "o/r", "--relay"];
-    let js = run_script(SCRIPT, &args, &dir, &rec, None);
+    let input = json!({
+        "args": args,
+        "anchors": std::fs::read_to_string(&anchors).unwrap(),
+        "calls": calls,
+    });
+    let js = witness("cut-in-pair", &dir, input, || {
+        run_script(SCRIPT, &args, &dir, &rec, None)
+    });
     let js_line = js.stdout.split('\n').nth(1).unwrap().to_owned();
     let rust = json_stringify(Some(&run(&args, "", &tools(&rec)).await.unwrap()));
     assert!(js_line.contains("x\\ud83d\""), "{js_line}");
@@ -1190,20 +1274,15 @@ async fn a_detail_cut_inside_a_pair_is_a_declared_difference() {
 async fn an_infinite_quote_is_a_declared_difference() {
     let dir = scratch("verified-anchors-infinity");
     let anchors = dir.join("anchors.json");
-    std::fs::write(
-        &anchors,
-        r#"[{"verifiedBy":[{"file":"src/a.ts","line":1,"quote":1e400}]}]"#,
-    )
-    .unwrap();
-    let rec = recordings(
-        &dir,
-        vec![gh_answer(
-            gh_args("o/r", "main", "src/a.ts"),
-            "x = Infinity;\n",
-            "",
-            0,
-        )],
-    );
+    let anchors_text = r#"[{"verifiedBy":[{"file":"src/a.ts","line":1,"quote":1e400}]}]"#;
+    std::fs::write(&anchors, anchors_text).unwrap();
+    let calls = vec![gh_answer(
+        gh_args("o/r", "main", "src/a.ts"),
+        "x = Infinity;\n",
+        "",
+        0,
+    )];
+    let rec = recordings(&dir, calls.clone());
     let args = [
         anchors.to_str().unwrap(),
         "main",
@@ -1211,10 +1290,47 @@ async fn an_infinite_quote_is_a_declared_difference() {
         "o/r",
         "--relay",
     ];
-    let js = run_script(SCRIPT, &args, &dir, &rec, None);
+    let input = json!({"args": args, "anchors": anchors_text, "calls": calls});
+    let js = witness("infinite-quote", &dir, input, || {
+        run_script(SCRIPT, &args, &dir, &rec, None)
+    });
     let (js, _) = js_value(&js);
     let rust = run(&args, "", &tools(&rec)).await.unwrap();
     assert_eq!(js["results"][0]["status"], "found", "{js}");
     assert_eq!(rust["results"][0]["status"], "malformed", "{rust}");
     assert_eq!(rust["results"][0]["note"], "no quote on the anchor");
+}
+
+/// The staleness check on a copy of the plugin rebuilt from the golden: it
+/// holds while the copy matches, fails once a script is edited, and is
+/// skipped once a script is deleted, since a retired script's golden is final.
+#[test]
+fn a_retired_script_is_not_held_to_the_golden() {
+    // Regeneration rewrites the golden while this would read it.
+    let Some(golden) = recorded() else { return };
+    let with = &golden["recordedWith"];
+    let root = scratch("verified-anchors-retired");
+    let shim = root.join("shim/gh");
+    for (key, text) in with.as_object().unwrap() {
+        let path = if key == "gh shim" {
+            shim.clone()
+        } else {
+            root.join(key)
+        };
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text.as_str().unwrap()).unwrap();
+    }
+    assert!(!stale(with, oracle_texts(&root, &shim).as_ref()));
+    for key in ["lib/resolve-verified-anchors.mjs", "lib/relay.mjs"] {
+        let path = root.join(key);
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(&path, format!("{text}// edited\n")).unwrap();
+        assert!(stale(with, oracle_texts(&root, &shim).as_ref()), "{key}");
+        std::fs::remove_file(&path).unwrap();
+        assert!(oracle_texts(&root, &shim).is_none(), "{key}");
+        assert!(!stale(with, oracle_texts(&root, &shim).as_ref()), "{key}");
+        std::fs::write(&path, text).unwrap();
+    }
+    std::fs::write(&shim, "edited").unwrap();
+    assert!(stale(with, oracle_texts(&root, &shim).as_ref()));
 }

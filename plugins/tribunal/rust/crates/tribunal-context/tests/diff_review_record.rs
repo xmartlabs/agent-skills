@@ -8,10 +8,17 @@
 //! through `eval/agent-cost.mjs`, on many more inputs than the end-to-end
 //! cases can afford.
 //!
-//! The script's side of the generated runs is read from
-//! `tests/goldens/persist-review-record.json`. The file keeps the text of every
-//! module the script imports and of the workflow regions it slices, and each
-//! case's input, so editing any of them without a regeneration fails here:
+//! Nothing here runs node outside a regeneration. The script's side of the
+//! generated runs is read from `tests/goldens/persist-review-record.json`. The
+//! file keeps the text of every module the script imports and of the workflow
+//! regions it slices, and each case's input. The fixed cases (the direct
+//! `eval/agent-cost.mjs` comparison, the held lock, the prototype models) are
+//! read from `tests/goldens/persist-review-record-fixed.json`, one entry per
+//! test, with a SHA-256 of each module and of the regions, each case's input,
+//! and the files the script left in the data directory. Editing any of them
+//! without a regeneration fails here; a module or the workflow no longer on
+//! disk was retired with the Workflow, so its check is skipped and the golden
+//! is final. Regenerate after changing them, over the whole binary:
 //! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_review_record`.
 
 mod posting;
@@ -156,38 +163,58 @@ fn js_json(v: &review_record::Js) -> Value {
     v.to_json().unwrap_or(Value::Null)
 }
 
+const AGENT_COST: &str = "skills/review-pr/eval/agent-cost.mjs";
+
 #[test]
 fn transcripts_and_classifier_match_js_directly() {
-    let dir = scratch("agent-cost");
     let cases = sample(CASES * 2, (transcript(), prompt()));
     let inputs: Vec<Value> = cases
         .iter()
         .map(|(t, p)| json!({"transcript": t, "prompt": p}))
         .collect();
-    std::fs::write(
-        dir.join("inputs.json"),
-        Value::Array(inputs.clone()).to_string(),
-    )
-    .unwrap();
-    std::fs::write(dir.join("harness.mjs"), AGENT_COST_HARNESS).unwrap();
-    let module = plugin_root().join("skills/review-pr/eval/agent-cost.mjs");
-    let js = node(
-        &dir.join("harness.mjs"),
-        &[
-            module.to_string_lossy().into_owned(),
-            dir.join("inputs.json").to_string_lossy().into_owned(),
-        ],
-        &dir,
-        &[],
-        &safe_path(None),
+    let inputs = Value::Array(inputs).to_string();
+    // A hash: the generated transcripts would make most of the file.
+    let recorded = fixed(
+        FIXED,
+        "transcripts_and_classifier_match_js_directly",
+        REGENERATE,
+        &[json!({"inputs": sha(&inputs), "harness": sha(AGENT_COST_HARNESS)})],
+        || module_shas(AGENT_COST),
+        |w| stale_module_shas(w, AGENT_COST),
+        || {
+            let dir = scratch("agent-cost");
+            std::fs::write(dir.join("inputs.json"), &inputs).unwrap();
+            std::fs::write(dir.join("harness.mjs"), AGENT_COST_HARNESS).unwrap();
+            let js = node(
+                &dir.join("harness.mjs"),
+                &[
+                    plugin_root()
+                        .join(AGENT_COST)
+                        .to_string_lossy()
+                        .into_owned(),
+                    dir.join("inputs.json").to_string_lossy().into_owned(),
+                ],
+                &dir,
+                &[],
+                &safe_path(None),
+            );
+            assert_eq!(js.code, 0, "{}", js.stderr);
+            // One compact line per case, as the comparison stringifies it:
+            // pretty-printed objects would double the file.
+            let out: Vec<Value> = serde_json::from_str(&js.stdout).unwrap();
+            vec![json!(out
+                .iter()
+                .map(|v| js::stringify(v, ""))
+                .collect::<Vec<_>>())]
+        },
     );
-    assert_eq!(js.code, 0, "{}", js.stderr);
-    let js_out: Vec<Value> = serde_json::from_str(&js.stdout).unwrap();
+    let js_out: &Vec<Value> = recorded[0].as_array().unwrap();
+    assert_eq!(js_out.len(), cases.len(), "{REGENERATE}");
     let mut kinds = BTreeMap::<String, usize>::new();
     let mut strings = 0;
     let diffs: Vec<Option<String>> = cases
         .iter()
-        .zip(&js_out)
+        .zip(js_out)
         .map(|((t, p), want)| {
             let r = review_record::parse_transcript(t);
             let (k, n) = review_record::classify_agent(&r.prompt_head);
@@ -206,8 +233,9 @@ fn transcripts_and_classifier_match_js_directly() {
                 },
                 "prompt": {"kind": pk, "name": pn},
             });
-            (js::stringify(&got, "") != js::stringify(want, ""))
-                .then(|| format!("input {t:?} / {p:?}\n  rs {}\n  js {}", js::stringify(&got, ""), js::stringify(want, "")))
+            let want = want.as_str().unwrap();
+            (js::stringify(&got, "") != want)
+                .then(|| format!("input {t:?} / {p:?}\n  rs {}\n  js {want}", js::stringify(&got, "")))
         })
         .collect();
     eprintln!("{kinds:?} strings={strings}");
@@ -648,13 +676,18 @@ const REGIONS: [&str; 3] = [
     "REPORT-FIDELITY-CHECKS",
 ];
 const GOLDEN: &str = "persist-review-record.json";
+const FIXED: &str = "persist-review-record-fixed.json";
+const WORKFLOW: &str = "workflows/tribunal.js";
 const REGENERATE: &str =
     "regenerate: TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_review_record";
 
 /// The marked regions of `workflows/tribunal.js` the script slices, not the
 /// whole file, which changes with every edit to the workflow.
 fn region_texts() -> BTreeMap<&'static str, Vec<String>> {
-    let src = std::fs::read_to_string(plugin_root().join("workflows/tribunal.js")).unwrap();
+    regions_of(&on_disk(WORKFLOW).expect("workflows/tribunal.js to record from"))
+}
+
+fn regions_of(src: &str) -> BTreeMap<&'static str, Vec<String>> {
     REGIONS
         .iter()
         .map(|name| {
@@ -675,6 +708,80 @@ fn region_texts() -> BTreeMap<&'static str, Vec<String>> {
 
 fn recorded_with() -> Value {
     json!({"modules": module_texts(SCRIPT), "regions": region_texts()})
+}
+
+/// What changed since `with` was recorded: modules as [`stale_modules`]
+/// (or [`stale_module_shas`] with `hashed`) finds them, and the regions,
+/// unless the workflow is gone (retired: skipped).
+fn stale_with(with: &Value, hashed: bool) -> Vec<String> {
+    let mut stale = if hashed {
+        stale_module_shas(&with["modules"], SCRIPT)
+    } else {
+        stale_modules(&with["modules"], SCRIPT)
+    };
+    if let Some(src) = on_disk(WORKFLOW) {
+        let regions = json!(regions_of(&src));
+        let now = if hashed {
+            sha(&regions.to_string())
+        } else {
+            regions
+        };
+        if with["regions"] != now {
+            stale.push(format!("the {WORKFLOW} regions"));
+        }
+    }
+    stale
+}
+
+/// The fixed tests' recordedWith: the hashes of what [`recorded_with`] keeps.
+fn fixed_with() -> Value {
+    json!({"modules": module_shas(SCRIPT), "regions": sha(&json!(region_texts()).to_string())})
+}
+
+/// The script's side of a fixed test's one case, from `FIXED`; `run`
+/// records it when regenerating.
+fn fixed_side(test: &str, input: Value, run: impl FnOnce() -> Value) -> Value {
+    fixed(
+        FIXED,
+        test,
+        REGENERATE,
+        &[input],
+        fixed_with,
+        |w| stale_with(w, true),
+        || vec![run()],
+    )
+    .remove(0)
+}
+
+/// The paths a golden keeps as placeholders, `(path, placeholder)`: the
+/// scratch directory, also in the dashed form the default project dir takes
+/// it in, and the plugin.
+fn placeholders(scratch: &Path) -> Vec<(String, String)> {
+    let scratch_text = scratch.to_string_lossy().into_owned();
+    let scratch_slug: String = scratch_text
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    vec![
+        (scratch_text, "<SCRATCH>".into()),
+        (scratch_slug, "<SCRATCH-SLUG>".into()),
+        (
+            plugin_root().to_string_lossy().into_owned(),
+            "<PLUGIN>".into(),
+        ),
+    ]
+}
+
+/// [`placeholders`] the other way round.
+fn placeholders_back(scratch: &Path) -> Vec<(String, String)> {
+    placeholders(scratch)
+        .into_iter()
+        .map(|(path, mark)| (mark, path))
+        .collect()
+}
+
+fn pairs(p: &[(String, String)]) -> Vec<(&str, &str)> {
+    p.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect()
 }
 
 fn side_json(run: &posting::Run, st: &State) -> Value {
@@ -710,25 +817,9 @@ fn side_from(v: &Value) -> (posting::Run, State) {
 fn persist_review_record_matches_js_on_generated_runs() {
     let root = scratch("persist");
     let cases = sample(CASES, case());
-    let scratch_text = root.to_string_lossy().into_owned();
-    let plugin_text = plugin_root().to_string_lossy().into_owned();
-    // The default project dir is the cwd with every other character a dash,
-    // so the scratch directory also appears in that form.
-    let scratch_slug: String = scratch_text
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect();
-    let to_golden = [
-        (scratch_text.as_str(), "<SCRATCH>"),
-        (scratch_slug.as_str(), "<SCRATCH-SLUG>"),
-        (plugin_text.as_str(), "<PLUGIN>"),
-    ];
-    let from_golden = [
-        ("<SCRATCH>", scratch_text.as_str()),
-        ("<SCRATCH-SLUG>", scratch_slug.as_str()),
-        ("<PLUGIN>", plugin_text.as_str()),
-    ];
-    let golden = recorded(GOLDEN, &recorded_with(), REGENERATE);
+    let (keep, back) = (placeholders(&root), placeholders_back(&root));
+    let (to_golden, from_golden) = (pairs(&keep), pairs(&back));
+    let golden = recorded(GOLDEN, REGENERATE, |w| stale_with(w, false));
     let replay: Option<&Vec<Value>> = golden.as_ref().map(|g| {
         let recorded = g["cases"].as_array().unwrap();
         assert_eq!(
@@ -836,7 +927,7 @@ fn persist_review_record_refuses_when_the_ledger_stays_locked() {
             .map(|s| (*s).to_owned())
             .collect(),
     };
-    let sides: Vec<(posting::Run, State)> = parallel(&["js", "rs"], |_, side| {
+    let side = |side: &str| {
         let dir = root.join(side);
         let (mut env, mut vars, argv) = prepare(&dir, &c);
         env.lock_wait = Duration::from_millis(LOCK_WAIT_MS);
@@ -844,7 +935,7 @@ fn persist_review_record_refuses_when_the_ledger_stays_locked() {
         let data = dir.join("data");
         write_data(&data, &c.ledger);
         std::fs::create_dir(data.join("metrics.jsonl.lock")).unwrap();
-        let out = if *side == "js" {
+        let out = if side == "js" {
             node(
                 &script("persist-review-record.mjs"),
                 &argv,
@@ -867,7 +958,17 @@ fn persist_review_record_refuses_when_the_ledger_stays_locked() {
             ..out
         };
         (out, state(&data))
-    });
+    };
+    let input = json!({"case": sha(&format!("{c:?}")), "waitMs": LOCK_WAIT_MS});
+    let js = fixed_side(
+        "persist_review_record_refuses_when_the_ledger_stays_locked",
+        input,
+        || {
+            let (run, st) = side("js");
+            to_placeholders(&side_json(&run, &st), &root)
+        },
+    );
+    let sides = [side_from(&from_placeholders(&js, &root)), side("rs")];
     assert_eq!(sides[0], sides[1]);
     assert_eq!(sides[0].0.code, 1);
     assert!(
@@ -952,15 +1053,24 @@ fn persist_review_record_matches_js_on_prototype_models() {
         .unwrap();
     }
     let data = dir.join("data");
-    write_data(&data, &c.ledger);
-    let js = node(
-        &script("persist-review-record.mjs"),
-        &argv,
-        &dir,
-        &vars,
-        &safe_path(None),
+    let input = json!({"case": sha(&format!("{c:?}")), "agents": sha(&format!("{agents:?}"))});
+    let (to_golden, from_golden) = (placeholders(&dir), placeholders_back(&dir));
+    let recorded = fixed_side(
+        "persist_review_record_matches_js_on_prototype_models",
+        input,
+        || {
+            write_data(&data, &c.ledger);
+            let js = node(
+                &script("persist-review-record.mjs"),
+                &argv,
+                &dir,
+                &vars,
+                &safe_path(None),
+            );
+            swapped(&side_json(&js, &state(&data)), &pairs(&to_golden))
+        },
     );
-    let js_state = state(&data);
+    let (js, js_state) = side_from(&swapped(&recorded, &pairs(&from_golden)));
     write_data(&data, &c.ledger);
     let rs = review_record::run(&argv, &env);
     let rs_state = state(&data);

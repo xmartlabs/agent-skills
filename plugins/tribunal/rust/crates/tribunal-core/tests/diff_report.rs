@@ -13,6 +13,13 @@ use common::*;
 // Where JavaScript throws, the Rust side returns `Err`, and the two are
 // compared on whether they threw, not on the message: V8's wording is not
 // part of the behavior and changes between Node releases.
+//
+// The JavaScript's side is read from `tests/goldens/oracle/diff_report.json`
+// (see `common`): the workflow is being retired, so a run starts only the
+// port. The file keeps each call's results under a SHA-256 of its inputs and a
+// SHA-256 of every region's text, so a region edited without regenerating
+// fails here; with the workflow gone the golden is final. Regenerate:
+// `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-core --test diff_report`.
 
 use proptest::prelude::*;
 use serde_json::{json, Map, Value};
@@ -1092,6 +1099,28 @@ fn run_carry_forward(call: &Value) -> Result<Value, String> {
         "priorGrade" => cf::prior_grade(a(0).unwrap()),
         other => panic!("no Rust port wired for {other}"),
     })
+}
+
+/// Declared difference: a finding a person lowered with `tribunal override
+/// --severity` stops blocking and grades at its new severity in the port.
+/// The Workflow does not read `operatorSeverity`.
+#[test]
+fn declared_difference_a_lowered_finding_stops_blocking() {
+    let f = json!({"severity": "critical", "blocking": true, "operatorSeverity": {"severity": "nit", "from": "critical"}});
+    let calls = vec![
+        json!({"fn": "countsAsBlocker", "args": [f]}),
+        json!({"fn": "priorGrade", "args": [f]}),
+    ];
+    let js: Vec<Value> = oracle_raw("CARRY-FORWARD", CARRY_FORWARD_EXPORTS, &[], &calls)
+        .into_iter()
+        .map(outcome)
+        .collect();
+    assert_eq!(
+        js,
+        [outcome(Ok(json!(true))), outcome(Ok(json!("critical")))]
+    );
+    assert!(!cf::counts_as_blocker(&f));
+    assert_eq!(cf::prior_grade(&f), json!("nit"));
 }
 
 #[test]

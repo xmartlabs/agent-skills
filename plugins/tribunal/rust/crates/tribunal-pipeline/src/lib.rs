@@ -5,9 +5,11 @@
 
 pub mod agent_def;
 pub mod context;
+pub mod cost_report;
 pub mod decisions;
 pub mod live;
 pub mod metrics;
+pub mod operator_override;
 pub mod panel;
 pub mod panel_prompts;
 pub mod persist;

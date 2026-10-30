@@ -70,8 +70,27 @@ name: PR evidence
 on:
   pull_request:
     types: [opened, ready_for_review, labeled]
+env:
+  EVIDENCE_PATHS: |
+    src/*
+    !src/*.test.tsx
 jobs:
+  # Decides through the API alone, so the evidence job and its install only start when there is
+  # something to capture.
+  gate:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pull-requests: read }
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      - id: gate
+        uses: xmartlabs/agent-skills/actions/pr-evidence/gate@pr-evidence-v1
+        with:
+          claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          paths: ${{ env.EVIDENCE_PATHS }}
   evidence:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -87,12 +106,16 @@ jobs:
         with:
           claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          paths: |
-            src/*
-            !src/*.test.tsx
+          paths: ${{ env.EVIDENCE_PATHS }}
           # instructions: docs/pr-evidence.md   # how to log in, which data, which routes
           # warmup-path: /                      # dev servers that compile on first visit
 ```
+
+The `gate` action takes the action's own inputs (`claude-token`, `anthropic-api-key`,
+`github-token`, `attach-token`, `paths`, `label`, `once`, `drafts`): pass the same `with:` to both,
+and the evidence job's action checks again with the same rules, so both agree. Pass the secret in
+each `with:` rather than in `env:`, so your setup steps (`npm ci` runs the pull request's install
+scripts) cannot read it.
 
 `@pr-evidence-v1` follows every compatible release. To freeze a version, use a full tag such as
 `@pr-evidence-v1.0.0`.
@@ -114,47 +137,20 @@ capture that could not be done leaves "Evidence pending — <reason>" instead.
 - **Native attachments instead of a hosting branch:** give a bot account's token as `attach-token`
   (see [Where the media goes](#where-the-media-goes)).
 
-### Skip the setup when there is nothing to capture
+### Simpler workflows
 
-The action decides whether to capture only after your setup steps ran. When they are slow (a large
-`npm ci`), put the decision in a cheap job first with the `gate` action, which reads the pull
-request through the API and checks out nothing. It takes the action's own inputs (`claude-token`,
-`anthropic-api-key`, `github-token`, `attach-token`, `paths`, `label`, `once`, `drafts`), so define
-`paths` once in the workflow's `env:` and pass the same `with:` to both. Pass the secret in each
-`with:` rather than in `env:`, so your setup steps (`npm ci` runs the pull request's install
-scripts) cannot read it:
+The gate job is optional; it saves work, not correctness. Two lighter shapes work too:
 
-```yaml
-env:
-  EVIDENCE_PATHS: |
-    src/*
-    !src/*.test.tsx
-jobs:
-  gate:
-    runs-on: ubuntu-latest
-    permissions: { contents: read, pull-requests: read }
-    outputs:
-      run: ${{ steps.gate.outputs.run }}
-    steps:
-      - id: gate
-        uses: xmartlabs/agent-skills/actions/pr-evidence/gate@pr-evidence-v1
-        with:
-          claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          paths: ${{ env.EVIDENCE_PATHS }}
-  evidence:
-    needs: gate
-    if: needs.gate.outputs.run == 'true'
-    # ... the job above, ending with:
-    steps:
-      - uses: xmartlabs/agent-skills/actions/pr-evidence@pr-evidence-v1
-        with:
-          claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          paths: ${{ env.EVIDENCE_PATHS }}
-```
+- **One job, no gate:** drop the `gate` job and the evidence job's `needs` and `if`. The action
+  applies the same rules by itself, but only after checkout and install ran, on every event.
+- **One job, gate as its first step:** run the `gate` action as the job's first step and add
+  `if: steps.gate.outputs.run == 'true'` to every step after it. The install is skipped, but the
+  job still takes a runner, and its `concurrency` block can cancel a running capture for an event
+  the gate then skips.
 
-The evidence job's action checks again, with the same rules, so both agree. The gate only checks
-that a credential is set. Its older `has-claude-credential` input (`true` when the evidence job
-has a credential) still works but is deprecated: pass `claude-token` or `anthropic-api-key`.
+On GitHub-hosted runners in a private repository the gate job bills its own minute on every event.
+The gate's older `has-claude-credential` input still works but is deprecated: pass `claude-token`
+or `anthropic-api-key`.
 
 ## When it runs
 
