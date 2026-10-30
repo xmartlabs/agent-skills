@@ -1112,30 +1112,24 @@ fn lens_prompt_matches_js() {
         .iter()
         .map(|p| json!({"fn": "lensPrompt", "args": [p]}))
         .collect();
+    // Declared difference: the port's `notReached` paragraph asks for each
+    // gap's kind. Each port prompt carries it once; with the Workflow's
+    // paragraph put back, the prompt is the Workflow's.
     let rust: Vec<Value> = params
         .iter()
-        .map(|p| as_result(lens_prompt::lens_prompt(p).map(Value::String)))
+        .map(|p| {
+            as_result(lens_prompt::lens_prompt(p).map(|text| {
+                assert_eq!(text.matches(lens_prompt::NOT_REACHED_PARAGRAPH).count(), 1);
+                Value::String(text.replace(
+                    lens_prompt::NOT_REACHED_PARAGRAPH,
+                    lens_prompt::WORKFLOW_NOT_REACHED_PARAGRAPH,
+                ))
+            }))
+        })
         .collect();
-    // Declared difference: the port's `notReached` paragraph asks for each
-    // gap's kind. Every Workflow prompt carries its own paragraph once, and
-    // nothing else differs.
     let js: Vec<Value> = oracle_raw("LENS-PROMPT", &["lensPrompt"], &[], &calls)
         .into_iter()
         .map(as_result)
-        .map(|mut r| {
-            if let Some(Value::String(p)) = r.get_mut("ok") {
-                assert_eq!(
-                    p.matches(lens_prompt::WORKFLOW_NOT_REACHED_PARAGRAPH)
-                        .count(),
-                    1
-                );
-                *p = p.replace(
-                    lens_prompt::WORKFLOW_NOT_REACHED_PARAGRAPH,
-                    lens_prompt::NOT_REACHED_PARAGRAPH,
-                );
-            }
-            r
-        })
         .collect();
     assert_same("lensPrompt", &calls, &rust, &js);
 }

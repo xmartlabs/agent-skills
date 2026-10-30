@@ -135,16 +135,20 @@ fn rust_prompt(c: &Value) -> Value {
 #[test]
 fn lens_dispatch_prompt_matches_the_workflow() {
     let cases = sample(case());
-    let mut js = span(&PROMPT_SPAN, &cases);
+    let js = span(&PROMPT_SPAN, &cases);
     // Declared difference (`lens_prompt::NOT_REACHED_PARAGRAPH`): the port
-    // asks for each gap's kind. Every Workflow prompt carries its own
-    // paragraph once, and nothing else differs.
-    for j in &mut js {
-        let p = j["prompt"].as_str().unwrap();
-        assert_eq!(p.matches(WORKFLOW_NOT_REACHED_PARAGRAPH).count(), 1);
-        j["prompt"] = json!(p.replace(WORKFLOW_NOT_REACHED_PARAGRAPH, NOT_REACHED_PARAGRAPH));
-    }
-    let rust: Vec<Value> = cases.iter().map(rust_prompt).collect();
+    // asks for each gap's kind. Each port prompt carries it once; with the
+    // Workflow's paragraph put back, the prompt is the Workflow's.
+    let rust: Vec<Value> = cases
+        .iter()
+        .map(rust_prompt)
+        .map(|mut r| {
+            let p = r["prompt"].as_str().unwrap();
+            assert_eq!(p.matches(NOT_REACHED_PARAGRAPH).count(), 1);
+            r["prompt"] = json!(p.replace(NOT_REACHED_PARAGRAPH, WORKFLOW_NOT_REACHED_PARAGRAPH));
+            r
+        })
+        .collect();
     assert_same("lens dispatch prompt", &cases, &rust, &js);
 }
 
