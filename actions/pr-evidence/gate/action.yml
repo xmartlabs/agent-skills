@@ -1,28 +1,41 @@
 name: PR evidence gate
 description: >-
   Decides whether the pr-evidence action would run on this pull request, without checking out or
-  installing anything. Use it in a cheap job before an expensive setup job.
+  installing anything. Use it in a cheap job before an expensive setup job, with the same inputs.
 author: Xmartlabs
 
 inputs:
+  claude-token:
+    description: >-
+      Same as the pr-evidence action's input. The gate only checks that a credential is set: runs
+      without one (Dependabot's) are skipped.
+    default: ''
+  anthropic-api-key:
+    description: Same as the pr-evidence action's input; the gate only checks that it is set.
+    default: ''
+  has-claude-credential:
+    description: >-
+      Deprecated: pass `claude-token` or `anthropic-api-key` instead. `true` counts as a Claude
+      credential.
+    default: ''
   github-token:
     description: Token for reading the pull request's files and comments.
     default: ${{ github.token }}
   attach-token:
     description: Same as the pr-evidence action's input; its user's comments count as posted.
     default: ''
-  has-claude-credential:
-    description: >-
-      `true` when the evidence job has a Claude credential: pass the expression comparing the
-      credential secret with an empty string (see the README). Runs without one (Dependabot's) are
-      skipped.
-    required: true
   paths:
     description: Same as the pr-evidence action's input.
     default: ''
   label:
     description: Same as the pr-evidence action's input.
     default: pr-evidence
+  once:
+    description: Same as the pr-evidence action's input.
+    default: 'true'
+  drafts:
+    description: Same as the pr-evidence action's input.
+    default: 'false'
 
 outputs:
   run:
@@ -37,7 +50,9 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.github-token }}
         ATTACH_TOKEN: ${{ inputs.attach-token }}
-        HAS_CLAUDE_AUTH: ${{ inputs.has-claude-credential }}
+        HAS_CLAUDE_AUTH: ${{ inputs.has-claude-credential == 'true' || inputs.claude-token != '' || inputs.anthropic-api-key != '' }}
         INPUT_PATHS: ${{ inputs.paths }}
         INPUT_LABEL: ${{ inputs.label }}
+        INPUT_ONCE: ${{ inputs.once }}
+        INPUT_DRAFTS: ${{ inputs.drafts }}
       run: bash "$GITHUB_ACTION_PATH/../run.sh" gate

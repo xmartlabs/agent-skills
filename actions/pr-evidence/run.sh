@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# run.sh gate|prepare|install|warmup|capture|fallback|cleanup — the steps of the pr-evidence action.
+# run.sh gate|prepare|install|warmup|capture|fallback|summary|cleanup — the steps of the pr-evidence
+# action.
 #
 # Each step is a subcommand so it can be tested on its own. State shared between steps lives in
 # one job directory under RUNNER_TEMP (per job, also on persistent self-hosted runners): the
@@ -32,14 +33,17 @@ PY
 pr_number() { event pull_request.number; }
 
 # Comments written by the action's own identities: github-actions[bot], the github-token's user
-# when it can read one (a PAT or an App's user token), and the attach-token user. Prints their
-# bodies, one JSON string per line, newest last.
-own_comment_bodies() { # [SINCE_ISO]
-  local since="${1:-}" logins='["github-actions[bot]"]'
+# when it can read one (a PAT or an App's user token), and the attach-token user. Prints FILTER (a
+# jq filter) applied to each of them, newest last.
+own_comments() { # FILTER [SINCE_ISO]
+  local since="${2:-}" logins='["github-actions[bot]"]'
   [ -f "$JOB/own-logins.json" ] && logins="$(cat "$JOB/own-logins.json")"
   gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$(pr_number)/comments?per_page=100${since:+&since=$since}" \
-    --jq ".[] | select(.user.login as \$l | $logins | index(\$l)) | .body | @json"
+    --jq ".[] | select(.user.login as \$l | $logins | index(\$l)) | $1"
 }
+
+# The bodies of the action's own comments, one JSON string per line, newest last.
+own_comment_bodies() { own_comments '.body | @json' "${1:-}"; } # [SINCE_ISO]
 
 # matches_paths FILE_LIST PATTERNS: exit 0 when a listed file matches an include pattern and no
 # exclude pattern (`!glob`). fnmatch semantics: `*` also crosses `/`.
@@ -85,13 +89,15 @@ cmd_gate() {
     else decide "label '$label' is not '$INPUT_LABEL'" false; fi
     return 0
   fi
-  [ "$draft" = true ] && { decide "draft pull request" false; return 0; }
+  # Automatic events: drafts, paths and once (in that order) can each skip the run.
+  [ "$draft" = true ] && [ "${INPUT_DRAFTS:-false}" != true ] \
+    && { decide "draft pull request" false; return 0; }
   if [ -n "${INPUT_PATHS:-}" ]; then
     changed_files "$JOB/changed-files.txt" || { log "could not list changed files"; return 1; }
     matches_paths "$JOB/changed-files.txt" "$INPUT_PATHS" \
       || { decide "no changed file matches 'paths'" false; return 0; }
   fi
-  if own_comment_bodies | grep -qF "$POSTED_MARKER"; then
+  if [ "${INPUT_ONCE:-true}" != false ] && own_comment_bodies | grep -qF "$POSTED_MARKER"; then
     decide "evidence already posted; add the '$INPUT_LABEL' label to run again" false
     return 0
   fi
@@ -270,6 +276,12 @@ PY
       < "$JOB/prompt.md" 2>&1 | tee "$JOB/claude.log"
 }
 
+# Why nothing was posted, for the job summary: the capture never started when setup failed.
+not_posted_reason() {
+  if [ -f "$JOB/claude.log" ]; then printf 'the evidence run ended without posting a result'
+  else printf "the action's setup failed before the capture started"; fi
+}
+
 # Post "evidence pending" unless this run already reported (posted or pending).
 cmd_fallback() {
   local since; since="$(cat "$JOB/started-at" 2>/dev/null || echo 1970-01-01T00:00:00Z)"
@@ -283,6 +295,25 @@ cmd_fallback() {
   gh pr comment "$(pr_number)" --repo "$GITHUB_REPOSITORY" --body-file "$JOB/pending.md"
 }
 
+# The run's page on GitHub says whether evidence was posted, with a link to it. GitHub caps a step's
+# summary at 1 MiB.
+cmd_summary() {
+  [ -n "${GITHUB_STEP_SUMMARY:-}" ] || return 0
+  local since urls url="" status
+  since="$(cat "$JOB/started-at" 2>/dev/null || echo 1970-01-01T00:00:00Z)"
+  if ! urls="$(own_comments "select(.body | contains(\"$POSTED_MARKER\")) | .html_url" "$since")"; then
+    status="⚠️ unknown: could not list the pull request's comments"
+  else
+    url="$(printf '%s\n' "$urls" | tail -n 1)"
+    if [ -n "$url" ]; then status="✅ posted"; else status="⏳ not posted: $(not_posted_reason)"; fi
+  fi
+  {
+    echo "### PR evidence — PR #$(pr_number) · $status"
+    if [ -n "$url" ]; then printf '\n[See the evidence on the pull request](%s)\n' "$url"; fi
+  } | head -c 900000 >> "$GITHUB_STEP_SUMMARY"
+  return 0
+}
+
 stop_port() { # PORT: stop whatever listens on it (the port is unique on the host for this job)
   if command -v fuser >/dev/null; then fuser -k -TERM "$1/tcp" 2>/dev/null || true
   elif command -v lsof >/dev/null; then lsof -t -iTCP:"$1" -sTCP:LISTEN | xargs -r kill 2>/dev/null || true
@@ -290,8 +321,19 @@ stop_port() { # PORT: stop whatever listens on it (the port is unique on the hos
 }
 
 # Close only this job's browser session (never kill-all: jobs may share the host), stop the app,
-# restore the config file and remove the job directory.
+# restore the config file, remove the label and remove the job directory. The label is a one-shot
+# request: removing it lets adding it again start a new run.
 cmd_cleanup() {
+  if [ -n "${INPUT_LABEL:-}" ]; then
+    local label err
+    label="$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1],safe=""))' "$INPUT_LABEL")"
+    if ! err="$(gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$(pr_number)/labels/$label" 2>&1 >/dev/null)"; then
+      case "$err" in
+        *"HTTP 404"*) log "label '$INPUT_LABEL' was not on the pull request" ;;
+        *) log "could not remove the label '$INPUT_LABEL': $err" ;;
+      esac
+    fi
+  fi
   [ -f "$JOB/session" ] && PATH="$JOB/tools/bin:$PATH" playwright-cli -s="$(cat "$JOB/session")" close >/dev/null 2>&1
   [ -f "$JOB/port" ] && stop_port "$(cat "$JOB/port")"
   if [ -f "$JOB/config-path" ]; then
@@ -309,6 +351,7 @@ case "${1:-}" in
   warmup) cmd_warmup ;;
   capture) cmd_capture ;;
   fallback) cmd_fallback ;;
+  summary) cmd_summary ;;
   cleanup) cmd_cleanup ;;
-  *) echo "usage: run.sh gate|prepare|install|warmup|capture|fallback|cleanup" >&2; exit 2 ;;
+  *) echo "usage: run.sh gate|prepare|install|warmup|capture|fallback|summary|cleanup" >&2; exit 2 ;;
 esac
