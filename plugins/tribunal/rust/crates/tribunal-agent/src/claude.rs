@@ -69,6 +69,21 @@ impl ClaudeAgent {
         }
     }
 
+    /// The agent the `tribunal` binary dispatches with: the CLI named by
+    /// `TRIBUNAL_CLAUDE_BIN` (else `claude`) on the session login, or on the API
+    /// key in `TRIBUNAL_ANTHROPIC_API_KEY` when that is set. A plain
+    /// `ANTHROPIC_API_KEY` left in the operator's shell never selects the key:
+    /// the session login stays the default, and that key is dropped from each
+    /// child. `lookup` reads one environment variable.
+    #[must_use]
+    pub fn from_env(lookup: impl Fn(&str) -> Option<String>) -> Self {
+        let mut agent = Self::new(lookup("TRIBUNAL_CLAUDE_BIN").unwrap_or_else(|| "claude".into()));
+        if let Some(key) = lookup("TRIBUNAL_ANTHROPIC_API_KEY").filter(|k| !k.is_empty()) {
+            agent.credentials = Credentials::ApiKey(key);
+        }
+        agent
+    }
+
     /// The command line, without the binary. `--agent` is never used: on
     /// 2.1.308 it drops `--json-schema`, so the agent body goes in as the
     /// system prompt instead. The output is the event stream, whose last
@@ -423,5 +438,45 @@ mod tests {
             env.iter().filter(|(k, _)| k == "ANTHROPIC_API_KEY").count(),
             1
         );
+    }
+
+    fn lookup(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
+        move |k| {
+            pairs
+                .iter()
+                .find(|(n, _)| *n == k)
+                .map(|(_, v)| (*v).to_owned())
+        }
+    }
+
+    #[test]
+    fn from_env_defaults_to_the_session_login_and_the_claude_binary() {
+        let agent = ClaudeAgent::from_env(lookup(&[]));
+        assert_eq!(agent, ClaudeAgent::new("claude"));
+    }
+
+    #[test]
+    fn from_env_reads_the_binary_override() {
+        let agent = ClaudeAgent::from_env(lookup(&[("TRIBUNAL_CLAUDE_BIN", "/opt/claude")]));
+        assert_eq!(agent.bin, PathBuf::from("/opt/claude"));
+    }
+
+    #[test]
+    fn from_env_uses_the_tribunal_api_key_when_given() {
+        let agent = ClaudeAgent::from_env(lookup(&[("TRIBUNAL_ANTHROPIC_API_KEY", "sk-test")]));
+        assert_eq!(agent.credentials, Credentials::ApiKey("sk-test".into()));
+    }
+
+    #[test]
+    fn from_env_ignores_an_empty_tribunal_api_key() {
+        let agent = ClaudeAgent::from_env(lookup(&[("TRIBUNAL_ANTHROPIC_API_KEY", "")]));
+        assert_eq!(agent.credentials, Credentials::Session);
+    }
+
+    #[test]
+    fn from_env_never_picks_up_an_inherited_anthropic_api_key() {
+        // A key left in the operator's shell must not switch the run to API billing.
+        let agent = ClaudeAgent::from_env(lookup(&[("ANTHROPIC_API_KEY", "sk-shell")]));
+        assert_eq!(agent.credentials, Credentials::Session);
     }
 }

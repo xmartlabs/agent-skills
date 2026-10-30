@@ -410,9 +410,7 @@ async fn post_main(argv: &[String]) -> ExitCode {
     };
     let rt = runtime();
     let agent = Progress {
-        inner: ClaudeAgent::new(
-            std::env::var("TRIBUNAL_CLAUDE_BIN").unwrap_or_else(|_| "claude".into()),
-        ),
+        inner: ClaudeAgent::from_env(|k| std::env::var(k).ok()),
         started: std::time::Instant::now(),
     };
     let mut logs = Vec::new();
@@ -481,9 +479,7 @@ async fn selfcheck_main(argv: &[String]) -> ExitCode {
     }
     let rt = runtime();
     let agent = Progress {
-        inner: ClaudeAgent::new(
-            std::env::var("TRIBUNAL_CLAUDE_BIN").unwrap_or_else(|_| "claude".into()),
-        ),
+        inner: ClaudeAgent::from_env(|k| std::env::var(k).ok()),
         started: std::time::Instant::now(),
     };
     let mut logs = Vec::new();
@@ -529,8 +525,7 @@ async fn main() -> ExitCode {
         }
     };
     let rt = runtime();
-    let mut agent =
-        ClaudeAgent::new(std::env::var("TRIBUNAL_CLAUDE_BIN").unwrap_or_else(|_| "claude".into()));
+    let mut agent = ClaudeAgent::from_env(|k| std::env::var(k).ok());
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());

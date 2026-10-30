@@ -543,6 +543,14 @@ the design depends on, both checked on 2.1.308: `--agent` drops
 `--json-schema`, so an agent definition goes in as `--system-prompt`; and
 `--max-turns` is not a flag.
 
+Each child runs on the operator's subscription login by default, and an
+`ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` it would inherit is removed,
+because the CLI ranks either above the login: a key left in a shell must not
+move a review to API billing. To run on an API key on purpose (a CI job with
+no subscription, for example), set `TRIBUNAL_ANTHROPIC_API_KEY`; the binary
+passes it to every child as `ANTHROPIC_API_KEY`. `TRIBUNAL_CLAUDE_BIN` names
+the `claude` binary to run.
+
 The context tests run each script and its port against the same recordings.
 The script finds `crates/tribunal-context/tests/shim/gh`, a node script, first
 on `PATH`. The port is passed `tribunal-test-gh` as `Tools.gh`: a binary of
