@@ -134,7 +134,7 @@ sets the config's `host.target` from the token, whatever the config says:
 | `once` | `true` | `true`: automatic events skip a pull request that already has the action's evidence. `false`: every automatic event runs. |
 | `drafts` | `false` | `true`: automatic events run on draft pull requests too. |
 | `config` | `.pr-evidence/config.json` | Config path, read at the base branch. |
-| `instructions` | empty | A repository document Claude reads first, for example how to log in, pick data or which route shows a component. |
+| `instructions` | empty | A repository document Claude reads first, for example how to log in, pick data or which route shows a component. Claude edits no tracked file unless this document allows it (for example a temporary demo fixture), and restores what it edited. |
 | `warmup-path` | empty | Request this path once before Claude starts, so a dev server's first compile does not hit the skill's readiness timeout. |
 | `max-turns` | `120` | Maximum Claude turns. |
 | `claude-args` | empty | Extra `claude` arguments, for example `--model claude-sonnet-5-5`. |

@@ -25,5 +25,6 @@ The comment's first line must be a hidden marker:
   (then the body is one line saying "No visible UI change detected").
 - `<!-- pr-evidence:pending -->` when it reports "Evidence pending — <reason>".
 
-Do not commit, push (except through the skill's `run.sh host`), or edit tracked files. Always run
-the skill's cleanup stage before finishing.
+Do not commit or push (except through the skill's `run.sh host`). Do not edit tracked files unless
+the instructions above allow an edit for the capture; then restore every file you edited before
+finishing (`git checkout -- <file>`). Always run the skill's cleanup stage before finishing.
