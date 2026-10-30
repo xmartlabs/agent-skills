@@ -110,6 +110,10 @@ Each region gets a small JS shim: read JSON from stdin, call the region via
 (fixtures plus generated cases) and fails on any difference. Declared
 differences need a witness input.
 
+This applies to code ported from the Workflow and its scripts. Code written
+after the port has no JavaScript twin and is tested in Rust alone, without
+`node` (see `../CLAUDE.md`).
+
 ## Ported so far
 
 All 37 decision regions are ported. Each region is one module, and each

@@ -4,6 +4,12 @@ Back to the [Tribunal README](../README.md).
 
 ## Changing it
 
+**New work goes in the Rust engine only.** The Workflow and its scripts are a
+fallback kept until they are deleted, so a new feature or rule has no
+JavaScript version, no node in its tests, and no user-facing check that runs
+a `.mjs`. A fallback review may lack it, and it ships with a new binary
+release. [`../CLAUDE.md`](../CLAUDE.md) lists the rules.
+
 Tribunal is versioned by a hash of its own behavioral surface, and every
 change is expected to clear the offline battery before it ships. The commands
 in this page run from `plugins/tribunal/skills/review-pr` unless a block says

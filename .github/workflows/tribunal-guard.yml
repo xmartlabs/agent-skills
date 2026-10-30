@@ -1,0 +1,31 @@
+name: tribunal-guard
+
+# Keeps new tribunal work in the Rust engine: fails a pull request that adds a script under
+# plugins/tribunal outside rust/, or makes workflow-src/tribunal.js or templates/check.sh longer
+# (plugins/tribunal/CLAUDE.md). The tribunal-script-exception label lets one through. Runs only
+# when the plugin changes; do not make it a required check (see CLAUDE.md).
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - plugins/tribunal/**
+      - .github/scripts/tribunal-guard.sh
+      - .github/workflows/tribunal-guard.yml
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: No new scripts outside rust/
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          EXCEPTION: ${{ contains(github.event.pull_request.labels.*.name, 'tribunal-script-exception') }}
+        run: bash .github/scripts/tribunal-guard.sh
