@@ -139,6 +139,41 @@ pub fn select_foci(
     all.into_iter().take(keep).collect()
 }
 
+/// Adds the profile's `correctness` focus when the forced foci filled every
+/// slot `select_foci` had, so a risk path adds a lens instead of taking the
+/// place of the one that asks whether the change works. No Workflow twin: the
+/// Workflow keeps the forced foci alone.
+pub fn keep_correctness(mut foci: Vec<Value>, profile_foci: &Map<String, Value>) -> Vec<Value> {
+    if let Some(c) = profile_foci
+        .get("correctness")
+        .filter(|v| js::truthy(Some(v)))
+    {
+        let c = js_ext::js_order(c);
+        if !foci.contains(&c) {
+            foci.push(c);
+        }
+    }
+    foci
+}
+
+/// The lens count. The foci outnumber the budget only when forced foci, and
+/// the `correctness` focus `keep_correctness` adds, exceed it; the count
+/// honours that instead of capping it at the budget, which the Workflow does
+/// and so hands the foci past it to no lens.
+pub fn lens_count_for(
+    lenses_override: Option<f64>,
+    group_count: f64,
+    lens_budget: f64,
+    foci_count: f64,
+) -> f64 {
+    match lenses_override {
+        Some(o) => o,
+        None if group_count > 1.0 => lens_budget.max(group_count).max(foci_count),
+        None if foci_count > lens_budget => foci_count,
+        None => lens_budget.min(foci_count),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,6 +215,48 @@ mod tests {
             select_foci(&files, 1.0, foci, &rules),
             [json!("m"), json!("s")]
         );
+    }
+
+    #[test]
+    fn every_forced_focus_gets_a_lens() {
+        let p = profile();
+        let rules = risk_path_rules(&p).unwrap();
+        let foci = p["foci"].as_object().unwrap();
+        let files = ["prisma/migrations/x.sql".into(), "src/auth.ts".into()];
+        let selected = select_foci(&files, 1.0, foci, &rules);
+        assert_eq!(lens_count_for(None, 1.0, 1.0, selected.len() as f64), 2.0);
+        assert_eq!(lens_count_for(None, 2.0, 1.0, selected.len() as f64), 2.0);
+        assert_eq!(lens_count_for(None, 3.0, 4.0, 3.0), 4.0);
+        assert_eq!(lens_count_for(None, 1.0, 2.0, 3.0), 3.0);
+    }
+
+    #[test]
+    fn forced_foci_never_take_the_correctness_lens() {
+        let p = profile();
+        let rules = risk_path_rules(&p).unwrap();
+        let foci = p["foci"].as_object().unwrap();
+        let both = ["prisma/migrations/x.sql".into(), "src/auth.ts".into()];
+        let kept = keep_correctness(select_foci(&both, 2.0, foci, &rules), foci);
+        assert_eq!(kept, [json!("m"), json!("s"), json!("c")]);
+        assert_eq!(lens_count_for(None, 1.0, 2.0, kept.len() as f64), 3.0);
+
+        let one = ["prisma/migrations/x.sql".into()];
+        let kept = keep_correctness(select_foci(&one, 2.0, foci, &rules), foci);
+        assert_eq!(kept, [json!("m"), json!("c")]);
+        assert_eq!(lens_count_for(None, 1.0, 2.0, kept.len() as f64), 2.0);
+
+        let mut no_correctness = foci.clone();
+        no_correctness.remove("correctness");
+        let kept = keep_correctness(vec![json!("m")], &no_correctness);
+        assert_eq!(kept, [json!("m")]);
+    }
+
+    #[test]
+    fn the_count_is_unchanged_without_excess_forced_foci() {
+        assert_eq!(lens_count_for(None, 1.0, 2.0, 2.0), 2.0);
+        assert_eq!(lens_count_for(None, 1.0, 5.0, 3.0), 3.0);
+        assert_eq!(lens_count_for(None, 3.0, 2.0, 2.0), 3.0);
+        assert_eq!(lens_count_for(Some(7.0), 1.0, 2.0, 3.0), 7.0);
     }
 
     #[test]

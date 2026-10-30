@@ -2,8 +2,10 @@
 // release.mjs — the gate a frozen version has to pass, and the ledger of what
 // each freeze actually contained.
 //
-// WHAT THIS IS. A floor: the offline battery was green at this exact content
-// hash. Nothing more.
+// WHAT THIS IS. A floor: the battery was green at this exact content hash.
+// Nothing more. The battery is the Rust engine's: fmt, clippy and the whole
+// test suite, the pinned binary built from the Rust source being frozen, and
+// the replays of the JavaScript the Rust path still runs.
 //
 // WHAT THIS IS NOT — and the distinction is the whole reason the file says it
 // out loud in its own output. This is NOT a quality score, and a green run here
@@ -39,11 +41,14 @@
 // create; it passes it in.
 
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { batteryVersion, harnessVersion, surfaceFiles } from "../scripts/harness-version.mjs";
-import { HARNESS_DATA, NEEDS_DATA_PATH, RELEASES_PATH } from "./paths.mjs";
+import { harnessVersion } from "../scripts/harness-version.mjs";
+import { resolveBinary } from "../scripts/rust-engine.mjs";
+import { HARNESS_DATA, RELEASES_PATH } from "./paths.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILL = resolve(HERE, "..");
@@ -58,24 +63,16 @@ const argValue = (name) => {
 };
 const portable = process.argv.includes("--portable");
 const dataPresent = existsSync(HARNESS_DATA);
-const needsData = new Set(
-  existsSync(NEEDS_DATA_PATH)
-    ? readFileSync(NEEDS_DATA_PATH, "utf8")
-        .split("\n")
-        .filter((l) => l.startsWith("tribunal "))
-        .map((l) => l.slice("tribunal ".length).trim())
-    : [],
-);
 // The gate has two levels. Full needs the data directory (TRIBUNAL_HARNESS_DATA),
-// which holds real past runs and is not in this repository. Without it only the
-// portable replays can run, and a row from that run must say so, because "green"
-// would otherwise claim more than was checked. So that level is never silent: it
-// needs --portable, and the row's battery cell names it.
+// which is not in this repository and holds the client terms replay-frontier
+// scans for. Without it the scan is skipped, and a row from that run must say
+// so, because "green" would otherwise claim more than was checked. So that level
+// is never silent: it needs --portable, and the row's battery cell names it.
 if (!dataPresent && !portable) {
   console.error(
     `\nrelease gate refused: the test-data directory ${HARNESS_DATA} does not exist.\n` +
-      "  Set TRIBUNAL_HARNESS_DATA to it for the full gate, or pass --portable to run only the\n" +
-      `  replays that need no data (${needsData.size} are skipped), recorded as such in the row.`,
+      "  Set TRIBUNAL_HARNESS_DATA to it for the full gate, or pass --portable to run without\n" +
+      "  the client-name scan, recorded as such in the row.",
   );
   process.exit(2);
 }
@@ -132,15 +129,136 @@ function run(label, args, { blocking = true } = {}) {
   }
 }
 
+// The binary is the default engine, so the battery tests the binary: the Rust
+// suite, and that the pinned release was built from the Rust source being
+// frozen. The Workflow's replays are not in it. The Workflow is a fallback that
+// only shrinks until it is deleted (plugins/tribunal/CLAUDE.md), so a change to it runs
+// them by hand (docs/maintaining.md). The replays kept here cover the
+// JavaScript the Rust path still runs: the launcher and its pin, and the
+// client-name ratchet over every plugin file.
+const RUST = join(CLAUDE, "rust");
+const RUST_PATH_REPLAYS = ["replay-rust-engine.mjs", "replay-frontier.mjs"];
+
+function runIn(label, cmd, args, cwd) {
+  try {
+    const out = execFileSync(cmd, args, {
+      cwd,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return { label, ok: true, blocking: true, out };
+  } catch (err) {
+    // stderr first: cargo's progress lines go there, and the failing tests and
+    // their assertions, which the report's tail has to show, go to stdout.
+    const missing = err.code === "ENOENT" ? `${cmd} is not installed\n` : "";
+    return { label, ok: false, blocking: true, out: `${err.stderr || ""}${err.stdout || ""}${missing}` };
+  }
+}
+
+function walk(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)],
+  );
+}
+const pluginPath = (abs) => relative(CLAUDE, abs).split(sep).join("/");
+
+// Files outside rust/ that the binary compiles in, read from its include_str!
+// and include_bytes! calls so the list cannot drift from the code.
+function embeddedOutsideRust() {
+  const out = new Set();
+  for (const crate of readdirSync(join(RUST, "crates"))) {
+    const src = join(RUST, "crates", crate, "src");
+    if (!existsSync(src)) continue;
+    for (const file of walk(src).filter((f) => f.endsWith(".rs"))) {
+      for (const m of readFileSync(file, "utf8").matchAll(/include_(?:str|bytes)!\(\s*"([^"]+)"\s*\)/g)) {
+        const rel = pluginPath(resolve(dirname(file), m[1]));
+        if (!rel.startsWith("rust/")) out.add(rel);
+      }
+    }
+  }
+  return [...out].sort();
+}
+
+// What changes the binary: everything under rust/ except the docs, the tests
+// and the pin itself, plus the files it embeds from elsewhere in the plugin.
+const shipsInBinary = (rel) =>
+  !rel.endsWith(".md") && rel !== "rust/release.json" && !/^rust\/crates\/[^/]+\/tests\//.test(rel);
+
+function pinCheck() {
+  const label = "rust-pin";
+  const fail = (why) => ({ label, ok: false, blocking: true, out: `${why}\n` });
+  const git = (args) =>
+    execFileSync("git", args, { cwd: CLAUDE, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  let tag;
+  try {
+    tag = JSON.parse(readFileSync(join(RUST, "release.json"), "utf8")).tag;
+  } catch (e) {
+    return fail(`cannot read rust/release.json: ${e.message}`);
+  }
+  if (!tag) return fail("rust/release.json pins no release");
+  let commit;
+  try {
+    commit = git(["rev-parse", "--verify", "--quiet", `${tag}^{commit}`]);
+  } catch {
+    return fail(`the pinned tag ${tag} is not in this clone; run git fetch origin tag ${tag}`);
+  }
+  // Against the working tree, untracked files included: release.sh records the
+  // row before it commits.
+  const paths = ["rust", ...embeddedOutsideRust()];
+  const changed = [
+    ...git(["diff", "--name-only", "--relative", commit, "--", ...paths]).split("\n"),
+    ...git(["ls-files", "--others", "--exclude-standard", "--", ...paths]).split("\n"),
+  ]
+    .filter(Boolean)
+    .filter(shipsInBinary);
+  if (changed.length) {
+    return fail(
+      `the pinned binary ${tag} was built without these changes:\n` +
+        changed.map((p) => `  ${p}`).join("\n") +
+        '\n  Release a new tribunal-rust binary and pin it (rust/README.md, "A release").',
+    );
+  }
+  // A fresh data directory, so the archive is downloaded and checked against the
+  // pin now rather than read from a cache an earlier run verified.
+  const scratch = mkdtempSync(join(tmpdir(), "tribunal-gate-"));
+  try {
+    const env = { ...process.env, TRIBUNAL_DATA_DIR: scratch };
+    delete env.TRIBUNAL_BIN;
+    delete env.TRIBUNAL_RUST_MANIFEST;
+    const r = resolveBinary({ env });
+    if (!r.ok) return fail(`the pinned binary does not resolve: ${r.error}`);
+    const printed = execFileSync(r.bin, ["--version"], { encoding: "utf8" }).trim();
+    const want = tag.replace(/^tribunal-rust-v/, "");
+    if (!printed.split(/\s+/).includes(want)) return fail(`${tag} prints "${printed}", not version ${want}`);
+    return { label, ok: true, blocking: true, out: `${tag}: ${printed}, built from this source\n` };
+  } catch (e) {
+    return fail(`the pinned binary did not run: ${e.message}`);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
 const { id, entries } = harnessVersion();
 // The battery has its own id because the row's central claim is about the
 // battery, and the harness hash never covered it: `pr-harness-4af7ff70ff8e` is
 // the same id `main` carried while `replay-embedded-bash` was red, so "green at
-// this hash" could not be re-verified by checking the hash out. Folding eval/
-// into the harness hash would have fixed that by breaking something else, since
-// a test-only edit would then move the field that exists to make runs
-// comparable. Two ids, and the row records both.
-const battery = batteryVersion();
+// this hash" could not be re-verified by checking the hash out. Two ids, and the
+// row records both. The battery is the Rust tests, the replays above and this
+// file; `rust-battery-` marks rows recorded since the battery moved off the
+// Workflow's replays (`pr-battery-`).
+const battery = (() => {
+  const files = [
+    ...walk(join(RUST, "crates")).filter((f) => /[/\\]tests[/\\]/.test(f)),
+    ...RUST_PATH_REPLAYS.map((f) => join(HERE, f)),
+    fileURLToPath(import.meta.url),
+  ];
+  const fileEntries = files
+    .map((f) => ({ path: pluginPath(f), sha: createHash("sha256").update(readFileSync(f)).digest("hex") }))
+    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const manifest = fileEntries.map((e) => `${e.path}:${e.sha}`).join("\n");
+  return { id: `rust-battery-${createHash("sha256").update(manifest).digest("hex").slice(0, 12)}`, entries: fileEntries };
+})();
 console.log(
   `peer-review release gate\n  version   ${id}\n  surface   ${entries.length} files\n  battery   ${battery.id}  (${battery.entries.length} files)`,
 );
@@ -162,21 +280,24 @@ if (!agentFiles.length) {
 }
 
 // --- the battery ------------------------------------------------------------
-const results = [run("check-mirror", ["eval/check-mirror.mjs"])];
-let skippedForData = 0;
-for (const f of readdirSync(join(SKILL, "eval")).filter((f) => /^replay-.*\.mjs$/.test(f)).sort()) {
-  if (portable && needsData.has(f)) {
-    skippedForData++;
-    continue;
-  }
-  results.push(run(f.replace(/\.mjs$/, ""), [`eval/${f}`]));
+// The Rust suite takes minutes, so each step says when it starts.
+const steps = [
+  () => runIn("cargo fmt", "cargo", ["fmt", "--all", "--check"], RUST),
+  () => runIn("cargo clippy", "cargo", ["clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"], RUST),
+  () => runIn("cargo test", "cargo", ["test", "--workspace", "--locked", "--no-fail-fast"], RUST),
+  () => pinCheck(),
+  ...RUST_PATH_REPLAYS.map((f) => () => run(f.replace(/\.mjs$/, ""), [`eval/${f}`])),
+];
+const results = [];
+console.log("\n  running");
+for (const step of steps) {
+  const r = step();
+  console.log(`    ${r.ok ? "ok  " : "FAIL"}  ${r.label}`);
+  results.push(r);
 }
 // The corpus score REPORTS, it does not gate. It is too thin to block on today
 // and pretending otherwise would be the kind of gate that lies (see the header).
 const score = portable ? { out: "" } : run("score", ["eval/score.mjs"], { blocking: false });
-
-console.log("\n  battery");
-for (const r of results) console.log(`    ${r.ok ? "ok  " : "FAIL"}  ${r.label}`);
 
 const red = results.filter((r) => !r.ok);
 const totals = (score.out.match(/^\s*TP=.*$/m) || ["  (score unavailable)"])[0].trim();
@@ -186,15 +307,21 @@ if (red.length) {
   console.log(`\nGATE RED — ${red.length} failing:`);
   for (const r of red) {
     console.log(`\n--- ${r.label} ---`);
-    console.log(r.out.trim().split("\n").slice(-12).join("\n"));
+    // cargo test's tail is the doc tests that ran after the failure, so show
+    // the failing tests, their panics and cargo's summary of them instead.
+    const lines = r.out.trim().split("\n");
+    const failing = lines.filter((l) => /^test \S+ \.\.\. FAILED$|panicked at/.test(l));
+    const summary = lines.filter((l) => /^error: \d+ targets? failed|^ {4}`-p /.test(l));
+    const shown = failing.length ? [...failing.slice(0, 30), ...summary] : lines.slice(-12);
+    console.log(shown.join("\n"));
   }
   if (record) console.log("\n--record refused: a RELEASES.md row asserts the battery passed.");
   process.exit(1);
 }
 
-console.log(`\nGATE GREEN — ${results.length}/${results.length} offline checks pass at ${id}${portable ? ` (portable gate: ${skippedForData} replays that need the data directory were not run)` : ""}.`);
+console.log(`\nGATE GREEN — ${results.length}/${results.length} checks pass at ${id}${portable ? " (portable gate: the client-name scan did not run)" : ""}.`);
 console.log(
-  "This means nothing regressed offline. It does NOT mean the review got better:\n" +
+  "This means nothing regressed. It does NOT mean the review got better:\n" +
     "  candidate generation reproduces at 14-16% between identical runs, so a\n" +
     "  quality delta cannot be read from any single run, green gate or not.",
 );
@@ -271,7 +398,7 @@ look.
 // The battery id goes in the BATTERY cell, not a seventh column: 56 rows already
 // exist with six, and it belongs beside the count whose claim it makes checkable.
 // The corpus totals are not written to the row: the corpus is external data.
-const gateCell = portable ? `${results.length}/${results.length} portable (${skippedForData} need data, not run)` : `${results.length}/${results.length} full`;
+const gateCell = portable ? `${results.length}/${results.length} portable (client-name scan not run)` : `${results.length}/${results.length} full`;
 const row = `| \`${id}\` | ${date} | ${tag} | ${gateCell} @ \`${battery.id}\` | n/a | ${notes} |`;
 const lines = readFileSync(RELEASES, "utf8").split("\n");
 let last = -1;
