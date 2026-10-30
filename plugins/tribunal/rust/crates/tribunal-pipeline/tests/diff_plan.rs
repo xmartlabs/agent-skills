@@ -238,6 +238,18 @@ fn js_plans(cases: &[Value]) -> Vec<Value> {
     )
 }
 
+/// The three fields `declared` reads, in a result small enough for the golden
+/// to keep whole: `js_plans` results are kept as digests.
+fn js_heads(cases: &[Value]) -> Vec<Value> {
+    span(
+        &Span {
+            ret: "{foci, lensCount, lensesOverride}",
+            ..PLAN_SPAN
+        },
+        cases,
+    )
+}
+
 /// The declared differences, both about forced foci:
 ///
 /// - When they outnumber the lens budget, the Workflow caps the lens count at
@@ -266,10 +278,11 @@ fn declared(js: &Value, case: &Value) -> Option<(Value, f64)> {
 fn plan_matches_the_workflow_glue() {
     let cases = sample(case());
     let js = js_plans(&cases);
+    let heads = js_heads(&cases);
     let rust: Vec<Value> = cases.iter().map(rust_plan).collect();
     let (mut same, mut differs) = (Vec::new(), 0);
     for i in 0..cases.len() {
-        match declared(&js[i], &cases[i]) {
+        match declared(&heads[i], &cases[i]) {
             Some((foci, count)) => {
                 differs += 1;
                 assert_eq!(rust[i]["foci"], foci, "case {i}");
