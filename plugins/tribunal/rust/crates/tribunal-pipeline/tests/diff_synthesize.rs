@@ -350,10 +350,27 @@ fn survivors_are_shaped_as_the_workflow_shapes_them() {
         .map(|r| json!({"surviving": r}))
         .collect();
     let js = span(&SURVIVING_SPAN, &cases);
-    let rust: Vec<Value> = cases
+    let mut rust: Vec<Value> = cases
         .iter()
         .map(|c| json!(surviving_for_synthesis(c["surviving"].as_array().unwrap())))
         .collect();
+    // Declared difference: the port says how many refuters proposed the lower
+    // severity, a field the Workflow does not write. It is present exactly
+    // when a proposal is, and is compared away here.
+    let mut counted = 0;
+    for f in rust.iter_mut().flat_map(|r| r.as_array_mut().unwrap()) {
+        let votes = f
+            .as_object_mut()
+            .unwrap()
+            .shift_remove("panelProposedSeverityVotes");
+        assert_eq!(
+            votes.is_some(),
+            f["panelProposedSeverity"].is_string(),
+            "{f}"
+        );
+        counted += usize::from(votes.is_some());
+    }
+    assert!(counted > 20, "{counted}");
     assert_same("survivingFindingsForSynthesis", &cases, &rust, &js);
     let demoted = rust
         .iter()
@@ -691,7 +708,14 @@ fn verdict_case() -> impl Strategy<Value = Value> {
     )
         .prop_map(|(carried, re, results, sweep, unreturned): (Vec<Value>, Vec<Value>, Vec<Value>, Value, usize)| {
             let unreturned: Vec<Value> = (0..unreturned).map(|i| json!({"lens": format!("lens{i}"), "files": null})).collect();
-            json!({"carried": carried, "re": re, "surviving": surviving_for_synthesis(&results), "cleanSweep": sweep, "lensesUnreturned": unreturned})
+            {
+            // The vote count is a port-only field the verdict never reads.
+            let mut surviving = surviving_for_synthesis(&results);
+            for f in &mut surviving {
+                f.as_object_mut().unwrap().shift_remove("panelProposedSeverityVotes");
+            }
+            json!({"carried": carried, "re": re, "surviving": surviving, "cleanSweep": sweep, "lensesUnreturned": unreturned})
+        }
         })
 }
 

@@ -473,33 +473,50 @@ fn severity_rank(v: Option<&Value>) -> Option<usize> {
     SEVERITIES.iter().position(|s| *s == key)
 }
 
-/// `placeSurvivor`.
-pub fn place_survivor(votes: &[Value], finding: &Value, line_added: bool) -> Placement {
-    let live: Vec<&Value> = votes
+/// The votes that answered the judgement fields. Codex answers in free text
+/// and never fills `introducedByPr`, so a Claude-plus-Codex panel has one.
+fn judging_votes(votes: &[Value]) -> Vec<&Value> {
+    votes
         .iter()
         .filter(|v| {
             js::truthy(Some(v))
                 && !is_str(js::get(v, "slotStatus"), "UNAVAILABLE")
                 && is_string(js::get(v, "introducedByPr"))
         })
-        .collect();
+        .collect()
+}
+
+/// The rank of each judging vote's proposal below the finding's severity.
+fn lower_proposals(live: &[&Value], finding: &Value) -> Vec<usize> {
+    let own = severity_rank(js::get(finding, "severity"));
+    live.iter()
+        .filter_map(|v| severity_rank(js::get(v, "proposedSeverity")))
+        .filter(|r| own.is_some_and(|o| *r < o))
+        .collect()
+}
+
+/// How many judging votes proposed a lower severity, and how many judged:
+/// what the report says next to a recorded proposal.
+#[must_use]
+pub fn lower_severity_votes(votes: &[Value], finding: &Value) -> (usize, usize) {
+    let live = judging_votes(votes);
+    (lower_proposals(&live, finding).len(), live.len())
+}
+
+/// `placeSurvivor`, except that a lower severity needs two judging votes, as
+/// a placement already did. The Workflow records one vote's proposal as the
+/// panel's; `diff_panel.rs` declares the difference.
+pub fn place_survivor(votes: &[Value], finding: &Value, line_added: bool) -> Placement {
+    let live = judging_votes(votes);
     let mut kept = Placement::default();
-    if live.is_empty() {
+    if live.len() < 2 {
         return kept;
     }
     // `x > live.length / 2` on whole numbers.
     let majority = |n: usize| n * 2 > live.len();
-    let own = severity_rank(js::get(finding, "severity"));
-    let lower: Vec<usize> = live
-        .iter()
-        .filter_map(|v| severity_rank(js::get(v, "proposedSeverity")))
-        .filter(|r| own.is_some_and(|o| *r < o))
-        .collect();
+    let lower = lower_proposals(&live, finding);
     if majority(lower.len()) {
         kept.proposed_severity = lower.iter().max().map(|&top| SEVERITIES[top]);
-    }
-    if live.len() < 2 {
-        return kept;
     }
     let intended_by = |v: &Value| js::get(v, "intendedBy").cloned();
     let intended: Vec<&Value> = live
@@ -580,5 +597,34 @@ mod tests {
             ["retry", "until", "redis", "ready"]
         );
         assert_eq!(topic_words("abcdEFGH"), ["abcd", "efgh"]);
+    }
+
+    fn judging(source: &str, proposed: &str) -> Value {
+        json!({"source": source, "verdict": "NOT_REFUTED", "slotStatus": "OK", "introducedByPr": "yes", "proposedSeverity": proposed})
+    }
+
+    #[test]
+    fn one_judging_vote_records_no_lower_severity() {
+        let f = json!({"severity": "important"});
+        let codex = v("codex", "NOT_REFUTED", 0.9);
+        let p = place_survivor(&[judging("claude", "nit"), codex.clone()], &f, false);
+        assert_eq!(p.proposed_severity, None);
+        assert_eq!(
+            lower_severity_votes(&[judging("claude", "nit"), codex], &f),
+            (1, 1)
+        );
+    }
+
+    #[test]
+    fn two_judging_votes_record_a_shared_lower_severity() {
+        let f = json!({"severity": "important"});
+        let both = [judging("claude", "nit"), judging("claude", "nit")];
+        assert_eq!(
+            place_survivor(&both, &f, false).proposed_severity,
+            Some("nit")
+        );
+        assert_eq!(lower_severity_votes(&both, &f), (2, 2));
+        let split = [judging("claude", "nit"), judging("claude", "important")];
+        assert_eq!(place_survivor(&split, &f, false).proposed_severity, None);
     }
 }
