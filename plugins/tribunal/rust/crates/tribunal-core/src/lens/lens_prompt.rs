@@ -1,6 +1,8 @@
 //! Port of the LENS-PROMPT region: the prompt every review lens receives. A
 //! model reads it, and the shared prefix above "YOUR PASS" is what the lenses'
-//! prompt cache keys on, so the text must match byte for byte.
+//! prompt cache keys on. It matches the Workflow's byte for byte except for
+//! the `notReached` paragraph, which asks for each gap's kind
+//! ([`NOT_REACHED_PARAGRAPH`]).
 
 use serde_json::Value;
 
@@ -9,13 +11,19 @@ use crate::js;
 
 pub const LENS_TOOL_CALL_BUDGET: u32 = 40;
 
+/// The Workflow's paragraph that this port replaces, for the differential test.
+pub const WORKFLOW_NOT_REACHED_PARAGRAPH: &str = "If you stop with something still unexamined, list it in `notReached` — one entry per file or surface you meant to look at and did not. That array is how the run reports its own blind spots; leaving it empty when you did run out of room is worse than the gap itself.";
+
+/// What a lens is asked to file in `notReached`.
+pub const NOT_REACHED_PARAGRAPH: &str = "List in `notReached` everything you meant to check and did not, one entry per surface. `surface` says what it is, `file` the repo path it lives in (null when there is none), and `kind` why it was left: `budget` when you meant to read that code and ran out of room, `out-of-focus` when it is outside your focus or your file list, `needs-execution` when only running something can settle it (tests, a build, a migration, a live service, a secret), and `outside-pr` when it lives in another repo or in code this PR does not reach. That array is how the run reports its own blind spots. A `budget` gap on a risk path keeps the review from approving, and leaving the array empty when you did run out of room is worse than the gap itself.";
+
 /// `LENS_BUDGET_INSTRUCTION`. It starts with a newline.
 pub fn lens_budget_instruction() -> String {
     format!(
         r##"
 Budget: about {LENS_TOOL_CALL_BUDGET} tool calls for this pass. This is a ceiling to aim under, not a target to reach and not a reason to stop early — a lens that gives up after a handful of reads has reviewed nothing, and that is a worse failure than being slow.
 Past that budget, wrap up with what you have rather than continuing to dig. On this codebase, lens findings measurably stop increasing after roughly 30-40 tool calls while cost keeps climbing: passes that ran past 80 calls cost three times as much and found slightly fewer real defects than passes that finished inside 50. Continuing is not thoroughness at that point, it is re-reading.
-If you stop with something still unexamined, list it in `notReached` — one entry per file or surface you meant to look at and did not. That array is how the run reports its own blind spots; leaving it empty when you did run out of room is worse than the gap itself."##
+{NOT_REACHED_PARAGRAPH}"##
     )
 }
 

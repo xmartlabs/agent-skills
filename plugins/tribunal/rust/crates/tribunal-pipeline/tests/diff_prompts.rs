@@ -6,6 +6,7 @@ mod common;
 use common::{assert_same, sample, span, Span, LOG_FN};
 use proptest::prelude::*;
 use serde_json::{json, Value};
+use tribunal_core::lens::lens_prompt::{NOT_REACHED_PARAGRAPH, WORKFLOW_NOT_REACHED_PARAGRAPH};
 use tribunal_core::profile::conventions_channel::conventions_channel;
 use tribunal_pipeline::prompts::{
     lens_dispatch_prompt, methodology_line, methodology_path, DiffDelivery, DiffExposure,
@@ -126,7 +127,15 @@ fn rust_prompt(c: &Value) -> Value {
 #[test]
 fn lens_dispatch_prompt_matches_the_workflow() {
     let cases = sample(case());
-    let js = span(&PROMPT_SPAN, &cases);
+    let mut js = span(&PROMPT_SPAN, &cases);
+    // Declared difference (`lens_prompt::NOT_REACHED_PARAGRAPH`): the port
+    // asks for each gap's kind. Every Workflow prompt carries its own
+    // paragraph once, and nothing else differs.
+    for j in &mut js {
+        let p = j["prompt"].as_str().unwrap();
+        assert_eq!(p.matches(WORKFLOW_NOT_REACHED_PARAGRAPH).count(), 1);
+        j["prompt"] = json!(p.replace(WORKFLOW_NOT_REACHED_PARAGRAPH, NOT_REACHED_PARAGRAPH));
+    }
     let rust: Vec<Value> = cases.iter().map(rust_prompt).collect();
     assert_same("lens dispatch prompt", &cases, &rust, &js);
 }

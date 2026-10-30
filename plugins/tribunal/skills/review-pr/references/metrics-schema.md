@@ -574,6 +574,26 @@ Regression cover: `eval/replay-lens-budget.mjs` (0 tokens) — the `notReached`
 plumbing against crashed and absent results, the union into `notChecked`, and the
 budget pinned between its measured failure floor (30) and efficiency knee (50).
 
+## Fields added for kinded gaps (Rust rows only): `lensNotReachedKinds`, `unreadRiskFiles`, `lensFailures`
+
+The Rust engine asks each lens to file a `notReached` entry as
+`{surface, file, kind}`. Rows from earlier runs, and Workflow rows, have plain
+strings, so `lensBudgetSkips` there counts everything a lens left unchecked,
+not only what it ran out of budget for. Reading 30 such entries by hand, 6
+were code a second read could cover; the rest were outside the lens's focus,
+needed running something, or sat outside the PR.
+
+| Field | Meaning |
+|---|---|
+| `lensNotReachedKinds` | `{budget, outOfFocus, needsExecution, outsidePr, unstated}`: how many entries of each kind the lenses filed. `budget` is the only kind that is a hole in coverage. `unstated` counts plain strings. |
+| `unreadRiskFiles` | The files matching a `riskPaths` rule that every lens holding them left unread for budget. A non-empty list keeps the verdict from APPROVE (it becomes COMMENT), as an unreturned lens does, and the report names the files. |
+| `lensFailures` | `[{lens, cause}]` for each lens dispatch that returned no answer. `cause` is `rate-limit`, `overloaded`, `auth`, `timeout`, `killed`, `spawn-failed`, `no-answer` or `error`, read from the exit and what the CLI printed. Recorded so a retry is built for the causes that happen, if any do. |
+
+`notChecked` keeps one string per entry: a kinded entry is written as
+`surface (kind)`. The report lists the `budget` entries and the
+`needs-execution` ones ("Check by hand") itself, after the report's text, so
+they no longer depend on the report's writer including them.
+
 ## Field added 2026-07-24 (the other 84% of the bill) — `agentCost`
 
 `claudeOutputTokens` counts **output only**, and output is the minority term.

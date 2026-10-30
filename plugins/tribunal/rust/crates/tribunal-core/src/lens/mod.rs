@@ -2,6 +2,7 @@
 //! dependents and attention blocks, its prompt) and what the run records about
 //! it afterwards (budget gaps, yield, the out-of-diff gate).
 
+pub mod coverage_gaps;
 pub mod dependents_block;
 pub mod diff_sectioning;
 pub mod diff_usable;
