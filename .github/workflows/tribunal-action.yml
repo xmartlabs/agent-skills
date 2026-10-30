@@ -1,0 +1,47 @@
+name: tribunal-action
+
+# CI for the tribunal GitHub Action (actions/tribunal) and the plugin files it reads. Runs only
+# when they change; do not make it a required check (see CLAUDE.md).
+on:
+  pull_request:
+    paths:
+      - actions/tribunal/**
+      - plugins/tribunal/rust/release.json
+      - plugins/tribunal/templates/review-profile.*.json
+      - plugins/homosapiens/skills/**
+      - .github/workflows/tribunal-action.yml
+  push:
+    branches: [main]
+    paths:
+      - actions/tribunal/**
+      - plugins/tribunal/rust/release.json
+      - plugins/tribunal/templates/review-profile.*.json
+      - plugins/homosapiens/skills/**
+      - .github/workflows/tribunal-action.yml
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run the action's tests
+        run: |
+          rc=0
+          for t in actions/tribunal/tests/*_test.sh; do bash "$t" || rc=1; done
+          exit $rc
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: shellcheck
+        run: shellcheck -S warning actions/tribunal/run.sh actions/tribunal/tests/*.sh
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.7
+        with:
+          args: -color .github/workflows/tribunal-action.yml

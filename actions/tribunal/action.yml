@@ -1,0 +1,120 @@
+name: Tribunal review
+description: >-
+  Runs the tribunal adversarial review on a pull request and posts it as a comment review.
+  Independent reviewers read the diff, every serious finding faces a panel that tries to disprove
+  it, and only the survivors are reported.
+author: Xmartlabs
+
+inputs:
+  claude-token:
+    description: >-
+      Claude Code OAuth token from `claude setup-token` (uses that account's Claude subscription).
+      Give this or `anthropic-api-key`. Store it as a secret.
+    default: ''
+  anthropic-api-key:
+    description: >-
+      Anthropic API key from the Console (billed per use). Give this or `claude-token`; when both
+      are set, the API key is used. Store it as a secret.
+    default: ''
+  github-token:
+    description: >-
+      Token for reading the pull request and posting the review. The job needs
+      `pull-requests: write` for it.
+    default: ${{ github.token }}
+  label:
+    description: >-
+      On a `labeled` event, only this label starts a review. The action removes it when it ends,
+      so adding it again starts a new review. Other events always review.
+    default: tribunal
+  reviewer:
+    description: >-
+      `frontend` or `backend`: the reviewer kind used when the repository has no
+      `.claude/review-profile.json` of its own.
+    default: frontend
+  upload-run:
+    description: Upload the run record, the report and the logs as a workflow artifact.
+    default: 'true'
+  upload-transcripts:
+    description: >-
+      Also upload every model dispatch's transcript. Off by default: transcripts keep tool output
+      verbatim, and artifacts of a public repository can be downloaded by anyone signed in.
+    default: 'false'
+
+outputs:
+  posted:
+    description: '`true` when the review was posted.'
+    value: ${{ steps.post.outcome == 'success' }}
+
+runs:
+  using: composite
+  steps:
+    - id: gate
+      shell: bash
+      env:
+        HAS_CLAUDE_AUTH: ${{ inputs.claude-token != '' || inputs.anthropic-api-key != '' }}
+        INPUT_LABEL: ${{ inputs.label }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" gate
+
+    - id: prepare
+      if: steps.gate.outputs.run == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_REVIEWER: ${{ inputs.reviewer }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" prepare
+
+    - id: review
+      if: steps.gate.outputs.run == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude-token }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" review
+
+    - id: post
+      if: steps.gate.outputs.run == 'true' && steps.review.outcome == 'success'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude-token }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" post
+
+    # A cancelled run (a newer request, or by hand) stays silent; the newer run reports.
+    - if: ${{ !cancelled() && steps.gate.outputs.run == 'true' && steps.post.outcome != 'success' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_LABEL: ${{ inputs.label }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" fallback
+
+    - if: ${{ always() && steps.gate.outputs.run == 'true' }}
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/run.sh" summary
+
+    - if: ${{ always() && steps.gate.outputs.run == 'true' && inputs.upload-run == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: tribunal-pr-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
+        path: |
+          ${{ runner.temp }}/tribunal/run.json
+          ${{ runner.temp }}/tribunal/*.log
+          ${{ runner.temp }}/tribunal/tmp/tribunal-report-*
+        if-no-files-found: ignore
+        retention-days: 14
+
+    - if: ${{ always() && steps.gate.outputs.run == 'true' && inputs.upload-transcripts == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: tribunal-pr-${{ github.event.pull_request.number }}-${{ github.run_attempt }}-transcripts
+        path: ${{ runner.temp }}/tribunal/tmp/tribunal-transcripts-*
+        if-no-files-found: ignore
+        retention-days: 14
+
+    - if: ${{ always() && steps.gate.outputs.run == 'true' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_LABEL: ${{ inputs.label }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" cleanup

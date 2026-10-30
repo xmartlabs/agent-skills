@@ -22,9 +22,10 @@ npx skills add xmartlabs/agent-skills --skill pr-evidence --skill release-notes
 | Action | What it does |
 | --- | --- |
 | [`actions/pr-evidence`](actions/pr-evidence) | Runs the `pr-evidence` skill with Claude on every pull request that changes UI, and posts the evidence on it. See its [README](actions/pr-evidence/README.md). |
+| [`actions/tribunal`](actions/tribunal) | Runs the tribunal review on a pull request when it gets the `tribunal` label, and posts it as a comment review. See its [README](actions/tribunal/README.md). |
 
-Each action runs the skills at its own ref, so `@pr-evidence-v1` pins the skill and the action
-together.
+Each action runs its tool at its own ref, so `@pr-evidence-v1` pins the skill and the action
+together, and `@tribunal-action-v1` the plugin, its binary and the action.
 
 ## Tests
 

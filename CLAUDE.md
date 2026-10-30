@@ -30,7 +30,9 @@ Keeping the tools independent:
 - A plugin lives in `plugins/<name>/` and reads nothing outside it; shared code
   is copied, not imported. The skills are organised by their own team: they
   share `tests/`, and an action in `actions/<name>/` may read its skill in
-  `skills/<name>/`.
+  `skills/<name>/`. An action for a plugin may read that plugin and the plugins
+  it runs with (`actions/tribunal/` reads `plugins/tribunal/` and
+  `plugins/homosapiens/`), and keeps its own tests in its directory.
 - Names are unique across the whole repository. `npx skills add` lists the
   skills in `skills/` and the skills inside every plugin of the marketplace, so
   a plugin skill and a standalone skill cannot share a name.
