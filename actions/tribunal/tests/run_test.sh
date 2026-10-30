@@ -227,7 +227,8 @@ assert_eq "no npm on the runner: Node is set up" "true" "$(PATH="$TMP/nogh" node
 # --- summary ------------------------------------------------------------------------------------
 summary() { : > "$TMP/summary.md"; GITHUB_STEP_SUMMARY="$TMP/summary.md" bash "$RUN" summary >/dev/null 2>&1; }
 new_job labeled tribunal; mkdir -p "$(job)/tmp"
-echo "Posted comment: https://github.com/acme/web-app/pull/12#pullrequestreview-9" > "$(job)/post.log"
+# The binary prints the verdict in capitals, as the live runs show.
+echo "Posted COMMENT: https://github.com/acme/web-app/pull/12#pullrequestreview-9" > "$(job)/post.log"
 printf '## Peer review: PR #12\n\n### Blocking\n\nNone.\n' > "$(job)/tmp/tribunal-report-12.md"
 summary; RC=$?
 assert_eq "summary exits 0" "0" "$RC"

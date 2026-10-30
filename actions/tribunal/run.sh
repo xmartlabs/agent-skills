@@ -226,7 +226,7 @@ cmd_summary() {
   [ -n "${GITHUB_STEP_SUMMARY:-}" ] || return 0
   local pr status url skipped reason report
   pr="$(pr_number)"; report="$JOB/tmp/tribunal-report-$pr.md"
-  url="$(grep -m1 -oE '^Posted [a-z-]+: \S+' "$JOB/post.log" 2>/dev/null | sed 's/^Posted [a-z-]*: //')"
+  url="$(grep -m1 -oE '^Posted [A-Za-z_-]+: \S+' "$JOB/post.log" 2>/dev/null | sed -E 's/^Posted [A-Za-z_-]+: //')"
   [ -f "$JOB/run.json" ] && skipped="$(python3 -c 'import json,sys
 r = json.load(open(sys.argv[1]))
 if r.get("skipped"): print(r.get("reason") or "no reason given")' "$JOB/run.json" 2>/dev/null)"
