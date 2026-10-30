@@ -10,11 +10,18 @@
 //! Each case compares stdout, stderr (unless the script crashed), exit
 //! status, the recorded calls, and the body files left in the temp dir.
 //!
-//! The script's side of the generated review lists is read from
-//! `tests/goldens/post-review.json`: running the script for every list made
-//! this one of the slowest test binaries. The file keeps the text of the
-//! scripts and of the fake `gh` it was recorded with, so editing either
-//! without a regeneration fails here. Regenerate after changing them:
+//! Nothing here runs the script outside a regeneration; the port still runs
+//! the fake `gh`, which is a node script. The script's side of the generated
+//! review lists is read from `tests/goldens/post-review.json`, which keeps the
+//! text of the scripts and of the fake `gh` it was recorded with. The fixed
+//! cases (the fixtures, the posted body, the declared difference) are read
+//! from `tests/goldens/post-review-fixed.json`, one entry per test, with a
+//! SHA-256 of each module the script imports and, per case, of its input and
+//! of the fake `gh`; each case keeps the calls the fake recorded and the body
+//! files left behind. Editing a script, the fake or a case without a
+//! regeneration fails here; a script no longer on disk was retired with the
+//! Workflow, so its check is skipped and the golden is final. Regenerate
+//! after changing them, over the whole binary:
 //! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_post_review`.
 
 mod posting;
@@ -95,6 +102,11 @@ fn view_call() -> Vec<&'static str> {
 }
 
 const URL: &str = "https://github.com/acme/widgets/pull/42\n";
+
+const POST_REVIEW: &str = "skills/review-pr/scripts/post-review.mjs";
+const FIXED: &str = "post-review-fixed.json";
+const REGENERATE: &str =
+    "regenerate: TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_post_review";
 
 #[derive(Debug, Clone)]
 struct Case {
@@ -229,12 +241,6 @@ fn left(d: &Dirs, side: &str) -> usize {
                 .count()
         })
         .unwrap_or(0)
-}
-
-fn run_both(root: &Path, case: &Case) -> (Side, Side, Run) {
-    let d = setup(root, &case.name, case);
-    let (js_side, js) = run_js(&d, case);
-    (js_side, run_rs(&d, case), js)
 }
 
 fn run_js(d: &Dirs, case: &Case) -> (Side, Run) {
@@ -761,13 +767,58 @@ fn fixtures() -> Vec<Case> {
     cases
 }
 
+/// The script's side of `cases`, read from `post-review-fixed.json` under
+/// `test`; regenerating runs the script on each in `root`.
+fn fixed_sides(test: &str, root: &Path, cases: &[Case]) -> Vec<(Side, Run)> {
+    let inputs: Vec<Value> = cases
+        .iter()
+        .map(|c| json!({"name": c.name, "case": sha(&format!("{c:?}")), "fakeGh": sha(FAKE_GH)}))
+        .collect();
+    let recorded = fixed(
+        FIXED,
+        test,
+        REGENERATE,
+        &inputs,
+        || module_shas(POST_REVIEW),
+        |w| stale_module_shas(w, POST_REVIEW),
+        || {
+            parallel(cases, |_, c| {
+                let d = setup(root, &c.name, c);
+                let (side, mut js) = run_js(&d, c);
+                // A crash's stderr, which is not compared, names pids; masked
+                // so a regeneration rewrites the same file.
+                if crashed(&js) {
+                    let pid = regex::Regex::new(r"(post-review-body-|pid: )\d+").unwrap();
+                    js.stderr = pid.replace_all(&js.stderr, "${1}<PID>").into_owned();
+                }
+                portable(&js, &side, root)
+            })
+        },
+    );
+    recorded.iter().map(|v| local(v, root)).collect()
+}
+
+/// The script's recorded side of `case`, the port's run now, and the
+/// script's raw run.
+fn replay_both(root: &Path, case: &Case, recorded: &(Side, Run)) -> (Side, Side, Run) {
+    let d = setup(root, &case.name, case);
+    let (js, raw) = recorded;
+    let js = Side {
+        out: js.out.clone(),
+        calls: js.calls.clone(),
+        left: js.left,
+    };
+    (js, run_rs(&d, case), raw.clone())
+}
+
 #[test]
 fn post_review_matches_js_on_fixtures() {
     let root = scratch("post-review-fixtures");
     let cases = fixtures();
+    let sides = fixed_sides("post_review_matches_js_on_fixtures", &root, &cases);
     let seen = Mutex::new(BTreeMap::<String, usize>::new());
-    let diffs = parallel(&cases, |_, c| {
-        let (js, rs, raw) = run_both(&root, c);
+    let diffs = parallel(&cases, |i, c| {
+        let (js, rs, raw) = replay_both(&root, c, &sides[i]);
         let kind = if raw.code == 0 && c.argv.iter().any(|a| a == "--find-review-id") {
             "found-id"
         } else if raw.code == 0 {
@@ -837,7 +888,9 @@ fn the_posted_body_is_banner_report_and_footer() {
         .into_iter()
         .find(|c| c.name == "request-changes")
         .unwrap();
-    let (js, rs, _) = run_both(&root, &case);
+    let cases = [case];
+    let sides = fixed_sides("the_posted_body_is_banner_report_and_footer", &root, &cases);
+    let (js, rs, _) = replay_both(&root, &cases[0], &sides[0]);
     let body = js.calls[0]["body"].as_str().unwrap();
     assert_eq!(
         body,
@@ -896,12 +949,7 @@ fn review() -> impl Strategy<Value = Value> {
 
 /// What the script reads: post-review.mjs and what it imports.
 const SCRIPTS: [&str; 2] = ["post-review.mjs", "strip-draft-comments.mjs"];
-const REGENERATE: &str =
-    "regenerate: TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_post_review";
-
-fn golden_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/goldens/post-review.json")
-}
+const GOLDEN: &str = "post-review.json";
 
 /// The scripts and the fake `gh`, which decides what a call records.
 fn recorded_with() -> Value {
@@ -912,25 +960,22 @@ fn recorded_with() -> Value {
     json!({"scripts": texts, "fakeGh": FAKE_GH})
 }
 
-fn regenerating() -> bool {
-    std::env::var("TRIBUNAL_REGEN_GOLDENS").is_ok_and(|v| v == "1")
-}
-
-/// The golden, checked against the scripts on disk; `None` when regenerating.
-fn recorded() -> Option<Value> {
-    if regenerating() {
-        return None;
+/// What changed since `with` was recorded: a script still on disk whose text
+/// differs (one that is gone was retired and is skipped), or the fake `gh`,
+/// which this file holds and so is always checked.
+fn stale_with(with: &Value) -> Vec<String> {
+    let mut stale: Vec<String> = SCRIPTS
+        .iter()
+        .filter(|s| {
+            on_disk(&format!("skills/review-pr/scripts/{s}"))
+                .is_some_and(|text| with["scripts"][**s] != json!(text))
+        })
+        .map(|s| (*s).to_owned())
+        .collect();
+    if with["fakeGh"] != json!(FAKE_GH) {
+        stale.push("the fake gh".into());
     }
-    let path = golden_path();
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("{}: {e}; {REGENERATE}", path.display()));
-    let golden: Value = serde_json::from_str(&text).unwrap();
-    assert!(
-        golden["recordedWith"] == recorded_with(),
-        "a script or the fake gh changed since {} was recorded; {REGENERATE}",
-        path.display()
-    );
-    Some(golden)
+    stale
 }
 
 /// The script's run and calls with the machine's paths replaced by
@@ -976,7 +1021,7 @@ fn post_review_matches_js_on_generated_review_lists() {
         .iter()
         .map(|(list, find)| json!({"list": list, "find": find}))
         .collect();
-    let golden = recorded();
+    let golden = recorded(GOLDEN, REGENERATE, stale_with);
     let replay: Option<&Vec<Value>> = golden.as_ref().map(|g| {
         let cases = g["cases"].as_array().unwrap();
         assert_eq!(
@@ -1046,10 +1091,7 @@ fn post_review_matches_js_on_generated_review_lists() {
             .zip(&runs)
             .map(|(input, (_, js))| json!({"input": input, "js": js}))
             .collect();
-        let text =
-            serde_json::to_string_pretty(&json!({"recordedWith": recorded_with(), "cases": cases}))
-                .unwrap();
-        std::fs::write(golden_path(), text + "\n").unwrap();
+        write_golden(GOLDEN, recorded_with(), cases);
     }
     let diffs: Vec<Option<String>> = runs.into_iter().map(|(d, _)| d).collect();
     eprintln!("{:?}", seen.lock().unwrap());
@@ -1089,7 +1131,13 @@ fn a_date_only_submitted_at_is_a_declared_difference() {
         .iter()
         .map(|s| (*s).to_owned())
         .collect();
-    let (js, rs, _) = run_both(&root, &c);
+    let cases = [c];
+    let sides = fixed_sides(
+        "a_date_only_submitted_at_is_a_declared_difference",
+        &root,
+        &cases,
+    );
+    let (js, rs, _) = replay_both(&root, &cases[0], &sides[0]);
     assert_eq!(js.out.stdout, "1\n");
     assert_eq!(rs.out.stdout, "2\n");
 }

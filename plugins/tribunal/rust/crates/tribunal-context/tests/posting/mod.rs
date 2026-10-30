@@ -1,15 +1,25 @@
 //! Shared harness for the posting and ledger differential tests: each case
-//! runs the real script under node and the port on the same inputs.
+//! compares the port with what the real script printed on the same inputs,
+//! read from a golden under `tests/goldens/`; only a regeneration
+//! (`TRIBUNAL_REGEN_GOLDENS=1`) runs the script under node.
 //!
 //! The scripts run with a cleared environment: `HOME`, `TRIBUNAL_DATA_DIR`
 //! and `TMPDIR` point at the case's temp directories, and `PATH` holds only
 //! the case's fake `gh`, a directory with `node` in it, `/usr/bin` and
 //! `/bin`, so neither side can reach a real `gh` or the real ledger.
+//!
+//! A golden keeps the text or SHA-256 of the modules it was recorded from. A
+//! module no longer on disk was retired with the Workflow, so its golden is
+//! final and its staleness check is skipped; the comparison still runs.
 #![allow(dead_code)]
 
-use std::path::{Path, PathBuf};
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
+
+use serde_json::{json, Value};
+use tribunal_context::harness_version::sha256_hex;
 
 use proptest::strategy::{Strategy, ValueTree};
 use proptest::test_runner::TestRunner;
@@ -247,26 +257,215 @@ pub fn module_texts(entry: &str) -> std::collections::BTreeMap<String, String> {
     seen
 }
 
-/// The golden `name`, checked against what it was recorded with; `None` when
+/// The text of `rel`, a path in the plugin; `None` once it is gone.
+pub fn on_disk(rel: &str) -> Option<String> {
+    on_disk_in(&plugin_root(), rel)
+}
+
+fn on_disk_in(root: &Path, rel: &str) -> Option<String> {
+    match std::fs::read_to_string(root.join(rel)) {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => panic!("{rel}: {e}"),
+    }
+}
+
+/// `p` with `.` and `..` folded away, without touching the disk.
+fn lexical(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::CurDir => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// [`module_texts`] for a tree the Workflow's retirement may have thinned:
+/// `None` when `entry` is gone, and a module it imports that is gone maps to
+/// `None` instead of failing.
+pub fn module_texts_opt(entry: &str) -> Option<BTreeMap<String, Option<String>>> {
+    module_texts_in(&plugin_root(), entry)
+}
+
+fn module_texts_in(root: &Path, entry: &str) -> Option<BTreeMap<String, Option<String>>> {
+    let import = regex::Regex::new(r#"(?:from|import)\s*\(?\s*"(\.{1,2}/[^"]+)""#).unwrap();
+    on_disk_in(root, entry)?;
+    let mut seen = BTreeMap::new();
+    let mut todo = vec![root.join(entry).canonicalize().unwrap()];
+    while let Some(file) = todo.pop() {
+        let key = file
+            .strip_prefix(root)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        if seen.contains_key(&key) {
+            continue;
+        }
+        let Some(text) = on_disk_in(root, &key) else {
+            seen.insert(key, None);
+            continue;
+        };
+        for m in import.captures_iter(&text) {
+            let dep = file.parent().unwrap().join(&m[1]);
+            todo.push(dep.canonicalize().unwrap_or_else(|_| lexical(&dep)));
+        }
+        seen.insert(key, Some(text));
+    }
+    Some(seen)
+}
+
+/// The modules in `recorded` (`{path: kept}`, `kept` being what `keep` makes
+/// of a module's text) that `entry` no longer reaches as recorded: changed
+/// text, a new import, or a recorded module still on disk that it stopped
+/// importing. A module that is gone is retired and skipped; with `entry`
+/// itself gone the golden is final and nothing is.
+pub fn stale_modules_by(
+    recorded: &Value,
+    entry: &str,
+    keep: impl Fn(&str) -> Value,
+) -> Vec<String> {
+    stale_modules_in(&plugin_root(), recorded, entry, keep)
+}
+
+/// [`stale_modules_by`] over the plugin tree at `root`.
+pub fn stale_modules_in(
+    root: &Path,
+    recorded: &Value,
+    entry: &str,
+    keep: impl Fn(&str) -> Value,
+) -> Vec<String> {
+    let Some(now) = module_texts_in(root, entry) else {
+        return Vec::new();
+    };
+    let mut names: BTreeSet<&String> = now.keys().collect();
+    names.extend(recorded.as_object().into_iter().flat_map(|m| m.keys()));
+    names
+        .into_iter()
+        .filter(|k| match now.get(*k) {
+            Some(Some(text)) => recorded.get(k.as_str()) != Some(&keep(text)),
+            Some(None) => false,
+            None => on_disk_in(root, k).is_some(),
+        })
+        .cloned()
+        .collect()
+}
+
+/// [`stale_modules_by`] for a golden that keeps the modules' text.
+pub fn stale_modules(recorded: &Value, entry: &str) -> Vec<String> {
+    stale_modules_by(recorded, entry, |t| json!(t))
+}
+
+/// The SHA-256 of every module `entry` reaches, for a golden that keeps
+/// hashes; regenerating needs them all on disk.
+pub fn module_shas(entry: &str) -> Value {
+    json!(module_texts(entry)
+        .into_iter()
+        .map(|(k, t)| (k, sha256_hex(t.as_bytes())))
+        .collect::<BTreeMap<_, _>>())
+}
+
+/// [`stale_modules_by`] for a golden made with [`module_shas`].
+pub fn stale_module_shas(recorded: &Value, entry: &str) -> Vec<String> {
+    stale_modules_by(recorded, entry, |t| json!(sha256_hex(t.as_bytes())))
+}
+
+/// The golden `name`, checked with `stale` against what it was recorded with
+/// (its `recordedWith`), which names what changed since; `None` when
 /// regenerating.
 pub fn recorded(
     name: &str,
-    recorded_with: &serde_json::Value,
     regenerate: &str,
-) -> Option<serde_json::Value> {
+    stale: impl FnOnce(&Value) -> Vec<String>,
+) -> Option<Value> {
     if regenerating() {
         return None;
     }
     let path = golden_path(name);
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("{}: {e}; {regenerate}", path.display()));
-    let golden: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let golden: Value = serde_json::from_str(&text).unwrap();
+    let stale = stale(&golden["recordedWith"]);
     assert!(
-        golden["recordedWith"] == *recorded_with,
-        "a script it reads changed since {} was recorded; {regenerate}",
+        stale.is_empty(),
+        "{stale:?} changed since {} was recorded; {regenerate}",
         path.display()
     );
     Some(golden)
+}
+
+/// The script's side of one test's fixed cases, kept under `test` in the
+/// golden `name`, which the fixed tests of one binary share. Each entry keeps
+/// what `with` returned when it was recorded, checked with `stale`, and each
+/// case's input, checked exactly. Regenerating calls `run`, compares nothing
+/// itself, and writes the entry back beside the others.
+pub fn fixed(
+    name: &str,
+    test: &str,
+    regenerate: &str,
+    inputs: &[Value],
+    with: impl FnOnce() -> Value,
+    stale: impl FnOnce(&Value) -> Vec<String>,
+    run: impl FnOnce() -> Vec<Value>,
+) -> Vec<Value> {
+    static WRITING: Mutex<()> = Mutex::new(());
+    let path = golden_path(name);
+    let read = || -> Option<Value> {
+        let text = std::fs::read_to_string(&path).ok()?;
+        Some(serde_json::from_str(&text).unwrap())
+    };
+    if regenerating() {
+        let js = run();
+        assert_eq!(js.len(), inputs.len(), "{test}: one result per input");
+        let cases: Vec<Value> = inputs
+            .iter()
+            .zip(&js)
+            .map(|(input, js)| json!({"input": input, "js": js}))
+            .collect();
+        let entry = json!({"recordedWith": with(), "cases": cases});
+        let _w = WRITING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut golden = read().unwrap_or_else(|| json!({}));
+        golden[test] = entry;
+        let text = serde_json::to_string_pretty(&golden).unwrap();
+        std::fs::write(&path, text + "\n").unwrap();
+        return js;
+    }
+    let golden = read().unwrap_or_else(|| panic!("{}: missing; {regenerate}", path.display()));
+    let entry = &golden[test];
+    assert!(
+        entry.is_object(),
+        "{test} is not in {}; {regenerate}",
+        path.display()
+    );
+    let stale = stale(&entry["recordedWith"]);
+    assert!(
+        stale.is_empty(),
+        "{stale:?} changed since {test} in {} was recorded; {regenerate}",
+        path.display()
+    );
+    let cases = entry["cases"].as_array().unwrap();
+    assert_eq!(
+        cases.len(),
+        inputs.len(),
+        "{test}: the cases changed; {regenerate}"
+    );
+    cases
+        .iter()
+        .zip(inputs)
+        .map(|(c, input)| {
+            assert_eq!(
+                &c["input"], input,
+                "{test}: the cases changed; {regenerate}"
+            );
+            c["js"].clone()
+        })
+        .collect()
 }
 
 pub fn write_golden(name: &str, recorded_with: serde_json::Value, cases: Vec<serde_json::Value>) {
@@ -296,6 +495,26 @@ pub fn swapped(v: &serde_json::Value, pairs: &[(&str, &str)]) -> serde_json::Val
         .iter()
         .fold(v.to_string(), |t, (from, to)| t.replace(from, to));
     serde_json::from_str(&text).unwrap()
+}
+
+/// `v` with `scratch` and the plugin root as `<SCRATCH>` and `<PLUGIN>`, for
+/// a golden.
+pub fn to_placeholders(v: &Value, scratch: &Path) -> Value {
+    let s = scratch.to_string_lossy();
+    let p = plugin_root().to_string_lossy().into_owned();
+    swapped(v, &[(&s, "<SCRATCH>"), (&p, "<PLUGIN>")])
+}
+
+/// [`to_placeholders`] undone with this run's paths.
+pub fn from_placeholders(v: &Value, scratch: &Path) -> Value {
+    let s = scratch.to_string_lossy();
+    let p = plugin_root().to_string_lossy().into_owned();
+    swapped(v, &[("<SCRATCH>", &s), ("<PLUGIN>", &p)])
+}
+
+/// The SHA-256 of `text`, as a golden keeps a bulky input.
+pub fn sha(text: &str) -> Value {
+    json!(sha256_hex(text.as_bytes()))
 }
 
 pub fn run_json(run: &Run) -> serde_json::Value {

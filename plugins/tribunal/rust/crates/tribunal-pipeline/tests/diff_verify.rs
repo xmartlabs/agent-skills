@@ -1,6 +1,13 @@
 //! The Verify phase's glue against the workflow: the dedup prompt and its
 //! answer applied, the typecheck text read, the grounded gate, which findings
 //! a panel would judge and afford, and the results split.
+//!
+//! The workflow's side is read from `tests/goldens/span/diff_verify.json` (see
+//! `common`), with a SHA-256 of the workflow code each span came from, so an
+//! edit there without regenerating fails here. Results over 1 KiB are kept as
+//! a SHA-256.
+//! Regenerate after changing a span, its cases or the workflow:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-pipeline --test diff_verify`.
 
 mod common;
 

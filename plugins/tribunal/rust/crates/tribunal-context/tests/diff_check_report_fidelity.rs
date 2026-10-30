@@ -4,12 +4,23 @@
 //! compared on the exit code, stdout byte for byte, and stderr (for an
 //! uncaught throw, its `TypeError:` line, since Node prints a stack around
 //! it).
+//!
+//! The script's side of every case is read from
+//! `tests/goldens/check-report-fidelity.json`, keyed by test, with the scratch
+//! directory stored as `<ROOT>`. The file keeps the script's text, the
+//! `workflows/tribunal.js` regions it slices, and a SHA-256 of each case's
+//! input, so editing any of them without a regeneration fails here; a script
+//! or workflow no longer on disk is retired and is not compared. Regenerate
+//! the whole binary at once:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_check_report_fidelity`.
 mod common;
 #[path = "../../tribunal-core/tests/common/mod.rs"]
 mod core_common;
+mod posting;
 
 use common::{plugin_root, scratch};
 use core_common::{assert_same, sample};
+use posting::{golden_path, regenerating, swapped};
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -23,10 +34,135 @@ use proptest::prelude::*;
 use proptest::sample::select;
 use serde_json::{json, Map, Value};
 use tribunal_context::check_report_fidelity::{apply_fidelity_checks, run};
+use tribunal_context::harness_version::sha256_hex;
 use tribunal_context::operator::CliOutput;
 use tribunal_core::js::stringify;
 
 const SCRIPT: &str = "lib/check-report-fidelity.mjs";
+const WORKFLOW: &str = "workflows/tribunal.js";
+/// The regions of the workflow `loadChecks` slices out.
+const REGIONS: [&str; 3] = [
+    "DRAFT-COMMENTS-STRIP",
+    "MERGED-LOCATIONS-CHECK",
+    "REPORT-FIDELITY-CHECKS",
+];
+const GOLDEN: &str = "check-report-fidelity.json";
+const REGENERATE: &str = "regenerate: TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_check_report_fidelity";
+
+/// The text of `rel` in the plugin, `None` once it is gone: a deleted oracle
+/// is retired, and the golden recorded from it is final.
+fn on_disk(rel: &str) -> Option<String> {
+    match std::fs::read_to_string(plugin_root().join(rel)) {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => panic!("{rel}: {e}"),
+    }
+}
+
+/// Every slice of each region in `src`, empty where the region is gone.
+fn region_texts(src: &str) -> Value {
+    let mut out = Map::new();
+    for name in REGIONS {
+        let begin = format!("// ===== BEGIN {name} =====");
+        let end = format!("// ===== END {name} =====");
+        let mut slices = Vec::new();
+        let mut from = 0;
+        while let Some(b) = src[from..].find(&begin).map(|i| from + i) {
+            let Some(e) = src[b..].find(&end).map(|i| b + i) else {
+                break;
+            };
+            slices.push(json!(src[b..e]));
+            from = e;
+        }
+        out.insert(name.into(), Value::Array(slices));
+    }
+    Value::Object(out)
+}
+
+fn recorded_with() -> Value {
+    let script = on_disk(SCRIPT).expect("regenerating needs the script");
+    let workflow = on_disk(WORKFLOW).expect("regenerating needs the workflow");
+    json!({"scripts": {SCRIPT: script}, "regions": region_texts(&workflow)})
+}
+
+/// Fails when a recorded script, or the regions of the workflow, changed on
+/// disk since the golden was recorded. What is no longer there is skipped.
+fn assert_fresh(with: &Value) {
+    for (rel, text) in with["scripts"].as_object().unwrap() {
+        if let Some(now) = on_disk(rel) {
+            assert!(
+                now == text.as_str().unwrap(),
+                "{rel} changed since {GOLDEN} was recorded; {REGENERATE}"
+            );
+        }
+    }
+    if let Some(src) = on_disk(WORKFLOW) {
+        assert!(
+            region_texts(&src) == with["regions"],
+            "a region of {WORKFLOW} the script slices changed since {GOLDEN} was recorded; {REGENERATE}"
+        );
+    }
+}
+
+/// The golden, checked against the script on disk; `None` when regenerating.
+fn golden() -> Option<&'static Value> {
+    static GOLDEN_CELL: OnceLock<Option<Value>> = OnceLock::new();
+    GOLDEN_CELL
+        .get_or_init(|| {
+            if regenerating() {
+                return None;
+            }
+            let path = golden_path(GOLDEN);
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{}: {e}; {REGENERATE}", path.display()));
+            let golden: Value = serde_json::from_str(&text).unwrap();
+            assert_fresh(&golden["recordedWith"]);
+            Some(golden)
+        })
+        .as_ref()
+}
+
+/// Adds a test's cases to the golden and writes it out. Tests record from
+/// several threads, so the file is rewritten each time and is whole once the
+/// binary finishes.
+fn record(name: &str, cases: Value) {
+    static CASES: Mutex<BTreeMap<String, Value>> = Mutex::new(BTreeMap::new());
+    let mut all = CASES.lock().unwrap();
+    assert!(all.insert(name.to_owned(), cases).is_none(), "{name} twice");
+    let text =
+        serde_json::to_string_pretty(&json!({"recordedWith": recorded_with(), "cases": *all}))
+            .unwrap();
+    std::fs::write(golden_path(GOLDEN), text + "\n").unwrap();
+}
+
+fn cli_json(out: &CliOutput) -> Value {
+    json!({"code": out.code, "stdout": out.stdout, "stderr": out.stderr})
+}
+
+/// The script's run for the witness `name`: started and recorded when
+/// regenerating, read back otherwise. `input` holds everything the script
+/// is given, with `root` stored as `<ROOT>`.
+fn js_side(name: &str, root: &Path, input: Value, js: impl FnOnce() -> CliOutput) -> CliOutput {
+    let root = root.to_string_lossy();
+    let input = swapped(&input, &[(&root, "<ROOT>")]);
+    let Some(g) = golden() else {
+        let out = js();
+        record(
+            name,
+            json!({"input": input, "js": swapped(&cli_json(&out), &[(&root, "<ROOT>")])}),
+        );
+        return out;
+    };
+    let case = &g["cases"][name];
+    assert!(case.is_object(), "{name} is not in {GOLDEN}; {REGENERATE}");
+    assert_eq!(case["input"], input, "{name}'s input changed; {REGENERATE}");
+    let v = swapped(&case["js"], &[("<ROOT>", &root)]);
+    CliOutput {
+        stdout: v["stdout"].as_str().unwrap().to_owned(),
+        stderr: v["stderr"].as_str().unwrap().to_owned(),
+        code: i32::try_from(v["code"].as_i64().unwrap()).unwrap(),
+    }
+}
 
 fn node(script: &Path, args: &[String], stdin: &str) -> CliOutput {
     let mut child = Command::new("node")
@@ -454,18 +590,36 @@ struct Outcome {
     rust: Value,
     case: Case,
     args: Vec<String>,
+    /// The script's side as the golden keeps it.
+    kept: Value,
 }
 
-fn check(root: &Path, case: &Case) -> Outcome {
-    std::fs::create_dir_all(root).unwrap();
-    let args = report_args(root, &case.report);
+/// `case` run in `dir`, under the scratch directory `root`. `recorded` is the
+/// golden's entry for it, when not regenerating.
+fn check(root: &str, dir: &Path, case: &Case, recorded: Option<&Value>) -> Outcome {
+    std::fs::create_dir_all(dir).unwrap();
+    let args = report_args(dir, &case.report);
     let stdin = stdin_text(&case.stdin);
-    let js = node(&plugin_root().join(SCRIPT), &args, &stdin);
+    let report = std::fs::read(dir.join("body.md")).unwrap_or_default();
+    let mut hashed = json!({"case": format!("{case:?}"), "args": args, "stdin": stdin})
+        .to_string()
+        .replace(root, "<ROOT>")
+        .into_bytes();
+    hashed.extend_from_slice(&report);
+    let digest = json!(sha256_hex(&hashed));
+    let js = match recorded {
+        Some(r) => {
+            assert_eq!(r["input"], digest, "the generator changed; {REGENERATE}");
+            swapped(&r["js"], &[("<ROOT>", root)])
+        }
+        None => normalized(&node(&plugin_root().join(SCRIPT), &args, &stdin), true),
+    };
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let rust = run(&refs, &stdin);
     Outcome {
         input: json!({"args": args, "stdin": stdin, "case": format!("{case:?}")}),
-        js: normalized(&js, true),
+        kept: json!({"input": digest, "js": swapped(&js, &[(root, "<ROOT>")])}),
+        js,
         rust: normalized(&rust, false),
         case: case.clone(),
         args,
@@ -477,7 +631,29 @@ fn outcomes() -> &'static [Outcome] {
     CELL.get_or_init(|| {
         let cases = sample(case());
         let root = scratch("report-fidelity-gen");
-        par_map(&cases, |i, case| check(&root.join(i.to_string()), case))
+        let root_text = root.to_string_lossy().into_owned();
+        let replay = golden().map(|g| {
+            let r = g["cases"]["generated"]
+                .as_array()
+                .unwrap_or_else(|| panic!("no generated cases in {GOLDEN}; {REGENERATE}"));
+            assert_eq!(r.len(), cases.len(), "the generator changed; {REGENERATE}");
+            r
+        });
+        let out = par_map(&cases, |i, case| {
+            check(
+                &root_text,
+                &root.join(i.to_string()),
+                case,
+                replay.map(|r| &r[i]),
+            )
+        });
+        if replay.is_none() {
+            record(
+                "generated",
+                Value::Array(out.iter().map(|o| o.kept.clone()).collect()),
+            );
+        }
+        out
     })
 }
 
@@ -625,10 +801,14 @@ fn the_generated_cases_reach_every_branch() {
 fn witness_number_beyond_double_range() {
     let root = scratch("report-fidelity-witness-inf");
     let body = root.join("body.md");
-    std::fs::write(&body, "also at: a.ts").unwrap();
+    let report = "also at: a.ts";
+    std::fs::write(&body, report).unwrap();
     let args = vec![body.to_string_lossy().into_owned()];
     let stdin = r#"{"findings":[{"mergedLocations":[{},{"file":"a.ts","line":1e400}]}]}"#;
-    let js = node(&plugin_root().join(SCRIPT), &args, stdin);
+    let input = json!({"args": args, "stdin": stdin, "report": report});
+    let js = js_side("witness_number_beyond_double_range", &root, input, || {
+        node(&plugin_root().join(SCRIPT), &args, stdin)
+    });
     let rust = run(&[args[0].as_str()], stdin);
     assert!(
         js.stdout
@@ -649,15 +829,24 @@ fn witness_number_beyond_double_range() {
 #[test]
 fn witness_regions_missing_from_the_workflow() {
     let root = scratch("report-fidelity-witness-regions");
-    std::fs::create_dir_all(root.join("lib")).unwrap();
-    std::fs::create_dir_all(root.join("workflows")).unwrap();
-    let script = root.join("lib/check-report-fidelity.mjs");
-    std::fs::copy(plugin_root().join(SCRIPT), &script).unwrap();
-    std::fs::write(root.join("workflows/tribunal.js"), "// no regions\n").unwrap();
+    let workflow = "// no regions\n";
     let body = root.join("body.md");
     std::fs::write(&body, "x").unwrap();
     let args = vec![body.to_string_lossy().into_owned()];
-    let js = node(&script, &args, "{}");
+    let input = json!({"args": args, "stdin": "{}", "report": "x", "workflow": workflow});
+    let js = js_side(
+        "witness_regions_missing_from_the_workflow",
+        &root,
+        input,
+        || {
+            std::fs::create_dir_all(root.join("lib")).unwrap();
+            std::fs::create_dir_all(root.join("workflows")).unwrap();
+            let script = root.join("lib/check-report-fidelity.mjs");
+            std::fs::copy(plugin_root().join(SCRIPT), &script).unwrap();
+            std::fs::write(root.join("workflows/tribunal.js"), workflow).unwrap();
+            node(&script, &args, "{}")
+        },
+    );
     assert_eq!(js.code, 1);
     assert!(
         js.stderr.contains("could not load the shared checks"),

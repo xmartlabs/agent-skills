@@ -1,28 +1,37 @@
+//! fetch-pr-context.mjs and the HEAD-WORKTREE region against their Rust
+//! ports, on the same recorded `gh` and on twin git repositories.
+//!
+//! The script writes its patch under `$TMPDIR`, so each side gets its own
+//! temporary directory, and the script runs through a small driver that sets
+//! `TMPDIR` (and the shim's call log) before importing it as the main module.
+//! Both outputs embed that directory; it is replaced by `<TMP>` on each side
+//! before comparing. Worktree paths also carry mktemp's random suffix, which
+//! is masked the same way, and the twin repositories' commits have fixed
+//! dates, so their shas are the same on every run.
+//!
+//! The scripts' side of every case is read from
+//! `tests/goldens/fetch-pr-context.json`, so a run starts only the port. It
+//! holds three oracles, each with what it reads recorded under `recordedWith`:
+//! `fetch` (the script run whole, its exports and `Date.parse`, keyed by the
+//! case's name), `worktree` (the script's `prepareReview` running the
+//! HEAD-WORKTREE region's bash in a twin repository, kept as the state it
+//! left) and `region` (the region's functions through
+//! `rust/oracle/region-oracle.mjs`). Inputs and outputs past 16 KiB, such as
+//! the 60,000-byte diffs at the window edges, are kept as their SHA-256.
+//! Editing a script, the region, a driver or the recorded `gh` without a
+//! regeneration fails the oracle that reads it; once any file an oracle reads
+//! is deleted, the oracle is retired, that check is skipped, and its recorded
+//! outputs are final. Regenerate the whole binary at once, on a Mac, after
+//! changing them, so that every case is recorded:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_fetch`.
 mod common;
 use common::*;
 
-// fetch-pr-context.mjs and the HEAD-WORKTREE region against their Rust
-// ports, on the same recorded `gh` and on twin git repositories.
-//
-// The script writes its patch under `$TMPDIR`, so each side gets its own
-// temporary directory, and the script runs through a small driver that sets
-// `TMPDIR` (and the shim's call log) before importing it as the main module.
-// Both outputs embed that directory; it is replaced by `<TMP>` on each side
-// before comparing. Worktree paths also carry mktemp's random suffix, which
-// is masked the same way.
-//
-// The script's side of every case that goes through `same` is read from
-// `tests/goldens/fetch-pr-context.json`, keyed by the case's name: running
-// the script for each of them made this one of the slowest test binaries.
-// The file keeps the text of the scripts, the driver and the recorded `gh` it
-// was made with, and each case's input, so editing any of them without a
-// regeneration fails here. Regenerate the whole binary at once after changing
-// them: `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_fetch`.
-// Cases that pick their own temp dirs (`same_in`) still run the script.
-
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Mutex, OnceLock};
 
 use proptest::prelude::*;
 use proptest::strategy::ValueTree;
@@ -30,9 +39,16 @@ use proptest::test_runner::TestRunner;
 use serde_json::{json, Value};
 use tribunal_context::exec::Tools;
 use tribunal_context::fetch_pr_context as fpc;
+use tribunal_context::harness_version::sha256_hex;
 use tribunal_context::head_worktree as hw;
 
 const SCRIPT: &str = "skills/review-pr/scripts/fetch-pr-context.mjs";
+const EXTRACT: &str = "skills/review-pr/eval/extract-pure-region.mjs";
+const REGION_ORACLE: &str = "rust/oracle/region-oracle.mjs";
+const WORKFLOW: &str = "workflow-src/tribunal.js";
+const REGION: &str = "HEAD-WORKTREE";
+/// Inputs and outputs longer than this go into the golden as their SHA-256.
+const BIG: usize = 16 * 1024;
 const REPO: &str = "acme/widgets";
 const VIEW_FIELDS: &str =
     "title,body,author,baseRefName,baseRefOid,headRefName,headRefOid,files,additions,deletions,reviews";
@@ -351,9 +367,13 @@ fn norm(s: &str, tmp: &Tmp) -> String {
     }
 }
 
-/// Runs one case on both sides with their own temp dirs and asserts the same
-/// stdout (byte for byte once the temp dir is masked), the same crash, the
-/// same `gh` calls and the same patch on disk. Returns the parsed line.
+fn unhex(h: &str) -> Vec<u8> {
+    (0..h.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&h[i..i + 2], 16).unwrap())
+        .collect()
+}
+
 fn case_dirs(name: &str) -> (PathBuf, Tmp, Tmp) {
     let dir = scratch(&format!("fetch-{name}"));
     let js_tmp = Tmp::Dir(dir.join("js-tmp").to_string_lossy().into_owned());
@@ -363,34 +383,17 @@ fn case_dirs(name: &str) -> (PathBuf, Tmp, Tmp) {
     (dir, js_tmp, rs_tmp)
 }
 
-/// `same` with the script always run, for cases whose inputs would make the
-/// golden large and which are quick anyway.
-async fn same_live(name: &str, calls: Vec<Value>, argv: &[String], pr: &str) -> Option<Value> {
-    let (dir, js_tmp, rs_tmp) = case_dirs(name);
-    same_in(&dir, calls, argv, pr, js_tmp, rs_tmp, name).await
-}
-
+/// Runs one case on both sides with their own temp dirs and asserts the same
+/// stdout (byte for byte once the temp dir is masked), the same crash, the
+/// same `gh` calls and the same patch on disk. Returns the parsed line.
 async fn same(name: &str, calls: Vec<Value>, argv: &[String], pr: &str) -> Option<Value> {
     let (dir, js_tmp, rs_tmp) = case_dirs(name);
     let input = json!({"calls": calls, "argv": argv, "pr": pr});
-    if let Some(golden) = recorded() {
-        let case = &golden["cases"][name];
-        assert!(!case.is_null(), "{name}: not in the golden; {REGENERATE}");
-        assert_eq!(
-            case["input"], input,
-            "{name}: the case changed; {REGENERATE}"
-        );
-        let rec_path = recordings(&dir, calls);
-        let rs = run_rs(&dir, &rec_path, argv, &rs_tmp, pr).await;
-        return compare(name, &Recorded::from_golden(case), &rs, &rs_tmp);
-    }
-    let (out, js) = same_in_recorded(&dir, calls, argv, pr, js_tmp, rs_tmp, name).await;
-    if regenerating() {
-        record(name, input, &js, &dir);
-    }
-    out
+    same_core(name, &dir, calls, argv, pr, js_tmp, rs_tmp, input).await
 }
 
+/// `same` in temp dirs the case picks under `dir`, which its input names as
+/// `<DIR>`.
 async fn same_in(
     dir: &Path,
     calls: Vec<Value>,
@@ -400,9 +403,43 @@ async fn same_in(
     rs_tmp: Tmp,
     name: &str,
 ) -> Option<Value> {
-    same_in_recorded(dir, calls, argv, pr, js_tmp, rs_tmp, name)
-        .await
-        .0
+    let input = json!({
+        "calls": calls,
+        "argv": argv,
+        "pr": pr,
+        "jsTmp": js_tmp.arg(),
+        "rsTmp": rs_tmp.arg(),
+    });
+    let input = portable(&input, dir);
+    same_core(name, dir, calls, argv, pr, js_tmp, rs_tmp, input).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn same_core(
+    name: &str,
+    dir: &Path,
+    calls: Vec<Value>,
+    argv: &[String],
+    pr: &str,
+    js_tmp: Tmp,
+    rs_tmp: Tmp,
+    input: Value,
+) -> Option<Value> {
+    let input = kept_input(input);
+    if let Some(golden) = recorded("fetch") {
+        let case = &golden[name];
+        assert!(!case.is_null(), "{name}: not in the golden; {REGENERATE}");
+        assert_eq!(
+            case["input"], input,
+            "{name}: the case changed; {REGENERATE}"
+        );
+        let rec_path = recordings(dir, calls);
+        let rs = run_rs(dir, &rec_path, argv, &rs_tmp, pr).await;
+        return compare(name, &Recorded::from_golden(case), &rs, &rs_tmp);
+    }
+    let (out, js) = same_in_recorded(dir, calls, argv, pr, js_tmp, rs_tmp, name).await;
+    record("fetch", name, js.to_golden(input), dir);
+    out
 }
 
 async fn same_in_recorded(
@@ -427,48 +464,117 @@ async fn same_in_recorded(
         }
     }
     let js = Recorded {
-        out: js.out.as_ref().ok().map(|a| norm(a, &js_tmp)),
+        out: js
+            .out
+            .as_ref()
+            .ok()
+            .map(|a| Kept::Bytes(norm(a, &js_tmp).into_bytes())),
         calls: js.calls,
-        patch: js.patch,
+        patch: js.patch.map(Kept::Bytes),
     };
     (compare(name, &js, &rs, &rs_tmp), js)
+}
+
+/// A recorded output: its bytes, or their SHA-256 where they would be most
+/// of the golden.
+enum Kept {
+    Bytes(Vec<u8>),
+    Sha(String),
+}
+
+impl Kept {
+    fn matches(&self, b: &[u8]) -> bool {
+        match self {
+            Kept::Bytes(a) => a == b,
+            Kept::Sha(h) => *h == sha256_hex(b),
+        }
+    }
+
+    /// `case[key]` (text, or hex when `hex`), or `case[<key>Sha256]`; `None`
+    /// where the case has neither.
+    fn read(case: &Value, key: &str, hex: bool) -> Option<Kept> {
+        if let Some(h) = case[format!("{key}Sha256")].as_str() {
+            return Some(Kept::Sha(h.to_owned()));
+        }
+        case[key]
+            .as_str()
+            .map(|s| Kept::Bytes(if hex { unhex(s) } else { s.as_bytes().to_vec() }))
+    }
+
+    fn write(case: &mut Value, key: &str, kept: Option<&Kept>, hex_bytes: bool) {
+        match kept {
+            None => case[key] = Value::Null,
+            Some(Kept::Bytes(b)) if b.len() > BIG => {
+                case[format!("{key}Sha256")] = json!(sha256_hex(b));
+            }
+            Some(Kept::Bytes(b)) if hex_bytes => case[key] = json!(hex(b)),
+            Some(Kept::Bytes(b)) => case[key] = json!(String::from_utf8(b.clone()).unwrap()),
+            Some(Kept::Sha(h)) => case[format!("{key}Sha256")] = json!(h),
+        }
+    }
+}
+
+impl std::fmt::Display for Kept {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Kept::Bytes(b) => f.write_str(&String::from_utf8_lossy(b)),
+            Kept::Sha(h) => write!(f, "<{BIG}+ bytes with SHA-256 {h}>"),
+        }
+    }
 }
 
 /// The script's side of a case as the comparison reads it: stdout with its
 /// temp dir masked (`None` when it failed), the `gh` calls, the patch.
 struct Recorded {
-    out: Option<String>,
+    out: Option<Kept>,
     calls: Vec<String>,
-    patch: Option<Vec<u8>>,
+    patch: Option<Kept>,
 }
 
 impl Recorded {
     fn from_golden(case: &Value) -> Self {
-        let bytes = |h: &str| {
-            (0..h.len())
-                .step_by(2)
-                .map(|i| u8::from_str_radix(&h[i..i + 2], 16).unwrap())
-                .collect()
-        };
         Self {
-            out: case["stdout"].as_str().map(str::to_owned),
+            out: Kept::read(case, "stdout", false),
             calls: serde_json::from_value(case["calls"].clone()).unwrap(),
-            patch: case["patch"].as_str().map(bytes),
+            patch: Kept::read(case, "patch", true),
         }
+    }
+
+    fn to_golden(&self, input: Value) -> Value {
+        let mut case = json!({"input": input, "calls": self.calls});
+        Kept::write(&mut case, "stdout", self.out.as_ref(), false);
+        Kept::write(&mut case, "patch", self.patch.as_ref(), true);
+        case
     }
 }
 
 fn compare(name: &str, js: &Recorded, rs: &Side, rs_tmp: &Tmp) -> Option<Value> {
     assert_eq!(js.calls, rs.calls, "{name}: different gh calls");
-    assert_eq!(js.patch, rs.patch, "{name}: different patch on disk");
+    let same_patch = match (&js.patch, &rs.patch) {
+        (None, None) => true,
+        (Some(a), Some(b)) => a.matches(b),
+        _ => false,
+    };
+    assert!(
+        same_patch,
+        "{name}: different patch on disk\n js: {:?}\n rs: {:?}",
+        js.patch.as_ref().map(ToString::to_string),
+        rs.patch.as_deref().map(String::from_utf8_lossy)
+    );
     match (&js.out, &rs.out) {
         (Some(a), Ok(b)) => {
             let b = norm(b, rs_tmp);
-            assert_eq!(*a, b, "{name}: stdout differs\n js: {a}\n rs: {b}");
-            Some(last_json(a))
+            assert!(
+                a.matches(b.as_bytes()),
+                "{name}: stdout differs\n js: {a}\n rs: {b}"
+            );
+            Some(last_json(&b))
         }
         (None, Err(_)) => None,
-        (a, b) => panic!("{name}: one side failed\n js: {a:?}\n rs: {b:?}"),
+        (a, b) => panic!(
+            "{name}: one side failed\n js: {:?}\n rs: {b:?}",
+            a.as_ref().map(ToString::to_string)
+        ),
     }
 }
 
@@ -479,26 +585,149 @@ fn golden_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/goldens/fetch-pr-context.json")
 }
 
-/// What the script reads besides its input: itself, what it imports, the
-/// driver that runs it and the recorded `gh` it calls.
-fn recorded_with() -> Value {
-    let read = |p: PathBuf| std::fs::read_to_string(p).unwrap();
-    json!({
-        SCRIPT: read(plugin_root().join(SCRIPT)),
-        "lib/relay.mjs": read(plugin_root().join("lib/relay.mjs")),
-        "gh shim": read(shim_dir().join("gh")),
-        "driver": FETCH_DRIVER,
-    })
+/// `input` as the golden keeps it: itself, or its SHA-256 past `BIG`.
+fn kept_input(input: Value) -> Value {
+    let text = input.to_string();
+    if text.len() > BIG {
+        json!({"sha256": sha256_hex(text.as_bytes())})
+    } else {
+        input
+    }
+}
+
+/// `v` with the scratch directory `dir` written as `<DIR>`.
+fn portable(v: &Value, dir: &Path) -> Value {
+    let text = v.to_string().replace(&*dir.to_string_lossy(), "<DIR>");
+    serde_json::from_str(&text).unwrap()
+}
+
+/// The text of `entry` (a path under the plugin `root`) and of every module
+/// it reaches through a relative import, by path in the plugin. `None` when
+/// any of them is gone.
+fn modules(root: &Path, entry: &str, into: &mut BTreeMap<String, String>) -> Option<()> {
+    let import = regex::Regex::new(r#"(?:from|import)\s*\(?\s*"(\.{1,2}/[^"]+)""#).unwrap();
+    let root = root.canonicalize().ok()?;
+    let mut todo = vec![root.join(entry)];
+    while let Some(file) = todo.pop() {
+        let file = file.canonicalize().ok()?;
+        let key = file
+            .strip_prefix(&root)
+            .ok()?
+            .to_string_lossy()
+            .into_owned();
+        if into.contains_key(&key) {
+            continue;
+        }
+        let text = std::fs::read_to_string(&file).ok()?;
+        let dir = file.parent().unwrap();
+        todo.extend(import.captures_iter(&text).map(|m| dir.join(&m[1])));
+        into.insert(key, text);
+    }
+    Some(())
+}
+
+/// The HEAD-WORKTREE region of the workflow under `root`, each slice from its
+/// BEGIN marker through its END marker, rather than the whole file, which
+/// changes with every edit to the workflow. `None` when the workflow is gone.
+fn region_text(root: &Path) -> Option<String> {
+    let src = std::fs::read_to_string(root.join(WORKFLOW)).ok()?;
+    let begin = format!("// ===== BEGIN {REGION} =====");
+    let end = format!("// ===== END {REGION} =====");
+    let mut slices = Vec::new();
+    let mut from = 0;
+    while let Some(b) = src[from..].find(&begin).map(|i| from + i) {
+        let e = b + src[b..].find(&end).expect("an END for every BEGIN") + end.len();
+        slices.push(&src[b..e]);
+        from = e;
+    }
+    Some(slices.join("\n"))
+}
+
+/// What each oracle reads besides its input, under the plugin `root`: the
+/// scripts it runs and every module they import, the workflow region it
+/// slices, the recorded `gh` at `shim`, and this file's drivers and fake
+/// `gh`s. An oracle is `None` once any file it reads is gone: it is retired,
+/// and its golden is final.
+fn oracle_texts(
+    root: &Path,
+    shim: &Path,
+) -> BTreeMap<&'static str, Option<BTreeMap<String, String>>> {
+    let read = |entries: &[&str],
+                region: bool,
+                gh: bool,
+                own: &[(&str, &str)]|
+     -> Option<BTreeMap<String, String>> {
+        let mut texts = BTreeMap::new();
+        for entry in entries {
+            modules(root, entry, &mut texts)?;
+        }
+        if region {
+            texts.insert(format!("{WORKFLOW}#{REGION}"), region_text(root)?);
+        }
+        if gh {
+            texts.insert("gh shim".to_owned(), std::fs::read_to_string(shim).ok()?);
+        }
+        for (k, v) in own {
+            texts.insert((*k).to_owned(), (*v).to_owned());
+        }
+        Some(texts)
+    };
+    BTreeMap::from([
+        (
+            "fetch",
+            read(
+                &[SCRIPT],
+                false,
+                true,
+                &[
+                    ("FETCH_DRIVER", FETCH_DRIVER),
+                    ("EXPORTS_DRIVER", EXPORTS_DRIVER),
+                    ("BYTES_DRIVER", BYTES_DRIVER),
+                    ("BYTES_GH", BYTES_GH),
+                ],
+            ),
+        ),
+        (
+            "worktree",
+            read(
+                &[SCRIPT, EXTRACT],
+                true,
+                true,
+                &[
+                    ("WORKTREE_DRIVER", WORKTREE_DRIVER),
+                    ("CLONING_GH", CLONING_GH),
+                ],
+            ),
+        ),
+        ("region", read(&[REGION_ORACLE], true, false, &[])),
+    ])
+}
+
+/// The oracles still on disk that differ from what the golden was recorded
+/// with. A retired oracle is never stale.
+fn stale(
+    recorded_with: &Value,
+    now: &BTreeMap<&'static str, Option<BTreeMap<String, String>>>,
+) -> Vec<&'static str> {
+    now.iter()
+        .filter(|(name, texts)| {
+            texts
+                .as_ref()
+                .is_some_and(|t| recorded_with[**name] != json!(t))
+        })
+        .map(|(name, _)| *name)
+        .collect()
 }
 
 fn regenerating() -> bool {
     std::env::var("TRIBUNAL_REGEN_GOLDENS").is_ok_and(|v| v == "1")
 }
 
-/// The golden, checked against the scripts on disk; `None` when regenerating.
-fn recorded() -> Option<&'static Value> {
-    static GOLDEN: std::sync::OnceLock<Option<Value>> = std::sync::OnceLock::new();
-    GOLDEN
+/// The golden's entries for `oracle`, checked against what that oracle reads
+/// on disk; `None` when regenerating.
+fn recorded(oracle: &str) -> Option<&'static Value> {
+    static GOLDEN: OnceLock<Option<(Value, Vec<&'static str>)>> = OnceLock::new();
+    let (golden, stale_ones) = GOLDEN
         .get_or_init(|| {
             if regenerating() {
                 return None;
@@ -507,42 +736,62 @@ fn recorded() -> Option<&'static Value> {
             let text = std::fs::read_to_string(&path)
                 .unwrap_or_else(|e| panic!("{}: {e}; {REGENERATE}", path.display()));
             let golden: Value = serde_json::from_str(&text).unwrap();
-            assert!(
-                golden["recordedWith"] == recorded_with(),
-                "a script, the driver or the gh shim changed since {} was recorded; {REGENERATE}",
-                path.display()
-            );
-            Some(golden)
+            let now = oracle_texts(&plugin_root(), &shim_dir().join("gh"));
+            let stale_ones = stale(&golden["recordedWith"], &now);
+            Some((golden, stale_ones))
         })
-        .as_ref()
+        .as_ref()?;
+    assert!(
+        !stale_ones.contains(&oracle),
+        "{oracle}: a script, the region, a driver or the gh shim it reads changed since {} was recorded; {REGENERATE}",
+        golden_path().display()
+    );
+    Some(&golden[oracle])
 }
 
-/// Adds a case to the golden and writes it out. Tests add their cases from
-/// several threads, so the file is rewritten after each one and is whole once
-/// the binary finishes.
-fn record(name: &str, input: Value, js: &Recorded, dir: &Path) {
-    static CASES: std::sync::Mutex<std::collections::BTreeMap<String, Value>> =
-        std::sync::Mutex::new(std::collections::BTreeMap::new());
-    let case = json!({
-        "input": input,
-        "stdout": js.out,
-        "calls": js.calls,
-        "patch": js.patch.as_deref().map(hex),
+/// Adds `entry` to the golden under `oracle` and `name`, and writes it out.
+/// Tests add their entries from several threads, so the file is rewritten
+/// after each one and is whole once the binary finishes. `dir` is the case's
+/// scratch directory, which the golden cannot keep.
+fn record(oracle: &str, name: &str, entry: Value, dir: &Path) {
+    static WITH: OnceLock<Value> = OnceLock::new();
+    static ENTRIES: Mutex<BTreeMap<String, BTreeMap<String, Value>>> = Mutex::new(BTreeMap::new());
+    let text = entry.to_string();
+    for d in [Some(dir.to_path_buf()), dir.canonicalize().ok()]
+        .into_iter()
+        .flatten()
+    {
+        assert!(
+            !text.contains(&*d.to_string_lossy()),
+            "{name}: the script's side names the case's directory, which the golden cannot keep"
+        );
+    }
+    let with = WITH.get_or_init(|| {
+        let texts: BTreeMap<_, _> = oracle_texts(&plugin_root(), &shim_dir().join("gh"))
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    k,
+                    v.unwrap_or_else(|| panic!("{k}: a file it reads is missing")),
+                )
+            })
+            .collect();
+        json!(texts)
     });
-    let text = case.to_string();
-    let dir = dir.to_string_lossy();
+    let mut entries = ENTRIES.lock().unwrap();
     assert!(
-        !text.contains(&*dir),
-        "{name}: the script's side names the case's directory, which the golden cannot keep"
+        entries
+            .entry(oracle.to_owned())
+            .or_default()
+            .insert(name.to_owned(), entry)
+            .is_none(),
+        "two {oracle} entries are named {name}"
     );
-    let mut cases = CASES.lock().unwrap();
-    assert!(
-        cases.insert(name.to_owned(), case).is_none(),
-        "two cases are named {name}"
-    );
-    let text =
-        serde_json::to_string_pretty(&json!({"recordedWith": recorded_with(), "cases": *cases}))
-            .unwrap();
+    let mut golden = json!({"recordedWith": with});
+    for (k, v) in entries.iter() {
+        golden[k] = json!(v);
+    }
+    let text = serde_json::to_string_pretty(&golden).unwrap();
     std::fs::write(golden_path(), text + "\n").unwrap();
 }
 
@@ -608,8 +857,8 @@ async fn fetch_pr_context_matches_js_at_the_diff_window_edges() {
         let pr = format!("{}", 110 + i);
         let mut calls = common_calls(&pr, &view(n, "main-ish"), &json!([]), &json!([]), "alice");
         calls.push(rec(&diff_args(&pr), &diff, "", 0));
-        // Diffs of 60,000 bytes, which would be most of the golden.
-        let out = same_live(&format!("window-{i}"), calls, &argv(&pr, extra), &pr)
+        // Diffs of 60,000 bytes: the golden keeps their SHA-256.
+        let out = same(&format!("window-{i}"), calls, &argv(&pr, extra), &pr)
             .await
             .unwrap();
         let in_band = !out["context"]["diff"].as_str().unwrap().is_empty();
@@ -962,9 +1211,17 @@ async fn fetch_pr_context_matches_js_on_temp_dirs() {
         std::fs::create_dir_all(rs_dir.join("sub")).unwrap();
         let js = Tmp::Dir(format!("{}{suffix}", js_dir.display()));
         let rs = Tmp::Dir(format!("{}{suffix}", rs_dir.display()));
-        same_in(&dir, calls.clone(), &argv(pr, &[]), pr, js, rs, "tmp-slash")
-            .await
-            .unwrap();
+        same_in(
+            &dir,
+            calls.clone(),
+            &argv(pr, &[]),
+            pr,
+            js,
+            rs,
+            &format!("tmp-slash-{i}"),
+        )
+        .await
+        .unwrap();
     }
 
     // Unset and empty TMPDIR both fall back to /tmp. The PR number is this
@@ -1053,9 +1310,34 @@ async fn fetch_pr_context_matches_js_on_generated_prs() {
     }
 }
 
+/// The script's exports, and `Date.parse`, on `calls`: run under
+/// regeneration, read back from the golden otherwise, where the calls are
+/// kept as their SHA-256.
 fn exports_oracle(name: &str, calls: &Value) -> Vec<Value> {
+    let key = format!("exports-{name}");
+    let input = sha256_hex(calls.to_string().as_bytes());
+    if let Some(golden) = recorded("fetch") {
+        let kept = &golden[&key];
+        assert!(!kept.is_null(), "{key}: not in the golden; {REGENERATE}");
+        assert_eq!(
+            kept["callsSha256"], input,
+            "{key}: the calls changed; {REGENERATE}"
+        );
+        return serde_json::from_value(kept["results"].clone()).unwrap();
+    }
     let dir = scratch(&format!("fetch-exports-{name}"));
-    let driver = write_driver(&dir, "exports-driver.mjs", EXPORTS_DRIVER);
+    let results = run_exports(&dir, calls);
+    record(
+        "fetch",
+        &key,
+        json!({"callsSha256": input, "results": results}),
+        &dir,
+    );
+    results
+}
+
+fn run_exports(dir: &Path, calls: &Value) -> Vec<Value> {
+    let driver = write_driver(dir, "exports-driver.mjs", EXPORTS_DRIVER);
     let mut child = Command::new("node")
         .arg(&driver)
         .arg(plugin_root().join(SCRIPT))
@@ -1199,7 +1481,7 @@ fn ticket_keys_and_cutoffs_match_js() {
         Just("A"),
         Just("B"),
         Just("Z"),
-        Just("PAY"),
+        Just("ABC"),
         Just("a"),
         Just("x"),
         Just("-"),
@@ -1292,9 +1574,11 @@ async fn declared_differences_have_witnesses() {
         rec(&diff_args(pr), "d", "", 0),
     ];
     let dir = scratch("fetch-surrogate");
-    let js_tmp = Tmp::Dir(dir.to_string_lossy().into_owned());
-    let (js, rs) = run_both(&dir, calls, &argv(pr, &[]), js_tmp.clone(), js_tmp, pr).await;
-    let (js, rs) = (js.out.unwrap(), rs.out.unwrap());
+    let t = Tmp::Dir(dir.to_string_lossy().into_owned());
+    let a = argv(pr, &[]);
+    let js = js_stdout("surrogate", &dir, &calls, &a, &t, pr);
+    let rs = run_rs(&dir, &recordings(&dir, calls), &a, &t, pr).await;
+    let rs = rs.out.unwrap();
     assert!(
         js.contains(&format!("{}\\ud83d\"", "a".repeat(299))),
         "{js}"
@@ -1309,11 +1593,23 @@ async fn declared_differences_have_witnesses() {
 // HEAD-WORKTREE
 // ---------------------------------------------------------------------------
 
-fn region_oracle(calls: &[Value]) -> Vec<Value> {
-    let oracle = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../oracle/region-oracle.mjs");
+/// The region's functions on `calls`, each `{"ok": value}` or `{"err":
+/// message}`: run through `region-oracle.mjs` under regeneration, read back
+/// from the golden otherwise, where the calls are kept as their SHA-256.
+fn region_results(name: &str, calls: &[Value]) -> Vec<Value> {
+    let input = sha256_hex(Value::Array(calls.to_vec()).to_string().as_bytes());
+    if let Some(golden) = recorded("region") {
+        let kept = &golden[name];
+        assert!(!kept.is_null(), "{name}: not in the golden; {REGENERATE}");
+        assert_eq!(
+            kept["callsSha256"], input,
+            "{name}: the calls changed; {REGENERATE}"
+        );
+        return serde_json::from_value(kept["results"].clone()).unwrap();
+    }
     let mut child = Command::new("node")
-        .arg(oracle)
-        .arg("HEAD-WORKTREE")
+        .arg(plugin_root().join(REGION_ORACLE))
+        .arg(REGION)
         .arg("headWorktreeBash,parseHeadWorktree,pinnedCheckoutBlock")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -1333,7 +1629,18 @@ fn region_oracle(calls: &[Value]) -> Vec<Value> {
         String::from_utf8_lossy(&out.stderr)
     );
     let results: Vec<Value> = serde_json::from_slice(&out.stdout).unwrap();
+    let dir = scratch(&format!("fetch-region-{name}"));
+    record(
+        "region",
+        name,
+        json!({"callsSha256": input, "results": results}),
+        &dir,
+    );
     results
+}
+
+fn region_oracle(calls: &[Value]) -> Vec<Value> {
+    region_results("matches", calls)
         .into_iter()
         .map(|r| {
             r.get("ok")
@@ -1439,6 +1746,10 @@ fn git(dir: &Path, args: &[&str]) -> String {
         ])
         .args(args)
         .current_dir(dir)
+        // Fixed dates make the same commits on every run, so the golden can
+        // name their shas.
+        .env("GIT_AUTHOR_DATE", "2026-01-01T00:00:00Z")
+        .env("GIT_COMMITTER_DATE", "2026-01-01T00:00:00Z")
         .output()
         .unwrap();
     assert!(
@@ -1523,6 +1834,31 @@ struct WtState {
     gh_calls: Vec<String>,
 }
 
+impl WtState {
+    fn to_json(&self) -> Value {
+        json!({
+            "worktree": self.worktree,
+            "head": self.head,
+            "list": self.list,
+            "leftovers": self.leftovers,
+            "removed": self.removed,
+            "ghCalls": self.gh_calls,
+        })
+    }
+
+    fn from_json(v: &Value) -> Self {
+        let strings = |k: &str| serde_json::from_value(v[k].clone()).unwrap();
+        Self {
+            worktree: v["worktree"].clone(),
+            head: v["head"].as_str().map(str::to_owned),
+            list: v["list"].as_str().unwrap().to_owned(),
+            leftovers: strings("leftovers"),
+            removed: v["removed"].clone(),
+            gh_calls: strings("ghCalls"),
+        }
+    }
+}
+
 fn state(
     repo: &Path,
     tmp: &Path,
@@ -1563,10 +1899,36 @@ fn state(
     }
 }
 
+/// A scratch directory by its real path, which is what git prints, so the
+/// masks match it on every machine.
+fn wt_scratch(name: &str) -> PathBuf {
+    scratch(name).canonicalize().unwrap()
+}
+
+/// The script's side of worktree case `name`: under regeneration `run`
+/// produces it and the golden keeps it; otherwise it is read back, and
+/// `input`, with `dir` as `<DIR>`, must be what it was recorded on.
+fn worktree_side(name: &str, dir: &Path, input: Value, run: impl FnOnce() -> Value) -> Value {
+    let input = portable(&input, dir);
+    if let Some(golden) = recorded("worktree") {
+        let kept = &golden[name];
+        assert!(!kept.is_null(), "{name}: not in the golden; {REGENERATE}");
+        assert_eq!(
+            kept["input"], input,
+            "{name}: the case changed; {REGENERATE}"
+        );
+        return kept["js"].clone();
+    }
+    let js = run();
+    record("worktree", name, json!({"input": input, "js": js}), dir);
+    js
+}
+
 /// Stale and fresh review checkouts, the same in both twins: one stale and
 /// removable, one stale but locked, one fresh, one stale with a name the
-/// pattern refuses, and one whose directory is gone.
-fn plant_worktrees(repo: &Path, tmp: &Path, sha: &str) {
+/// pattern refuses, and one whose directory is gone. Without `age` none of
+/// them is made to look old.
+fn plant_worktrees(repo: &Path, tmp: &Path, sha: &str, age: bool) {
     let add = |name: &str| {
         let p = tmp.join(name);
         git(
@@ -1583,6 +1945,9 @@ fn plant_worktrees(repo: &Path, tmp: &Path, sha: &str) {
         p
     };
     let old = |p: &Path| {
+        if !age {
+            return;
+        }
         let st = Command::new("touch")
             .args(["-t", "202001010000"])
             .arg(p)
@@ -1630,8 +1995,11 @@ fn twin_pair(dir: &Path, o: &Origin) -> (Twin, Twin) {
 }
 
 /// Runs the script's `prepareReview` worktree step in `js.repo` and the port
-/// in `rs.repo`, and returns each side's resulting state.
+/// in `rs.repo`, and returns each side's resulting state. The script's side
+/// is case `name` of the golden's `worktree` oracle.
+#[allow(clippy::too_many_arguments)]
 async fn prep_both(
+    name: &str,
     dir: &Path,
     js: &Twin,
     rs: &Twin,
@@ -1641,26 +2009,30 @@ async fn prep_both(
     tmp_override: Option<(&str, &str)>,
 ) -> (WtState, WtState) {
     let rec_path = recordings(dir, vec![]);
-    let driver = write_driver(dir, "worktree-driver.mjs", WORKTREE_DRIVER);
     let _ = std::fs::remove_file(&js.log);
     let _ = std::fs::remove_file(&rs.log);
     let (js_tmp, rs_tmp) =
         tmp_override.unwrap_or((js.tmp.to_str().unwrap(), rs.tmp.to_str().unwrap()));
-    let script_path = dir.join("head-worktree.sh");
-    let plugin = plugin_root();
-    let args = [
-        "prep",
-        plugin.to_str().unwrap(),
-        js_tmp,
-        js.log.to_str().unwrap(),
-        repo,
-        pr,
-        &context.to_string(),
-        script_path.to_str().unwrap(),
-    ];
-    let out = run_script(driver.to_str().unwrap(), &args, &js.repo, &rec_path, None);
-    assert_eq!(out.code, Some(0), "{}", out.stderr);
-    let js_worktree = last_json(&out.stdout)["worktree"].clone();
+    let input = json!({"context": context, "repo": repo, "pr": pr, "tmp": [js_tmp, rs_tmp]});
+    let js_state = worktree_side(name, dir, input, || {
+        let driver = write_driver(dir, "worktree-driver.mjs", WORKTREE_DRIVER);
+        let script_path = dir.join("head-worktree.sh");
+        let plugin = plugin_root();
+        let args = [
+            "prep",
+            plugin.to_str().unwrap(),
+            js_tmp,
+            js.log.to_str().unwrap(),
+            repo,
+            pr,
+            &context.to_string(),
+            script_path.to_str().unwrap(),
+        ];
+        let out = run_script(driver.to_str().unwrap(), &args, &js.repo, &rec_path, None);
+        assert_eq!(out.code, Some(0), "{}", out.stderr);
+        let js_worktree = last_json(&out.stdout)["worktree"].clone();
+        state(&js.repo, &js.tmp, js_worktree, Value::Null, &js.log, pr).to_json()
+    });
 
     let mut t: Tools = tools(&rec_path);
     t.env
@@ -1678,7 +2050,7 @@ async fn prep_both(
     .unwrap()
     .map_or(Value::Null, Value::String);
     (
-        state(&js.repo, &js.tmp, js_worktree, Value::Null, &js.log, pr),
+        WtState::from_json(&js_state),
         state(&rs.repo, &rs.tmp, rs_worktree, Value::Null, &rs.log, pr),
     )
 }
@@ -1687,83 +2059,152 @@ fn ctx(sha: &str) -> Value {
     json!({"isDeploymentPR": false, "headRefOid": sha, "diffPath": "", "files": []})
 }
 
+/// Whether the stale checkout is pruned depends on whether this machine can
+/// age it (see `aged`), so the golden keeps the script's side both ways:
+/// regenerating also plants checkouts left fresh, the state a machine that
+/// cannot age them reaches, and each run reads the side its own planting
+/// matches.
 #[tokio::test]
 async fn head_worktree_builds_the_same_checkout_as_the_bash() {
-    let dir = scratch("wt-local");
-    let o = origin(&dir);
-    let (js, rs) = twin_pair(&dir, &o);
-    plant_worktrees(&js.repo, &js.tmp, &o.c1);
-    plant_worktrees(&rs.repo, &rs.tmp, &o.c1);
-    let stale = aged(&js.tmp.join("peer-review-wt-77-abc123"));
-    let (a, b) = prep_both(&dir, &js, &rs, &ctx(&o.c2), REPO, "301", None).await;
-    assert_eq!(a, b);
-    assert_eq!(a.head.as_deref(), Some(o.c2.as_str()));
-    assert!(a
-        .worktree
-        .as_str()
-        .unwrap()
-        .starts_with("CREATED_WORKTREE <TMP>/peer-review-wt-301-XXXXXX"));
-    // The stale unlocked checkout is gone where it could be aged; the rest stay.
-    assert_eq!(a.list.contains("abc123"), !stale, "{}", a.list);
-    assert!(
-        a.list.contains("lock01") && a.list.contains("fresh1"),
-        "{}",
-        a.list
-    );
+    let ages: &[bool] = if regenerating() {
+        &[true, false]
+    } else {
+        &[true]
+    };
+    let mut done = Vec::new();
+    for &age in ages {
+        let dir = wt_scratch(&format!("wt-local-{age}"));
+        let o = origin(&dir);
+        let (js, rs) = twin_pair(&dir, &o);
+        plant_worktrees(&js.repo, &js.tmp, &o.c1, age);
+        plant_worktrees(&rs.repo, &rs.tmp, &o.c1, age);
+        let stale = aged(&rs.tmp.join("peer-review-wt-77-abc123"));
+        let name = if stale { "local-aged" } else { "local-fresh" };
+        if done.contains(&name) {
+            continue;
+        }
+        done.push(name);
+        let (a, b) = prep_both(name, &dir, &js, &rs, &ctx(&o.c2), REPO, "301", None).await;
+        assert_eq!(a, b);
+        assert_eq!(a.head.as_deref(), Some(o.c2.as_str()));
+        assert!(a
+            .worktree
+            .as_str()
+            .unwrap()
+            .starts_with("CREATED_WORKTREE <TMP>/peer-review-wt-301-XXXXXX"));
+        // The stale unlocked checkout is gone where it could be aged; the rest stay.
+        assert_eq!(a.list.contains("abc123"), !stale, "{}", a.list);
+        assert!(
+            a.list.contains("lock01") && a.list.contains("fresh1"),
+            "{}",
+            a.list
+        );
+    }
 }
 
 #[tokio::test]
 async fn head_worktree_fetches_a_commit_only_the_remote_has() {
-    let dir = scratch("wt-fetch");
+    let dir = wt_scratch("wt-fetch");
     let o = origin(&dir);
     let (js, rs) = twin_pair(&dir, &o);
     git(&o.seed, &["checkout", "-q", "-b", "late"]);
     let c3 = commit(&o.seed, "c.txt", "three\n");
     git(&o.seed, &["push", "-q", "origin", "late"]);
-    let (a, b) = prep_both(&dir, &js, &rs, &ctx(&c3), "ACME/WIDGETS", "302", None).await;
+    let (a, b) = prep_both(
+        "fetch",
+        &dir,
+        &js,
+        &rs,
+        &ctx(&c3),
+        "ACME/WIDGETS",
+        "302",
+        None,
+    )
+    .await;
     assert_eq!(a, b);
     assert_eq!(a.head.as_deref(), Some(c3.as_str()));
 }
 
 #[tokio::test]
 async fn head_worktree_falls_back_and_fails_as_the_bash_does() {
-    let dir = scratch("wt-fail");
+    let dir = wt_scratch("wt-fail");
     let o = origin(&dir);
     let (js, rs) = twin_pair(&dir, &o);
     // The remote is not the PR's repo: no worktree, and the clone fallback
     // asks the recorded gh, which has no answer.
-    let (a, b) = prep_both(&dir, &js, &rs, &ctx(&o.c1), "other/thing", "303", None).await;
+    let (a, b) = prep_both(
+        "fail-other-repo",
+        &dir,
+        &js,
+        &rs,
+        &ctx(&o.c1),
+        "other/thing",
+        "303",
+        None,
+    )
+    .await;
     assert_eq!(a, b);
     assert_eq!(a.worktree, json!("WORKTREE_FAILED"));
     assert_eq!(a.gh_calls.len(), 1, "{:?}", a.gh_calls);
     assert!(a.leftovers.is_empty(), "{:?}", a.leftovers);
 
     // A commit nobody has.
-    let (a, b) = prep_both(&dir, &js, &rs, &ctx(&"0".repeat(40)), REPO, "304", None).await;
+    let (a, b) = prep_both(
+        "fail-no-commit",
+        &dir,
+        &js,
+        &rs,
+        &ctx(&"0".repeat(40)),
+        REPO,
+        "304",
+        None,
+    )
+    .await;
     assert_eq!(a, b);
     assert_eq!(a.worktree, json!("WORKTREE_FAILED"));
 
     // A `.` in the repo name is a regex wildcard to grep.
-    let (a, b) = prep_both(&dir, &js, &rs, &ctx(&o.c1), "acme.widgets", "305", None).await;
+    let (a, b) = prep_both(
+        "fail-dot",
+        &dir,
+        &js,
+        &rs,
+        &ctx(&o.c1),
+        "acme.widgets",
+        "305",
+        None,
+    )
+    .await;
     assert_eq!(a, b);
     assert_eq!(a.head.as_deref(), Some(o.c1.as_str()));
 
     // Declared difference: `.` is the only metacharacter the port honours,
     // since a GitHub owner or name cannot hold the others. To grep `s*` is
     // "any number of s", so the bash builds a worktree the port does not.
-    let (a, b) = prep_both(&dir, &js, &rs, &ctx(&o.c1), "acme/widgets*", "307", None).await;
+    let (a, b) = prep_both(
+        "fail-star",
+        &dir,
+        &js,
+        &rs,
+        &ctx(&o.c1),
+        "acme/widgets*",
+        "307",
+        None,
+    )
+    .await;
     assert_eq!(a.head.as_deref(), Some(o.c1.as_str()));
     assert_eq!(b.worktree, json!("WORKTREE_FAILED"));
 }
 
 #[tokio::test]
 async fn head_worktree_matches_the_bash_when_mktemp_fails() {
-    let dir = scratch("wt-mktemp");
+    let dir = wt_scratch("wt-mktemp");
     let o = origin(&dir);
     let (js, rs) = twin_pair(&dir, &o);
     let js_missing = dir.join("no-such-js");
     let rs_missing = dir.join("no-such-rs");
     let (a, b) = prep_both(
+        "mktemp",
         &dir,
         &js,
         &rs,
@@ -1781,11 +2222,11 @@ async fn head_worktree_matches_the_bash_when_mktemp_fails() {
 
 #[tokio::test]
 async fn head_worktree_skips_deployment_prs_and_missing_heads() {
-    let dir = scratch("wt-skip");
+    let dir = wt_scratch("wt-skip");
     let o = origin(&dir);
     let (js, rs) = twin_pair(&dir, &o);
-    plant_worktrees(&js.repo, &js.tmp, &o.c1);
-    plant_worktrees(&rs.repo, &rs.tmp, &o.c1);
+    plant_worktrees(&js.repo, &js.tmp, &o.c1, true);
+    plant_worktrees(&rs.repo, &rs.tmp, &o.c1, true);
     for (i, c) in [
         json!({"isDeploymentPR": true, "headRefOid": o.c1}),
         json!({"isDeploymentPR": false, "headRefOid": ""}),
@@ -1794,7 +2235,17 @@ async fn head_worktree_skips_deployment_prs_and_missing_heads() {
     .iter()
     .enumerate()
     {
-        let (a, b) = prep_both(&dir, &js, &rs, c, REPO, &format!("{}", 310 + i), None).await;
+        let (a, b) = prep_both(
+            &format!("skip-{i}"),
+            &dir,
+            &js,
+            &rs,
+            c,
+            REPO,
+            &format!("{}", 310 + i),
+            None,
+        )
+        .await;
         assert_eq!(a, b);
         assert_eq!(a.worktree, json!("<null>"));
         // Nothing was pruned either: prepareReview returns first.
@@ -1802,32 +2253,41 @@ async fn head_worktree_skips_deployment_prs_and_missing_heads() {
     }
 }
 
+/// Three hours on, every planted checkout the pattern takes is stale whether
+/// or not this machine could age it, so one recorded side serves both.
 #[tokio::test]
 async fn prune_stale_worktrees_matches_js_with_a_clock() {
-    let dir = scratch("wt-prune");
+    let dir = wt_scratch("wt-prune");
     let o = origin(&dir);
     let (js, rs) = twin_pair(&dir, &o);
-    plant_worktrees(&js.repo, &js.tmp, &o.c1);
-    plant_worktrees(&rs.repo, &rs.tmp, &o.c1);
-    let driver = write_driver(&dir, "worktree-driver.mjs", WORKTREE_DRIVER);
+    plant_worktrees(&js.repo, &js.tmp, &o.c1, true);
+    plant_worktrees(&rs.repo, &rs.tmp, &o.c1, true);
     let rec_path = recordings(&dir, vec![]);
-    let now = hw::now_ms() + 3.0 * 3_600_000.0;
-    let plugin = plugin_root();
-    let out = run_script(
-        driver.to_str().unwrap(),
-        &[
-            "prune",
-            plugin.to_str().unwrap(),
-            js.tmp.to_str().unwrap(),
-            "",
-            &format!("{now}"),
-        ],
-        &js.repo,
-        &rec_path,
-        None,
-    );
-    assert_eq!(out.code, Some(0), "{}", out.stderr);
-    let js_removed = last_json(&out.stdout)["removed"].clone();
+    let ahead = 3.0 * 3_600_000.0;
+    let now = hw::now_ms() + ahead;
+    let input = json!({"aheadMs": ahead, "maxAgeMs": hw::STALE_WORKTREE_MS});
+    let a = worktree_side("prune", &dir, input, || {
+        let driver = write_driver(&dir, "worktree-driver.mjs", WORKTREE_DRIVER);
+        let plugin = plugin_root();
+        let out = run_script(
+            driver.to_str().unwrap(),
+            &[
+                "prune",
+                plugin.to_str().unwrap(),
+                js.tmp.to_str().unwrap(),
+                "",
+                &format!("{now}"),
+            ],
+            &js.repo,
+            &rec_path,
+            None,
+        );
+        assert_eq!(out.code, Some(0), "{}", out.stderr);
+        let js_removed = last_json(&out.stdout)["removed"].clone();
+        // The planted names are the same on both sides, so nothing is masked.
+        state(&js.repo, &js.tmp, Value::Null, js_removed, &js.log, "none").to_json()
+    });
+    let a = WtState::from_json(&a);
     let rs_removed = json!(
         hw::prune_stale_worktrees(
             &tools(&rec_path),
@@ -1837,8 +2297,6 @@ async fn prune_stale_worktrees_matches_js_with_a_clock() {
         )
         .await
     );
-    // The planted names are the same on both sides, so nothing is masked.
-    let a = state(&js.repo, &js.tmp, Value::Null, js_removed, &js.log, "none");
     let b = state(&rs.repo, &rs.tmp, Value::Null, rs_removed, &rs.log, "none");
     assert_eq!(a, b);
     // Three hours on, the fresh checkout is stale too; the locked one stays.
@@ -1871,8 +2329,36 @@ fn calls_with_view_text(pr: &str, view_text: &str, inline_text: &str) -> Vec<Val
 async fn both_lines(name: &str, calls: Vec<Value>, argv: &[String], pr: &str) -> (String, Value) {
     let dir = scratch(&format!("fetch-{name}"));
     let t = Tmp::Dir(dir.to_string_lossy().into_owned());
-    let (js, rs) = run_both(&dir, calls, argv, t.clone(), t, pr).await;
-    (js.out.unwrap(), last_json(&rs.out.unwrap()))
+    let js = js_stdout(name, &dir, &calls, argv, &t, pr);
+    let rs = run_rs(&dir, &recordings(&dir, calls), argv, &t, pr).await;
+    (js, last_json(&rs.out.unwrap()))
+}
+
+/// The script's stdout on one case that must succeed, with its temp dir as
+/// `<TMP>`: run under regeneration, read back from the golden otherwise.
+fn js_stdout(
+    name: &str,
+    dir: &Path,
+    calls: &[Value],
+    argv: &[String],
+    tmp: &Tmp,
+    pr: &str,
+) -> String {
+    let input = kept_input(json!({"calls": calls, "argv": argv, "pr": pr}));
+    if let Some(golden) = recorded("fetch") {
+        let kept = &golden[name];
+        assert!(!kept.is_null(), "{name}: not in the golden; {REGENERATE}");
+        assert_eq!(
+            kept["input"], input,
+            "{name}: the case changed; {REGENERATE}"
+        );
+        return kept["stdout"].as_str().unwrap().to_owned();
+    }
+    let rec_path = recordings(dir, calls.to_vec());
+    let js = run_js(dir, &rec_path, argv, tmp, pr);
+    let out = norm(&js.out.unwrap(), tmp);
+    record("fetch", name, json!({"input": input, "stdout": out}), dir);
+    out
 }
 
 /// Declared difference: `serde_json` refuses what `JSON.parse` reads as an
@@ -1915,8 +2401,15 @@ async fn json_the_port_cannot_parse_is_a_declared_difference() {
     same("underflow", calls, &argv(pr, &[]), pr).await.unwrap();
 }
 
-/// What `JSON.stringify(JSON.parse(text))` gives, through node.
+/// What `JSON.stringify(JSON.parse(text))` gives, through node under
+/// regeneration and from the golden otherwise.
 fn js_number_of(text: &str) -> Value {
+    let name = format!("number-of-{text}");
+    if let Some(golden) = recorded("fetch") {
+        let kept = &golden[&name];
+        assert!(!kept.is_null(), "{name}: not in the golden; {REGENERATE}");
+        return kept["result"].clone();
+    }
     let out = Command::new("node")
         .args([
             "-e",
@@ -1925,7 +2418,10 @@ fn js_number_of(text: &str) -> Value {
         ])
         .output()
         .unwrap();
-    serde_json::from_slice::<Value>(&out.stdout).unwrap()[0].clone()
+    let result = serde_json::from_slice::<Value>(&out.stdout).unwrap()[0].clone();
+    let dir = scratch("fetch-number-of");
+    record("fetch", &name, json!({"result": result}), &dir);
+    result
 }
 
 /// `String(x)` and `Number(x)` throw on an object whose own `toString` is not
@@ -2229,7 +2725,6 @@ async fn fetch_pr_context_matches_js_on_invalid_utf8() {
     let gh = ghdir.join("gh");
     std::fs::write(&gh, BYTES_GH).unwrap();
     std::fs::set_permissions(&gh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    let driver = write_driver(&dir, "bytes-driver.mjs", BYTES_DRIVER);
     let tails: [(&[u8], Option<usize>); 8] = [
         (b"caf\xe9 latin-1\n", None),
         (b"A\xe0\x80A\xed\xa0\x80A\xf4\x90\x80\x80\xff\xfe\n", None),
@@ -2263,26 +2758,56 @@ async fn fetch_pr_context_matches_js_on_invalid_utf8() {
         std::fs::create_dir_all(&rs_tmp).unwrap();
         let js_log = dir.join(format!("js-{i}.log"));
         let rs_log = dir.join(format!("rs-{i}.log"));
-        let mut args = vec![
-            js_tmp.to_string_lossy().into_owned(),
-            js_log.to_string_lossy().into_owned(),
-            ghdir.to_string_lossy().into_owned(),
-            plugin_root().join(SCRIPT).to_string_lossy().into_owned(),
-        ];
         let a = argv(&pr, &[]);
-        args.extend(a.iter().cloned());
-        let out = Command::new("node")
-            .arg(&driver)
-            .args(&args)
-            .env("GH_BYTES", &rec_path)
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
+        let name = format!("bytes-{i}");
+        let input = sha256_hex(
+            json!({"entries": entries, "argv": a})
+                .to_string()
+                .as_bytes(),
         );
-        let js_out = String::from_utf8(out.stdout).unwrap();
+        let patch_of =
+            |d: &Path| std::fs::read(d.join(format!("peer-review-diff-{pr}.patch"))).unwrap();
+        let js = match recorded("fetch") {
+            Some(golden) => {
+                let kept = &golden[&name];
+                assert!(!kept.is_null(), "{name}: not in the golden; {REGENERATE}");
+                assert_eq!(
+                    kept["inputSha256"], input,
+                    "{name}: the case changed; {REGENERATE}"
+                );
+                kept.clone()
+            }
+            None => {
+                let driver = write_driver(&dir, "bytes-driver.mjs", BYTES_DRIVER);
+                let mut args = vec![
+                    js_tmp.to_string_lossy().into_owned(),
+                    js_log.to_string_lossy().into_owned(),
+                    ghdir.to_string_lossy().into_owned(),
+                    plugin_root().join(SCRIPT).to_string_lossy().into_owned(),
+                ];
+                args.extend(a.iter().cloned());
+                let out = Command::new("node")
+                    .arg(&driver)
+                    .args(&args)
+                    .env("GH_BYTES", &rec_path)
+                    .output()
+                    .unwrap();
+                assert!(
+                    out.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+                let js_out = String::from_utf8(out.stdout).unwrap();
+                let kept = json!({
+                    "inputSha256": input,
+                    "stdout": js_out.replace(js_tmp.to_str().unwrap(), "<TMP>"),
+                    "calls": read_calls(&js_log),
+                    "patch": hex(&patch_of(&js_tmp)),
+                });
+                record("fetch", &name, kept.clone(), &dir);
+                kept
+            }
+        };
         let t = Tools {
             gh: gh.to_string_lossy().into_owned(),
             git: "git".into(),
@@ -2295,14 +2820,17 @@ async fn fetch_pr_context_matches_js_on_invalid_utf8() {
             .await
             .unwrap();
         assert_eq!(
-            js_out.replace(js_tmp.to_str().unwrap(), "<TMP>"),
+            js["stdout"].as_str().unwrap(),
             rs_out.replace(rs_tmp.to_str().unwrap(), "<TMP>"),
             "case {i}"
         );
-        assert_eq!(read_calls(&js_log), read_calls(&rs_log), "case {i}");
-        let patch =
-            |d: &Path| std::fs::read(d.join(format!("peer-review-diff-{pr}.patch"))).unwrap();
-        assert_eq!(patch(&js_tmp), patch(&rs_tmp), "case {i}");
+        let js_calls: Vec<String> = serde_json::from_value(js["calls"].clone()).unwrap();
+        assert_eq!(js_calls, read_calls(&rs_log), "case {i}");
+        assert_eq!(
+            unhex(js["patch"].as_str().unwrap()),
+            patch_of(&rs_tmp),
+            "case {i}"
+        );
     }
 }
 
@@ -2310,50 +2838,55 @@ async fn fetch_pr_context_matches_js_on_invalid_utf8() {
 /// in, which is the repository the checkout is built from.
 #[tokio::test]
 async fn head_worktree_matches_the_bash_with_a_relative_tmpdir() {
-    let dir = scratch("wt-relative");
+    let dir = wt_scratch("wt-relative");
     let o = origin(&dir);
     let (js, rs) = twin_pair(&dir, &o);
     std::fs::create_dir_all(js.repo.join("rel-tmp")).unwrap();
     std::fs::create_dir_all(rs.repo.join("rel-tmp")).unwrap();
     let rec_path = recordings(&dir, vec![]);
-    let driver = write_driver(&dir, "worktree-driver.mjs", WORKTREE_DRIVER);
-    let script_path = dir.join("head-worktree.sh");
-    let plugin = plugin_root();
     let context = ctx(&o.c2);
-    let args = [
-        "prep",
-        plugin.to_str().unwrap(),
-        "rel-tmp",
-        js.log.to_str().unwrap(),
-        REPO,
-        "330",
-        &context.to_string(),
-        script_path.to_str().unwrap(),
-    ];
-    let out = run_script(driver.to_str().unwrap(), &args, &js.repo, &rec_path, None);
-    assert_eq!(out.code, Some(0), "{}", out.stderr);
-    let js_wt = last_json(&out.stdout)["worktree"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let mut t: Tools = tools(&rec_path);
-    t.env.push(("TMPDIR".into(), "rel-tmp".into()));
-    let rs_wt = hw::prepare_head_worktree(&t, &context, REPO, "330", Some(&rs.repo), "rel-tmp")
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(mask_suffix(&js_wt, "330"), mask_suffix(&rs_wt, "330"));
-    assert!(
-        js_wt.starts_with("CREATED_WORKTREE rel-tmp/peer-review-wt-330-"),
-        "{js_wt}"
-    );
     let head = |repo: &Path, wt: &str| {
         git(
             &repo.join(&wt["CREATED_WORKTREE ".len()..]),
             &["rev-parse", "HEAD"],
         )
     };
-    assert_eq!(head(&js.repo, &js_wt), o.c2);
+    let input = json!({"context": context, "repo": REPO, "pr": "330", "tmp": "rel-tmp"});
+    let kept = worktree_side("relative", &dir, input, || {
+        let driver = write_driver(&dir, "worktree-driver.mjs", WORKTREE_DRIVER);
+        let script_path = dir.join("head-worktree.sh");
+        let plugin = plugin_root();
+        let args = [
+            "prep",
+            plugin.to_str().unwrap(),
+            "rel-tmp",
+            js.log.to_str().unwrap(),
+            REPO,
+            "330",
+            &context.to_string(),
+            script_path.to_str().unwrap(),
+        ];
+        let out = run_script(driver.to_str().unwrap(), &args, &js.repo, &rec_path, None);
+        assert_eq!(out.code, Some(0), "{}", out.stderr);
+        let js_wt = last_json(&out.stdout)["worktree"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        json!({"worktree": mask_suffix(&js_wt, "330"), "head": head(&js.repo, &js_wt)})
+    });
+    let js_wt = kept["worktree"].as_str().unwrap();
+    let mut t: Tools = tools(&rec_path);
+    t.env.push(("TMPDIR".into(), "rel-tmp".into()));
+    let rs_wt = hw::prepare_head_worktree(&t, &context, REPO, "330", Some(&rs.repo), "rel-tmp")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(mask_suffix(js_wt, "330"), mask_suffix(&rs_wt, "330"));
+    assert!(
+        js_wt.starts_with("CREATED_WORKTREE rel-tmp/peer-review-wt-330-"),
+        "{js_wt}"
+    );
+    assert_eq!(kept["head"], json!(o.c2));
     assert_eq!(head(&rs.repo, &rs_wt), o.c2);
 }
 
@@ -2374,7 +2907,7 @@ process.exit(r.status ?? 1);
 /// the checkout.
 #[tokio::test]
 async fn head_worktree_clones_as_the_bash_does() {
-    let dir = scratch("wt-clone");
+    let dir = wt_scratch("wt-clone");
     let o = origin(&dir);
     let (js, rs) = twin_pair(&dir, &o);
     let bin = dir.join("bin");
@@ -2382,39 +2915,44 @@ async fn head_worktree_clones_as_the_bash_does() {
     let gh = bin.join("gh");
     std::fs::write(&gh, CLONING_GH).unwrap();
     std::fs::set_permissions(&gh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    let driver = write_driver(&dir, "worktree-driver.mjs", WORKTREE_DRIVER);
-    let script_path = dir.join("head-worktree.sh");
-    let plugin = plugin_root();
     // c2 is on `feature`, which a --depth 1 clone of `main` does not hold.
     let context = ctx(&o.c2);
-    let path = std::env::join_paths(
-        std::iter::once(bin.clone())
-            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
-    )
-    .unwrap();
-    let out = Command::new("node")
-        .arg(&driver)
-        .args([
-            "prep",
-            plugin.to_str().unwrap(),
-            js.tmp.to_str().unwrap(),
-            js.log.to_str().unwrap(),
-            "other/thing",
-            "350",
-            &context.to_string(),
-            script_path.to_str().unwrap(),
-        ])
-        .current_dir(&js.repo)
-        .env("PATH", path)
-        .env("GH_BARE", &o.bare)
-        .output()
+    let input = json!({"context": context, "repo": "other/thing", "pr": "350"});
+    let a = worktree_side("clone", &dir, input, || {
+        let driver = write_driver(&dir, "worktree-driver.mjs", WORKTREE_DRIVER);
+        let script_path = dir.join("head-worktree.sh");
+        let plugin = plugin_root();
+        let path = std::env::join_paths(
+            std::iter::once(bin.clone())
+                .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+        )
         .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let js_wt = last_json(&String::from_utf8_lossy(&out.stdout))["worktree"].clone();
+        let out = Command::new("node")
+            .arg(&driver)
+            .args([
+                "prep",
+                plugin.to_str().unwrap(),
+                js.tmp.to_str().unwrap(),
+                js.log.to_str().unwrap(),
+                "other/thing",
+                "350",
+                &context.to_string(),
+                script_path.to_str().unwrap(),
+            ])
+            .current_dir(&js.repo)
+            .env("PATH", path)
+            .env("GH_BARE", &o.bare)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let js_wt = last_json(&String::from_utf8_lossy(&out.stdout))["worktree"].clone();
+        state(&js.repo, &js.tmp, js_wt, Value::Null, &js.log, "350").to_json()
+    });
+    let a = WtState::from_json(&a);
     let t = Tools {
         gh: gh.to_string_lossy().into_owned(),
         git: "git".into(),
@@ -2434,7 +2972,6 @@ async fn head_worktree_clones_as_the_bash_does() {
     .await
     .unwrap()
     .map_or(Value::Null, Value::String);
-    let a = state(&js.repo, &js.tmp, js_wt, Value::Null, &js.log, "350");
     let b = state(&rs.repo, &rs.tmp, rs_wt, Value::Null, &rs.log, "350");
     assert_eq!(a, b);
     assert!(
@@ -2462,23 +2999,7 @@ fn head_worktree_region_throws_where_js_does() {
         json!({"fn": "pinnedCheckoutBlock", "args": [{"ok": false, "path": bad}, HEAD]}),
         json!({"fn": "pinnedCheckoutBlock", "args": [{"ok": true, "path": [bad]}, HEAD]}),
     ];
-    let oracle = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../oracle/region-oracle.mjs");
-    let mut child = Command::new("node")
-        .arg(oracle)
-        .arg("HEAD-WORKTREE")
-        .arg("headWorktreeBash,parseHeadWorktree,pinnedCheckoutBlock")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(Value::Array(calls.clone()).to_string().as_bytes())
-        .unwrap();
-    let out = child.wait_with_output().unwrap();
-    let js: Vec<Value> = serde_json::from_slice(&out.stdout).unwrap();
+    let js = region_results("throws", &calls);
     for (c, j) in calls.iter().zip(js) {
         let args = c["args"].as_array().unwrap();
         let rs: Result<Value, String> = if c["fn"] == "parseHeadWorktree" {
@@ -2498,13 +3019,11 @@ fn head_worktree_region_throws_where_js_does() {
 /// bash's environment; the port returns an error at the same point.
 #[tokio::test]
 async fn head_worktree_rejects_a_sha_node_cannot_pass() {
-    let dir = scratch("wt-badsha");
+    let dir = wt_scratch("wt-badsha");
     let o = origin(&dir);
     let (js, rs) = twin_pair(&dir, &o);
     let rec_path = recordings(&dir, vec![]);
-    let driver = write_driver(&dir, "worktree-driver.mjs", WORKTREE_DRIVER);
-    let script_path = dir.join("head-worktree.sh");
-    let plugin = plugin_root();
+    let left = |t: &Path| std::fs::read_dir(t).unwrap().count();
     for (i, sha) in [
         json!({"toString": 1}),
         json!("ab\u{0}cd"),
@@ -2516,18 +3035,25 @@ async fn head_worktree_rejects_a_sha_node_cannot_pass() {
         let context =
             json!({"isDeploymentPR": false, "headRefOid": sha, "diffPath": "", "files": []});
         let pr = format!("{}", 340 + i);
-        let args = [
-            "prep",
-            plugin.to_str().unwrap(),
-            js.tmp.to_str().unwrap(),
-            js.log.to_str().unwrap(),
-            REPO,
-            &pr,
-            &context.to_string(),
-            script_path.to_str().unwrap(),
-        ];
-        let out = run_script(driver.to_str().unwrap(), &args, &js.repo, &rec_path, None);
-        assert_ne!(out.code, Some(0), "case {i}: {}", out.stdout);
+        let input = json!({"context": context, "repo": REPO, "pr": pr});
+        let kept = worktree_side(&format!("badsha-{i}"), &dir, input, || {
+            let driver = write_driver(&dir, "worktree-driver.mjs", WORKTREE_DRIVER);
+            let script_path = dir.join("head-worktree.sh");
+            let plugin = plugin_root();
+            let args = [
+                "prep",
+                plugin.to_str().unwrap(),
+                js.tmp.to_str().unwrap(),
+                js.log.to_str().unwrap(),
+                REPO,
+                &pr,
+                &context.to_string(),
+                script_path.to_str().unwrap(),
+            ];
+            let out = run_script(driver.to_str().unwrap(), &args, &js.repo, &rec_path, None);
+            json!({"code": out.code, "stdout": out.stdout, "left": left(&js.tmp)})
+        });
+        assert_ne!(kept["code"], json!(0), "case {i}: {}", kept["stdout"]);
         let rs_out = hw::prepare_head_worktree(
             &tools(&rec_path),
             &context,
@@ -2538,8 +3064,63 @@ async fn head_worktree_rejects_a_sha_node_cannot_pass() {
         )
         .await;
         assert!(rs_out.is_err(), "case {i}: {rs_out:?}");
-        let left = |t: &Path| std::fs::read_dir(t).unwrap().count();
-        assert_eq!(left(&js.tmp), 0);
+        assert_eq!(kept["left"], json!(0));
         assert_eq!(left(&rs.tmp), 0);
     }
+}
+
+/// The staleness check on a copy of the plugin rebuilt from the golden: an
+/// oracle holds while the copy matches, fails once a file it reads is edited,
+/// and is skipped once a file it reads is deleted, since a retired oracle's
+/// golden is final.
+#[test]
+fn a_retired_oracle_is_not_held_to_the_golden() {
+    // Regeneration rewrites the golden while this would read it.
+    if regenerating() {
+        return;
+    }
+    let golden: Value =
+        serde_json::from_str(&std::fs::read_to_string(golden_path()).unwrap()).unwrap();
+    let with = &golden["recordedWith"];
+    let root = scratch("fetch-retired");
+    let shim = root.join("shim/gh");
+    for texts in with.as_object().unwrap().values() {
+        for (key, text) in texts.as_object().unwrap() {
+            let path = match key.split_once('#') {
+                Some((file, _)) => root.join(file),
+                None if key == "gh shim" => shim.clone(),
+                None if key.contains('/') => root.join(key),
+                // This file's own drivers and fake `gh`s.
+                None => continue,
+            };
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text.as_str().unwrap()).unwrap();
+        }
+    }
+    let now = || oracle_texts(&root, &shim);
+    assert_eq!(stale(with, &now()), Vec::<&str>::new());
+
+    let script = root.join(SCRIPT);
+    let text = std::fs::read_to_string(&script).unwrap();
+    std::fs::write(&script, format!("{text}// edited\n")).unwrap();
+    assert_eq!(stale(with, &now()), ["fetch", "worktree"]);
+    std::fs::remove_file(&script).unwrap();
+    let n = now();
+    assert!(n["fetch"].is_none() && n["worktree"].is_none() && n["region"].is_some());
+    assert_eq!(stale(with, &n), Vec::<&str>::new());
+    std::fs::write(&script, text).unwrap();
+
+    let workflow = root.join(WORKFLOW);
+    let text = std::fs::read_to_string(&workflow).unwrap();
+    let begin = format!("BEGIN {REGION} =====");
+    std::fs::write(
+        &workflow,
+        text.replace(&begin, &format!("{begin}\n// edited")),
+    )
+    .unwrap();
+    assert_eq!(stale(with, &now()), ["region", "worktree"]);
+    std::fs::remove_file(&workflow).unwrap();
+    let n = now();
+    assert!(n["fetch"].is_some() && n["worktree"].is_none() && n["region"].is_none());
+    assert_eq!(stale(with, &n), Vec::<&str>::new());
 }

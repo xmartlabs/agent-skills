@@ -6,9 +6,15 @@
 //!
 //! The script's side of the generated trees is read from
 //! `tests/goldens/harness-version.json`: running node twice for each of them
-//! made this one of the slowest test binaries. The file keeps the script's
-//! text and each case's input, so editing either without a regeneration
-//! fails here. Regenerate after changing them:
+//! made this one of the slowest test binaries. The file keeps the text of the
+//! script and of every module it imports, and each case's input, so editing
+//! either without a regeneration fails here. The checkout's own tree changes
+//! with every edit to the harness, so `tests/goldens/harness-version-checkout.json`
+//! keeps its layout as it was recorded (every path, its kind, and a body made
+//! from its name) and what the script printed over that layout; the port is
+//! compared there and must also run clean on the checkout itself. A script no
+//! longer on disk has been retired and its golden is final. Nothing runs node
+//! outside a regeneration. Regenerate after changing them:
 //! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_harness_version`.
 mod common;
 #[path = "../../tribunal-core/tests/common/mod.rs"]
@@ -17,7 +23,7 @@ mod core_common;
 use common::{plugin_root, scratch};
 use core_common::{assert_same, sample};
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -192,6 +198,7 @@ struct NodeRun {
     stderr: String,
 }
 
+/// Runs the script; only a regeneration reaches it.
 fn node(args: &[&str], root: Option<&str>, eval: Option<&str>) -> NodeRun {
     let mut cmd = Command::new("node");
     match eval {
@@ -364,33 +371,94 @@ fn check(root: &Path, case: &Case, js: JsSide) -> Outcome {
 const REGENERATE: &str =
     "regenerate: TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_harness_version";
 
-fn golden_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/goldens/harness-version.json")
+fn golden_path(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/goldens")
+        .join(name)
 }
 
-fn script_text() -> String {
-    std::fs::read_to_string(plugin_root().join(SCRIPT)).unwrap()
+/// The text of the script and of every module it reaches through a relative
+/// import, by path in the plugin.
+fn module_texts() -> Value {
+    let import = regex::Regex::new(r#"(?:from|import)\s*\(?\s*"(\.{1,2}/[^"]+)""#).unwrap();
+    let root = plugin_root().canonicalize().unwrap();
+    let mut seen = BTreeMap::new();
+    let mut todo = vec![root.join(SCRIPT)];
+    while let Some(file) = todo.pop() {
+        let key = file
+            .strip_prefix(&root)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        if seen.contains_key(&key) {
+            continue;
+        }
+        let text = std::fs::read_to_string(&file).unwrap();
+        for m in import.captures_iter(&text) {
+            let dep = file.parent().unwrap().join(&m[1]);
+            todo.push(
+                dep.canonicalize()
+                    .unwrap_or_else(|e| panic!("{}: {e}", dep.display())),
+            );
+        }
+        seen.insert(key, text);
+    }
+    json!(seen)
 }
 
 fn regenerating() -> bool {
     std::env::var("TRIBUNAL_REGEN_GOLDENS").is_ok_and(|v| v == "1")
 }
 
-/// The golden, checked against the script on disk; `None` when regenerating.
-fn recorded() -> Option<Value> {
+/// The scripts in `recorded` (`{path: text}`) or `scripts` whose text under
+/// `root` is not what was recorded. A script no longer on disk was retired
+/// with the Workflow and its golden is final, so it is skipped; when
+/// `scripts[0]`, the one the cases run, is gone, the rest are only what it
+/// imported and are skipped too.
+fn stale_scripts(recorded: &Value, scripts: &[&str], root: &Path) -> Vec<String> {
+    let on_disk = |s: &str| match std::fs::read_to_string(root.join(s)) {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => panic!("{s}: {e}"),
+    };
+    if on_disk(scripts[0]).is_none() {
+        return Vec::new();
+    }
+    let mut names: BTreeSet<String> = scripts.iter().map(|s| (*s).to_owned()).collect();
+    names.extend(
+        recorded
+            .as_object()
+            .into_iter()
+            .flat_map(|m| m.keys().cloned()),
+    );
+    names
+        .into_iter()
+        .filter(|s| on_disk(s).is_some_and(|text| recorded.get(s) != Some(&json!(text))))
+        .collect()
+}
+
+/// The golden `name`, checked against the modules on disk; `None` when
+/// regenerating.
+fn recorded(name: &str) -> Option<Value> {
     if regenerating() {
         return None;
     }
-    let path = golden_path();
+    let path = golden_path(name);
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("{}: {e}; {REGENERATE}", path.display()));
     let golden: Value = serde_json::from_str(&text).unwrap();
+    let stale = stale_scripts(&golden["scripts"], &[SCRIPT], &plugin_root());
     assert!(
-        golden["script"] == script_text(),
-        "the script changed since {} was recorded; {REGENERATE}",
+        stale.is_empty(),
+        "{stale:?} changed since {} was recorded; {REGENERATE}",
         path.display()
     );
     Some(golden)
+}
+
+fn write_golden(name: &str, golden: Value) {
+    let text = serde_json::to_string_pretty(&golden).unwrap();
+    std::fs::write(golden_path(name), text + "\n").unwrap();
 }
 
 fn outcomes() -> &'static [Outcome] {
@@ -400,7 +468,7 @@ fn outcomes() -> &'static [Outcome] {
         let root = scratch("harness-version");
         let scratch_text = root.to_string_lossy().into_owned();
         let battery = battery_js();
-        let golden = recorded();
+        let golden = recorded("harness-version.json");
         let replay: Option<&Vec<Value>> = golden.as_ref().map(|g| {
             let recorded = g["cases"].as_array().unwrap();
             assert_eq!(
@@ -449,10 +517,10 @@ fn outcomes() -> &'static [Outcome] {
             .map(|m| m.into_inner().unwrap().unwrap())
             .unzip();
         if replay.is_none() {
-            let text =
-                serde_json::to_string_pretty(&json!({"script": script_text(), "cases": kept}))
-                    .unwrap();
-            std::fs::write(golden_path(), text + "\n").unwrap();
+            write_golden(
+                "harness-version.json",
+                json!({"scripts": module_texts(), "cases": kept}),
+            );
         }
         out
     })
@@ -470,17 +538,102 @@ fn harness_version_matches_js_on_generated_trees() {
     assert_same("batteryVersion", &inputs, &rust, &js);
 }
 
+/// Every path of the checkout's surface and battery, in walk order, with its
+/// kind: a directory, a symlink with its (relative) target, or a file with the
+/// body the copy gives it, its own path.
+fn checkout_layout() -> Vec<Value> {
+    fn walk(root: &Path, rel: &str, out: &mut Vec<Value>) {
+        let abs = root.join(rel);
+        let Ok(meta) = abs.symlink_metadata() else {
+            return;
+        };
+        if meta.file_type().is_symlink() {
+            let target = std::fs::read_link(&abs).unwrap();
+            assert!(target.is_relative(), "{rel} links outside the plugin");
+            out.push(json!({"path": rel, "kind": "link", "target": target.to_str().unwrap()}));
+        } else if meta.is_dir() {
+            out.push(json!({"path": rel, "kind": "dir"}));
+            let mut names: Vec<String> = std::fs::read_dir(&abs)
+                .unwrap()
+                .map(|e| e.unwrap().file_name().into_string().unwrap())
+                .collect();
+            names.sort();
+            for n in names {
+                walk(root, &format!("{rel}/{n}"), out);
+            }
+        } else {
+            out.push(json!({"path": rel, "kind": "file", "body": format!("{rel}\n")}));
+        }
+    }
+    let root = plugin_root().canonicalize().unwrap();
+    let mut out = Vec::new();
+    walk(&root, "skills/review-pr/SKILL.md", &mut out);
+    for dir in DIRS {
+        walk(&root, dir, &mut out);
+    }
+    out
+}
+
+fn build_layout(root: &Path, layout: &[Value]) {
+    for e in layout {
+        let abs = root.join(e["path"].as_str().unwrap());
+        std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        match e["kind"].as_str().unwrap() {
+            "dir" => std::fs::create_dir_all(&abs).unwrap(),
+            "link" => symlink(e["target"].as_str().unwrap(), &abs).unwrap(),
+            _ => std::fs::write(&abs, e["body"].as_str().unwrap()).unwrap(),
+        }
+    }
+}
+
 #[test]
 fn harness_version_matches_js_on_this_checkout() {
-    let root = plugin_root().canonicalize().unwrap();
-    let root = root.to_string_lossy();
+    let live = plugin_root().canonicalize().unwrap();
+    let live = live.to_string_lossy();
     for args in ARGS {
-        let (rust, js, err) = compare_cli(args, node(args, None, None), &root);
+        assert_eq!(run(args, &live).err(), None, "{args:?}");
+    }
+    assert!(battery_version(&live).is_ok());
+
+    const GOLDEN: &str = "harness-version-checkout.json";
+    let golden = recorded(GOLDEN);
+    let layout = match &golden {
+        Some(g) => g["layout"].as_array().unwrap().clone(),
+        None => checkout_layout(),
+    };
+    let dir = scratch("harness-version-checkout");
+    build_layout(&dir, &layout);
+    let root = dir.canonicalize().unwrap();
+    let root = root.to_string_lossy().into_owned();
+    let battery = battery_js();
+    let mut kept = Vec::new();
+    for (i, args) in ARGS.iter().enumerate() {
+        let js = match &golden {
+            Some(g) => {
+                let r = &g["runs"][i];
+                assert_eq!(
+                    r["args"],
+                    json!(args),
+                    "the arguments changed; {REGENERATE}"
+                );
+                JsSide::local(&r["js"], &root)
+            }
+            None => JsSide::run(args, &root, &battery),
+        };
+        kept.push(json!({"args": args, "js": js.portable(&root)}));
+        let b_js = js.battery.trim_end().to_owned();
+        let (rust, js, err) = compare_cli(args, js.cli, &root);
         assert_eq!(err, None);
         assert_eq!(rust, js, "{args:?}");
+        assert_eq!(battery_rust(&root), b_js);
     }
-    let js = node(&[], None, Some(&battery_js()));
-    assert_eq!(battery_rust(&root), js.stdout.trim_end());
+    let _ = std::fs::remove_dir_all(&dir);
+    if golden.is_none() {
+        write_golden(
+            GOLDEN,
+            json!({"scripts": module_texts(), "layout": layout, "runs": kept}),
+        );
+    }
 }
 
 #[test]
@@ -535,4 +688,30 @@ fn the_generated_trees_reach_every_branch() {
     for (k, n) in &seen {
         assert!(*n >= 3, "{k} reached only {n} times: {seen:#?}");
     }
+}
+
+/// The staleness check on a tree of its own: a module edited since the
+/// recording is stale, one deleted (retired with the Workflow) is not, and
+/// with the script itself deleted nothing is.
+#[test]
+fn a_retired_script_is_not_stale() {
+    let root = scratch("harness-version-retired");
+    std::fs::create_dir_all(root.join("lib")).unwrap();
+    let write = |name: &str, text: &str| std::fs::write(root.join(name), text).unwrap();
+    write("lib/run.mjs", "run");
+    write("lib/dep.mjs", "dep edited");
+    let recorded = json!({"lib/run.mjs": "run", "lib/dep.mjs": "dep", "lib/gone.mjs": "gone"});
+    let scripts = ["lib/run.mjs", "lib/dep.mjs", "lib/gone.mjs"];
+    assert_eq!(stale_scripts(&recorded, &scripts, &root), ["lib/dep.mjs"]);
+    write("lib/dep.mjs", "dep");
+    assert!(stale_scripts(&recorded, &scripts, &root).is_empty());
+    write("lib/new.mjs", "new");
+    assert_eq!(
+        stale_scripts(&recorded, &["lib/run.mjs", "lib/new.mjs"], &root),
+        ["lib/new.mjs"]
+    );
+    std::fs::remove_file(root.join("lib/run.mjs")).unwrap();
+    write("lib/dep.mjs", "dep edited again");
+    assert!(stale_scripts(&recorded, &scripts, &root).is_empty());
+    let _ = std::fs::remove_dir_all(&root);
 }

@@ -1,22 +1,307 @@
 //! `skills/review-pr/scripts/resolve-evidence-line.mjs` against
 //! `tribunal_context::resolve_evidence_line`: the same diff file and
 //! candidates text on both sides, compared on the printed JSON as text.
+//!
+//! The script's side is read from `tests/goldens/resolve-evidence-line.json`,
+//! keyed by test: each keeps the SHA-256 of every module the script reaches
+//! through a relative import and, for each script run, the SHA-256 of what the
+//! run read (arguments, candidates, diff) next to what it printed, with the
+//! scratch directory and the plugin root stored as placeholders. The history
+//! test keeps the commits it was recorded on and replays those, not the last
+//! 25 of HEAD. Editing the script or a generator without regenerating fails
+//! here; once the script is deleted its golden is final and only the module
+//! check is skipped. Regenerate after changing them:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_resolve_evidence`.
+//! The fixtures under `TRIBUNAL_HARNESS_DATA` come from reviewed repositories,
+//! which no golden may hold, so that ignored test still runs the script.
 mod common;
 mod patchgen;
 use common::*;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::Mutex;
 
 use proptest::prelude::*;
 use proptest::sample::select;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::TestRunner;
 use serde_json::{json, Value};
+use tribunal_context::harness_version::sha256_hex;
 use tribunal_context::resolve_evidence_line::run;
 use tribunal_core::profile::js_ext::json_stringify;
 
 const SCRIPT: &str = "skills/review-pr/scripts/resolve-evidence-line.mjs";
+
+// ---------------------------------------------------------------------------
+// Goldens: the script's side recorded once, so a run starts only the port.
+
+const REGENERATE: &str =
+    "regenerate: TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_resolve_evidence";
+
+fn regenerating() -> bool {
+    std::env::var("TRIBUNAL_REGEN_GOLDENS").is_ok_and(|v| v == "1")
+}
+
+fn golden_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/goldens/resolve-evidence-line.json")
+}
+
+/// The SHA-256 of `entry` (a path under `root`) and of every module it reaches
+/// through a relative import, by path under `root`; `None` when `entry` is not
+/// there, that is, the script is retired.
+fn module_hashes(root: &Path, entry: &str) -> Option<BTreeMap<String, String>> {
+    let import = regex::Regex::new(r#"(?:from|import)\s*\(?\s*"(\.{1,2}/[^"]+)""#).unwrap();
+    let root = root.canonicalize().unwrap();
+    let entry = root.join(entry);
+    if !entry.exists() {
+        return None;
+    }
+    let mut seen = BTreeMap::new();
+    let mut todo = vec![entry.canonicalize().unwrap()];
+    while let Some(file) = todo.pop() {
+        let key = file
+            .strip_prefix(&root)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        if seen.contains_key(&key) {
+            continue;
+        }
+        let text = std::fs::read_to_string(&file).unwrap();
+        for m in import.captures_iter(&text) {
+            let dep = file.parent().unwrap().join(&m[1]);
+            todo.push(
+                dep.canonicalize()
+                    .unwrap_or_else(|e| panic!("{}: {e}", dep.display())),
+            );
+        }
+        seen.insert(key, sha256_hex(text.as_bytes()));
+    }
+    Some(seen)
+}
+
+/// Whether the modules `entry` reaches under `root` are the ones `recorded`
+/// names. A retired `entry` passes: nothing can run it, so the golden is final.
+fn check_modules(root: &Path, entry: &str, recorded: &Value) -> Result<(), String> {
+    let Some(now) = module_hashes(root, entry) else {
+        return Ok(());
+    };
+    if serde_json::to_value(&now).unwrap() == *recorded {
+        return Ok(());
+    }
+    let was: BTreeMap<String, String> =
+        serde_json::from_value(recorded.clone()).unwrap_or_default();
+    let changed: std::collections::BTreeSet<&String> = now
+        .keys()
+        .chain(was.keys())
+        .filter(|k| now.get(*k) != was.get(*k))
+        .collect();
+    Err(format!("{entry}: changed since recorded: {changed:?}"))
+}
+
+/// One test's recordings: what the script printed for each run, in order.
+struct Oracle {
+    key: String,
+    subs: Vec<(String, &'static str)>,
+    replay: Option<Vec<Value>>,
+    kept: Vec<Value>,
+}
+
+static GOLDEN_WRITE: Mutex<()> = Mutex::new(());
+
+impl Oracle {
+    /// `dir` is the test's scratch directory, which the golden keeps as a
+    /// placeholder, as it keeps the plugin root.
+    fn new(key: &str, dir: &Path) -> Self {
+        let mut subs: Vec<(String, &'static str)> = Vec::new();
+        let mut add = |p: &Path, real: &'static str, given: &'static str| {
+            let canonical = p.canonicalize().unwrap().to_string_lossy().into_owned();
+            let p = p.to_string_lossy().into_owned();
+            if canonical != p {
+                subs.push((p, given));
+            }
+            subs.push((canonical, real));
+        };
+        add(&plugin_root(), "<ROOT_REAL>", "<ROOT>");
+        add(dir, "<DIR_REAL>", "<DIR>");
+        // A path that contains another is replaced first.
+        subs.sort_by_key(|(p, _)| std::cmp::Reverse(p.len()));
+        let replay = (!regenerating()).then(|| {
+            let path = golden_path();
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{}: {e}; {REGENERATE}", path.display()));
+            let golden: Value = serde_json::from_str(&text).unwrap();
+            let entry = &golden["cases"][key];
+            assert!(
+                entry.is_object(),
+                "{key}: not in {}; {REGENERATE}",
+                path.display()
+            );
+            if let Err(e) = check_modules(&plugin_root(), SCRIPT, &entry["modules"]) {
+                panic!("{e}; {REGENERATE}");
+            }
+            entry["runs"].as_array().unwrap().clone()
+        });
+        Oracle {
+            key: key.to_owned(),
+            subs,
+            replay,
+            kept: Vec::new(),
+        }
+    }
+
+    fn portable(&self, text: &str) -> String {
+        self.subs
+            .iter()
+            .fold(text.to_owned(), |t, (from, to)| t.replace(from, to))
+    }
+
+    fn local(&self, v: &Value) -> Value {
+        let text = self
+            .subs
+            .iter()
+            .fold(v.to_string(), |t, (to, from)| t.replace(from, to));
+        serde_json::from_str(&text).unwrap()
+    }
+
+    /// What the script printed for `input`, a description of everything the
+    /// run reads; `spawn` runs it, and only when regenerating.
+    fn answer(&mut self, input: &str, spawn: impl FnOnce() -> Value) -> Value {
+        let input = sha256_hex(self.portable(input).as_bytes());
+        let i = self.kept.len();
+        let out = match &self.replay {
+            Some(runs) => {
+                let run = runs.get(i).unwrap_or_else(|| {
+                    panic!("{}: run {i} was not recorded; {REGENERATE}", self.key)
+                });
+                assert!(
+                    run["input"] == json!(input),
+                    "{}: run {i}'s input changed since it was recorded; {REGENERATE}",
+                    self.key
+                );
+                self.kept.push(Value::Null);
+                return self.local(&run["out"]);
+            }
+            None => spawn(),
+        };
+        let portable: Value = serde_json::from_str(&self.portable(&out.to_string())).unwrap();
+        self.kept.push(json!({"input": input, "out": portable}));
+        out
+    }
+
+    /// `run_script` through [`Oracle::answer`]; `read` holds the bytes of the
+    /// files `args` name.
+    fn script(
+        &mut self,
+        args: &[&str],
+        stdin: Option<&str>,
+        read: &[&[u8]],
+        cwd: &Path,
+    ) -> ScriptRun {
+        let read: Vec<String> = read.iter().map(|b| sha256_hex(b)).collect();
+        let input = format!("{args:?}\n{stdin:?}\n{read:?}");
+        let out = self.answer(&input, || {
+            let rec = recordings(cwd, vec![]);
+            let run = run_script(SCRIPT, args, cwd, &rec, stdin);
+            json!({"code": run.code, "stdout": run.stdout, "stderr": run.stderr})
+        });
+        ScriptRun {
+            code: out["code"].as_i64().map(|c| i32::try_from(c).unwrap()),
+            stdout: out["stdout"].as_str().unwrap().to_owned(),
+            stderr: out["stderr"].as_str().unwrap().to_owned(),
+        }
+    }
+
+    /// Checks every recorded run was replayed, or writes this test's entry.
+    fn finish(self) {
+        if let Some(runs) = &self.replay {
+            assert_eq!(
+                runs.len(),
+                self.kept.len(),
+                "{}: recorded runs; {REGENERATE}",
+                self.key
+            );
+            return;
+        }
+        let entry = json!({
+            "modules": module_hashes(&plugin_root(), SCRIPT).expect("the script to record"),
+            "runs": self.kept,
+        });
+        let tmp = std::env::temp_dir();
+        for t in [tmp.clone(), tmp.canonicalize().unwrap()] {
+            let t = t.to_string_lossy();
+            assert!(
+                !entry.to_string().contains(t.trim_end_matches('/')),
+                "{}: a run printed a scratch path the placeholders missed ({t})",
+                self.key
+            );
+        }
+        let _lock = GOLDEN_WRITE.lock().unwrap_or_else(|e| e.into_inner());
+        let path = golden_path();
+        let golden: Value = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
+        let mut cases: BTreeMap<String, Value> =
+            serde_json::from_value(golden["cases"].clone()).unwrap_or_default();
+        cases.insert(self.key.clone(), entry);
+        let golden = json!({"script": SCRIPT, "cases": cases});
+        std::fs::write(&path, serde_json::to_string_pretty(&golden).unwrap() + "\n").unwrap();
+    }
+}
+
+/// `git show` of `sha` the way `patchgen::repo_patches` takes it, for the
+/// commits a golden was recorded on.
+fn show(sha: &str) -> String {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../..");
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(&repo)
+        .args([
+            "show",
+            "-M",
+            "--format=",
+            "--no-color",
+            "--no-ext-diff",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            sha,
+        ])
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .expect("git must be on PATH");
+    assert!(
+        out.status.success(),
+        "commit {sha}, recorded in the golden, is not in this history (a shallow checkout?): {}; {REGENERATE}",
+        String::from_utf8_lossy(&out.stderr).trim()
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// The last 25 commits of HEAD when regenerating, else the ones recorded: the
+/// history moves with every commit, the golden does not.
+fn history(oracle: &mut Oracle) -> Vec<(String, String)> {
+    let mut fresh = None;
+    let shas = oracle.answer("the commits", || {
+        let patches = patchgen::repo_patches(25);
+        let shas = json!(patches.iter().map(|(s, _)| s).collect::<Vec<_>>());
+        fresh = Some(patches);
+        shas
+    });
+    fresh.unwrap_or_else(|| {
+        shas.as_array()
+            .unwrap()
+            .iter()
+            .map(|s| {
+                let s = s.as_str().unwrap();
+                (s.to_owned(), show(s))
+            })
+            .collect()
+    })
+}
 
 /// How a candidate's field is built: a fixed value (`None` leaves the key
 /// out), or taken from the diff around an anchor line.
@@ -263,23 +548,30 @@ enum Candidates<'a> {
 }
 
 /// Runs both sides and fails on any difference. A script that throws out of
-/// the batch exits non-zero; the port must return an error there.
-fn check_case(dir: &Path, diff: &[u8], candidates: Candidates, seen: &mut Seen) {
+/// the batch exits non-zero; the port must return an error there. The
+/// script's side comes from `oracle`, or from the script itself without one.
+fn check_case(
+    oracle: Option<&mut Oracle>,
+    dir: &Path,
+    diff: &[u8],
+    candidates: Candidates,
+    seen: &mut Seen,
+) {
     std::fs::create_dir_all(dir).unwrap();
     let diff_path = dir.join("diff.patch");
     std::fs::write(&diff_path, diff).unwrap();
-    let rec = recordings(dir, vec![]);
-    let (js, text) = match candidates {
+    let cands_path = dir.join("candidates.json");
+    let (args, stdin, text) = match candidates {
         Candidates::File(text) => {
-            let p = dir.join("candidates.json");
-            std::fs::write(&p, text).unwrap();
-            let args = [diff_path.to_str().unwrap(), p.to_str().unwrap()];
-            (run_script(SCRIPT, &args, dir, &rec, None), text)
+            std::fs::write(&cands_path, text).unwrap();
+            let args = [diff_path.to_str().unwrap(), cands_path.to_str().unwrap()];
+            (args, None, text)
         }
-        Candidates::Stdin(text) => {
-            let args = [diff_path.to_str().unwrap(), "-"];
-            (run_script(SCRIPT, &args, dir, &rec, Some(text)), text)
-        }
+        Candidates::Stdin(text) => ([diff_path.to_str().unwrap(), "-"], Some(text), text),
+    };
+    let js = match oracle {
+        Some(o) => o.script(&args, stdin, &[diff, text.as_bytes()], dir),
+        None => run_script(SCRIPT, &args, dir, &recordings(dir, vec![]), stdin),
     };
     let rust = run(&diff_path, text);
     let ctx = || format!("case {}: {text}", dir.display());
@@ -313,6 +605,7 @@ fn resolve_evidence_matches_js_on_generated_candidates() {
     );
     let mut runner = TestRunner::deterministic();
     let mut seen = Seen::default();
+    let mut oracle = Oracle::new("generated", &root);
     for i in 0..300 {
         let ((diff, paths), specs, mode) = strategy.new_tree(&mut runner).unwrap().current();
         let lines: Vec<&str> = diff.split('\n').collect();
@@ -326,8 +619,15 @@ fn resolve_evidence_matches_js_on_generated_candidates() {
         } else {
             Candidates::File(&text)
         };
-        check_case(&root.join(i.to_string()), diff.as_bytes(), input, &mut seen);
+        check_case(
+            Some(&mut oracle),
+            &root.join(i.to_string()),
+            diff.as_bytes(),
+            input,
+            &mut seen,
+        );
     }
+    oracle.finish();
     eprintln!("{seen:?}");
     for k in [
         "exact",
@@ -370,18 +670,22 @@ fn resolve_evidence_matches_js_when_the_file_is_missing() {
     .to_string();
     let root = scratch("resolve-evidence-missing-file");
     let mut seen = Seen::default();
+    let mut oracle = Oracle::new("missing-file", &root);
     check_case(
+        Some(&mut oracle),
         &root.join("first-undefined"),
         first_undefined.as_bytes(),
         Candidates::File(&cands),
         &mut seen,
     );
     check_case(
+        Some(&mut oracle),
         &root.join("first-other"),
         first_other.as_bytes(),
         Candidates::File(&cands),
         &mut seen,
     );
+    oracle.finish();
     assert!(
         seen.no_resolved_file >= 2 && seen.kind("error") >= 3,
         "{seen:?}"
@@ -403,14 +707,14 @@ fn an_infinite_file_is_a_declared_difference() {
     let patch = dir.join("d.patch");
     std::fs::write(&patch, &diff).unwrap();
     let cands = r#"[{"id":1e400,"file":1e400,"line":1e400,"evidence":"const total = computeTotal(items);"}]"#;
-    let rec = recordings(&dir, vec![]);
-    let js = run_script(
-        SCRIPT,
+    let mut oracle = Oracle::new("infinity", &dir);
+    let js = oracle.script(
         &[patch.to_str().unwrap(), "-"],
-        &dir,
-        &rec,
         Some(cands),
+        &[diff.as_bytes()],
+        &dir,
     );
+    oracle.finish();
     let rust = json_stringify(Some(&run(&patch, cands).unwrap()));
     let js_says = r#"{"ran":true,"results":[{"id":null,"matchKind":"error","error":"file.endsWith is not a function"}]}"#;
     assert_eq!(js.stdout, js_says);
@@ -424,11 +728,12 @@ fn an_infinite_file_is_a_declared_difference() {
 }
 
 /// Patches from this repository's history, with candidates quoting their
-/// real lines.
+/// real lines: the last 25 commits when the golden was recorded.
 #[test]
 fn resolve_evidence_matches_js_on_repo_history() {
     let root = scratch("resolve-evidence-history");
-    let patches = patchgen::repo_patches(25);
+    let mut oracle = Oracle::new("repo-history", &root);
+    let patches = history(&mut oracle);
     let strategy = proptest::collection::vec(spec(), 1..12);
     let mut runner = TestRunner::deterministic();
     let mut seen = Seen::default();
@@ -443,12 +748,14 @@ fn resolve_evidence_matches_js_on_repo_history() {
         let cands: Vec<Value> = specs.iter().map(|s| build(s, &lines, &paths)).collect();
         let text = Value::Array(cands).to_string();
         check_case(
+            Some(&mut oracle),
             &root.join(sha),
             diff.as_bytes(),
             Candidates::File(&text),
             &mut seen,
         );
     }
+    oracle.finish();
     assert!(
         seen.kind("exact") + seen.kind("shifted") + seen.kind("elsewhere") >= 5,
         "{seen:?}"
@@ -524,12 +831,15 @@ fn resolve_evidence_matches_js_on_the_line_correction_replay() {
     let root = scratch("resolve-evidence-replay");
     let mut seen = Seen::default();
     let both = format!("{diff}\n{long}");
+    let mut oracle = Oracle::new("line-correction", &root);
     check_case(
+        Some(&mut oracle),
         &root.join("both"),
         both.as_bytes(),
         Candidates::File(&cands.to_string()),
         &mut seen,
     );
+    oracle.finish();
     assert!(seen.corrected >= 5, "{seen:?}");
 }
 
@@ -556,8 +866,10 @@ fn resolve_evidence_matches_js_on_unusable_inputs() {
         ("deep-id", usable.clone(), "[{\"id\": {\"1\": [{\"0\": 1, \"z\": 2, \"3\": 3}]}, \"file\": \"a.ts\"}]"),
         ("big-line", usable.clone(), "[{\"file\": \"src/a.ts\", \"line\": 1e400, \"evidence\": \"const total = computeTotal(items);\"}]"),
     ];
+    let mut oracle = Oracle::new("unusable", &root);
     for (name, diff, cands) in cases {
         check_case(
+            Some(&mut oracle),
             &root.join(name),
             diff.as_bytes(),
             Candidates::File(cands),
@@ -567,15 +879,9 @@ fn resolve_evidence_matches_js_on_unusable_inputs() {
 
     let dir = root.join("unreadable");
     std::fs::create_dir_all(&dir).unwrap();
-    let rec = recordings(&dir, vec![]);
     let missing = dir.join("missing.patch");
-    let js = run_script(
-        SCRIPT,
-        &[missing.to_str().unwrap(), "-"],
-        &dir,
-        &rec,
-        Some("[]"),
-    );
+    let js = oracle.script(&[missing.to_str().unwrap(), "-"], Some("[]"), &[], &dir);
+    oracle.finish();
     let rust = run(&missing, "[]").unwrap();
     assert_eq!(json_stringify(Some(&rust)), js.stdout);
     assert_eq!(rust, json!({"ran": false, "reason": "diff-unreadable"}));
@@ -602,6 +908,7 @@ fn resolve_evidence_matches_js_on_recorded_fixtures() {
         let name = p.file_stem().unwrap().to_string_lossy().into_owned();
         let diff = fixture["diff"].as_str().unwrap_or("");
         check_case(
+            None,
             &root.join(name),
             diff.as_bytes(),
             Candidates::File(&cands.to_string()),
@@ -613,4 +920,43 @@ fn resolve_evidence_matches_js_on_recorded_fixtures() {
         "no fixtures in {}",
         dir.display()
     );
+}
+
+// ---------------------------------------------------------------------------
+// The golden's module check
+
+#[test]
+fn a_retired_script_skips_only_the_module_check() {
+    let root = scratch("resolve-evidence-retired");
+    let scripts = root.join("skills/review-pr/scripts");
+    std::fs::create_dir_all(&scripts).unwrap();
+    std::fs::create_dir_all(root.join("lib")).unwrap();
+    std::fs::write(
+        scripts.join("resolve-evidence-line.mjs"),
+        "import { relayLines } from \"../../../lib/relay.mjs\";\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("lib/relay.mjs"), "export const relayLines = 1;\n").unwrap();
+    let recorded = serde_json::to_value(module_hashes(&root, SCRIPT).unwrap()).unwrap();
+    assert_eq!(recorded.as_object().unwrap().len(), 2);
+    assert_eq!(check_modules(&root, SCRIPT, &recorded), Ok(()));
+    std::fs::write(root.join("lib/relay.mjs"), "export const relayLines = 2;\n").unwrap();
+    let err = check_modules(&root, SCRIPT, &recorded).unwrap_err();
+    assert!(err.contains("lib/relay.mjs"), "{err}");
+    std::fs::remove_file(scripts.join("resolve-evidence-line.mjs")).unwrap();
+    assert_eq!(check_modules(&root, SCRIPT, &recorded), Ok(()));
+    // Every recorded test replays on a tree that does not hold the script.
+    if regenerating() {
+        return;
+    }
+    let golden: Value =
+        serde_json::from_str(&std::fs::read_to_string(golden_path()).unwrap()).unwrap();
+    for (key, case) in golden["cases"].as_object().unwrap() {
+        assert_eq!(
+            check_modules(&root, SCRIPT, &case["modules"]),
+            Ok(()),
+            "{key}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&root);
 }

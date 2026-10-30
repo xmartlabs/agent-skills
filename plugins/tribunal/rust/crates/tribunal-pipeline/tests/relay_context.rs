@@ -1,5 +1,13 @@
 //! `context::relay_context` against fetch-pr-context.mjs's own exported
 //! `relayContext`: the same context back, and the same bytes on disk.
+//!
+//! The script's side is read from `tests/goldens/span/relay_context.json`
+//! (see `common`): each case's context, with the scratch directory as
+//! `<ROOT>`, and a SHA-256 of each file it wrote, together with a SHA-256 of
+//! the script and of the generated cases. The context names the platform it
+//! ran on; replayed on another one, the platform node would name there is
+//! expected instead. Regenerate after changing the script or the cases:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-pipeline --test relay_context`.
 
 mod common;
 
@@ -7,14 +15,28 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use common::{assert_same, sample};
+use common::{assert_same, plugin_file_sha, recorded_value, sample};
 use proptest::prelude::*;
 use serde_json::{json, Value};
+use tribunal_context::harness_version::sha256_hex;
 use tribunal_pipeline::context::relay_context;
+
+const SCRIPT: &str = "skills/review-pr/scripts/fetch-pr-context.mjs";
+const FILES: [&str; 2] = ["raw.json", "bot-comments.json"];
 
 fn script() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../skills/review-pr/scripts/fetch-pr-context.mjs")
+        .join("../../..")
+        .join(SCRIPT)
+}
+
+/// `process.platform` on this machine.
+fn node_platform() -> &'static str {
+    match std::env::consts::OS {
+        "macos" => "darwin",
+        "windows" => "win32",
+        other => other,
+    }
 }
 
 fn text() -> impl Strategy<Value = String> {
@@ -111,28 +133,63 @@ process.stdout.write(JSON.stringify(out));"#,
     serde_json::from_slice(&out.stdout).unwrap()
 }
 
+/// The script's side of each case: its context, with `js_root` as `<ROOT>`,
+/// and a SHA-256 of each file it wrote.
+fn js_side(cases: &[Value], js_root: &std::path::Path) -> Value {
+    let root = js_root.to_string_lossy().into_owned();
+    let out = js_relay(cases, js_root);
+    let sides: Vec<Value> = out
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            let mut v = v.clone();
+            for key in ["rawPath", "botCommentsPath"] {
+                v[key] = json!(v[key].as_str().unwrap().replace(&root, "<ROOT>"));
+            }
+            let files: Vec<String> = FILES
+                .iter()
+                .map(|f| sha256_hex(&std::fs::read(js_root.join(i.to_string()).join(f)).unwrap()))
+                .collect();
+            json!({"context": v, "files": files})
+        })
+        .collect();
+    json!({"platform": node_platform(), "cases": sides})
+}
+
 #[test]
 fn relay_context_matches_the_script() {
     let cases = sample(case());
     let js_root = scratch("js");
     let rs_root = scratch("rs");
-    let js = js_relay(&cases, &js_root);
+    let recorded = recorded_value(
+        "relayContext",
+        &[(SCRIPT, plugin_file_sha(SCRIPT))],
+        &json!(cases),
+        || js_side(&cases, &js_root),
+    );
+    let sides = recorded["cases"].as_array().unwrap();
+    assert_eq!(sides.len(), cases.len());
+    let mut js = Vec::new();
     let mut rust = Vec::new();
-    for (i, c) in cases.iter().enumerate() {
+    for (i, (c, side)) in cases.iter().zip(sides).enumerate() {
+        let mut j = side["context"].clone();
+        if recorded["platform"] != node_platform() {
+            j["platform"] = json!(node_platform());
+        }
+        js.push(j);
         let dir = rs_root.join(i.to_string());
         let mut v = relay_context(c, &dir.to_string_lossy()).unwrap();
         for key in ["rawPath", "botCommentsPath"] {
-            let p = v[key].as_str().unwrap().replace(
-                &rs_root.to_string_lossy().into_owned(),
-                &js_root.to_string_lossy(),
-            );
+            let p = v[key]
+                .as_str()
+                .unwrap()
+                .replace(&rs_root.to_string_lossy().into_owned(), "<ROOT>");
             v[key] = json!(p);
         }
         rust.push(v);
-        for f in ["raw.json", "bot-comments.json"] {
-            let a = std::fs::read(js_root.join(i.to_string()).join(f)).unwrap();
+        for (f, sha) in FILES.iter().zip(side["files"].as_array().unwrap()) {
             let b = std::fs::read(dir.join(f)).unwrap();
-            assert_eq!(a, b, "case {i}: {f} differs");
+            assert_eq!(&json!(sha256_hex(&b)), sha, "case {i}: {f} differs");
         }
     }
     assert_same("relayContext", &cases, &rust, &js);

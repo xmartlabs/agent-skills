@@ -1,8 +1,17 @@
-//! The published schemas are the workflow's own constants, key order included.
+//! The published schemas are the workflow's own constants, key order included,
+//! and the harvest rules are its step two.
+//!
+//! The workflow's side is read from `tests/goldens/span/diff_schemas.json`:
+//! each constant as the span oracle evaluated it, and the step-two text,
+//! with a SHA-256 of the workflow code each came from (see `common`).
+//! Regenerate after changing them:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-pipeline --test diff_schemas`.
 
 mod common;
 
-use common::{canon, span, Span};
+use common::{canon, recorded_value, span, Span};
+use serde_json::json;
+use tribunal_context::harness_version::sha256_hex;
 use tribunal_pipeline::schemas;
 
 fn constant(name: &str) -> serde_json::Value {
@@ -77,21 +86,34 @@ fn thread_harvest_schema_takes_the_workflows_two_fields() {
     );
 }
 
+const HARVEST: (&str, &str) = ("It is the PR's human text:", "must not be conflated.");
+
+/// The workflow's step two, from its first sentence to its last.
+fn harvest_text(src: &str) -> String {
+    let start = src.find(HARVEST.0).expect("the harvest text moved");
+    let end = src[start..]
+        .find(HARVEST.1)
+        .expect("the harvest text moved")
+        + start
+        + HARVEST.1.len();
+    src[start..end].replace("\\`", "`")
+}
+
 #[test]
 fn the_harvest_rules_are_the_workflows_step_two() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let src = std::fs::read_to_string(root.join("../../../workflow-src/tribunal.js")).unwrap();
-    let start = src
-        .find("It is the PR's human text:")
-        .expect("the harvest text moved");
-    let end = src[start..]
-        .find("must not be conflated.")
-        .expect("the harvest text moved")
-        + start
-        + "must not be conflated.".len();
-    let theirs = src[start..end].replace("\\`", "`");
+    let workflow = std::fs::read_to_string(root.join("../../../workflow-src/tribunal.js")).ok();
+    let now = workflow
+        .as_deref()
+        .map(|w| sha256_hex(harvest_text(w).as_bytes()));
+    let theirs = recorded_value(
+        "harvestRules",
+        &[("workflow-src/tribunal.js", now)],
+        &json!(HARVEST),
+        || json!(harvest_text(workflow.as_deref().unwrap())),
+    );
     let ours = std::fs::read_to_string(root.join("src/harvest-rules.txt")).unwrap();
-    assert_eq!(ours.trim_end(), theirs);
+    assert_eq!(ours.trim_end(), theirs.as_str().unwrap());
 }
 
 fn constant_with(name: &str, pre: &[(&str, &str)]) -> serde_json::Value {

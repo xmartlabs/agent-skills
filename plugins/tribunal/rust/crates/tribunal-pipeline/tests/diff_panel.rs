@@ -2,6 +2,14 @@
 //! answers go to the workflow's code (from the clean-verdict sweep to the vote
 //! corrections) through a fake `agent`, and to `panel_phase` through a fake
 //! `PanelIo`. Results, logs and the dispatches asked for must agree.
+//!
+//! The workflow's side is read from `tests/goldens/span/diff_panel.json` (see
+//! `common`), with a SHA-256 of the workflow code each span came from, so an
+//! edit there without regenerating fails here. Each result is over 1 KiB, so
+//! the file keeps a SHA-256 of each; a failure shows the port's result and the
+//! input, and `TRIBUNAL_DUMP` writes only the digest for js.
+//! Regenerate after changing a span, its cases or the workflow:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-pipeline --test diff_panel`.
 
 #![recursion_limit = "256"]
 
@@ -517,7 +525,7 @@ fn the_panel_runs_as_the_workflow_runs_it() {
     let rust: Vec<Value> = cases.iter().map(|c| rust_panel(c, &rt)).collect();
     if let Some(dir) = std::env::var_os("TRIBUNAL_DUMP") {
         let dir = std::path::PathBuf::from(dir);
-        let first = (0..cases.len()).find(|&i| common::canon(&rust[i]) != common::canon(&js[i]));
+        let first = (0..cases.len()).find(|&i| !common::same(&rust[i], &js[i]));
         if let Some(i) = first {
             std::fs::write(dir.join("case.json"), cases[i].to_string()).unwrap();
             std::fs::write(

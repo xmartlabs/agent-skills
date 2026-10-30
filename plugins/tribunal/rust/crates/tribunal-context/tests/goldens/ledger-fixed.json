@@ -1,0 +1,284 @@
+{
+  "a_lone_surrogate_row_is_a_declared_difference": {
+    "recordedWith": {
+      "lib/operator.mjs": "f1b6700279d51139590291b6512c589f1daef74aff98257dc8979473c3fd7899",
+      "skills/review-pr/eval/paths.mjs": "8f0b5254024ed0e933beb110cd78b3f36e0ef6bc1dd22bd911c0ab8e93c5c677",
+      "skills/review-pr/eval/rows.mjs": "36d1da3c5e906f857910aa550de5cb3e857c57cd53092e1d68fdd77810d647a2",
+      "skills/review-pr/scripts/locate-last-row.mjs": "2b13dff4f4770b42a3d41db1fd7058c47f760dae8783c22e61327a32dc4de68d"
+    },
+    "cases": [
+      {
+        "input": {
+          "row": "{\"pr\":7,\"x\":\"\\ud800\"}\n",
+          "argv": [
+            "--pr",
+            "7"
+          ]
+        },
+        "js": {
+          "code": 0,
+          "stdout": "{\"pr\":7,\"x\":\"\\ud800\"}\n",
+          "stderr": ""
+        }
+      }
+    ]
+  },
+  "locate_last_row_scans_only_the_last_fifty_rows": {
+    "recordedWith": {
+      "lib/operator.mjs": "f1b6700279d51139590291b6512c589f1daef74aff98257dc8979473c3fd7899",
+      "skills/review-pr/eval/paths.mjs": "8f0b5254024ed0e933beb110cd78b3f36e0ef6bc1dd22bd911c0ab8e93c5c677",
+      "skills/review-pr/eval/rows.mjs": "36d1da3c5e906f857910aa550de5cb3e857c57cd53092e1d68fdd77810d647a2",
+      "skills/review-pr/scripts/locate-last-row.mjs": "2b13dff4f4770b42a3d41db1fd7058c47f760dae8783c22e61327a32dc4de68d"
+    },
+    "cases": [
+      {
+        "input": {
+          "after": 49,
+          "argv": [
+            "--pr",
+            "7"
+          ]
+        },
+        "js": {
+          "code": 0,
+          "stdout": "{\"pr\":7}\n",
+          "stderr": ""
+        }
+      },
+      {
+        "input": {
+          "after": 50,
+          "argv": [
+            "--pr",
+            "7"
+          ]
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "refusing: last row is pr 149, expected 7\n"
+        }
+      }
+    ]
+  },
+  "the_lock_wait_reads_the_variable_as_the_script_does": {
+    "recordedWith": {
+      "skills/review-pr/scripts/ledger-lock.mjs": "b23256980b6edb463c367e848bb34f2ebcba964ea7f1ab9c26bd5a0edf3144e0"
+    },
+    "cases": [
+      {
+        "input": {
+          "value": null,
+          "probe": "2f1977e67e199d99f6af2dbd880b2be986e0a1057735fe3ecbd52f0de59f43c4"
+        },
+        "js": {
+          "stdout": "15000 15000",
+          "stderr": ""
+        }
+      },
+      {
+        "input": {
+          "value": "",
+          "probe": "2f1977e67e199d99f6af2dbd880b2be986e0a1057735fe3ecbd52f0de59f43c4"
+        },
+        "js": {
+          "stdout": "15000 15000",
+          "stderr": ""
+        }
+      },
+      {
+        "input": {
+          "value": "300",
+          "probe": "2f1977e67e199d99f6af2dbd880b2be986e0a1057735fe3ecbd52f0de59f43c4"
+        },
+        "js": {
+          "stdout": "15000 300",
+          "stderr": ""
+        }
+      },
+      {
+        "input": {
+          "value": "1",
+          "probe": "2f1977e67e199d99f6af2dbd880b2be986e0a1057735fe3ecbd52f0de59f43c4"
+        },
+        "js": {
+          "stdout": "15000 1",
+          "stderr": ""
+        }
+      },
+      {
+        "input": {
+          "value": "0",
+          "probe": "2f1977e67e199d99f6af2dbd880b2be986e0a1057735fe3ecbd52f0de59f43c4"
+        },
+        "js": {
+          "stdout": "15000 15000",
+          "stderr": ""
+        }
+      },
+      {
+        "input": {
+          "value": "007",
+          "probe": "2f1977e67e199d99f6af2dbd880b2be986e0a1057735fe3ecbd52f0de59f43c4"
+        },
+        "js": {
+          "stdout": "15000 15000",
+          "stderr": ""
+        }
+      },
+      {
+        "input": {
+          "value": "-5",
+          "probe": "2f1977e67e199d99f6af2dbd880b2be986e0a1057735fe3ecbd52f0de59f43c4"
+        },
+        "js": {
+          "stdout": "15000 15000",
+          "stderr": ""
+        }
+      },
+      {
+        "input": {
+          "value": "1.5",
+          "probe": "2f1977e67e199d99f6af2dbd880b2be986e0a1057735fe3ecbd52f0de59f43c4"
+        },
+        "js": {
+          "stdout": "15000 15000",
+          "stderr": ""
+        }
+      },
+      {
+        "input": {
+          "value": "1e3",
+          "probe": "2f1977e67e199d99f6af2dbd880b2be986e0a1057735fe3ecbd52f0de59f43c4"
+        },
+        "js": {
+          "stdout": "15000 15000",
+          "stderr": ""
+        }
+      },
+      {
+        "input": {
+          "value": " 300",
+          "probe": "2f1977e67e199d99f6af2dbd880b2be986e0a1057735fe3ecbd52f0de59f43c4"
+        },
+        "js": {
+          "stdout": "15000 15000",
+          "stderr": ""
+        }
+      },
+      {
+        "input": {
+          "value": "abc",
+          "probe": "2f1977e67e199d99f6af2dbd880b2be986e0a1057735fe3ecbd52f0de59f43c4"
+        },
+        "js": {
+          "stdout": "15000 15000",
+          "stderr": ""
+        }
+      }
+    ]
+  },
+  "ledger_lock_matches_js_in_every_state": {
+    "recordedWith": {
+      "skills/review-pr/scripts/ledger-lock.mjs": "b23256980b6edb463c367e848bb34f2ebcba964ea7f1ab9c26bd5a0edf3144e0"
+    },
+    "cases": [
+      {
+        "input": {
+          "state": "Free",
+          "throw": false,
+          "harness": "02c7076d90f8b610f04c1730eb7e926984d6f207dc9f6bc87e7cf213d62eb2be",
+          "waitMs": 300
+        },
+        "js": {
+          "code": 0,
+          "stderr": "",
+          "out": "ok\n",
+          "ran": true,
+          "lockLeft": false,
+          "waited": null
+        }
+      },
+      {
+        "input": {
+          "state": "Free",
+          "throw": true,
+          "harness": "02c7076d90f8b610f04c1730eb7e926984d6f207dc9f6bc87e7cf213d62eb2be",
+          "waitMs": 300
+        },
+        "js": {
+          "code": 0,
+          "stderr": "",
+          "out": "ERR boom\n",
+          "ran": true,
+          "lockLeft": false,
+          "waited": null
+        }
+      },
+      {
+        "input": {
+          "state": "Stale",
+          "throw": false,
+          "harness": "02c7076d90f8b610f04c1730eb7e926984d6f207dc9f6bc87e7cf213d62eb2be",
+          "waitMs": 300
+        },
+        "js": {
+          "code": 0,
+          "stderr": "",
+          "out": "ok\n",
+          "ran": true,
+          "lockLeft": false,
+          "waited": null
+        }
+      },
+      {
+        "input": {
+          "state": "ReleasedSoon",
+          "throw": false,
+          "harness": "02c7076d90f8b610f04c1730eb7e926984d6f207dc9f6bc87e7cf213d62eb2be",
+          "waitMs": 300
+        },
+        "js": {
+          "code": 0,
+          "stderr": "",
+          "out": "ok\n",
+          "ran": true,
+          "lockLeft": false,
+          "waited": null
+        }
+      },
+      {
+        "input": {
+          "state": "NoParent",
+          "throw": false,
+          "harness": "02c7076d90f8b610f04c1730eb7e926984d6f207dc9f6bc87e7cf213d62eb2be",
+          "waitMs": 300
+        },
+        "js": {
+          "code": 0,
+          "stderr": "",
+          "out": "ERR ENOENT: no such file or directory, mkdir '<dir>/missing/metrics.jsonl.lock'\n",
+          "ran": false,
+          "lockLeft": false,
+          "waited": null
+        }
+      },
+      {
+        "input": {
+          "state": "Held",
+          "throw": false,
+          "harness": "02c7076d90f8b610f04c1730eb7e926984d6f207dc9f6bc87e7cf213d62eb2be",
+          "waitMs": 300
+        },
+        "js": {
+          "code": 0,
+          "stderr": "",
+          "out": "ERR could not lock <dir>/metrics.jsonl within 300 ms\n",
+          "ran": false,
+          "lockLeft": true,
+          "waited": true
+        }
+      }
+    ]
+  }
+}
