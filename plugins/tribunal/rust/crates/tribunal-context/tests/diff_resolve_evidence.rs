@@ -117,11 +117,10 @@ impl Oracle {
     fn new(key: &str, dir: &Path) -> Self {
         let mut subs: Vec<(String, &'static str)> = Vec::new();
         let mut add = |p: &Path, real: &'static str, given: &'static str| {
+            // Both on every platform: a golden recorded where the two forms
+            // differ (macOS's /var/folders) holds both placeholders.
             let canonical = p.canonicalize().unwrap().to_string_lossy().into_owned();
-            let p = p.to_string_lossy().into_owned();
-            if canonical != p {
-                subs.push((p, given));
-            }
+            subs.push((p.to_string_lossy().into_owned(), given));
             subs.push((canonical, real));
         };
         add(&plugin_root(), "<ROOT_REAL>", "<ROOT>");
@@ -169,7 +168,8 @@ impl Oracle {
     /// What the script printed for `input`, a description of everything the
     /// run reads; `spawn` runs it, and only when regenerating.
     fn answer(&mut self, input: &str, spawn: impl FnOnce() -> Value) -> Value {
-        let input = sha256_hex(self.portable(input).as_bytes());
+        // One hash on every platform: on Linux the two forms of a path are one.
+        let input = sha256_hex(self.portable(input).replace("_REAL>", ">").as_bytes());
         let i = self.kept.len();
         let out = match &self.replay {
             Some(runs) => {

@@ -440,15 +440,31 @@ fn case() -> impl Strategy<Value = Case> {
         prop::bool::weighted(0.04),
     )
         .prop_map(
-            |(votes, orphans, flood, stdin, args, broken_classifier)| Case {
-                votes,
-                orphans,
-                flood,
-                stdin,
-                args,
-                broken_classifier,
+            |(mut votes, orphans, flood, stdin, args, broken_classifier)| {
+                unfold_case(&mut votes);
+                Case {
+                    votes,
+                    orphans,
+                    flood,
+                    stdin,
+                    args,
+                    broken_classifier,
+                }
             },
         )
+}
+
+/// Slots `a` and `A` in one case name the same artifacts on macOS's
+/// case-insensitive disk and different ones on Linux, so a golden recorded on
+/// one cannot speak for the other. Each stays covered in cases of its own.
+fn unfold_case(votes: &mut [VoteF]) {
+    let named = |name: &str| slot_pool().iter().position(|(_, s)| *s == name).unwrap();
+    let (lower, upper) = (named("a"), named("A"));
+    if votes.iter().any(|v| v.slot == lower) {
+        for v in votes.iter_mut().filter(|v| v.slot == upper) {
+            v.slot = lower;
+        }
+    }
 }
 
 // ---------------------------------------------------------------- building
