@@ -101,6 +101,7 @@ console.log("\nthe three that fell through are covered");
     ["workflows/harness-selfcheck.js", "moved into the plugin in v54, not added"],
     ["methodology/code-review-methodology.md", "read by the BE lens at run time; outside the hash until 2026-10-19"],
     ["methodology/fe-code-review-methodology.md", "read by the FE lens at run time; outside the hash until 2026-10-19"],
+    ["methodology/e2e-code-review-methodology.md", "read by the e2e lens at run time"],
   ]) {
     check(`${f} is frozen (${why})`, surface.has(f));
   }

@@ -46,7 +46,10 @@ const sha = (t) => createHash("sha256").update(t).digest("hex");
 
 const GOLDEN = join(TRIBUNAL_DATA, "fixtures", "methodology-v99");
 const RULES_DIR = join(HARNESS_DATA, "rules");
-const SHIPPED = { backend: "code-review-methodology.md", frontend: "fe-code-review-methodology.md" };
+const SHIPPED = { backend: "code-review-methodology.md", frontend: "fe-code-review-methodology.md", e2e: "e2e-code-review-methodology.md" };
+// The kinds the templates were split from in v99; a kind added later has no
+// frozen methodology to come back to.
+const V99_KINDS = ["backend", "frontend"];
 const profiles = readdirSync(join(HARNESS_DATA, "profiles"))
   .filter((f) => f.endsWith(".json"))
   .map((f) => JSON.parse(readFileSync(join(HARNESS_DATA, "profiles", f), "utf8")));
@@ -60,7 +63,7 @@ const SINCE_V99 = [[/startsWith\('[a-z]{2}-'\)/, "startsWith('ext-')"]];
 const sinceV99 = (text) => SINCE_V99.reduce((t, [from, to]) => t.replace(from, to), text);
 
 console.log("\n--- the repos it was split from get their old methodology back ---");
-for (const kind of KINDS) {
+for (const kind of V99_KINDS) {
   const profile = profiles.find((p) => p.reviewer === kind);
   const rulesFile = join(RULES_DIR, `${profile.repo.replace("/", "__")}.md`);
   const golden = sinceV99(readFileSync(join(GOLDEN, `${kind}.md`), "utf8"));
@@ -79,6 +82,18 @@ for (const kind of KINDS) {
     "regenerate it: node scripts/assemble-methodology.mjs --kind " + kind + " --out ../../methodology/" + SHIPPED[kind],
   );
   check(`templates/${kind}.md carries no slot marker into the shipped file`, !/<!-- \/?slot/.test(shipped));
+}
+
+console.log("\n--- an e2e suite gets no application-stack checklist ---");
+{
+  const text = assembleKind({ kind: "e2e" }).text;
+  const stack = text.match(/prisma|\bzod\b|N\+1|\$transaction|controller|\bDAL\b|BullMQ|React|useEffect|useMemo|useCallback|re-?render|virtualis/gi) || [];
+  check("the e2e methodology names no backend or React check", stack.length === 0, JSON.stringify([...new Set(stack)]));
+  const r = assembleKind({
+    kind: "e2e",
+    rulesText: ["<!-- slot: tribunal/real-data-writes -->", "ours", "<!-- /slot -->", "<!-- slot: tribunal/route-auth -->", "backend only", "<!-- /slot -->"].join("\n"),
+  });
+  check("a block for a backend-only slot is reported, not placed", r.unknown.join() === "tribunal/route-auth" && !r.text.includes("backend only") && r.filled.join() === "real-data-writes");
 }
 
 console.log("\n--- one rules file, two plugins ---");

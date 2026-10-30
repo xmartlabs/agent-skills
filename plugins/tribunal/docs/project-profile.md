@@ -28,7 +28,7 @@ removed: the loader still accepts it and nothing reads it.
 
 `projectRules` names the repo's own review rules, usually
 `.claude/review-rules.md`, read at the same ref as the profile. The plugin's
-methodology (`methodology/templates/backend.md` and `frontend.md`) has named
+methodology (`methodology/templates/backend.md`, `frontend.md` and `e2e.md`) has named
 slots with generic text, and a `tribunal/<slot>` block in that file replaces the
 slot's text for this repo. `skills/review-pr/scripts/assemble-methodology.mjs`
 builds the file a review reads, and every row records the rules' sha256. Without

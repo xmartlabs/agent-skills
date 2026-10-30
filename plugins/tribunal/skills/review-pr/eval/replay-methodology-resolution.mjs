@@ -50,16 +50,18 @@ const check = (name, cond, detail) => {
 
 const FE_WRAPPER = agent("fe-code-review-expert.md");
 const BE_WRAPPER = agent("code-review-expert.md");
+const E2E_WRAPPER = agent("e2e-code-review-expert.md");
 const fe = readFileSync(FE_WRAPPER, "utf8");
 const be = readFileSync(BE_WRAPPER, "utf8");
+const e2e = readFileSync(E2E_WRAPPER, "utf8");
 
-console.log(`\nmethodology resolution — ${FE_WRAPPER}, ${BE_WRAPPER}`);
+console.log(`\nmethodology resolution — ${FE_WRAPPER}, ${BE_WRAPPER}, ${E2E_WRAPPER}`);
 
 console.log(`\n--- deterministic resolution against the installed plugin cache (v58) ---`);
 {
   const scanCmd =
     'for d in ~/.claude/plugins/cache/*/tribunal/*/; do [ -d "$d" ] && echo "$(basename "$d") $d"; done | sort -V | tail -1 | cut -d\' \' -f2-';
-  for (const [label, src] of [["FE", fe], ["BE", be]]) {
+  for (const [label, src] of [["FE", fe], ["BE", be], ["E2E", e2e]]) {
     check(`${label} wrapper still tries \$CLAUDE_PLUGIN_ROOT first`, /echo "\$CLAUDE_PLUGIN_ROOT"/.test(src));
     check(`${label} wrapper's fallback scans the installed cache, not a bare repo-root glob`, src.includes(scanCmd));
     check(`${label} wrapper sorts by version rather than trusting glob/mtime order`, /sort -V \| tail -1/.test(src));
@@ -74,7 +76,7 @@ console.log(`\n--- reading the methodology is a hard precondition, not optional 
 {
   const hardPrecondition =
     "**This Read call is a hard precondition, not optional context-gathering.**";
-  for (const [label, src] of [["FE", fe], ["BE", be]]) {
+  for (const [label, src] of [["FE", fe], ["BE", be], ["E2E", e2e]]) {
     check(`${label} wrapper states the Read is a hard precondition`, src.includes(hardPrecondition));
     check(
       `${label} wrapper forbids acting before the Read completes`,

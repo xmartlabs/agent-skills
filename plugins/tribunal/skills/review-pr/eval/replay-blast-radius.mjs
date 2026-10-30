@@ -336,7 +336,7 @@ check("the block sits in the shared lens prefix, above YOUR PASS", () => {
   return lens.includes("</context>\n${p.dependents ? `\\n${p.dependents}\\n` : \"\"}\n${LENS_BUDGET_INSTRUCTION}") && /\bdependents,/.test(call);
 });
 check("the row records the block and the dropped titles", /^\s*dependents: blastRelay$/m.test(src) && /droppedPrePanelItems: droppedPrePanel\.map/.test(src));
-for (const m of ["code-review-methodology.md", "fe-code-review-methodology.md"]) {
+for (const m of ["code-review-methodology.md", "fe-code-review-methodology.md", "e2e-code-review-methodology.md"]) {
   const t = readFileSync(join(dirname(WORKFLOW), "..", "methodology", m), "utf8");
   check(`${m} sanctions the listed callers, and nothing wider`, (t.match(/the callers a `<dependents>` block in your prompt lists/g) || []).length === 2 && !/only sanctioned cross-file lookup\b(?!s)/.test(t));
 }

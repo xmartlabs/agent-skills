@@ -23,6 +23,10 @@ its text reaches no reviewer. The slots that exist:
   tribunal, frontend: intro branch-review stay-in-project literal-duplication
                       api-layer-siblings enforce project-traps
                       checklist-data-contracts checklist-conventions
+  tribunal, e2e:      intro branch-review stay-in-project enforce project-traps
+                      correctness failure-modes real-data-writes
+                      external-calls differential-gate differential-tooling
+                      path-rules
 
 `intro` and `project-traps` are the two that matter most. Start with them, run a
 few reviews, and add a block when a review misses something this repo's own

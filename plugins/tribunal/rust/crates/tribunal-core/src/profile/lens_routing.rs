@@ -9,9 +9,10 @@ use crate::js;
 pub const AGENT_NS: &str = "tribunal:";
 
 /// `REVIEWER_AGENTS`, in its declaration order.
-pub const REVIEWER_AGENTS: [(&str, &str); 2] = [
+pub const REVIEWER_AGENTS: [(&str, &str); 3] = [
     ("backend", "tribunal:code-review-expert"),
     ("frontend", "tribunal:fe-code-review-expert"),
+    ("e2e", "tribunal:e2e-code-review-expert"),
 ];
 
 /// Ports `lensAgentFor`. The kind is used as a property key, so it goes
@@ -20,7 +21,7 @@ pub const REVIEWER_AGENTS: [(&str, &str); 2] = [
 /// A kind that names an `Object.prototype` member (`"constructor"`,
 /// `"toString"`, ...) finds an inherited function in JavaScript and returns
 /// it; here it is an unknown kind. It cannot reach this function in
-/// production: `validate_profile` admits only the two kinds above.
+/// production: `validate_profile` admits only the kinds above.
 pub fn lens_agent_for(profile: &Value) -> Result<&'static str, String> {
     let kind = if js::truthy(Some(profile)) {
         js::get(profile, "reviewer")
@@ -54,6 +55,10 @@ mod tests {
         assert_eq!(
             lens_agent_for(&json!({"reviewer": ["frontend"]})),
             Ok("tribunal:fe-code-review-expert")
+        );
+        assert_eq!(
+            lens_agent_for(&json!({"reviewer": "e2e"})),
+            Ok("tribunal:e2e-code-review-expert")
         );
     }
 

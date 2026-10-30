@@ -14,17 +14,18 @@ that live in that repo, not in the plugin:
 |---|---|
 | [`review-profile.backend.json`](review-profile.backend.json) | `.claude/review-profile.json` in a backend repo |
 | [`review-profile.frontend.json`](review-profile.frontend.json) | `.claude/review-profile.json` in a frontend repo |
+| [`review-profile.e2e.json`](review-profile.e2e.json) | `.claude/review-profile.json` in a browser end-to-end test suite |
 | [`review-rules.md`](review-rules.md) | `.claude/review-rules.md` |
 | [`review-harness.json`](review-harness.json) | `~/.claude/review-harness.json`, on your machine only |
 | [`check.sh`](check.sh) | nothing, run it where it is (needs `node` and `python3`) |
 
 ## Steps
 
-1. **Pick the reviewer kind.** `backend` or `frontend`. The reviewer personas
-   carry stack knowledge for Node, Express and Prisma (`backend`) and React
-   (`frontend`). A repo on another stack gets a working review, but its
-   reviewers know nothing about that stack's traps until you write them into the
-   rules file (step 3).
+1. **Pick the reviewer kind.** `backend`, `frontend` or `e2e`. The reviewer
+   personas carry stack knowledge for Node, Express and Prisma (`backend`),
+   React (`frontend`) and Playwright test suites (`e2e`). A repo on another
+   stack gets a working review, but its reviewers know nothing about that
+   stack's traps until you write them into the rules file (step 3).
 2. **Copy the profile and edit it.** Every field:
 
    | Field | Meaning |
@@ -32,7 +33,7 @@ that live in that repo, not in the plugin:
    | `schemaVersion` | Always `1` |
    | `project` | A short name, used in run records |
    | `repo` | `owner/name` of the repo being reviewed |
-   | `reviewer` | `backend` or `frontend` |
+   | `reviewer` | `backend`, `frontend` or `e2e` |
    | `baseBranch` | The branch PRs merge into |
    | `deployBranches` | Branches whose PRs are deployments (staging, production). Tribunal refuses those. `[]` if there are none |
    | `foci` | One sentence per lens. Required: `correctness`, `dataContract`, `security`, `performance`, `errorHandling`. Optional: `migration`. Keep the sentences different from each other, and do not add other keys |
@@ -81,9 +82,13 @@ reviewer follows a contract change across the two only when the diff itself
 changes the contract, such as renaming an endpoint, and it says so in the rules
 file's `stay-in-project` slot.
 
+An end-to-end suite works the same way: name the application it tests in
+`crossRepoAnchors`, so a reviewer can check that a locator or a mocked response
+matches the app.
+
 ## What a profile cannot do yet
 
-A third reviewer kind (a Python service, a mobile app) needs a new persona and a
+Another reviewer kind (a Python service, a mobile app) needs a new persona and a
 methodology template in tribunal, not a profile. The profile loader refuses
-any `reviewer` other than `backend` and `frontend`, so this fails loudly instead
-of borrowing another stack's reviewer.
+any `reviewer` other than `backend`, `frontend` and `e2e`, so this fails loudly
+instead of borrowing another stack's reviewer.

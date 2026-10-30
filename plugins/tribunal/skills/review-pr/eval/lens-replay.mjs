@@ -54,7 +54,7 @@ import { blastRadius, makeRepo } from "../../../lib/blast-radius.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WORKFLOW_SRC = resolve(HERE, "..", "..", "..", "workflow-src", "tribunal.js");
 const SEVERITY_RANK = { nit: 0, important: 1, critical: 2 };
-const LENS_AGENT = { backend: "tribunal:code-review-expert", frontend: "tribunal:fe-code-review-expert" };
+const LENS_AGENT = { backend: "tribunal:code-review-expert", frontend: "tribunal:fe-code-review-expert", e2e: "tribunal:e2e-code-review-expert" };
 const LENS_TOOLS = ["Read", "Grep", "Glob", "Bash(git show:*)", "Bash(git ls-tree:*)", "Bash(git grep:*)", "Bash(grep:*)", "Bash(ls:*)"];
 
 const sha256 = (s) => createHash("sha256").update(s).digest("hex");

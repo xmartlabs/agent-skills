@@ -25,7 +25,7 @@
 // a slot that moved, and either way its text reaches no reviewer.
 //
 // Usage:
-//   node assemble-methodology.mjs --kind backend|frontend [--rules <file> [--rules-sha256 <sha>]] --out <file>
+//   node assemble-methodology.mjs --kind backend|frontend|e2e [--rules <file> [--rules-sha256 <sha>]] --out <file>
 // Prints ONE line of JSON: {ok, out, sha256, kind, rulesSha256, filled, unknown}
 // or {ok: false, error} and exits 1. --rules-sha256 refuses a rules file whose
 // bytes are not the ones load-profile.mjs recorded.
@@ -36,7 +36,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const NAMESPACE = "tribunal";
-export const KINDS = ["backend", "frontend"];
+export const KINDS = ["backend", "frontend", "e2e"];
 const TEMPLATES = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "methodology", "templates");
 
 const OPEN = /^<!-- slot: ([a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)?) -->$/;

@@ -1189,6 +1189,7 @@ fn profile() -> impl Strategy<Value = Value> {
             s("backend"),
             s("backend"),
             s("frontend"),
+            s("e2e"),
             s("Backend"),
             s(""),
             Some(Value::Null),
@@ -1330,7 +1331,7 @@ fn valid_rules() -> impl Strategy<Value = Value> {
 /// `validateProfile` returns (key order included) is never compared.
 fn mostly_valid_profile() -> impl Strategy<Value = Value> {
     let base = (
-        prop::sample::select(vec!["backend", "frontend"]),
+        prop::sample::select(vec!["backend", "frontend", "e2e"]),
         valid_foci(),
         valid_rules(),
         proptest::option::of(valid_rules()),
@@ -1525,10 +1526,12 @@ fn profile_lookup_matches_js() {
 fn lens_routing_matches_js() {
     // Kinds that name an Object.prototype member ("constructor", "toString")
     // are left out: JavaScript returns an inherited function for them, and
-    // validateProfile admits only "backend" and "frontend" before this runs.
+    // validateProfile admits only "backend", "frontend" and "e2e" before this runs.
     let reviewer = pick(vec![
         s("backend"),
         s("frontend"),
+        s("e2e"),
+        s("E2E"),
         s("Backend"),
         s("backend "),
         s(""),
@@ -1538,6 +1541,7 @@ fn lens_routing_matches_js() {
         Some(json!(true)),
         Some(json!(["backend"])),
         Some(json!(["frontend"])),
+        Some(json!(["e2e"])),
         Some(json!(["back", "end"])),
         Some(json!([])),
         Some(json!({})),
