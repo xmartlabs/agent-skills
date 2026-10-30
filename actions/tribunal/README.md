@@ -59,7 +59,8 @@ in order:
 3. A `labeled` event with another label is skipped.
 4. Any other event (for example `opened` or `ready_for_review`) reviews, unless the pull request
    is a draft and `drafts` is `false`; `paths` is set and no changed file matches it; or `once` is
-   `true` and the action already reviewed the pull request.
+   `true` and the action already reviewed the pull request. `paths` needs at least one include
+   pattern: a list of only `!` exclusions matches nothing.
 
 "Already reviewed" means a review on the pull request, by one of the action's own identities, that
 carries tribunal's footer (`<sub>tribunal v…`). The action's identities are `github-actions[bot]`
@@ -72,8 +73,8 @@ and the `github-token` user when that token can read its own user (a PAT or an A
 - Each run writes a job summary on its Actions page: whether the review was posted (with a link),
   skipped or held and why, followed by the report itself.
 - The review is always posted as a comment, never as an approval or a change request. The
-  report's own suggestion is in the body. The Actions token cannot tell which earlier reviews are
-  its own, so each run posts the full review over any standing one.
+  report's own suggestion is in the body. Each run posts a new review and never replaces or
+  dismisses an earlier one.
 
 ### Skip the setup when there is nothing to review
 
@@ -81,7 +82,8 @@ The review job's `concurrency` block cancels a running review whenever a newer e
 even one the action would skip, and the job takes a runner either way. When the workflow listens
 to more than the label (`opened`, `ready_for_review`, `synchronize`), put the decision in a cheap
 job first with the `gate` action, which reads the pull request through the API and checks out
-nothing. Define `paths` and the credential once and pass the same `with:` to both:
+nothing. Define `paths` once and pass the same `with:` to both. Pass the secret in each `with:`
+rather than in workflow `env:`, so only the steps that use it can read it:
 
 ```yaml
 # .github/workflows/tribunal.yml
@@ -90,7 +92,6 @@ on:
   pull_request:
     types: [opened, ready_for_review, labeled]
 env:
-  CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
   REVIEW_PATHS: |
     src/*
     !src/*.test.ts
@@ -104,7 +105,7 @@ jobs:
       - id: gate
         uses: xmartlabs/agent-skills/actions/tribunal/gate@tribunal-action-v1
         with:
-          claude-token: ${{ env.CLAUDE_TOKEN }}
+          claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           paths: ${{ env.REVIEW_PATHS }}
   review:
     needs: gate
@@ -120,7 +121,7 @@ jobs:
     steps:
       - uses: xmartlabs/agent-skills/actions/tribunal@tribunal-action-v1
         with:
-          claude-token: ${{ env.CLAUDE_TOKEN }}
+          claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           paths: ${{ env.REVIEW_PATHS }}
 ```
 
