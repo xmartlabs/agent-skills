@@ -43,10 +43,12 @@ gh label create tribunal --description "Run the tribunal review on this pull req
 name: Tribunal
 on:
   pull_request:
-    types: [labeled]
+    # Drop opened and ready_for_review to review only when someone adds the label.
+    types: [opened, ready_for_review, labeled]
 jobs:
   review:
-    if: github.event.label.name == 'tribunal'
+    # Other labels would start a runner for nothing and cancel a running review.
+    if: github.event.action != 'labeled' || github.event.label.name == 'tribunal'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -60,16 +62,23 @@ jobs:
         with:
           claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # paths: |            # review only pull requests that touch these files
+          #   src/*
           # reviewer: backend   # the generic profile to use when the repo has none
 ```
+
+The action is the only step: it decides by itself whether to review (see
+[When it runs](#when-it-runs)) and has nothing to set up before that, so it needs no separate
+gate.
 
 `@tribunal-action-v1` follows every compatible release. To freeze a version, use a full tag such
 as `@tribunal-action-v1.0.1`.
 
 ### 5. Try it
 
-Open a pull request and add the `tribunal` label. Within a few minutes the review appears as a
-comment review on the pull request, the label is removed, and the run's page in the **Actions**
+Open a pull request (or add the `tribunal` label to an open one). Within a few minutes the review
+appears as a comment review on the pull request, the label is removed if you added it, and the
+run's page in the **Actions**
 tab shows a summary: posted (with a link), skipped or held and why, then the report.
 
 ### Optional: describe your repository
@@ -99,7 +108,9 @@ in the repository itself (Renovate, for example) do get secrets; to keep them ou
 job's condition:
 
 ```yaml
-    if: github.event.label.name == 'tribunal' && github.event.pull_request.user.type != 'Bot'
+    if: >-
+      (github.event.action != 'labeled' || github.event.label.name == 'tribunal') &&
+      github.event.pull_request.user.type != 'Bot'
 ```
 
 ## When it runs
@@ -132,25 +143,19 @@ and the `github-token` user when that token can read its own user (a PAT or an A
   report's own suggestion is in the body. Each run posts a new review and never replaces or
   dismisses an earlier one.
 
-### Skip the setup when there is nothing to review
+### Decide in a separate job
 
-The review job's `concurrency` block cancels a running review whenever a newer event arrives,
-even one the action would skip, and the job takes a runner either way. When the workflow listens
-to more than the label (`opened`, `ready_for_review`, `synchronize`), put the decision in a cheap
-job first with the `gate` action, which reads the pull request through the API and checks out
-nothing. Define `paths` once and pass the same `with:` to both. Pass the secret in each `with:`
-rather than in workflow `env:`, so only the steps that use it can read it:
+The review job's `concurrency` block cancels a running review whenever a newer event reaches the
+job, even one the action then skips. That only matters when the workflow listens to frequent
+events such as `synchronize`. In that case decide in a cheap job first with the `gate` action,
+which takes the action's own inputs, reads the pull request through the API and checks out
+nothing. The review job, and its `concurrency` block, then only start when there is something to
+review:
 
 ```yaml
-# .github/workflows/tribunal.yml
-name: Tribunal
-on:
-  pull_request:
-    types: [opened, ready_for_review, labeled]
 env:
   REVIEW_PATHS: |
     src/*
-    !src/*.test.ts
 jobs:
   gate:
     runs-on: ubuntu-latest
@@ -166,14 +171,7 @@ jobs:
   review:
     needs: gate
     if: needs.gate.outputs.run == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    permissions:
-      contents: read
-      pull-requests: write
-    concurrency:
-      group: tribunal-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
+    # ... the job above, with the same `with:`:
     steps:
       - uses: xmartlabs/agent-skills/actions/tribunal@tribunal-action-v1
         with:
@@ -181,7 +179,9 @@ jobs:
           paths: ${{ env.REVIEW_PATHS }}
 ```
 
-The review job's action checks again, with the same rules, so both agree.
+Pass the secret in each `with:` rather than in workflow `env:`, so only the steps that use it can
+read it. The review job's action checks again with the same rules, so both agree. On
+GitHub-hosted runners in a private repository the gate job bills its own minute on every event.
 
 ## Troubleshooting
 
