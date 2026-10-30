@@ -1094,6 +1094,28 @@ fn run_carry_forward(call: &Value) -> Result<Value, String> {
     })
 }
 
+/// Declared difference: a finding a person lowered with `tribunal override
+/// --severity` stops blocking and grades at its new severity in the port.
+/// The Workflow does not read `operatorSeverity`.
+#[test]
+fn declared_difference_a_lowered_finding_stops_blocking() {
+    let f = json!({"severity": "critical", "blocking": true, "operatorSeverity": {"severity": "nit", "from": "critical"}});
+    let calls = vec![
+        json!({"fn": "countsAsBlocker", "args": [f]}),
+        json!({"fn": "priorGrade", "args": [f]}),
+    ];
+    let js: Vec<Value> = oracle_raw("CARRY-FORWARD", CARRY_FORWARD_EXPORTS, &[], &calls)
+        .into_iter()
+        .map(outcome)
+        .collect();
+    assert_eq!(
+        js,
+        [outcome(Ok(json!(true))), outcome(Ok(json!("critical")))]
+    );
+    assert!(!cf::counts_as_blocker(&f));
+    assert_eq!(cf::prior_grade(&f), json!("nit"));
+}
+
 #[test]
 fn carry_forward_matches_js() {
     let mut calls = carry_forward_seeds();
