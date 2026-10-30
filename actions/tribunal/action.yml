@@ -89,6 +89,10 @@ runs:
         INPUT_LABEL: ${{ inputs.label }}
       run: bash "$GITHUB_ACTION_PATH/run.sh" fallback
 
+    - if: ${{ always() && steps.gate.outputs.run == 'true' }}
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/run.sh" summary
+
     - if: ${{ always() && steps.gate.outputs.run == 'true' && inputs.upload-run == 'true' }}
       uses: actions/upload-artifact@v4
       with:

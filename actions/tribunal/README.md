@@ -57,6 +57,8 @@ jobs:
 - A push during a review makes its post refuse (the head moved): add the label again.
 - Fork pull requests and runs without a Claude credential (Dependabot's) never run: they get no
   secrets.
+- Each run writes a job summary on its Actions page: whether the review was posted (with a link),
+  skipped or held and why, followed by the report itself.
 - The review is always posted as a comment, never as an approval or a change request. The
   report's own suggestion is in the body. The Actions token cannot tell which earlier reviews are
   its own, so each run posts the full review over any standing one.

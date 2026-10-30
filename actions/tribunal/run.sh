@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run.sh gate|prepare|review|post|fallback|cleanup — the steps of the tribunal action.
+# run.sh gate|prepare|review|post|fallback|summary|cleanup — the steps of the tribunal action.
 #
 # Each step is a subcommand so it can be tested on its own. Everything a run writes lives in one
 # job directory under RUNNER_TEMP: HOME (Claude's config and the homosapiens skill), TMPDIR (the
@@ -205,6 +205,37 @@ if r.get("skipped"): print(r.get("reason") or "no reason given")' "$JOB/run.json
   gh pr comment "$(pr_number)" --repo "$GITHUB_REPOSITORY" --body-file "$JOB/pending.md"
 }
 
+# The run's page on GitHub shows what happened and the report itself, so nobody needs the
+# artifact to see how a review went. GitHub caps a step's summary at 1 MiB.
+cmd_summary() {
+  [ -n "${GITHUB_STEP_SUMMARY:-}" ] || return 0
+  local pr status url skipped reason report
+  pr="$(pr_number)"; report="$JOB/tmp/tribunal-report-$pr.md"
+  url="$(grep -m1 -oE '^Posted [a-z-]+: \S+' "$JOB/post.log" 2>/dev/null | sed 's/^Posted [a-z-]*: //')"
+  [ -f "$JOB/run.json" ] && skipped="$(python3 -c 'import json,sys
+r = json.load(open(sys.argv[1]))
+if r.get("skipped"): print(r.get("reason") or "no reason given")' "$JOB/run.json" 2>/dev/null)"
+  if [ -n "$url" ]; then status="✅ posted"
+  elif [ -n "${skipped:-}" ]; then status="⏭️ skipped: $skipped"
+  else
+    reason="$(grep -m1 '^NOT POSTED:' "$JOB/post.log" 2>/dev/null)"
+    [ -z "$reason" ] && reason="$(grep '^tribunal:' "$JOB/review.log" 2>/dev/null | tail -n 1)"
+    status="⏳ not posted${reason:+: $reason}"
+  fi
+  {
+    echo "### Tribunal — PR #$pr · $status"
+    [ -n "$url" ] && printf '\n[See the review on the pull request](%s)\n' "$url"
+    echo
+    if [ -f "$report" ]; then
+      head -c 900000 "$report"
+      [ "$(wc -c < "$report")" -gt 900000 ] && printf '\n\n*Report cut to fit the job summary; the full one is in the run artifact.*\n'
+    else
+      echo "No report was written."
+    fi
+  } >> "$GITHUB_STEP_SUMMARY"
+  return 0
+}
+
 # The label is a one-shot request: remove it so adding it again starts a new review.
 cmd_cleanup() {
   local label pr slug head
@@ -226,6 +257,7 @@ case "${1:-}" in
   review) cmd_review ;;
   post) cmd_post ;;
   fallback) cmd_fallback ;;
+  summary) cmd_summary ;;
   cleanup) cmd_cleanup ;;
-  *) echo "usage: run.sh gate|prepare|review|post|fallback|cleanup" >&2; exit 2 ;;
+  *) echo "usage: run.sh gate|prepare|review|post|fallback|summary|cleanup" >&2; exit 2 ;;
 esac

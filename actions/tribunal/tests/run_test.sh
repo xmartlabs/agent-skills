@@ -213,6 +213,38 @@ new_job labeled tribunal; mkdir -p "$(job)"; printf 'lens:1 ok\ntribunal: cannot
 fallback
 assert_ok "a crashed review quotes its last tribunal line" grep -qF "tribunal: cannot clone acme/web-app" "$FX/posted-body.md"
 
+# --- summary ------------------------------------------------------------------------------------
+summary() { : > "$TMP/summary.md"; GITHUB_STEP_SUMMARY="$TMP/summary.md" bash "$RUN" summary >/dev/null 2>&1; }
+new_job labeled tribunal; mkdir -p "$(job)/tmp"
+echo "Posted comment: https://github.com/acme/web-app/pull/12#pullrequestreview-9" > "$(job)/post.log"
+printf '## Peer review: PR #12\n\n### Blocking\n\nNone.\n' > "$(job)/tmp/tribunal-report-12.md"
+summary; RC=$?
+assert_eq "summary exits 0" "0" "$RC"
+assert_ok "a posted review is marked as posted" grep -qF "### Tribunal — PR #12 · ✅ posted" "$TMP/summary.md"
+assert_ok "it links the posted review" grep -qF "https://github.com/acme/web-app/pull/12#pullrequestreview-9" "$TMP/summary.md"
+assert_ok "it includes the report" grep -qF "## Peer review: PR #12" "$TMP/summary.md"
+
+new_job labeled tribunal; mkdir -p "$(job)"
+echo '{"skipped":true,"reason":"deployment branch"}' > "$(job)/run.json"
+summary
+assert_ok "a skipped run is marked as skipped, with its reason" grep -qF "⏭️ skipped: deployment branch" "$TMP/summary.md"
+
+new_job labeled tribunal; mkdir -p "$(job)"
+echo "NOT POSTED: duplicate-review gate is held" > "$(job)/post.log"
+summary
+assert_ok "a held post is marked as not posted, with the reason" grep -qF "⏳ not posted: NOT POSTED: duplicate-review gate is held" "$TMP/summary.md"
+assert_ok "without a report it says so" grep -qF "No report was written." "$TMP/summary.md"
+
+new_job labeled tribunal; mkdir -p "$(job)/tmp"
+python3 -c 'print("x" * 1100000)' > "$(job)/tmp/tribunal-report-12.md"
+summary
+assert_ok "a huge report is cut to fit GitHub's summary limit" test "$(wc -c < "$TMP/summary.md")" -lt 1000000
+assert_ok "and says it was cut" grep -qF "Report cut to fit" "$TMP/summary.md"
+
+new_job labeled tribunal
+: > "$TMP/summary.md"; env -u GITHUB_STEP_SUMMARY bash "$RUN" summary >/dev/null 2>&1; RC=$?
+assert_eq "summary without GITHUB_STEP_SUMMARY is a no-op" "0" "$RC"
+
 # --- cleanup ------------------------------------------------------------------------------------
 new_job labeled tribunal; touch "$FX/profile-base" "$FX/label-present"; prepare
 touch "$TMP/fixed-tmp/tribunal-methodology-acme-web-app-12.md" "$TMP/fixed-tmp/tribunal-conventions-acme-web-app-12.md" \
