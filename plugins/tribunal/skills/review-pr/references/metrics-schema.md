@@ -778,8 +778,19 @@ by. `readOverride` returns such an annotation as **INVALID and reports it**
 rather than dropping it, because an override the operator believes they recorded
 and the scorer silently ignores is the worst of the three outcomes.
 
-**How to patch a row** (after verifying the finding by hand — never from a
-model's second opinion):
+**How to patch a row** (after verifying the finding by hand, never from a
+model's second opinion): run `tribunal override`, which finds the row by its
+`ts` and the finding by a title prefix, refuses unless exactly one finding
+matches, applies the consistency rule above, and rewrites only that line
+under the ledger lock a run takes to append:
+
+```bash
+tribunal override --ts "<the row ts>" --title "<enough of the title to be unique>" \
+  --direction reinstated --reason "<how it was verified>" --by <login> --verified-at <sha>
+```
+
+`--dry-run` prints the annotation without writing it. The snippet below is the
+older way, kept for a machine without the binary:
 
 ```bash
 cd ${CLAUDE_PLUGIN_ROOT}/skills/review-pr
@@ -813,7 +824,7 @@ a title prefix that matches two findings, or none, silently mislabels ground
 truth. Re-run `score.mjs` afterwards — if the override does not appear in its
 `operator overrides` section, it was not recorded the way you think.
 
-**Follow-up candidate, not built yet:** this is the same "should be a script,
+**Built as `tribunal override`** (above). The original note: this is the same "should be a script,
 not an inline `node -e`" pattern that `scripts/persist-review-record.mjs` and
 `scripts/post-review.mjs` now cover for Step 4's posting/metrics-persistence
 snippets. A `scripts/patch-operator-override.mjs --ts <ts> --title-prefix
@@ -838,6 +849,31 @@ a rate computed over them is not the panel's error rate. Use them to find
 Regression cover: `eval/replay-operator-override.mjs` (0 tokens) — 36 asserts
 over the two directions, the consistency rule in both directions, malformed
 annotations, and the warning cases.
+
+## Field added for severity calls (Rust only): `findings[].operatorSeverity`
+
+A person's call that a finding is real but less severe than reported. It is not
+a panel error, so it is not an `operatorOverride` direction: the scorer's
+direction list and its rates stay as they are, and `eval/score.mjs` ignores the
+field.
+
+```json
+"operatorSeverity": {
+  "severity": "nit",
+  "from": "important",
+  "by": "<github login>",
+  "at": "<ISO 8601>",
+  "verifiedAt": "<full sha the hand check was done against>",
+  "reason": "<what was read, and why it is less severe>"
+}
+```
+
+Written by `tribunal override --severity nit|important`, which refuses a
+severity that is not lower than the finding's own, a finding the panel killed,
+and a call without a reason. On an incremental re-review a carried-forward
+finding with this field no longer blocks and grades at the new severity. The
+Workflow does not read it. These calls are the human label for whether reviews
+block too much: count them per repo before changing a repo's severity rules.
 
 ## Field added 2026-07-24 (re-review state) — `priorOpenReviews`
 

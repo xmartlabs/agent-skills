@@ -25,6 +25,7 @@ const DEFAULT_MODEL: &str = "claude-sonnet-5-5";
 fn usage() -> ExitCode {
     eprintln!("usage: tribunal --version");
     eprintln!("usage: tribunal cost [--repo <owner/name>] [--since <iso date>] [--json]");
+    eprintln!("usage: tribunal override --ts <row ts> --title <finding title prefix> (--direction reinstated|rejected|withdrawn | --severity nit|important) --reason <how it was checked> [--by <login>] [--verified-at <sha>] [--dry-run]");
     eprintln!("usage: tribunal selfcheck [--apply] [--no-battery] [--model <id>] [--effort <level>] [--out <file>]");
     eprintln!("usage: tribunal post --from <run.json> [--verdict approve|request-changes|comment] [--delta|--edit-existing] [--over-own-review] [--over-standing-review] [--model <id>] [--effort <level>]");
     eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--context <text>] [--bot-comments] [--model <id>] [--preflight] [--max-panels <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
@@ -549,6 +550,93 @@ fn cost_main(argv: &[String]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// `tribunal override`: writes a person's verdict on one finding into its
+/// ledger row, under the ledger lock a run takes to append.
+fn override_main(argv: &[String]) -> ExitCode {
+    use tribunal_pipeline::operator_override::{apply, Change, Request};
+    let mut req = Request {
+        ts: String::new(),
+        title_prefix: String::new(),
+        change: Change::Severity(String::new()),
+        reason: String::new(),
+        by: None,
+        verified_at: None,
+        at: tribunal_context::post_footer::iso_timestamp(std::time::SystemTime::now()),
+    };
+    let mut change = None;
+    let mut dry_run = false;
+    let mut it = argv.iter();
+    while let Some(a) = it.next() {
+        let mut value = || {
+            it.next()
+                .filter(|v| !v.starts_with("--"))
+                .cloned()
+                .ok_or_else(|| format!("{a} needs a value"))
+        };
+        let parsed = match a.as_str() {
+            "--ts" => value().map(|v| req.ts = v),
+            "--title" => value().map(|v| req.title_prefix = v),
+            "--reason" => value().map(|v| req.reason = v),
+            "--by" => value().map(|v| req.by = Some(v)),
+            "--verified-at" => value().map(|v| req.verified_at = Some(v)),
+            "--direction" => value().map(|v| change = Some(Change::Direction(v))),
+            "--severity" => value().map(|v| change = Some(Change::Severity(v))),
+            "--dry-run" => {
+                dry_run = true;
+                Ok(())
+            }
+            other => Err(format!("unknown argument {other}")),
+        };
+        if let Err(e) = parsed {
+            eprintln!("tribunal: {e}");
+            return usage();
+        }
+    }
+    let Some(change) = change.filter(|_| !req.ts.is_empty() && !req.title_prefix.is_empty()) else {
+        eprintln!("tribunal: override needs --ts, --title and one of --direction or --severity");
+        return usage();
+    };
+    req.change = change;
+    let env = tribunal_context::ledger::LedgerEnv::from_process();
+    let path = env.metrics_path();
+    let written = tribunal_context::ledger::with_ledger_lock(&path, env.lock_wait, || {
+        let text =
+            std::fs::read_to_string(&path).map_err(|e| format!("cannot read {path}: {e}"))?;
+        let applied = apply(&text, &req)?;
+        if !dry_run {
+            let tmp = format!("{path}.override.tmp");
+            std::fs::write(&tmp, &applied.ledger)
+                .and_then(|()| std::fs::rename(&tmp, &path))
+                .map_err(|e| format!("cannot write {path}: {e}"))?;
+        }
+        Ok::<_, String>(applied)
+    });
+    match written.and_then(|r| r) {
+        Ok(a) => {
+            for w in &a.warnings {
+                eprintln!("tribunal: warning: {w}");
+            }
+            println!(
+                "{} {} on \"{}\"{}",
+                if dry_run { "would set" } else { "set" },
+                a.field,
+                a.title,
+                if dry_run {
+                    " (dry run, nothing written)"
+                } else {
+                    ""
+                }
+            );
+            println!("{}", a.value);
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("tribunal: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -557,6 +645,7 @@ async fn main() -> ExitCode {
         Some("post") => return post_main(&argv[1..]).await,
         Some("selfcheck") => return selfcheck_main(&argv[1..]).await,
         Some("cost") => return cost_main(&argv[1..]),
+        Some("override") => return override_main(&argv[1..]),
         Some("--version" | "version") => {
             println!(
                 "tribunal {} ({})",

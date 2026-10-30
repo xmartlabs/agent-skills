@@ -161,11 +161,20 @@ fn override_direction(f: &Value) -> Option<&str> {
     js::get(o, "direction")?.as_str()
 }
 
-/// Ports `countsAsBlocker`: a human's override outranks the panel's flags.
+/// The severity a person lowered the finding to with `tribunal override
+/// --severity`. Rust only: the Workflow does not read `operatorSeverity`.
+fn operator_severity(f: &Value) -> Option<&Value> {
+    let o = js::get(f, "operatorSeverity").filter(|o| js::truthy(Some(o)))?;
+    js::get(o, "severity").filter(|v| v.is_string())
+}
+
+/// Ports `countsAsBlocker`: a human's override outranks the panel's flags. A
+/// finding a person lowered with `operatorSeverity` no longer blocks.
 pub fn counts_as_blocker(f: &Value) -> bool {
     match override_direction(f) {
         Some("rejected" | "withdrawn" | "dropped") => false,
         Some("reinstated") => true,
+        _ if operator_severity(f).is_some() => false,
         _ => {
             js::truthy(Some(f))
                 && (js::truthy(js::get(f, "blocking"))
@@ -174,12 +183,16 @@ pub fn counts_as_blocker(f: &Value) -> bool {
     }
 }
 
-/// Ports `priorGrade`: a reinstated finding grades as critical; otherwise the
-/// finding's own severity (`null` when absent), or the finding itself when it
-/// is falsy, as `f && f.severity` does.
+/// Ports `priorGrade`: a reinstated finding grades as critical, one a person
+/// lowered grades at the severity they gave it; otherwise the finding's own
+/// severity (`null` when absent), or the finding itself when it is falsy, as
+/// `f && f.severity` does.
 pub fn prior_grade(f: &Value) -> Value {
     if override_direction(f) == Some("reinstated") {
         return s("critical");
+    }
+    if let Some(sev) = operator_severity(f) {
+        return sev.clone();
     }
     if !js::truthy(Some(f)) {
         return f.clone();
@@ -465,6 +478,15 @@ mod tests {
             g,
             json!({"verdict": "CANNOT_TELL", "quote": "", "reason": "claimed FIXED with no quote to support it — looks handled"})
         );
+    }
+
+    #[test]
+    fn a_lowered_finding_stops_blocking_and_grades_at_its_new_severity() {
+        let f = json!({"severity": "critical", "blocking": true, "operatorSeverity": {"severity": "nit", "from": "critical"}});
+        assert!(!counts_as_blocker(&f));
+        assert_eq!(prior_grade(&f), s("nit"));
+        let reinstated = json!({"severity": "important", "blocking": false, "operatorSeverity": {"severity": "nit"}, "operatorOverride": {"direction": "reinstated"}});
+        assert!(counts_as_blocker(&reinstated));
     }
 
     #[test]
