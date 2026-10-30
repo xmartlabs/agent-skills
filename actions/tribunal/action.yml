@@ -55,6 +55,16 @@ runs:
         INPUT_LABEL: ${{ inputs.label }}
       run: bash "$GITHUB_ACTION_PATH/run.sh" gate
 
+    - id: node
+      if: steps.gate.outputs.run == 'true'
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/run.sh" node-check
+
+    - if: steps.gate.outputs.run == 'true' && steps.node.outputs.missing == 'true'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+
     - id: prepare
       if: steps.gate.outputs.run == 'true'
       shell: bash

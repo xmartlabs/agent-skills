@@ -77,8 +77,9 @@ jobs:
 
 ## Runner requirements
 
-Linux x64 with `bash`, `git`, `curl`, `tar`, `sha256sum`, `python3` and `npm`, which
-GitHub-hosted Ubuntu runners have. The action downloads the tribunal binary pinned by `plugins/tribunal/rust/release.json` at
+Linux x64 with `bash`, `git`, `curl`, `tar`, `sha256sum` and `python3`, which GitHub-hosted
+Ubuntu runners have. When the runner has no `npm` (some self-hosted ones), the action sets up
+Node 24 with `actions/setup-node` first. The action downloads the tribunal binary pinned by `plugins/tribunal/rust/release.json` at
 the action's own ref and checks its sha256, and installs the Claude CLI (and `gh` when missing)
 into the job's temporary directory; a `gh` already on the runner is used when it is 2.60 or newer.
 Everything the run writes stays in that directory, so

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run.sh gate|prepare|review|post|fallback|summary|cleanup — the steps of the tribunal action.
+# run.sh gate|node-check|prepare|review|post|fallback|summary|cleanup — the steps of the tribunal action.
 #
 # Each step is a subcommand so it can be tested on its own. Everything a run writes lives in one
 # job directory under RUNNER_TEMP: HOME (Claude's config and the homosapiens skill), TMPDIR (the
@@ -131,6 +131,12 @@ install_tools() {
   ln -sf "$tools/claude/node_modules/.bin/claude" "$tools/bin/claude"
 }
 
+# The action installs the Claude CLI with npm. Runners without Node (some self-hosted ones) get it
+# from actions/setup-node in the next step.
+cmd_node_check() {
+  if command -v npm >/dev/null 2>&1; then out missing false; else out missing true; fi
+}
+
 cmd_prepare() {
   set -e
   rm -rf "$JOB"
@@ -186,7 +192,18 @@ cmd_post() {
   tribunal post --from "$JOB/run.json" --verdict comment --over-standing-review 2>&1 | tee "$JOB/post.log"
 }
 
+# Why nothing was posted: the post's own line, else the last line the binary printed, else the
+# setup failed before either ran.
+not_posted_reason() {
+  local reason=""
+  [ -f "$JOB/post.log" ] && reason="$(grep -m1 '^NOT POSTED:' "$JOB/post.log")"
+  [ -z "$reason" ] && [ -f "$JOB/review.log" ] && reason="$(grep '^tribunal:' "$JOB/review.log" | tail -n 1)"
+  [ -z "$reason" ] && [ ! -f "$JOB/review.log" ] && reason="the action's setup failed before the review started; see the run log"
+  printf '%s' "$reason"
+}
+
 cmd_fallback() {
+  mkdir -p "$JOB"
   local run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" skipped="" reason=""
   [ -f "$JOB/run.json" ] && skipped="$(python3 -c 'import json,sys
 r = json.load(open(sys.argv[1]))
@@ -195,9 +212,7 @@ if r.get("skipped"): print(r.get("reason") or "no reason given")' "$JOB/run.json
     printf '%s\n%s\n' "$PENDING_MARKER" \
       "**Tribunal skipped** this pull request: $skipped. ([run log]($run_url))" > "$JOB/pending.md"
   else
-    # Why nothing was posted: the post's own line, else the last line the binary printed.
-    [ -f "$JOB/post.log" ] && reason="$(grep -m1 '^NOT POSTED:' "$JOB/post.log")"
-    [ -z "$reason" ] && [ -f "$JOB/review.log" ] && reason="$(grep '^tribunal:' "$JOB/review.log" | tail -n 1)"
+    reason="$(not_posted_reason)"
     printf '%s\n%s\n%s\n' "$PENDING_MARKER" \
       "**Tribunal pending** — the review run ended without posting a review ([run log]($run_url)).${reason:+ $reason}" \
       "Add the \`$INPUT_LABEL\` label again to retry." > "$JOB/pending.md"
@@ -218,8 +233,7 @@ if r.get("skipped"): print(r.get("reason") or "no reason given")' "$JOB/run.json
   if [ -n "$url" ]; then status="✅ posted"
   elif [ -n "${skipped:-}" ]; then status="⏭️ skipped: $skipped"
   else
-    reason="$(grep -m1 '^NOT POSTED:' "$JOB/post.log" 2>/dev/null)"
-    [ -z "$reason" ] && reason="$(grep '^tribunal:' "$JOB/review.log" 2>/dev/null | tail -n 1)"
+    reason="$(not_posted_reason)"
     status="⏳ not posted${reason:+: $reason}"
   fi
   {
@@ -253,11 +267,12 @@ cmd_cleanup() {
 
 case "${1:-}" in
   gate) cmd_gate ;;
+  node-check) cmd_node_check ;;
   prepare) cmd_prepare ;;
   review) cmd_review ;;
   post) cmd_post ;;
   fallback) cmd_fallback ;;
   summary) cmd_summary ;;
   cleanup) cmd_cleanup ;;
-  *) echo "usage: run.sh gate|prepare|review|post|fallback|summary|cleanup" >&2; exit 2 ;;
+  *) echo "usage: run.sh gate|node-check|prepare|review|post|fallback|summary|cleanup" >&2; exit 2 ;;
 esac

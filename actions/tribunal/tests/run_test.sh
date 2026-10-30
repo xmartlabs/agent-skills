@@ -213,6 +213,17 @@ new_job labeled tribunal; mkdir -p "$(job)"; printf 'lens:1 ok\ntribunal: cannot
 fallback
 assert_ok "a crashed review quotes its last tribunal line" grep -qF "tribunal: cannot clone acme/web-app" "$FX/posted-body.md"
 
+new_job labeled tribunal
+fallback
+assert_ok "a run that failed before the review says the setup failed" \
+  grep -qF "the action's setup failed before the review started" "$FX/posted-body.md"
+
+# --- node check ---------------------------------------------------------------------------------
+node_check() { : > "$GITHUB_OUTPUT"; bash "$RUN" node-check >/dev/null 2>&1; sed -n 's/^missing=//p' "$GITHUB_OUTPUT"; }
+new_job labeled tribunal
+assert_eq "npm on the runner: no Node setup" "false" "$(node_check)"
+assert_eq "no npm on the runner: Node is set up" "true" "$(PATH="$TMP/nogh" node_check)"
+
 # --- summary ------------------------------------------------------------------------------------
 summary() { : > "$TMP/summary.md"; GITHUB_STEP_SUMMARY="$TMP/summary.md" bash "$RUN" summary >/dev/null 2>&1; }
 new_job labeled tribunal; mkdir -p "$(job)/tmp"
@@ -240,6 +251,11 @@ python3 -c 'print("x" * 1100000)' > "$(job)/tmp/tribunal-report-12.md"
 summary
 assert_ok "a huge report is cut to fit GitHub's summary limit" test "$(wc -c < "$TMP/summary.md")" -lt 1000000
 assert_ok "and says it was cut" grep -qF "Report cut to fit" "$TMP/summary.md"
+
+new_job labeled tribunal
+summary
+assert_ok "a run that failed before the review says so in the summary" \
+  grep -qF "⏳ not posted: the action's setup failed before the review started" "$TMP/summary.md"
 
 new_job labeled tribunal
 : > "$TMP/summary.md"; env -u GITHUB_STEP_SUMMARY bash "$RUN" summary >/dev/null 2>&1; RC=$?
