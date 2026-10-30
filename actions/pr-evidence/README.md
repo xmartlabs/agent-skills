@@ -53,11 +53,12 @@ The action decides whether to capture only after your setup steps ran. When they
 `npm ci`), put the decision in a cheap job first with the `gate` action, which reads the pull
 request through the API and checks out nothing. It takes the action's own inputs (`claude-token`,
 `anthropic-api-key`, `github-token`, `attach-token`, `paths`, `label`, `once`, `drafts`), so define
-the credential and `paths` once in the workflow's `env:` and pass the same `with:` to both:
+`paths` once in the workflow's `env:` and pass the same `with:` to both. Pass the secret in each
+`with:` rather than in `env:`, so your setup steps (`npm ci` runs the pull request's install
+scripts) cannot read it:
 
 ```yaml
 env:
-  CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
   EVIDENCE_PATHS: |
     src/*
     !src/*.test.tsx
@@ -71,7 +72,7 @@ jobs:
       - id: gate
         uses: xmartlabs/agent-skills/actions/pr-evidence/gate@pr-evidence-v1
         with:
-          claude-token: ${{ env.CLAUDE_TOKEN }}
+          claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           paths: ${{ env.EVIDENCE_PATHS }}
   evidence:
     needs: gate
@@ -80,7 +81,7 @@ jobs:
     steps:
       - uses: xmartlabs/agent-skills/actions/pr-evidence@pr-evidence-v1
         with:
-          claude-token: ${{ env.CLAUDE_TOKEN }}
+          claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           paths: ${{ env.EVIDENCE_PATHS }}
 ```
 
@@ -128,7 +129,7 @@ sets the config's `host.target` from the token, whatever the config says:
 | `anthropic-api-key` | empty | Anthropic API key (billed per use). Wins over `claude-token` when both are set. |
 | `github-token` | `github.token` | Reads the pull request, posts comments, pushes to the hosting branch. |
 | `attach-token` | empty | User token for native attachments (see above). |
-| `paths` | empty | Newline-separated globs (fnmatch: `*` also crosses `/`, so `src/*` is the whole tree; a leading `!` excludes). |
+| `paths` | empty | Newline-separated globs (fnmatch: `*` also crosses `/`, so `src/*` is the whole tree; a leading `!` excludes; a list of only exclusions matches nothing). |
 | `label` | `pr-evidence` | The label that forces a run; removed at the end of the run. |
 | `once` | `true` | `true`: automatic events skip a pull request that already has the action's evidence. `false`: every automatic event runs. |
 | `drafts` | `false` | `true`: automatic events run on draft pull requests too. |

@@ -299,13 +299,17 @@ cmd_fallback() {
 # summary at 1 MiB.
 cmd_summary() {
   [ -n "${GITHUB_STEP_SUMMARY:-}" ] || return 0
-  local since url status
+  local since urls url="" status
   since="$(cat "$JOB/started-at" 2>/dev/null || echo 1970-01-01T00:00:00Z)"
-  url="$(own_comments "select(.body | contains(\"$POSTED_MARKER\")) | .html_url" "$since" 2>/dev/null | tail -n 1)"
-  if [ -n "$url" ]; then status="✅ posted"; else status="⏳ not posted: $(not_posted_reason)"; fi
+  if ! urls="$(own_comments "select(.body | contains(\"$POSTED_MARKER\")) | .html_url" "$since")"; then
+    status="⚠️ unknown: could not list the pull request's comments"
+  else
+    url="$(printf '%s\n' "$urls" | tail -n 1)"
+    if [ -n "$url" ]; then status="✅ posted"; else status="⏳ not posted: $(not_posted_reason)"; fi
+  fi
   {
     echo "### PR evidence — PR #$(pr_number) · $status"
-    [ -n "$url" ] && printf '\n[See the evidence on the pull request](%s)\n' "$url"
+    if [ -n "$url" ]; then printf '\n[See the evidence on the pull request](%s)\n' "$url"; fi
   } | head -c 900000 >> "$GITHUB_STEP_SUMMARY"
   return 0
 }

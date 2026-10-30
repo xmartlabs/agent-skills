@@ -36,7 +36,9 @@ case "${args[0]} ${args[1]:-}" in
       "DELETE "*/issues/*/labels/*)
         if [ -f "$FX/label-missing" ]; then echo "gh: Label does not exist (HTTP 404)" >&2; exit 1; fi
         echo "${args[1]}" >> "$FX/deleted-labels" ;;
-      "GET "*/issues/*/comments*) emit "$FX/comments.json" ;;
+      "GET "*/issues/*/comments*)
+        if [ -f "$FX/comments-error" ]; then echo "gh: Server Error (HTTP 502)" >&2; exit 1; fi
+        emit "$FX/comments.json" ;;
       "GET "*/pulls/*/files*) emit "$FX/files.json" ;;
       "GET "*/contents/*)
         if [ -f "$FX/base-config.json" ]; then cat "$FX/base-config.json"
@@ -306,6 +308,11 @@ assert_eq "summary: a person's comment is not the evidence" "### PR evidence —
 new_job opened false; echo "gh: Server Error (HTTP 502)" > "$FX/contents-error"; prepare
 summary
 assert_eq "summary: setup failed before the capture" "### PR evidence — PR #12 · ⏳ not posted: the action's setup failed before the capture started" "$(head -n 1 "$TMP/runner/summary.md")"
+new_job opened false; printf '%s' "$base_cfg" > "$FX/base-config.json"; prepare; capture
+echo "$POSTED_BY_BOT" > "$FX/comments.json"; touch "$FX/comments-error"
+summary; RC=$?; rm -f "$FX/comments-error"
+assert_eq "summary exits 0 when it cannot list the comments" "0" "$RC"
+assert_eq "summary: unknown when it cannot list the comments" "### PR evidence — PR #12 · ⚠️ unknown: could not list the pull request's comments" "$(head -n 1 "$TMP/runner/summary.md")"
 new_job opened false; printf '%s' "$base_cfg" > "$FX/base-config.json"; prepare; capture; : > "$FX/gh.log"
 (unset GITHUB_STEP_SUMMARY; bash "$RUN" summary >/dev/null 2>&1); RC=$?
 assert_eq "summary without GITHUB_STEP_SUMMARY exits 0" "0" "$RC"
