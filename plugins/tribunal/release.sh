@@ -166,7 +166,7 @@ echo "   $(grep -cv '^[[:space:]]*\(#.*\)\?$' "$NOTES_FILE") line(s) of notes"
 # 1. The gate. release.mjs exits non-zero on a red battery and refuses --record,
 #    so this is the step that decides whether a freeze happens at all. The tag is
 #    passed in because release.mjs cannot derive it: it does not exist until 4/5.
-step "1/5  Recording the freeze (gate: offline battery)"
+step "1/5  Recording the freeze (gate: Rust suite and binary pin)"
 ( cd "$SKILL" && node eval/release.mjs $PORTABLE --record --tag "$TAG" --notes-file "$NOTES_FILE" )
 
 # The row is the artifact this whole script exists to produce, so verify it
