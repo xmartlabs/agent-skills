@@ -141,6 +141,24 @@ capture that could not be done leaves "Evidence pending — <reason>" instead.
 
 The gate job is optional; it saves work, not correctness. Two lighter shapes work too:
 
+- **One job, install in `boot`:** when the install needs no secret, move it into the config's
+  `boot` and keep only checkout before the action, which then decides before anything slow runs.
+  `boot` runs twice (the action's warm-up, then Claude), so install only when needed:
+
+  ```json
+  "boot": "[ -d node_modules ] || npm ci; npm run dev -- --port $PORT"
+  ```
+
+  ```yaml
+      steps:
+        - uses: actions/checkout@v6
+        - uses: xmartlabs/agent-skills/actions/pr-evidence@pr-evidence-v1
+          with:
+            claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+  ```
+
+  Not for an install that needs a token (a private registry, private submodules): `boot` runs
+  next to Claude and the pull request's code.
 - **One job, no gate:** drop the `gate` job and the evidence job's `needs` and `if`. The action
   applies the same rules by itself, but only after checkout and install ran, on every event.
 - **One job, gate as its first step:** run the `gate` action as the job's first step and add
