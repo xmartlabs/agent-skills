@@ -1,5 +1,13 @@
 //! The metrics row against the workflow's `metrics` object, built from the
 //! same state.
+//!
+//! The workflow's side is read from `tests/goldens/span/diff_metrics.json`
+//! (see `common`), with a SHA-256 of the workflow code each span came from, so
+//! an edit there without regenerating fails here. Each row is over 1 KiB, so
+//! the file keeps a SHA-256 of each; a failure shows the port's row and the
+//! input.
+//! Regenerate after changing a span, its cases or the workflow:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-pipeline --test diff_metrics`.
 
 #![recursion_limit = "1024"]
 
@@ -288,9 +296,7 @@ fn the_metrics_row_is_the_workflows() {
         .collect();
     if let Some(dir) = std::env::var_os("TRIBUNAL_DUMP") {
         let dir = std::path::PathBuf::from(dir);
-        if let Some(i) =
-            (0..cases.len()).find(|&i| common::canon(&rust[i]) != common::canon(&js[i]))
-        {
+        if let Some(i) = (0..cases.len()).find(|&i| !common::same(&rust[i], &js[i])) {
             std::fs::write(
                 dir.join("rust.json"),
                 serde_json::to_string_pretty(&rust[i]).unwrap(),

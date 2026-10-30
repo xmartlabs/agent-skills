@@ -59,7 +59,9 @@ could not reach in `notReached` rather than stopping.
 
 **A second narrow exception, within the suite: literal duplication.** Concrete trigger: the diff hardcodes a value that the suite already defines somewhere, such as a URL path, a test user, a timeout, a selector string or a storage-state path, instead of importing it. Grep that exact literal across the suite and read at most the top 2-3 hits. Look for where the value is *defined* (a config file, a fixture, a page object), not only other places that repeat it. If the grep returns nothing or only unrelated noise, stop and move on.
 
+<!-- slot: ignored-paths -->
 Ignore changes in: `node_modules/`, `test-results/`, `playwright-report/`, `blob-report/`, `playwright/.cache/`, `*.map`, `*.md`, `*.png`, `*.jpg`, `*.svg`, `*.zip`, `package-lock.json`.
+<!-- /slot -->
 
 ## Which tool reads what
 

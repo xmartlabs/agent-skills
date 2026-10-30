@@ -1,12 +1,36 @@
+//! `lib/blast-radius.mjs` and `skills/review-pr/scripts/import-adjacency.mjs`
+//! against `tribunal_context::blast_radius` and
+//! `tribunal_context::import_adjacency`: the CLIs on generated git
+//! repositories and manifests, compared on stdout and on the git calls each
+//! side makes, and the scripts' exported functions on generated inputs.
+//!
+//! The scripts' side is read from `tests/goldens/dependents.json`, so a run
+//! starts only the port. Each blast-radius case is keyed by a SHA-256 of its
+//! arguments, the diff's bytes and the repository's files and refs; each
+//! import-adjacency run by a SHA-256 of its stdin; each batch of exported
+//! function calls by its name, with a SHA-256 of its input. The file keeps a
+//! SHA-256 of every module the two scripts reach through a relative import,
+//! and of the node driver and the logging `git` this file writes, so editing
+//! any of them without a regeneration fails here. A recorded module that is no
+//! longer on disk is retired, and its check is skipped. The scratch directory
+//! and the plugin are stored as `<ROOT>`, `<REALROOT>` and `<PLUGIN>`. The
+//! socket the diff-read case opens fails with another errno on each platform,
+//! so that case is recorded once per platform and a regeneration keeps the
+//! other platform's entry. Regenerate the whole binary at once after changing
+//! them: `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_dependents`.
 mod common;
 use common::*;
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 use serde_json::{json, Value};
 use tribunal_context::blast_radius;
 use tribunal_context::exec::Tools;
+use tribunal_context::harness_version::sha256_hex;
 use tribunal_context::import_adjacency;
 
 const BLAST: &str = "lib/blast-radius.mjs";
@@ -135,20 +159,16 @@ fn fixture(name: &str, base: &[(&str, Option<&str>)], head: &[(&str, Option<&str
     }
 }
 
+/// The logging `git`, with `<GIT>` for the real one.
+const GIT_WRAPPER: &str = "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\037' \"$a\"; done >> \"$GIT_CALL_LOG\"\nprintf '\\n' >> \"$GIT_CALL_LOG\"\nexec '<GIT>' \"$@\"\n";
+
 /// A `git` that logs each call's arguments, then runs the real one. Both
 /// sides get it, so their git calls can be compared one for one.
 fn git_wrapper(root: &Path) -> PathBuf {
     let dir = root.join("gitwrap");
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("git");
-    std::fs::write(
-        &path,
-        format!(
-            "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\037' \"$a\"; done >> \"$GIT_CALL_LOG\"\nprintf '\\n' >> \"$GIT_CALL_LOG\"\nexec '{}' \"$@\"\n",
-            real_git()
-        ),
-    )
-    .unwrap();
+    std::fs::write(&path, GIT_WRAPPER.replace("<GIT>", &real_git())).unwrap();
     Command::new("chmod").arg("+x").arg(&path).status().unwrap();
     dir
 }
@@ -197,6 +217,18 @@ struct BlastPair {
 /// `typescript` to load. The binding resolver, which the script takes when it
 /// finds one, is `tests/diff_blast_radius_ast.rs`.
 async fn blast_pair(root: &Path, diff: &str, repo: &str, rev: Option<&str>) -> BlastPair {
+    blast_pair_on(false, root, diff, repo, rev).await
+}
+
+/// [`blast_pair`] where `per_os` says the script's output depends on the
+/// platform, so the golden keeps one entry for each.
+async fn blast_pair_on(
+    per_os: bool,
+    root: &Path,
+    diff: &str,
+    repo: &str,
+    rev: Option<&str>,
+) -> BlastPair {
     let wrap = git_wrapper(root);
     let cwd = root.join("cwd");
     std::fs::create_dir_all(&cwd).unwrap();
@@ -209,7 +241,10 @@ async fn blast_pair(root: &Path, diff: &str, repo: &str, rev: Option<&str>) -> B
     if let Some(r) = rev {
         args.extend(["--rev", r]);
     }
-    let js = run_node(BLAST, &args, &cwd, &rec, &wrap, &js_log);
+    let (js, js_calls) = blast_js(per_os, root, &args, || {
+        let js = run_node(BLAST, &args, &cwd, &rec, &wrap, &js_log);
+        (js, std::fs::read_to_string(&js_log).unwrap_or_default())
+    });
     let mut t: Tools = tools(&rec);
     t.git = wrap.join("git").to_string_lossy().into_owned();
     t.env.push(("GIT_CALL_LOG".into(), rust_log.clone().into()));
@@ -217,9 +252,90 @@ async fn blast_pair(root: &Path, diff: &str, repo: &str, rev: Option<&str>) -> B
     BlastPair {
         js,
         rust,
-        js_calls: std::fs::read_to_string(&js_log).unwrap_or_default(),
+        js_calls,
         rust_calls: std::fs::read_to_string(&rust_log).unwrap_or_default(),
     }
+}
+
+/// The script's side of a blast-radius case, its run and the git calls it
+/// made: read from the golden, or from `run` when regenerating and recorded.
+/// stderr is not kept, since no case compares it.
+fn blast_js(
+    per_os: bool,
+    root: &Path,
+    args: &[&str],
+    run: impl FnOnce() -> (ScriptRun, String),
+) -> (ScriptRun, String) {
+    let key = blast_key(per_os, root, args);
+    if !regenerating() {
+        let v = replayed("blast", &key, &format!("blast-radius {args:?}"));
+        let js = ScriptRun {
+            code: v["code"].as_i64().map(|c| i32::try_from(c).unwrap()),
+            stdout: local(v["stdout"].as_str().unwrap(), root),
+            stderr: String::new(),
+        };
+        return (js, local(v["calls"].as_str().unwrap(), root));
+    }
+    let (js, calls) = run();
+    let mut entry = json!({
+        "args": args.iter().map(|a| portable(a, root)).collect::<Vec<_>>(),
+        "code": js.code,
+        "stdout": portable(&js.stdout, root),
+        "calls": portable(&calls, root),
+    });
+    if per_os {
+        entry["os"] = json!(std::env::consts::OS);
+    }
+    record("blast", &key, entry);
+    (js, calls)
+}
+
+/// A SHA-256 of what a blast-radius case's output depends on besides the
+/// scripts: its arguments, the diff's bytes, and the repository's files and
+/// refs.
+fn blast_key(per_os: bool, root: &Path, args: &[&str]) -> String {
+    let mut input = json!({
+        "args": args.iter().map(|a| portable(a, root)).collect::<Vec<_>>(),
+        "diff": std::fs::read(args[0]).map_or_else(|_| "unreadable".to_owned(), |b| sha(&b)),
+        "repo": repo_state(Path::new(args[1])),
+    });
+    if per_os {
+        input["os"] = json!(std::env::consts::OS);
+    }
+    sha(input.to_string().as_bytes())
+}
+
+/// Every file under `repo` but `.git` with a SHA-256 of its bytes, and the
+/// refs when it is a git repository.
+fn repo_state(repo: &Path) -> Value {
+    fn walk(base: &Path, dir: &Path, out: &mut BTreeMap<String, String>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for e in entries.flatten() {
+            let p = e.path();
+            let rel = p.strip_prefix(base).unwrap().to_string_lossy().into_owned();
+            let Ok(ft) = e.file_type() else { continue };
+            if rel == ".git" {
+                continue;
+            } else if ft.is_dir() {
+                walk(base, &p, out);
+            } else if ft.is_symlink() {
+                let target = std::fs::read_link(&p).unwrap();
+                out.insert(rel, format!("-> {}", target.display()));
+            } else {
+                let hash = std::fs::read(&p).map_or_else(|_| "unreadable".to_owned(), |b| sha(&b));
+                out.insert(rel, hash);
+            }
+        }
+    }
+    let mut files = BTreeMap::new();
+    walk(repo, repo, &mut files);
+    let refs = repo.join(".git").is_dir().then(|| {
+        git(repo, &["for-each-ref", "--format=%(objectname) %(refname)"])
+            + &git(repo, &["rev-parse", "HEAD"])
+    });
+    json!({"files": files, "refs": refs})
 }
 
 /// The relayed JSON line of a successful script run: `RELAY-CRC ...` then the
@@ -914,47 +1030,69 @@ async fn blast_radius_matches_js_on_generated_repos() {
 // ---------------------------------------------------------------------------
 // blast-radius: the pure parts against the script's own exports
 
-/// Runs the script's exported functions (and Node's `path.posix` and
-/// `localeCompare`) over `cases`, one result per case, `{"throw": true}` where
-/// one throws.
-fn js_batch(name: &str, cases: &[Value]) -> Vec<Value> {
-    let dir = scratch(name);
-    let root = plugin_root().canonicalize().unwrap();
-    let driver = dir.join("driver.mjs");
-    std::fs::write(
-        &driver,
-        format!(
-            r#"import path from "node:path";
-import {{ readFileSync }} from "node:fs";
-import {{ changedLines, declarations, readAliases, specPointsAt }} from "{root}/lib/blast-radius.mjs";
-import {{ extractSpecifiers, computeAdjacency }} from "{root}/skills/review-pr/scripts/import-adjacency.mjs";
+/// The node driver behind [`js_batch`], with `<PLUGIN>` for the plugin.
+const DRIVER: &str = r#"import path from "node:path";
+import { readFileSync } from "node:fs";
+import { changedLines, declarations, readAliases, specPointsAt } from "<PLUGIN>/lib/blast-radius.mjs";
+import { extractSpecifiers, computeAdjacency } from "<PLUGIN>/skills/review-pr/scripts/import-adjacency.mjs";
 const cases = JSON.parse(readFileSync(0, "utf8"));
-const run = (c) => {{
-  switch (c.fn) {{
+const run = (c) => {
+  switch (c.fn) {
     case "normalize": return path.posix.normalize(c.a);
     case "join": return path.posix.join(c.a, c.b);
     case "dirname": return path.posix.dirname(c.a);
     case "basename": return path.posix.basename(c.a);
     case "localeCompare": return Math.sign(c.a.localeCompare(c.b));
     case "changedLines": return [...changedLines(c.a)].map(([f, s]) => [f, [...s]]);
-    case "declarations": return declarations(c.a).map((d) => ({{ name: d.name, kind: d.kind, exported: d.exported, start: d.start, at: d.at, end: d.end, body: d.body, exportAs: d.exportAs }}));
+    case "declarations": return declarations(c.a).map((d) => ({ name: d.name, kind: d.kind, exported: d.exported, start: d.start, at: d.at, end: d.end, body: d.body, exportAs: d.exportAs }));
     case "readAliases": return Object.entries(readAliases(c.a));
     case "specPointsAt": return specPointsAt(c.spec, c.importer, c.target, Object.fromEntries(c.aliases));
     case "extractSpecifiers": return extractSpecifiers(c.a);
     case "computeAdjacency": return computeAdjacency(c.a);
-  }}
-}};
-process.stdout.write(JSON.stringify(cases.map((c) => {{ try {{ return {{ ok: run(c) }}; }} catch {{ return {{ throw: true }}; }} }})));
-"#,
-            root = root.display()
-        ),
+  }
+};
+process.stdout.write(JSON.stringify(cases.map((c) => { try { return { ok: run(c) }; } catch { return { throw: true }; } })));
+"#;
+
+/// Runs the script's exported functions (and Node's `path.posix` and
+/// `localeCompare`) over `cases`, one result per case, `{"throw": true}` where
+/// one throws. Read from the golden under `name`, or run when regenerating
+/// and recorded. The golden keeps each result as one line of JSON, which
+/// halves its size.
+fn js_batch(name: &str, cases: &[Value]) -> Vec<Value> {
+    let input = Value::Array(cases.to_vec()).to_string();
+    if !regenerating() {
+        let v = replayed("batches", name, name);
+        assert_eq!(
+            v["input"],
+            json!(sha(input.as_bytes())),
+            "{name}: the generator changed; {REGENERATE}"
+        );
+        return v["outputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|o| serde_json::from_str(o.as_str().unwrap()).unwrap())
+            .collect();
+    }
+    let dir = scratch(name);
+    let driver = dir.join("driver.mjs");
+    std::fs::write(
+        &driver,
+        DRIVER.replace("<PLUGIN>", &plugin().to_string_lossy()),
     )
     .unwrap();
     let rec = recordings(&dir, vec![]);
-    let input = Value::Array(cases.to_vec()).to_string();
     let out = run_script(driver.to_str().unwrap(), &[], &dir, &rec, Some(&input));
     assert_eq!(out.code, Some(0), "{}", out.stderr);
-    serde_json::from_str::<Vec<Value>>(&out.stdout).unwrap()
+    let outputs = serde_json::from_str::<Vec<Value>>(&out.stdout).unwrap();
+    let lines: Vec<String> = outputs.iter().map(Value::to_string).collect();
+    record(
+        "batches",
+        name,
+        json!({"input": sha(input.as_bytes()), "outputs": lines}),
+    );
+    outputs
 }
 
 fn rand_string(rng: &mut Rng, alphabet: &[&str], max: usize) -> String {
@@ -1425,13 +1563,7 @@ async fn declared_difference_typescript_resolver() {
 /// Runs the script on `stdin` and the port on the same text. A script that
 /// throws exits 1 with nothing on stdout; the port returns `Err` then.
 fn adjacency_same(case: &str, stdin: &str) -> Option<Value> {
-    static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let dir = scratch(&format!(
-        "adj-{}",
-        N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    ));
-    let rec = recordings(&dir, vec![]);
-    let js = run_script(ADJ, &[], &dir, &rec, Some(stdin));
+    let js = adjacency_js(stdin);
     match import_adjacency::run(stdin) {
         Ok(line) => {
             assert_eq!(js.code, Some(0), "{case}: {}", js.stderr);
@@ -1447,6 +1579,36 @@ fn adjacency_same(case: &str, stdin: &str) -> Option<Value> {
             None
         }
     }
+}
+
+/// The script's exit code and stdout on `stdin`: read from the golden, or run
+/// when regenerating and recorded. stderr is not kept, since no case compares
+/// it.
+fn adjacency_js(stdin: &str) -> ScriptRun {
+    let key = sha(stdin.as_bytes());
+    if !regenerating() {
+        let shown: String = stdin.chars().take(200).collect();
+        let v = replayed("adjacency", &key, &format!("import-adjacency on {shown:?}"));
+        return ScriptRun {
+            code: v["code"].as_i64().map(|c| i32::try_from(c).unwrap()),
+            stdout: v["stdout"].as_str().unwrap().to_owned(),
+            stderr: String::new(),
+        };
+    }
+    static N: AtomicUsize = AtomicUsize::new(0);
+    let dir = scratch(&format!("adj-{}", N.fetch_add(1, Ordering::Relaxed)));
+    let rec = recordings(&dir, vec![]);
+    let js = run_script(ADJ, &[], &dir, &rec, Some(stdin));
+    assert!(
+        !js.stdout.contains(&*dir.to_string_lossy()),
+        "the script's stdout names its directory, which the golden cannot keep"
+    );
+    record(
+        "adjacency",
+        &key,
+        json!({"code": js.code, "stdout": js.stdout}),
+    );
+    js
 }
 
 #[test]
@@ -1641,9 +1803,7 @@ fn import_adjacency_matches_js_on_generated_manifests() {
 #[test]
 fn declared_difference_files_not_an_object() {
     let m = r#"{"files": ["import x from './a'"], "carried": ["0"], "changed": ["a.ts"]}"#;
-    let dir = scratch("adj-files-array");
-    let rec = recordings(&dir, vec![]);
-    let js = last_json(&run_script(ADJ, &[], &dir, &rec, Some(m)).stdout);
+    let js = last_json(&adjacency_js(m).stdout);
     assert_eq!(js["scanned"], json!(1));
     assert_eq!(js["relatedFiles"]["0"][0]["file"], "a.ts");
     let rust: Value = serde_json::from_str(&import_adjacency::run(m).unwrap()).unwrap();
@@ -1655,9 +1815,7 @@ fn declared_difference_files_not_an_object() {
 #[test]
 fn declared_difference_lone_surrogate_in_manifest() {
     let m = r#"{"files": {"a.ts": "\ud800"}, "carried": ["a.ts"]}"#;
-    let dir = scratch("adj-surrogate");
-    let rec = recordings(&dir, vec![]);
-    let js = last_json(&run_script(ADJ, &[], &dir, &rec, Some(m)).stdout);
+    let js = last_json(&adjacency_js(m).stdout);
     assert_eq!(js["scanned"], json!(1));
     let rust: Value = serde_json::from_str(&import_adjacency::run(m).unwrap()).unwrap();
     assert_eq!(rust["scanned"], json!(0));
@@ -1689,7 +1847,8 @@ async fn adversarial_diff_read_errors_match_node() {
         .status()
         .unwrap();
     for bad in [&lp, &long, &sock, &locked] {
-        let p = blast_pair(&f.root, bad.to_str().unwrap(), &repo, None).await;
+        // Opening a socket is EOPNOTSUPP on macOS and ENXIO on Linux.
+        let p = blast_pair_on(bad == &sock, &f.root, bad.to_str().unwrap(), &repo, None).await;
         assert_eq!(p.js.code, Some(1), "{}", p.js.stderr);
         let err = p.rust.unwrap_err();
         assert_eq!(p.js.stdout, format!("{err}\n"), "{}", bad.display());
@@ -1853,4 +2012,237 @@ fn adversarial_array_contents_stringify_like_js() {
             "{m}"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// Goldens
+
+const REGENERATE: &str =
+    "regenerate: TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_dependents";
+
+fn regenerating() -> bool {
+    std::env::var("TRIBUNAL_REGEN_GOLDENS").is_ok_and(|v| v == "1")
+}
+
+fn golden_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/goldens/dependents.json")
+}
+
+fn sha(bytes: &[u8]) -> String {
+    sha256_hex(bytes)
+}
+
+fn plugin() -> PathBuf {
+    plugin_root().canonicalize().unwrap()
+}
+
+/// `text` as the golden keeps it: this run's scratch directory `root`, through
+/// symlinks resolved or as given, and the plugin as placeholders. Where
+/// `root` has no symlink in it (Linux's `/tmp`) it is `<ROOT>` alone, so the
+/// keys built from it are the same on every platform.
+fn portable(text: &str, root: &Path) -> String {
+    let real = root.canonicalize().unwrap();
+    let text = if real == root {
+        text.to_owned()
+    } else {
+        text.replace(&*real.to_string_lossy(), "<REALROOT>")
+    };
+    text.replace(&*root.to_string_lossy(), "<ROOT>")
+        .replace(&*plugin().to_string_lossy(), "<PLUGIN>")
+}
+
+/// [`portable`] undone for this run.
+fn local(text: &str, root: &Path) -> String {
+    let real = root.canonicalize().unwrap();
+    text.replace("<REALROOT>", &real.to_string_lossy())
+        .replace("<ROOT>", &root.to_string_lossy())
+        .replace("<PLUGIN>", &plugin().to_string_lossy())
+}
+
+/// A SHA-256 of each module `entries` reach through a relative import, by
+/// path under `root`, which must be canonical. A module not on disk is left
+/// out.
+fn module_hashes(root: &Path, entries: &[&str]) -> BTreeMap<String, String> {
+    let import = regex::Regex::new(r#"(?:from|import)\s*\(?\s*"(\.{1,2}/[^"]+)""#).unwrap();
+    let mut seen = BTreeMap::new();
+    let mut todo: Vec<PathBuf> = entries.iter().map(|e| root.join(e)).collect();
+    while let Some(file) = todo.pop() {
+        let Ok(file) = file.canonicalize() else {
+            continue;
+        };
+        let key = file
+            .strip_prefix(root)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        if seen.contains_key(&key) {
+            continue;
+        }
+        let bytes = std::fs::read(&file).unwrap();
+        for m in import.captures_iter(&String::from_utf8_lossy(&bytes)) {
+            todo.push(file.parent().unwrap().join(&m[1]));
+        }
+        seen.insert(key, sha(&bytes));
+    }
+    seen
+}
+
+/// `Err` naming a module the golden was recorded from that is on disk under
+/// `root` with other bytes, or one `entries` now reach that it was not
+/// recorded from. A recorded module missing from disk is retired: the golden
+/// is final for it, and it is skipped.
+fn check_scripts(recorded: &Value, root: &Path, entries: &[&str]) -> Result<(), String> {
+    let recorded = recorded.as_object().ok_or("no scripts recorded")?;
+    for (path, hash) in recorded {
+        match std::fs::read(root.join(path)) {
+            Ok(bytes) if json!(sha(&bytes)) == *hash => {}
+            Ok(_) => return Err(format!("{path} changed")),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("{path}: {e}")),
+        }
+    }
+    match module_hashes(root, entries)
+        .into_keys()
+        .find(|p| !recorded.contains_key(p))
+    {
+        Some(p) => Err(format!("{p} is not in the golden")),
+        None => Ok(()),
+    }
+}
+
+/// What this file writes for the script's side to run with.
+fn generators() -> Value {
+    json!({"driver": sha(DRIVER.as_bytes()), "git wrapper": sha(GIT_WRAPPER.as_bytes())})
+}
+
+fn recorded_with() -> Value {
+    json!({"scripts": module_hashes(&plugin(), &[BLAST, ADJ]), "generators": generators()})
+}
+
+/// The golden, checked against the scripts on disk and the generators;
+/// `None` when regenerating.
+fn golden() -> Option<&'static Value> {
+    static GOLDEN: OnceLock<Option<Value>> = OnceLock::new();
+    GOLDEN
+        .get_or_init(|| {
+            if regenerating() {
+                return None;
+            }
+            let path = golden_path();
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{}: {e}; {REGENERATE}", path.display()));
+            let golden: Value = serde_json::from_str(&text).unwrap();
+            if let Err(e) =
+                check_scripts(&golden["recordedWith"]["scripts"], &plugin(), &[BLAST, ADJ])
+            {
+                panic!("{e} since {} was recorded; {REGENERATE}", path.display());
+            }
+            assert!(
+                golden["recordedWith"]["generators"] == generators(),
+                "the driver or the logging git changed since {} was recorded; {REGENERATE}",
+                path.display()
+            );
+            Some(golden)
+        })
+        .as_ref()
+}
+
+/// The script's side of `key` in `section` of the golden.
+fn replayed(section: &str, key: &str, what: &str) -> Value {
+    let v = &golden().expect("not regenerating")[section][key];
+    assert!(
+        !v.is_null(),
+        "{what}: not in the golden, so an input changed; {REGENERATE}"
+    );
+    v.clone()
+}
+
+/// Adds the script's side of `key` to `section` and writes the golden out.
+/// Tests record from several threads, so the file is rewritten after each
+/// case and is whole once the binary finishes.
+fn record(section: &str, key: &str, entry: Value) {
+    static CASES: OnceLock<Mutex<Value>> = OnceLock::new();
+    let mut golden = CASES.get_or_init(|| Mutex::new(carried())).lock().unwrap();
+    let slot = &mut golden[section][key];
+    assert!(
+        slot.is_null() || *slot == entry,
+        "{section} {key}: the script answered the same input two ways"
+    );
+    *slot = entry;
+    // Sorted, so the file does not depend on which test recorded first.
+    let mut sorted = golden.clone();
+    for section in ["blast", "adjacency", "batches"] {
+        let cases: BTreeMap<&String, &Value> =
+            golden[section].as_object().unwrap().iter().collect();
+        sorted[section] = json!(cases);
+    }
+    let text = serde_json::to_string_pretty(&sorted).unwrap();
+    std::fs::write(golden_path(), text + "\n").unwrap();
+}
+
+/// An empty golden, holding the entries the file it replaces recorded on
+/// another platform when that file was recorded from the same scripts: only
+/// that platform can record them again.
+fn carried() -> Value {
+    let mut golden = json!({
+        "recordedWith": recorded_with(),
+        "blast": {},
+        "adjacency": {},
+        "batches": {},
+    });
+    let old = std::fs::read_to_string(golden_path())
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .filter(|old| old["recordedWith"] == golden["recordedWith"]);
+    for (k, v) in old.iter().flat_map(|o| o["blast"].as_object()).flatten() {
+        if v["os"]
+            .as_str()
+            .is_some_and(|os| os != std::env::consts::OS)
+        {
+            golden["blast"][k] = v.clone();
+        }
+    }
+    golden
+}
+
+/// The staleness check on a plugin tree of its own: a recorded module with
+/// other bytes fails, one the entry reaches that was not recorded fails, and
+/// one that is gone from disk is retired and skipped.
+#[test]
+fn golden_check_skips_a_retired_script() {
+    let root = scratch("retired").canonicalize().unwrap();
+    std::fs::create_dir_all(root.join("lib")).unwrap();
+    std::fs::write(
+        root.join("lib/entry.mjs"),
+        "import { x } from \"./dep.mjs\";\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("lib/dep.mjs"), "export const x = 1;\n").unwrap();
+    let entries = ["lib/entry.mjs"];
+    let recorded = json!(module_hashes(&root, &entries));
+    assert_eq!(
+        recorded.as_object().unwrap().keys().collect::<Vec<_>>(),
+        ["lib/dep.mjs", "lib/entry.mjs"]
+    );
+    assert_eq!(check_scripts(&recorded, &root, &entries), Ok(()));
+
+    let mut changed = recorded.clone();
+    changed["lib/dep.mjs"] = json!(sha(b"other"));
+    assert_eq!(
+        check_scripts(&changed, &root, &entries),
+        Err("lib/dep.mjs changed".to_owned())
+    );
+
+    let mut short = recorded.clone();
+    short.as_object_mut().unwrap().remove("lib/dep.mjs");
+    assert_eq!(
+        check_scripts(&short, &root, &entries),
+        Err("lib/dep.mjs is not in the golden".to_owned())
+    );
+
+    std::fs::remove_file(root.join("lib/dep.mjs")).unwrap();
+    assert_eq!(check_scripts(&recorded, &root, &entries), Ok(()));
+    std::fs::remove_file(root.join("lib/entry.mjs")).unwrap();
+    assert_eq!(check_scripts(&recorded, &root, &entries), Ok(()));
+    assert_eq!(check_scripts(&changed, &root, &entries), Ok(()));
 }

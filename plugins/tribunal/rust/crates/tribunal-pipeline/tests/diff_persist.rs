@@ -1,6 +1,13 @@
 //! The persist step's pure parts against the workflow's own code:
 //! `externalVotes`, `persistJson`, RECONCILIATION-RELAY with the logs and
 //! the self-audit and wall-clock reads that follow it, and `rowIsThisRun`.
+//!
+//! The workflow's side is read from `tests/goldens/span/diff_persist.json`
+//! (see `common`), with a SHA-256 of the workflow code each span came from, so
+//! an edit there without regenerating fails here. Results over 1 KiB are kept
+//! as a SHA-256.
+//! Regenerate after changing a span, its cases or the workflow:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-pipeline --test diff_persist`.
 mod common;
 
 use common::{assert_same, sample, span, Span, LOGS, LOG_FN};

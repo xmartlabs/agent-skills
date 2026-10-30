@@ -1,0 +1,33 @@
+{
+  "scripts": {
+    "lib/classify-artifacts.sh": "#!/usr/bin/env bash\n# classify-artifacts.sh <artifact-dir> [suffix-filter]\n#\n# Runs classify-verdict.sh over every saved external-head CLI output in a\n# directory and prints ONE line of JSON: an object keyed by artifact basename\n# (without the .out), each value {failclass, verdict, confidence, reason}.\n#\n# Why this exists: the external heads' verdicts used to reach the harness as\n# something an AGENT reported. On the 2026-07-23 PR #1911 run two slots reported\n# votes their own artifacts contradict — one of them NOT_REFUTED at confidence\n# 1.0, the maximum weight in the tally, over an artifact that reads\n# \"gemini-exec.sh: line 22: 3: missing prompt\". The classifier had said\n# `unparseable` for both. Nothing was wrong with the classifier, the CLI wrapper\n# or the pinned worktree; the relay was simply not the truth.\n#\n# So the harness stopped asking. It derives each external vote from the artifact\n# the CLI wrote, and this script is the derivation: one deterministic pass, no\n# model in the loop, output small enough to survive being relayed verbatim.\n#\n# An agent can still overwrite an artifact before this runs — that hole is real\n# and stays open (see reconcile-votes.mjs, which counts invocations). What is\n# closed is the cheaper deviation: casting a vote the CLI never returned.\nset -uo pipefail\n\nDIR=\"${1:?usage: classify-artifacts.sh <artifact-dir> [suffix-filter]}\"\nFILTER=\"${2:-}\"\nCLASSIFIER=\"$(tribunal-root)/lib/classify-verdict.sh\"\n\n[ -d \"$DIR\" ] || { echo '{}'; exit 0; }\n[ -x \"$CLASSIFIER\" ] || [ -f \"$CLASSIFIER\" ] || { echo '{}'; exit 0; }\n\n# The count is emitted alongside the entries so the caller can tell a complete\n# relay from an abridged one. Every payload that crosses an agent boundary in\n# this harness now carries its own expected size, because twice in one run an\n# agent shortened one and nothing noticed.\ntotal=0\nfor f in \"$DIR\"/*.out; do\n  [ -e \"$f\" ] || continue\n  base=$(basename \"$f\" .out)\n  case \"$base\" in *\"$FILTER\"*) total=$((total + 1)) ;; esac\ndone\n\nfirst=1\nprintf '{\"total\":%d,\"entries\":{' \"$total\"\nfor f in \"$DIR\"/*.out; do\n  [ -e \"$f\" ] || continue\n  base=$(basename \"$f\" .out)\n  case \"$base\" in\n    *\"$FILTER\"*) ;;\n    *) continue ;;\n  esac\n\n  out=$(bash \"$CLASSIFIER\" \"$f\" 2>/dev/null)\n  failclass=$(printf '%s\\n' \"$out\" | sed -n 's/^FAILCLASS: *//p' | head -1)\n  verdict=$(printf '%s\\n' \"$out\" | sed -n 's/^VERDICT: *//p' | head -1)\n  confidence=$(printf '%s\\n' \"$out\" | sed -n 's/^CONFIDENCE: *//p' | head -1)\n  confdecl=$(printf '%s\\n' \"$out\" | sed -n 's/^CONFIDENCE_DECLARED: *//p' | head -1)\n  reason=$(printf '%s\\n' \"$out\" | sed -n 's/^REASON: *//p' | head -1)\n  [ -n \"$failclass\" ] || failclass=\"unparseable\"\n\n  # Reason text is free-form model prose and is the only field that can carry\n  # quotes, newlines or backslashes into the JSON — let python quote it rather\n  # than hand-rolling an escape that a stray backslash defeats.\n  entry=$(PYTHONUTF8=1 FAILCLASS=\"$failclass\" VERDICT=\"$verdict\" CONF=\"$confidence\" CONFDECL=\"$confdecl\" REASON=\"$reason\" BASE=\"$base\" python3 -c '\nimport json, os\nv = os.environ[\"VERDICT\"] or None\ntry:\n    c = float(os.environ[\"CONF\"])\nexcept ValueError:\n    c = None\nprint(json.dumps(os.environ[\"BASE\"]) + \":\" + json.dumps({\n    \"failclass\": os.environ[\"FAILCLASS\"],\n    \"verdict\": v,\n    \"confidence\": c,\n    # None when the classifier did not say: an older artifact, or a failclass\n    # that never reached the confidence line. False means the 0.5 above is the\n    # default this harness applies, not a number the head returned. No\n    # apostrophes in here — this block is inside a single-quoted shell string.\n    \"confidenceDeclared\": {\"yes\": True, \"no\": False}.get(os.environ[\"CONFDECL\"]),\n    \"reason\": (os.environ[\"REASON\"] or \"\")[:100],\n}))\n')\n  [ -n \"$entry\" ] || continue\n  [ \"$first\" = 1 ] || printf ','\n  first=0\n  printf '%s' \"$entry\"\ndone\nprintf '}}\\n'\n"
+  },
+  "cases": [
+    {
+      "input": {
+        "args": []
+      },
+      "js": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "<PLUGIN>/lib/classify-artifacts.sh: line 25: 1: usage: classify-artifacts.sh <artifact-dir> [suffix-filter]\n"
+      }
+    },
+    {
+      "input": {
+        "args": [
+          "<ROOT>/votes"
+        ],
+        "tribunalRoot": "<ROOT>/nowhere",
+        "files": {
+          "0-codex.out": "VERDICT: REFUTED\n"
+        }
+      },
+      "js": {
+        "code": 0,
+        "stdout": "{}\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

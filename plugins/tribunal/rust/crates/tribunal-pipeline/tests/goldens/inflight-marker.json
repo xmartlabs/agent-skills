@@ -1,0 +1,89 @@
+{
+  "recordedWith": {
+    "rust/oracle/span-oracle.mjs": "743d242f99cf629907da52eb254c024fc78d6b7e96983885c0954bf58869fff3",
+    "skills/review-pr/eval/extract-pure-region.mjs": "97769df2f5f39666765504272b70c273ed213da3b17d4bdc6e081f150979c98c",
+    "workflow-src/tribunal.js": "1b508115fccb151cc8d911f4a8944fd53f556a22879f03b3e86a1b33496d95c9"
+  },
+  "cases": [
+    {
+      "input": {
+        "sha": "abc123",
+        "deploy": [
+          "staging",
+          "production"
+        ],
+        "base": "development",
+        "batch": false
+      },
+      "js": {
+        "bash": "\nHEAD_SHA=abc123\nBASE_REF=$(gh pr view 77 --repo acme/widgets --json baseRefName --jq .baseRefName 2>/dev/null || true)\nmkdir -p \"${TRIBUNAL_DATA_DIR:-$HOME/.claude/tribunal-data}\"\ncase \"$BASE_REF\" in\n  staging|production) IS_DEPLOY=1 ;;\n  *) IS_DEPLOY=0 ;;\nesac\nif [ \"$IS_DEPLOY\" = \"0\" ]; then\nTS=$(date -u +%Y-%m-%dT%H:%M:%SZ)\nEPOCH=$(date +%s)\nif [ -n \"$HEAD_SHA\" ]; then HS=\"\\\"$HEAD_SHA\\\"\"; else HS=null; fi\n// windows-size: fixed one-line JSON, about 200 characters plus the repo name\ncat <<STARTJSON >> \"${TRIBUNAL_DATA_DIR:-$HOME/.claude/tribunal-data}/inflight-runs.jsonl\"\n{\"event\":\"started\",\"pr\":77,\"repo\":\"acme/widgets\",\"headSha\":$HS,\"batchPanelsRequested\":false,\"ts\":\"$TS\",\"epoch\":$EPOCH}\nSTARTJSON\nfi",
+        "lines": [
+          {
+            "event": "started",
+            "pr": 77,
+            "repo": "acme/widgets",
+            "headSha": "abc123",
+            "batchPanelsRequested": false,
+            "ts": "T",
+            "epoch": 0
+          }
+        ],
+        "dirExists": true
+      }
+    },
+    {
+      "input": {
+        "sha": "abc123",
+        "deploy": [
+          "staging",
+          "production"
+        ],
+        "base": "staging",
+        "batch": true
+      },
+      "js": {
+        "bash": "\nHEAD_SHA=abc123\nBASE_REF=$(gh pr view 77 --repo acme/widgets --json baseRefName --jq .baseRefName 2>/dev/null || true)\nmkdir -p \"${TRIBUNAL_DATA_DIR:-$HOME/.claude/tribunal-data}\"\ncase \"$BASE_REF\" in\n  staging|production) IS_DEPLOY=1 ;;\n  *) IS_DEPLOY=0 ;;\nesac\nif [ \"$IS_DEPLOY\" = \"0\" ]; then\nTS=$(date -u +%Y-%m-%dT%H:%M:%SZ)\nEPOCH=$(date +%s)\nif [ -n \"$HEAD_SHA\" ]; then HS=\"\\\"$HEAD_SHA\\\"\"; else HS=null; fi\n// windows-size: fixed one-line JSON, about 200 characters plus the repo name\ncat <<STARTJSON >> \"${TRIBUNAL_DATA_DIR:-$HOME/.claude/tribunal-data}/inflight-runs.jsonl\"\n{\"event\":\"started\",\"pr\":77,\"repo\":\"acme/widgets\",\"headSha\":$HS,\"batchPanelsRequested\":true,\"ts\":\"$TS\",\"epoch\":$EPOCH}\nSTARTJSON\nfi",
+        "lines": [],
+        "dirExists": true
+      }
+    },
+    {
+      "input": {
+        "sha": "abc123",
+        "deploy": [],
+        "base": "main",
+        "batch": true
+      },
+      "js": {
+        "bash": "\nHEAD_SHA=abc123\nBASE_REF=$(gh pr view 77 --repo acme/widgets --json baseRefName --jq .baseRefName 2>/dev/null || true)\nmkdir -p \"${TRIBUNAL_DATA_DIR:-$HOME/.claude/tribunal-data}\"\ncase \"$BASE_REF\" in\n  __tribunal_no_deploy_branch__) IS_DEPLOY=1 ;;\n  *) IS_DEPLOY=0 ;;\nesac\nif [ \"$IS_DEPLOY\" = \"0\" ]; then\nTS=$(date -u +%Y-%m-%dT%H:%M:%SZ)\nEPOCH=$(date +%s)\nif [ -n \"$HEAD_SHA\" ]; then HS=\"\\\"$HEAD_SHA\\\"\"; else HS=null; fi\n// windows-size: fixed one-line JSON, about 200 characters plus the repo name\ncat <<STARTJSON >> \"${TRIBUNAL_DATA_DIR:-$HOME/.claude/tribunal-data}/inflight-runs.jsonl\"\n{\"event\":\"started\",\"pr\":77,\"repo\":\"acme/widgets\",\"headSha\":$HS,\"batchPanelsRequested\":true,\"ts\":\"$TS\",\"epoch\":$EPOCH}\nSTARTJSON\nfi",
+        "lines": [
+          {
+            "event": "started",
+            "pr": 77,
+            "repo": "acme/widgets",
+            "headSha": "abc123",
+            "batchPanelsRequested": true,
+            "ts": "T",
+            "epoch": 0
+          }
+        ],
+        "dirExists": true
+      }
+    },
+    {
+      "input": {
+        "sha": "abc123",
+        "deploy": [
+          "release-*"
+        ],
+        "base": "release-7",
+        "batch": false
+      },
+      "js": {
+        "bash": "\nHEAD_SHA=abc123\nBASE_REF=$(gh pr view 77 --repo acme/widgets --json baseRefName --jq .baseRefName 2>/dev/null || true)\nmkdir -p \"${TRIBUNAL_DATA_DIR:-$HOME/.claude/tribunal-data}\"\ncase \"$BASE_REF\" in\n  release-*) IS_DEPLOY=1 ;;\n  *) IS_DEPLOY=0 ;;\nesac\nif [ \"$IS_DEPLOY\" = \"0\" ]; then\nTS=$(date -u +%Y-%m-%dT%H:%M:%SZ)\nEPOCH=$(date +%s)\nif [ -n \"$HEAD_SHA\" ]; then HS=\"\\\"$HEAD_SHA\\\"\"; else HS=null; fi\n// windows-size: fixed one-line JSON, about 200 characters plus the repo name\ncat <<STARTJSON >> \"${TRIBUNAL_DATA_DIR:-$HOME/.claude/tribunal-data}/inflight-runs.jsonl\"\n{\"event\":\"started\",\"pr\":77,\"repo\":\"acme/widgets\",\"headSha\":$HS,\"batchPanelsRequested\":false,\"ts\":\"$TS\",\"epoch\":$EPOCH}\nSTARTJSON\nfi",
+        "lines": [],
+        "dirExists": true
+      }
+    }
+  ]
+}

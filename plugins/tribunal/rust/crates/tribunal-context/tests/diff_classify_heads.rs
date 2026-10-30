@@ -12,8 +12,11 @@
 //! counts bytes and splits a character, mawk folds case byte by byte, and
 //! glibc collates `*.out` in another order. So the comparisons over generated
 //! text and the collation witness read what the scripts printed on macOS from
-//! `tests/goldens/`, and run on every platform. Regenerate those files on a
-//! Mac after changing a script or a generator:
+//! `tests/goldens/`, and run on every platform. So do the edge cases and
+//! witnesses at the end, from `classify-edge-*.json`: no test runs a script
+//! outside a regeneration. A golden whose script is no longer on disk was
+//! recorded from a script retired with the Workflow, and is final. Regenerate
+//! those files on a Mac after changing a script or a generator:
 //! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_classify_heads`.
 mod common;
 #[path = "../../tribunal-core/tests/common/mod.rs"]
@@ -22,7 +25,7 @@ mod core_common;
 use common::{plugin_root, scratch};
 use core_common::{assert_same, sample};
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -115,12 +118,40 @@ fn regenerating() -> bool {
     std::env::var("TRIBUNAL_REGEN_GOLDENS").is_ok_and(|v| v == "1")
 }
 
+/// The scripts in `recorded` (`{path: text}`) or `scripts` whose text under
+/// `root` is not what was recorded. A script no longer on disk was retired
+/// with the Workflow and its golden is final, so it is skipped; when
+/// `scripts[0]`, the one the cases run, is gone, the rest are only what it
+/// ran and are skipped too.
+fn stale_scripts(recorded: &Value, scripts: &[&str], root: &Path) -> Vec<String> {
+    let on_disk = |s: &str| match std::fs::read_to_string(root.join(s)) {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => panic!("{s}: {e}"),
+    };
+    if on_disk(scripts[0]).is_none() {
+        return Vec::new();
+    }
+    let mut names: BTreeSet<String> = scripts.iter().map(|s| (*s).to_owned()).collect();
+    names.extend(
+        recorded
+            .as_object()
+            .into_iter()
+            .flat_map(|m| m.keys().cloned()),
+    );
+    names
+        .into_iter()
+        .filter(|s| on_disk(s).is_some_and(|text| recorded.get(s) != Some(&json!(text))))
+        .collect()
+}
+
 /// What the script printed for each input, read from `tests/goldens/<set>.json`
 /// or, when regenerating, from `run` and written there. The file keeps the
 /// text of `scripts` and every input, so a script or generator edited without
 /// a regeneration fails here on every platform instead of being compared with
-/// a stale oracle. `root`, the scratch directory the cases live in, is stored
-/// as `<ROOT>`: its name carries the process id.
+/// a stale oracle; `scripts[0]` is the one `run` starts. `root`, the scratch
+/// directory the cases live in, is stored as `<ROOT>`: its name carries the
+/// process id. `run` is called only when regenerating.
 fn oracle(
     set: &str,
     scripts: &[&str],
@@ -128,13 +159,6 @@ fn oracle(
     inputs: &[Value],
     run: impl Fn(usize) -> Value + Sync,
 ) -> Vec<Value> {
-    let texts: BTreeMap<String, String> = scripts
-        .iter()
-        .map(|s| {
-            let text = std::fs::read_to_string(plugin_root().join(s)).unwrap();
-            ((*s).to_owned(), text)
-        })
-        .collect();
     let root = root.to_string_lossy().into_owned();
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/goldens")
@@ -143,6 +167,13 @@ fn oracle(
         if !cfg!(target_os = "macos") {
             panic!("the goldens record the scripts as they run on macOS");
         }
+        let texts: BTreeMap<String, String> = scripts
+            .iter()
+            .map(|s| {
+                let text = std::fs::read_to_string(plugin_root().join(s)).unwrap();
+                ((*s).to_owned(), text)
+            })
+            .collect();
         let js = par_map(inputs, |i, _| run(i));
         let cases: Vec<Value> = inputs
             .iter()
@@ -159,9 +190,10 @@ fn oracle(
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("{}: {e}; {REGENERATE}", path.display()));
     let golden: Value = serde_json::from_str(&text.replace("<ROOT>", &root)).unwrap();
+    let stale = stale_scripts(&golden["scripts"], scripts, &plugin_root());
     assert!(
-        golden["scripts"] == json!(texts),
-        "a script changed since {} was recorded; {REGENERATE}",
+        stale.is_empty(),
+        "{stale:?} changed since {} was recorded; {REGENERATE}",
         path.display()
     );
     let cases = golden["cases"].as_array().unwrap();
@@ -1295,45 +1327,182 @@ fn the_generated_cases_reach_every_branch() {
 
 // ---------------------------------------------------------------- edges
 
+/// A script's run as the edge goldens keep it, with the plugin, which bash
+/// names in a usage error, as `<PLUGIN>`.
+fn edge_run(r: Run) -> Value {
+    let given = plugin_root().to_string_lossy().into_owned();
+    let real = plugin_root()
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let stderr = r
+        .stderr
+        .replace(&given, "<PLUGIN>")
+        .replace(&real, "<PLUGIN>");
+    json!({"code": r.code, "stdout": r.stdout, "stderr": stderr})
+}
+
+fn edge_code(v: &Value) -> Option<i32> {
+    v["code"].as_i64().map(|c| i32::try_from(c).unwrap())
+}
+
+fn edge_text<'a>(v: &'a Value, k: &str) -> &'a str {
+    v[k].as_str().unwrap()
+}
+
+/// The verdict classifier's edge cases: the files they read, kept for the
+/// tests, and what the script printed for each.
+struct VerdictEdges {
+    round_trip: PathBuf,
+    invalid: PathBuf,
+    nul: PathBuf,
+    usage: Value,
+    round_trip_js: Value,
+    invalid_js: Value,
+    nul_js: Value,
+}
+
+const INVALID_UTF8: &[u8] = b"VERDICT: REFUTED bad \xff byte\nCONFIDENCE: 0.7\n";
+const WITH_NUL: &[u8] = b"VERDICT: REFUTED nul\x00here\n";
+
+fn verdict_edges() -> &'static VerdictEdges {
+    static CELL: OnceLock<VerdictEdges> = OnceLock::new();
+    CELL.get_or_init(|| {
+        let dir = scratch("classify-verdict-edges");
+        let log = dir.join("err");
+        std::fs::write(
+            &log,
+            "user\nprompt about billing\nERROR: Your workspace is out of credits\n",
+        )
+        .unwrap();
+        let hf = classify_head_failure::run(log.to_str());
+        let round_trip_text = format!("{}\nlater text\n", hf.artifact_line());
+        let round_trip = dir.join("0-codex.out");
+        std::fs::write(&round_trip, &round_trip_text).unwrap();
+        let invalid = dir.join("invalid.out");
+        std::fs::write(&invalid, INVALID_UTF8).unwrap();
+        let nul = dir.join("nul.out");
+        std::fs::write(&nul, WITH_NUL).unwrap();
+        let path = |p: &Path| p.to_str().unwrap().to_owned();
+        let args = [String::new(), path(&round_trip), path(&invalid), path(&nul)];
+        let inputs = [
+            json!({"args": [&args[0]]}),
+            json!({"args": [&args[1]], "text": round_trip_text}),
+            json!({"args": [&args[2]], "bytes": INVALID_UTF8.escape_ascii().to_string()}),
+            json!({"args": [&args[3]], "bytes": WITH_NUL.escape_ascii().to_string()}),
+        ];
+        let js = oracle("classify-edge-verdict", &[VERDICT_SH], &dir, &inputs, |i| {
+            edge_run(bash(VERDICT_SH, &[args[i].as_str()]))
+        });
+        VerdictEdges {
+            round_trip,
+            invalid,
+            nul,
+            usage: js[0].clone(),
+            round_trip_js: js[1].clone(),
+            invalid_js: js[2].clone(),
+            nul_js: js[3].clone(),
+        }
+    })
+}
+
+/// `classify-head-failure.sh ""`, as the script printed it.
+fn head_failure_usage() -> &'static Value {
+    static CELL: OnceLock<Value> = OnceLock::new();
+    CELL.get_or_init(|| {
+        let dir = scratch("classify-head-failure-edges");
+        let js = oracle(
+            "classify-edge-head-failure",
+            &[HEAD_FAILURE_SH],
+            &dir,
+            &[json!({"args": [""]})],
+            |_| edge_run(bash(HEAD_FAILURE_SH, &[""])),
+        );
+        js[0].clone()
+    })
+}
+
+/// classify-artifacts's edge cases: the vote directory the second reads, and
+/// what the script printed for a call with no arguments and for one whose
+/// `tribunal-root` names a tree without the classifier.
+struct ArtifactsEdges {
+    votes: PathBuf,
+    usage: Value,
+    no_classifier: Value,
+}
+
+fn artifacts_edges() -> &'static ArtifactsEdges {
+    static CELL: OnceLock<ArtifactsEdges> = OnceLock::new();
+    CELL.get_or_init(|| {
+        let dir = scratch("classify-artifacts-edges");
+        let votes = dir.join("votes");
+        std::fs::create_dir_all(&votes).unwrap();
+        std::fs::write(votes.join("0-codex.out"), "VERDICT: REFUTED\n").unwrap();
+        let nowhere = dir.join("nowhere");
+        let inputs = [
+            json!({"args": []}),
+            json!({
+                "args": [votes.to_str().unwrap()],
+                "tribunalRoot": nowhere.to_str().unwrap(),
+                "files": {"0-codex.out": "VERDICT: REFUTED\n"},
+            }),
+        ];
+        let js = oracle(
+            "classify-edge-artifacts",
+            &[ARTIFACTS_SH],
+            &dir,
+            &inputs,
+            |i| {
+                if i == 0 {
+                    return edge_run(bash(ARTIFACTS_SH, &[]));
+                }
+                let bin = stub_bin("classify-empty-root", &nowhere);
+                edge_run(bash_with(&bin, ARTIFACTS_SH, &[votes.to_str().unwrap()]))
+            },
+        );
+        ArtifactsEdges {
+            votes,
+            usage: js[0].clone(),
+            no_classifier: js[1].clone(),
+        }
+    })
+}
+
 #[test]
 fn usage_errors_match_the_scripts() {
-    let r = bash(VERDICT_SH, &[""]);
-    assert_eq!(r.code, Some(1));
-    assert!(r.stdout.is_empty() && r.stderr.contains("usage: classify-verdict.sh <file>"));
+    let r = &verdict_edges().usage;
+    assert_eq!(edge_code(r), Some(1));
+    assert!(
+        edge_text(r, "stdout").is_empty()
+            && edge_text(r, "stderr").contains("usage: classify-verdict.sh <file>")
+    );
     assert_eq!(
         classify_verdict::run(""),
         Err("usage: classify-verdict.sh <file>".to_owned())
     );
 
-    let r = bash(ARTIFACTS_SH, &[]);
-    assert_eq!(r.code, Some(1));
-    assert!(r
-        .stderr
+    let r = &artifacts_edges().usage;
+    assert_eq!(edge_code(r), Some(1));
+    assert!(edge_text(r, "stderr")
         .contains("usage: classify-artifacts.sh <artifact-dir> [suffix-filter]"));
     assert!(classify_artifacts::run("", None).is_err());
 
-    let r = bash(HEAD_FAILURE_SH, &[""]);
-    assert_eq!(r.code, Some(0));
-    assert_eq!(r.stdout, classify_head_failure::run(Some("")).to_lines());
+    let r = head_failure_usage();
+    assert_eq!(edge_code(r), Some(0));
+    assert_eq!(
+        edge_text(r, "stdout"),
+        classify_head_failure::run(Some("")).to_lines()
+    );
 }
 
 /// A failed head's artifact line, read back by the verdict classifier, keeps
 /// its class and reason: the round trip HEAD-FAILURE makes.
 #[test]
 fn a_head_failure_line_round_trips_through_the_verdict_classifier() {
-    let dir = scratch("classify-round-trip");
-    let log = dir.join("err");
-    std::fs::write(
-        &log,
-        "user\nprompt about billing\nERROR: Your workspace is out of credits\n",
-    )
-    .unwrap();
-    let hf = classify_head_failure::run(log.to_str());
-    let out = dir.join("0-codex.out");
-    std::fs::write(&out, format!("{}\nlater text\n", hf.artifact_line())).unwrap();
-    let rust = classify_verdict::run(out.to_str().unwrap()).unwrap();
-    let js = bash(VERDICT_SH, &[out.to_str().unwrap()]);
-    assert_eq!(js.stdout, rust.to_lines());
+    let edges = verdict_edges();
+    let rust = classify_verdict::run(edges.round_trip.to_str().unwrap()).unwrap();
+    assert_eq!(edge_text(&edges.round_trip_js, "stdout"), rust.to_lines());
     assert_eq!(rust.failclass, Failclass::Quota);
     assert_eq!(
         rust.reason.as_deref(),
@@ -1375,12 +1544,9 @@ fn entry_order_is_a_declared_difference() {
 /// makes the script print `{}`; the port carries its classifier.
 #[test]
 fn a_missing_classifier_is_a_declared_difference() {
-    let dir = scratch("classify-no-classifier");
-    std::fs::write(dir.join("0-codex.out"), "VERDICT: REFUTED\n").unwrap();
-    let bin = stub_bin("classify-empty-root", &dir.join("nowhere"));
-    let js = bash_with(&bin, ARTIFACTS_SH, &[dir.to_str().unwrap()]);
-    assert_eq!(js.stdout, "{}\n");
-    let rust = classify_artifacts::run(dir.to_str().unwrap(), None).unwrap();
+    let edges = artifacts_edges();
+    assert_eq!(edge_text(&edges.no_classifier, "stdout"), "{}\n");
+    let rust = classify_artifacts::run(edges.votes.to_str().unwrap(), None).unwrap();
     assert!(matches!(rust, ArtifactScan::Scanned(ref a) if a.total == 1));
 }
 
@@ -1389,23 +1555,43 @@ fn a_missing_classifier_is_a_declared_difference() {
 /// `$(…)`; the port reads the file lossily and keeps NUL.
 #[test]
 fn invalid_utf8_and_nul_are_a_declared_difference() {
-    let dir = scratch("classify-bytes-witness");
-    let invalid = dir.join("invalid.out");
-    std::fs::write(
-        &invalid,
-        b"VERDICT: REFUTED bad \xff byte\nCONFIDENCE: 0.7\n",
-    )
-    .unwrap();
-    let js = bash(VERDICT_SH, &[invalid.to_str().unwrap()]);
-    assert_eq!(js.stdout, "FAILCLASS: unparseable\n");
-    let rust = classify_verdict::run(invalid.to_str().unwrap()).unwrap();
+    let edges = verdict_edges();
+    assert_eq!(
+        edge_text(&edges.invalid_js, "stdout"),
+        "FAILCLASS: unparseable\n"
+    );
+    let rust = classify_verdict::run(edges.invalid.to_str().unwrap()).unwrap();
     assert_eq!(rust.failclass, Failclass::None);
     assert_eq!(rust.reason.as_deref(), Some("bad \u{FFFD} byte"));
 
-    let nul = dir.join("nul.out");
-    std::fs::write(&nul, b"VERDICT: REFUTED nul\x00here\n").unwrap();
-    let js = bash(VERDICT_SH, &[nul.to_str().unwrap()]);
-    assert!(js.stdout.ends_with("REASON: nulhere\n"), "{}", js.stdout);
-    let rust = classify_verdict::run(nul.to_str().unwrap()).unwrap();
+    let js = edge_text(&edges.nul_js, "stdout");
+    assert!(js.ends_with("REASON: nulhere\n"), "{js}");
+    let rust = classify_verdict::run(edges.nul.to_str().unwrap()).unwrap();
     assert_eq!(rust.reason.as_deref(), Some("nul\0here"));
+}
+
+/// The staleness check on a tree of its own: a script edited since the
+/// recording is stale, one deleted (retired with the Workflow) is not, and
+/// with the script the cases run deleted nothing is.
+#[test]
+fn a_retired_script_is_not_stale() {
+    let root = scratch("classify-retired");
+    std::fs::create_dir_all(root.join("lib")).unwrap();
+    let write = |name: &str, text: &str| std::fs::write(root.join(name), text).unwrap();
+    write("lib/run.sh", "run");
+    write("lib/dep.sh", "dep edited");
+    let recorded = json!({"lib/run.sh": "run", "lib/dep.sh": "dep", "lib/gone.sh": "gone"});
+    let scripts = ["lib/run.sh", "lib/dep.sh", "lib/gone.sh"];
+    assert_eq!(stale_scripts(&recorded, &scripts, &root), ["lib/dep.sh"]);
+    write("lib/dep.sh", "dep");
+    assert!(stale_scripts(&recorded, &scripts, &root).is_empty());
+    write("lib/new.sh", "new");
+    assert_eq!(
+        stale_scripts(&recorded, &["lib/run.sh", "lib/new.sh"], &root),
+        ["lib/new.sh"]
+    );
+    std::fs::remove_file(root.join("lib/run.sh")).unwrap();
+    write("lib/dep.sh", "dep edited again");
+    assert!(stale_scripts(&recorded, &scripts, &root).is_empty());
+    let _ = std::fs::remove_dir_all(&root);
 }

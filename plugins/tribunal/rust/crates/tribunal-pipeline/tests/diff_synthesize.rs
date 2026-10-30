@@ -2,13 +2,20 @@
 //! and re-checked, the survivors' payload, the verifiedBy anchors, the side
 //! payloads, the wrong-ref audit, the verdict, the report prompt and the
 //! report as posted.
+//!
+//! The workflow's side is read from `tests/goldens/span/diff_synthesize.json`
+//! (see `common`), with a SHA-256 of the workflow code each span came from, so
+//! an edit there without regenerating fails here. Results over 1 KiB are kept
+//! as a SHA-256; the wrong-ref audit's scratch checkout is kept as `<ROOT>`.
+//! Regenerate after changing a span, its cases or the workflow:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-pipeline --test diff_synthesize`.
 
 mod common;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use common::{assert_same, sample, span, span_raw, Span, LOGS, LOG_FN};
+use common::{assert_same, sample, span, span_at, span_raw, Span, LOGS, LOG_FN};
 use proptest::prelude::*;
 use serde_json::{json, Value};
 use tribunal_pipeline::synthesize::{
@@ -615,12 +622,14 @@ fn the_wrong_ref_audit_matches_the_workflow_and_its_grep() {
             })
         })
         .collect();
-    let js = span(
+    let root = wt.parent().unwrap().to_string_lossy().into_owned();
+    let js = span_at(
         &Span {
             ret: &ret,
             ..REF_SPAN
         },
         &params,
+        &[(&root, "<ROOT>")],
     );
     let head = json!("feedfacecafebeef");
     let rust: Vec<Value> = cases

@@ -15,6 +15,13 @@ use common::*;
 // `samePath` throws, and severities named after `Object.prototype` members.
 // Integer-like object keys are not generated: `JSON.parse` reorders them in
 // every JavaScript object, which is not a property of these regions.
+//
+// The JavaScript's side is read from `tests/goldens/oracle/diff_panel.json`
+// (see `common`): the workflow is being retired, so a run starts only the
+// port. The file keeps each call's results under a SHA-256 of its inputs and a
+// SHA-256 of every region's text, so a region edited without regenerating
+// fails here; with the workflow gone the golden is final. Regenerate:
+// `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-core --test diff_panel`.
 
 use proptest::prelude::*;
 use serde_json::{json, Map, Value};

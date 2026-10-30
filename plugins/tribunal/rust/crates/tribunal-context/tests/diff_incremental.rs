@@ -1,11 +1,30 @@
+//! `skills/review-pr/scripts/resolve-baseline.mjs` and `incremental-scope.mjs`
+//! against `tribunal_context::resolve_baseline` and `incremental_scope`: the
+//! scripts' exported functions driven over generated inputs in one Node
+//! process, and the scripts run as commands over generated ledgers and patch
+//! files.
+//!
+//! The scripts' side is read from `tests/goldens/resolve-baseline.json` and
+//! `tests/goldens/incremental-scope.json`, keyed by case: each keeps the
+//! SHA-256 of every module the script reaches through a relative import and,
+//! for each script run, the SHA-256 of everything the run read (driver body,
+//! arguments, stdin, ledger, patch files) next to what it printed, with the
+//! scratch directory and the plugin root stored as placeholders. Editing a
+//! script or a generator without regenerating fails here; once a script is
+//! deleted its golden is final and only the module check is skipped.
+//! Regenerate after changing them:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_incremental`.
 mod common;
 use common::*;
 
+use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 
 use serde_json::{json, Value};
+use tribunal_context::harness_version::sha256_hex;
 use tribunal_context::incremental_scope::{
     locale_compare, scope_files, scope_incremental, split_diff_by_file,
 };
@@ -19,13 +38,253 @@ const RESOLVE: &str = "skills/review-pr/scripts/resolve-baseline.mjs";
 const SCOPE: &str = "skills/review-pr/scripts/incremental-scope.mjs";
 
 // ---------------------------------------------------------------------------
+// Goldens: the scripts' side recorded once, so a run starts only the port.
+
+const REGENERATE: &str =
+    "regenerate: TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_incremental";
+
+fn regenerating() -> bool {
+    std::env::var("TRIBUNAL_REGEN_GOLDENS").is_ok_and(|v| v == "1")
+}
+
+fn golden_path(script: &str) -> PathBuf {
+    let stem = Path::new(script).file_stem().unwrap().to_string_lossy();
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("tests/goldens/{stem}.json"))
+}
+
+/// The SHA-256 of `entry` (a path under `root`) and of every module it reaches
+/// through a relative import, by path under `root`; `None` when `entry` is not
+/// there, that is, the script is retired.
+fn module_hashes(root: &Path, entry: &str) -> Option<BTreeMap<String, String>> {
+    let import = regex::Regex::new(r#"(?:from|import)\s*\(?\s*"(\.{1,2}/[^"]+)""#).unwrap();
+    let root = root.canonicalize().unwrap();
+    let entry = root.join(entry);
+    if !entry.exists() {
+        return None;
+    }
+    let mut seen = BTreeMap::new();
+    let mut todo = vec![entry.canonicalize().unwrap()];
+    while let Some(file) = todo.pop() {
+        let key = file
+            .strip_prefix(&root)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        if seen.contains_key(&key) {
+            continue;
+        }
+        let text = std::fs::read_to_string(&file).unwrap();
+        for m in import.captures_iter(&text) {
+            let dep = file.parent().unwrap().join(&m[1]);
+            todo.push(
+                dep.canonicalize()
+                    .unwrap_or_else(|e| panic!("{}: {e}", dep.display())),
+            );
+        }
+        seen.insert(key, sha256_hex(text.as_bytes()));
+    }
+    Some(seen)
+}
+
+/// Whether the modules `entry` reaches under `root` are the ones `recorded`
+/// names. A retired `entry` passes: nothing can run it, so the golden is final.
+fn check_modules(root: &Path, entry: &str, recorded: &Value) -> Result<(), String> {
+    let Some(now) = module_hashes(root, entry) else {
+        return Ok(());
+    };
+    if serde_json::to_value(&now).unwrap() == *recorded {
+        return Ok(());
+    }
+    let was: BTreeMap<String, String> =
+        serde_json::from_value(recorded.clone()).unwrap_or_default();
+    let changed: std::collections::BTreeSet<&String> = now
+        .keys()
+        .chain(was.keys())
+        .filter(|k| now.get(*k) != was.get(*k))
+        .collect();
+    Err(format!("{entry}: changed since recorded: {changed:?}"))
+}
+
+/// One test's recordings: what the script printed for each run, in order.
+struct Oracle {
+    script: &'static str,
+    key: String,
+    subs: Vec<(String, &'static str)>,
+    replay: Option<Vec<Value>>,
+    kept: Vec<Value>,
+}
+
+static GOLDEN_WRITE: Mutex<()> = Mutex::new(());
+
+/// A long driver output kept as its distinct values and the order they came
+/// in: most generated cases print one of a few hundred answers.
+fn pack(out: &Value) -> Value {
+    match out {
+        Value::Array(items) if items.len() > 16 => {
+            let mut distinct: Vec<&Value> = Vec::new();
+            let mut seen: std::collections::HashMap<String, usize> = Default::default();
+            let order: Vec<String> = items
+                .iter()
+                .map(|v| {
+                    let at = *seen.entry(v.to_string()).or_insert_with(|| {
+                        distinct.push(v);
+                        distinct.len() - 1
+                    });
+                    at.to_string()
+                })
+                .collect();
+            json!({"distinct": distinct, "order": order.join(" ")})
+        }
+        _ => out.clone(),
+    }
+}
+
+fn unpack(out: Value) -> Value {
+    match (out.get("distinct"), out.get("order")) {
+        (Some(Value::Array(distinct)), Some(Value::String(order))) => Value::Array(
+            order
+                .split(' ')
+                .map(|i| distinct[i.parse::<usize>().unwrap()].clone())
+                .collect(),
+        ),
+        _ => out,
+    }
+}
+
+impl Oracle {
+    /// `dirs` are the test's scratch directories, which a golden keeps as
+    /// placeholders, as it keeps the plugin root.
+    fn new(script: &'static str, key: &str, dirs: &[&Path]) -> Self {
+        let mut subs: Vec<(String, &'static str)> = Vec::new();
+        let mut add = |p: &Path, real: &'static str, given: &'static str| {
+            // Both on every platform: a golden recorded where the two forms
+            // differ (macOS's /var/folders) holds both placeholders.
+            let canonical = p.canonicalize().unwrap().to_string_lossy().into_owned();
+            subs.push((p.to_string_lossy().into_owned(), given));
+            subs.push((canonical, real));
+        };
+        add(&plugin_root(), "<ROOT_REAL>", "<ROOT>");
+        for (i, d) in dirs.iter().enumerate() {
+            add(d, ["<DIR_REAL>", "<DIR2_REAL>"][i], ["<DIR>", "<DIR2>"][i]);
+        }
+        // A path that contains another is replaced first.
+        subs.sort_by_key(|(p, _)| std::cmp::Reverse(p.len()));
+        let replay = (!regenerating()).then(|| {
+            let path = golden_path(script);
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{}: {e}; {REGENERATE}", path.display()));
+            let golden: Value = serde_json::from_str(&text).unwrap();
+            let entry = &golden["cases"][key];
+            assert!(
+                entry.is_object(),
+                "{key}: not in {}; {REGENERATE}",
+                path.display()
+            );
+            if let Err(e) = check_modules(&plugin_root(), script, &entry["modules"]) {
+                panic!("{e}; {REGENERATE}");
+            }
+            entry["runs"].as_array().unwrap().clone()
+        });
+        Oracle {
+            script,
+            key: key.to_owned(),
+            subs,
+            replay,
+            kept: Vec::new(),
+        }
+    }
+
+    fn portable(&self, text: &str) -> String {
+        self.subs
+            .iter()
+            .fold(text.to_owned(), |t, (from, to)| t.replace(from, to))
+    }
+
+    fn local(&self, v: &Value) -> Value {
+        let text = self
+            .subs
+            .iter()
+            .fold(v.to_string(), |t, (to, from)| t.replace(from, to));
+        serde_json::from_str(&text).unwrap()
+    }
+
+    /// What the script printed for `input`, a description of everything the
+    /// run reads; `spawn` runs it, and only when regenerating.
+    fn answer(&mut self, input: &str, spawn: impl FnOnce() -> Value) -> Value {
+        // One hash on every platform: on Linux the two forms of a path are one.
+        let input = sha256_hex(self.portable(input).replace("_REAL>", ">").as_bytes());
+        let i = self.kept.len();
+        let out = match &self.replay {
+            Some(runs) => {
+                let run = runs.get(i).unwrap_or_else(|| {
+                    panic!("{}: run {i} was not recorded; {REGENERATE}", self.key)
+                });
+                assert!(
+                    run["input"] == json!(input),
+                    "{}: run {i}'s input changed since it was recorded; {REGENERATE}",
+                    self.key
+                );
+                self.kept.push(Value::Null);
+                return unpack(self.local(&run["out"]));
+            }
+            None => spawn(),
+        };
+        let portable: Value =
+            serde_json::from_str(&self.portable(&pack(&out).to_string())).unwrap();
+        self.kept.push(json!({"input": input, "out": portable}));
+        out
+    }
+
+    fn script(&mut self, input: &str, spawn: impl FnOnce() -> ScriptRun) -> ScriptRun {
+        let out = self.answer(input, || {
+            let run = spawn();
+            json!({"code": run.code, "stdout": run.stdout, "stderr": run.stderr})
+        });
+        ScriptRun {
+            code: out["code"].as_i64().map(|c| i32::try_from(c).unwrap()),
+            stdout: out["stdout"].as_str().unwrap().to_owned(),
+            stderr: out["stderr"].as_str().unwrap().to_owned(),
+        }
+    }
+
+    /// Checks every recorded run was replayed, or writes this test's entry.
+    fn finish(self) {
+        if let Some(runs) = &self.replay {
+            assert_eq!(
+                runs.len(),
+                self.kept.len(),
+                "{}: recorded runs; {REGENERATE}",
+                self.key
+            );
+            return;
+        }
+        let _lock = GOLDEN_WRITE.lock().unwrap_or_else(|e| e.into_inner());
+        let path = golden_path(self.script);
+        let golden: Value = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
+        let mut cases: BTreeMap<String, Value> =
+            serde_json::from_value(golden["cases"].clone()).unwrap_or_default();
+        let modules = module_hashes(&plugin_root(), self.script).expect("the script to record");
+        cases.insert(
+            self.key.clone(),
+            json!({"modules": modules, "runs": self.kept}),
+        );
+        let golden = json!({"script": self.script, "cases": cases});
+        std::fs::write(&path, serde_json::to_string_pretty(&golden).unwrap() + "\n").unwrap();
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Harness
 
 /// `run_script` with extra environment: resolve-baseline finds its ledger
 /// through `TRIBUNAL_DATA_DIR` (or `HOME`), and `localeCompare` follows the
 /// process locale, pinned here to the one Node uses by default. The recorded
 /// `gh` is first on PATH with no recordings and a call log, so a script that
-/// reached for `gh` would fail and leave the log behind.
+/// reached for `gh` would fail and leave the log behind. Runs only when
+/// regenerating, through an [`Oracle`].
 fn node(
     script: &Path,
     args: &[&str],
@@ -124,24 +383,30 @@ fn module_url(script: &str) -> String {
 }
 
 /// Runs `body` (a module that may use `cases`, `out` and the named imports
-/// from `script`) over a JSON array of cases in one Node process.
-fn driver(name: &str, script: &str, imports: &str, body: &str, cases: &str) -> Vec<Value> {
-    let dir = scratch(name);
-    let src = format!(
-        "import {{ {imports} }} from {url};\n\
-         import {{ readFileSync }} from \"node:fs\";\n\
-         const cases = JSON.parse(readFileSync(0, \"utf8\"));\n\
-         const out = [];\n\
-         const attempt = (f) => {{ try {{ return f(); }} catch (e) {{ return {{ error: e.constructor.name + \": \" + e.message }}; }} }};\n\
-         {body}\n\
-         process.stdout.write(JSON.stringify(out) + \"\\n\");\n",
-        url = serde_json::to_string(&module_url(script)).unwrap(),
-    );
-    let file = dir.join("driver.mjs");
-    std::fs::write(&file, src).unwrap();
-    let out = node(&file, &[], &dir, cases, &[], &[]);
-    assert_eq!(out.code, Some(0), "driver failed: {}", out.stderr);
-    match last_json(&out.stdout) {
+/// from `script`) over a JSON array of cases in one Node process, or reads
+/// what it printed from the golden under `name`.
+fn driver(name: &str, script: &'static str, imports: &str, body: &str, cases: &str) -> Vec<Value> {
+    let mut oracle = Oracle::new(script, name, &[]);
+    let out = oracle.answer(&format!("{imports}\n{body}\n{cases}"), || {
+        let dir = scratch(name);
+        let src = format!(
+            "import {{ {imports} }} from {url};\n\
+             import {{ readFileSync }} from \"node:fs\";\n\
+             const cases = JSON.parse(readFileSync(0, \"utf8\"));\n\
+             const out = [];\n\
+             const attempt = (f) => {{ try {{ return f(); }} catch (e) {{ return {{ error: e.constructor.name + \": \" + e.message }}; }} }};\n\
+             {body}\n\
+             process.stdout.write(JSON.stringify(out) + \"\\n\");\n",
+            url = serde_json::to_string(&module_url(script)).unwrap(),
+        );
+        let file = dir.join("driver.mjs");
+        std::fs::write(&file, src).unwrap();
+        let out = node(&file, &[], &dir, cases, &[], &[]);
+        assert_eq!(out.code, Some(0), "driver failed: {}", out.stderr);
+        last_json(&out.stdout)
+    });
+    oracle.finish();
+    match out {
         Value::Array(a) => a,
         other => panic!("driver returned {other}"),
     }
@@ -562,18 +827,24 @@ fn assert_same_run(script: &ScriptRun, rust: &Run, what: &str) {
     }
 }
 
-fn run_both(dir: &Path, ledger: &str, stdin: &str) -> (ScriptRun, Run) {
+fn run_both(oracle: &mut Oracle, dir: &Path, ledger: &str, stdin: &str) -> (ScriptRun, Run) {
     let data = dir.join("data");
     std::fs::create_dir_all(&data).unwrap();
     std::fs::write(data.join("metrics.jsonl"), ledger).unwrap();
-    let script = node(
-        Path::new(RESOLVE),
-        &[],
-        dir,
-        stdin,
-        &[("TRIBUNAL_DATA_DIR", data.as_os_str())],
-        &[],
+    let input = format!(
+        "TRIBUNAL_DATA_DIR={}\nledger:\n{ledger}\nstdin:\n{stdin}",
+        data.display()
     );
+    let script = oracle.script(&input, || {
+        node(
+            Path::new(RESOLVE),
+            &[],
+            dir,
+            stdin,
+            &[("TRIBUNAL_DATA_DIR", data.as_os_str())],
+            &[],
+        )
+    });
     let rust = run(
         stdin,
         &metrics_path_from(Some(data.as_os_str()), Path::new("/nonexistent")),
@@ -613,6 +884,7 @@ fn ledger_line(r: &mut Rng, pr: i64) -> String {
 #[test]
 fn resolve_baseline_script_matches_on_generated_ledgers() {
     let dir = scratch("resolve-main-gen");
+    let mut oracle = Oracle::new(RESOLVE, "resolve-main-gen", &[&dir]);
     let mut r = Rng(0x0123_4567_89ab_cdef);
     let mut found = 0;
     for i in 0..120 {
@@ -635,7 +907,7 @@ fn resolve_baseline_script_matches_on_generated_ledgers() {
             ("reviews", Some(Value::Array(reviews))),
         ])
         .to_string();
-        let (script, rust) = run_both(&dir, &ledger, &stdin);
+        let (script, rust) = run_both(&mut oracle, &dir, &ledger, &stdin);
         assert_same_run(
             &script,
             &rust,
@@ -645,12 +917,14 @@ fn resolve_baseline_script_matches_on_generated_ledgers() {
             found += 1;
         }
     }
+    oracle.finish();
     assert!(found > 15, "only {found} found");
 }
 
 #[test]
 fn resolve_baseline_script_matches_on_named_cases() {
     let dir = scratch("resolve-main-named");
+    let mut oracle = Oracle::new(RESOLVE, "resolve-main-named", &[&dir]);
     let row = |sha: &str, posted: bool, extra: Value| {
         let mut v = json!({
             "schemaVersion": 3, "pr": 42, "repo": "acme/widgets", "headSha": sha,
@@ -840,14 +1114,16 @@ fn resolve_baseline_script_matches_on_named_cases() {
         ),
     ];
     for (what, ledger, input) in cases {
-        let (script, rust) = run_both(&dir, &ledger, &input);
+        let (script, rust) = run_both(&mut oracle, &dir, &ledger, &input);
         assert_same_run(&script, &rust, what);
     }
+    oracle.finish();
 }
 
 #[test]
 fn resolve_baseline_failure_paths_match_js() {
     let dir = scratch("resolve-fail");
+    let mut oracle = Oracle::new(RESOLVE, "resolve-fail", &[&dir]);
     let valid_ledger =
         "{\"schemaVersion\":3,\"pr\":1,\"headSha\":\"a\",\"posted\":true,\"findings\":[{}]}\n";
     for stdin in [
@@ -862,13 +1138,13 @@ fn resolve_baseline_failure_paths_match_js() {
         "{\"pr\":1}",
         "{\"pr\":1,\"repo\":\"acme/widgets\"}",
     ] {
-        let (script, rust) = run_both(&dir, valid_ledger, stdin);
+        let (script, rust) = run_both(&mut oracle, &dir, valid_ledger, stdin);
         assert_same_run(&script, &rust, stdin);
     }
     // Invalid stdin: same exit code and nothing on stdout; the message after
     // the prefix is V8's on one side and the port's parser's on the other.
     for stdin in ["", "{", "{\"pr\": 1,}", "\u{feff}{\"pr\":1}", "NaN"] {
-        let (script, rust) = run_both(&dir, valid_ledger, stdin);
+        let (script, rust) = run_both(&mut oracle, &dir, valid_ledger, stdin);
         let prefix = "resolve-baseline: stdin is not valid JSON: ";
         assert_eq!(
             (script.code, script.stdout.as_str()),
@@ -887,13 +1163,18 @@ fn resolve_baseline_failure_paths_match_js() {
     let as_dir = dir.join("ledger-dir");
     std::fs::create_dir_all(as_dir.join("metrics.jsonl")).unwrap();
     for data in [missing, as_dir] {
-        let script = node(
-            Path::new(RESOLVE),
-            &[],
-            &dir,
-            input,
-            &[("TRIBUNAL_DATA_DIR", data.as_os_str())],
-            &[],
+        let script = oracle.script(
+            &format!("TRIBUNAL_DATA_DIR={}\nstdin:\n{input}", data.display()),
+            || {
+                node(
+                    Path::new(RESOLVE),
+                    &[],
+                    &dir,
+                    input,
+                    &[("TRIBUNAL_DATA_DIR", data.as_os_str())],
+                    &[],
+                )
+            },
         );
         let rust = run(
             input,
@@ -901,25 +1182,27 @@ fn resolve_baseline_failure_paths_match_js() {
         );
         assert_same_run(&script, &rust, &data.display().to_string());
     }
+    oracle.finish();
 }
 
 #[test]
 fn resolve_baseline_default_ledger_is_under_home() {
     let home = scratch("resolve-home");
+    let mut oracle = Oracle::new(RESOLVE, "resolve-home", &[&home]);
     let data = home.join(".claude").join("tribunal-data");
     std::fs::create_dir_all(&data).unwrap();
-    std::fs::write(
-        data.join("metrics.jsonl"),
-        "{\"schemaVersion\":3,\"pr\":9,\"headSha\":\"feed1234\",\"posted\":true,\"findings\":[{\"file\":\"x.ts\"}]}\n",
-    )
-    .unwrap();
+    let ledger = "{\"schemaVersion\":3,\"pr\":9,\"headSha\":\"feed1234\",\"posted\":true,\"findings\":[{\"file\":\"x.ts\"}]}\n";
+    std::fs::write(data.join("metrics.jsonl"), ledger).unwrap();
     let input = "{\"pr\":9,\"repo\":\"acme/widgets\",\"headSha\":\"head\"}";
     let empty = OsStr::new("");
     for env in [
         vec![("HOME", home.as_os_str())],
         vec![("HOME", home.as_os_str()), ("TRIBUNAL_DATA_DIR", empty)],
     ] {
-        let script = node(Path::new(RESOLVE), &[], &home, input, &env, &[]);
+        let script = oracle.script(
+            &format!("env {env:?}\nledger:\n{ledger}\nstdin:\n{input}"),
+            || node(Path::new(RESOLVE), &[], &home, input, &env, &[]),
+        );
         let data_dir = env
             .iter()
             .find(|(k, _)| *k == "TRIBUNAL_DATA_DIR")
@@ -928,6 +1211,7 @@ fn resolve_baseline_default_ledger_is_under_home() {
         assert_same_run(&script, &rust, "default ledger");
         assert!(rust.stdout.contains("feed1234"));
     }
+    oracle.finish();
 }
 
 /// Runs `f` on a thread with a large stack: printing or dropping a deeply
@@ -1064,8 +1348,9 @@ fn resolve_baseline_takes_any_nesting_depth() {
         ),
         (String::new(), format!("{{\"pr\":1,\"x\":{}", nested(300, "[", "1", "]"))),
     ];
+    let mut oracle = Oracle::new(RESOLVE, "resolve-deep", &[&dir]);
     for (i, (ledger, stdin)) in cases.iter().enumerate() {
-        let (script, rust) = run_both(&dir, ledger, stdin);
+        let (script, rust) = run_both(&mut oracle, &dir, ledger, stdin);
         if script.code == Some(1) {
             // Invalid stdin: the message after the prefix differs by design.
             assert_eq!((rust.code, rust.stdout.as_str()), (1, ""), "case {i}");
@@ -1081,18 +1366,17 @@ fn resolve_baseline_takes_any_nesting_depth() {
             rust.stdout
         );
     }
+    oracle.finish();
 }
 
 #[test]
 fn resolve_baseline_data_dir_resolves_like_path_resolve() {
     let dir = scratch("resolve-lexical");
+    let mut oracle = Oracle::new(RESOLVE, "resolve-lexical", &[&dir]);
     let data = dir.join("data");
     std::fs::create_dir_all(&data).unwrap();
-    std::fs::write(
-        data.join("metrics.jsonl"),
-        "{\"schemaVersion\":3,\"pr\":5,\"headSha\":\"feed1234\",\"posted\":true,\"findings\":[{\"file\":\"x.ts\"}]}\n",
-    )
-    .unwrap();
+    let ledger = "{\"schemaVersion\":3,\"pr\":5,\"headSha\":\"feed1234\",\"posted\":true,\"findings\":[{\"file\":\"x.ts\"}]}\n";
+    std::fs::write(data.join("metrics.jsonl"), ledger).unwrap();
     // `link` points somewhere else, so `link/..` on disk is not `dir`.
     let elsewhere = dir.join("elsewhere").join("deeper");
     std::fs::create_dir_all(&elsewhere).unwrap();
@@ -1106,13 +1390,18 @@ fn resolve_baseline_data_dir_resolves_like_path_resolve() {
         format!("{d}//data"),
         format!("{d}/data/sub/.."),
     ] {
-        let script = node(
-            Path::new(RESOLVE),
-            &[],
-            &dir,
-            input,
-            &[("TRIBUNAL_DATA_DIR", OsStr::new(&data_dir))],
-            &[],
+        let script = oracle.script(
+            &format!("TRIBUNAL_DATA_DIR={data_dir}\nledger:\n{ledger}\nstdin:\n{input}"),
+            || {
+                node(
+                    Path::new(RESOLVE),
+                    &[],
+                    &dir,
+                    input,
+                    &[("TRIBUNAL_DATA_DIR", OsStr::new(&data_dir))],
+                    &[],
+                )
+            },
         );
         let rust = run(
             input,
@@ -1126,17 +1415,23 @@ fn resolve_baseline_data_dir_resolves_like_path_resolve() {
     std::fs::create_dir_all(home.join(".claude")).unwrap();
     std::os::unix::fs::symlink(&data, home.join(".claude").join("tribunal-data")).unwrap();
     let odd_home = format!("{d}/missing/../home");
-    let script = node(
-        Path::new(RESOLVE),
-        &[],
-        &dir,
-        input,
-        &[("HOME", OsStr::new(&odd_home))],
-        &[],
+    let script = oracle.script(
+        &format!("HOME={odd_home}\nledger:\n{ledger}\nstdin:\n{input}"),
+        || {
+            node(
+                Path::new(RESOLVE),
+                &[],
+                &dir,
+                input,
+                &[("HOME", OsStr::new(&odd_home))],
+                &[],
+            )
+        },
     );
     let rust = run(input, &metrics_path_from(None, Path::new(&odd_home)));
     assert_same_run(&script, &rust, &odd_home);
     assert!(rust.stdout.contains("feed1234"));
+    oracle.finish();
 }
 
 // ---------------------------------------------------------------------------
@@ -1325,23 +1620,25 @@ fn write(dir: &Path, name: &str, text: &[u8]) -> PathBuf {
 #[test]
 fn incremental_scope_script_matches_on_files() {
     let dir = scratch("scope-main");
+    let mut oracle = Oracle::new(SCOPE, "scope-main", &[&dir]);
     let base = b"diff --git a/src/b.ts b/src/b.ts\n--- a/src/b.ts\n+++ b/src/b.ts\n@@ -1 +1 @@\n-x\n+y\ndiff --git a/src/same.ts b/src/same.ts\n+same\ndiff --git a/src/old.ts b/src/old.ts\n+old\n";
     let cur = b"diff --git a/src/same.ts b/src/same.ts\n+same\ndiff --git a/src/b.ts b/src/b.ts\n--- a/src/b.ts\n+++ b/src/b.ts\n@@ -1 +1,2 @@\n-x\n+y\n+z\ndiff --git a/src/A_new.ts b/src/A_new.ts\n+++ b/src/A_new.ts\n+n\n";
-    write(&dir, "base.patch", base);
-    write(&dir, "cur.patch", cur);
-    write(&dir, "empty.patch", b"");
-    write(&dir, "nosections.patch", b"just text\nno headers\n");
-    write(
-        &dir,
-        "quoted.patch",
-        b"diff --git \"a/x y\" \"b/x y\"\n+q\n",
-    );
-    write(&dir, "crlf.patch", b"diff --git a/w.ts b/w.ts\r\n+w\r\n");
-    write(
-        &dir,
-        "latin1.patch",
-        b"diff --git a/src/b.ts b/src/b.ts\n-x\n+caf\xe9\n",
-    );
+    let files: [(&str, &[u8]); 7] = [
+        ("base.patch", base),
+        ("cur.patch", cur),
+        ("empty.patch", b""),
+        ("nosections.patch", b"just text\nno headers\n"),
+        ("quoted.patch", b"diff --git \"a/x y\" \"b/x y\"\n+q\n"),
+        ("crlf.patch", b"diff --git a/w.ts b/w.ts\r\n+w\r\n"),
+        (
+            "latin1.patch",
+            b"diff --git a/src/b.ts b/src/b.ts\n-x\n+caf\xe9\n",
+        ),
+    ];
+    for (name, text) in files {
+        write(&dir, name, text);
+    }
+    let fingerprint: Vec<(&str, String)> = files.iter().map(|(n, t)| (*n, sha256_hex(t))).collect();
     std::fs::create_dir_all(dir.join("adir")).unwrap();
     let abs = dir.join("base.patch");
     let abs = abs.to_str().unwrap();
@@ -1365,7 +1662,9 @@ fn incremental_scope_script_matches_on_files() {
         vec!["base.patch", "cur.patch", "extra"],
     ];
     for args in cases {
-        let script = node(Path::new(SCOPE), &args, &dir, "", &[], &[]);
+        let script = oracle.script(&format!("{args:?}\nfiles: {fingerprint:?}"), || {
+            node(Path::new(SCOPE), &args, &dir, "", &[], &[])
+        });
         assert_eq!(script.code, Some(0), "{args:?}: {}", script.stderr);
         assert_eq!(script.stderr, "", "{args:?}");
         // The port reads relative paths against the process cwd; the script
@@ -1386,6 +1685,7 @@ fn incremental_scope_script_matches_on_files() {
         );
         assert_eq!(script.stdout, format!("{}\n", rust.to_json()), "{args:?}");
     }
+    oracle.finish();
 }
 
 /// V8's longest string, in UTF-16 units. `readFileSync(p, "utf8")` throws for
@@ -1408,12 +1708,18 @@ fn sparse(dir: &Path, name: &str, head: &[u8], len: u64) -> PathBuf {
 #[test]
 fn incremental_scope_reads_a_patch_as_node_does_at_the_string_limit() {
     let dir = scratch("scope-limit");
+    let mut oracle = Oracle::new(SCOPE, "scope-limit", &[&dir]);
     let head = b"diff --git a/x.ts b/x.ts\n+1\n";
-    write(&dir, "small.patch", b"diff --git a/y.ts b/y.ts\n+2\n");
+    let small: &[u8] = b"diff --git a/y.ts b/y.ts\n+2\n";
+    write(&dir, "small.patch", small);
     sparse(&dir, "at.patch", head, NODE_STRING_LIMIT);
     sparse(&dir, "below.patch", head, NODE_STRING_LIMIT - 1);
     for name in ["at.patch", "below.patch"] {
-        let script = node(Path::new(SCOPE), &["small.patch", name], &dir, "", &[], &[]);
+        let len = std::fs::metadata(dir.join(name)).unwrap().len();
+        let input = format!("small.patch {small:?}\n{name} {head:?} then NULs to {len} bytes");
+        let script = oracle.script(&input, || {
+            node(Path::new(SCOPE), &["small.patch", name], &dir, "", &[], &[])
+        });
         assert_eq!(
             (script.code, script.stderr.as_str()),
             (Some(0), ""),
@@ -1424,6 +1730,7 @@ fn incremental_scope_reads_a_patch_as_node_does_at_the_string_limit() {
         let rust = scope_files(small.to_str(), big.to_str());
         assert_eq!(script.stdout, format!("{}\n", rust.to_json()), "{name}");
     }
+    oracle.finish();
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -1435,17 +1742,28 @@ fn resolve_baseline_reads_the_ledger_as_node_does_at_the_string_limit() {
     let row = b"{\"schemaVersion\":3,\"pr\":5,\"headSha\":\"feed1234\",\"posted\":true,\"findings\":[{\"file\":\"x.ts\"}]}\n";
     sparse(&data, "metrics.jsonl", row, NODE_STRING_LIMIT);
     let input = "{\"pr\":5,\"repo\":\"acme/widgets\",\"headSha\":\"head\",\"reviews\":[{\"author\":\"a\",\"state\":\"APPROVED\",\"commit\":\"c1\"}]}";
-    let script = node(
-        Path::new(RESOLVE),
-        &[],
-        &dir,
-        input,
-        &[("TRIBUNAL_DATA_DIR", data.as_os_str())],
-        &[],
+    let mut oracle = Oracle::new(RESOLVE, "resolve-limit", &[&dir]);
+    let len = std::fs::metadata(data.join("metrics.jsonl")).unwrap().len();
+    let script = oracle.script(
+        &format!(
+            "TRIBUNAL_DATA_DIR={}\nledger: {row:?} then NULs to {len} bytes\nstdin:\n{input}",
+            data.display()
+        ),
+        || {
+            node(
+                Path::new(RESOLVE),
+                &[],
+                &dir,
+                input,
+                &[("TRIBUNAL_DATA_DIR", data.as_os_str())],
+                &[],
+            )
+        },
     );
     let rust = run(input, &data.join("metrics.jsonl"));
     assert_same_run(&script, &rust, "ledger at the string limit");
     assert!(rust.stdout.contains("\"human-review\""), "{}", rust.stdout);
+    oracle.finish();
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -1497,21 +1815,26 @@ fn declared_non_ascii_paths_collate_by_code_point() {
 #[test]
 fn declared_locale_tailoring_is_not_followed() {
     let dir = scratch("decl-locale");
-    let p = write(&dir, "b.patch", b"diff --git a/q.ts b/q.ts\n+q\n");
-    let c = write(
-        &dir,
-        "c.patch",
+    let mut oracle = Oracle::new(SCOPE, "decl-locale", &[&dir]);
+    let (b, c): (&[u8], &[u8]) = (
+        b"diff --git a/q.ts b/q.ts\n+q\n",
         b"diff --git a/z.ts b/z.ts\n+z\ndiff --git a/aa.ts b/aa.ts\n+a\n",
     );
+    let input = format!("LC_ALL=da_DK.UTF-8\nb.patch {b:?}\nc.patch {c:?}");
+    let p = write(&dir, "b.patch", b);
+    let c = write(&dir, "c.patch", c);
     let (p, c) = (p.to_str().unwrap(), c.to_str().unwrap());
-    let script = node(
-        Path::new(SCOPE),
-        &[p, c],
-        &dir,
-        "",
-        &[("LC_ALL", OsStr::new("da_DK.UTF-8"))],
-        &[],
-    );
+    let script = oracle.script(&format!("{p} {c}\n{input}"), || {
+        node(
+            Path::new(SCOPE),
+            &[p, c],
+            &dir,
+            "",
+            &[("LC_ALL", OsStr::new("da_DK.UTF-8"))],
+            &[],
+        )
+    });
+    oracle.finish();
     assert_eq!(last_json(&script.stdout)["added"], json!(["z.ts", "aa.ts"]));
     assert_eq!(scope_files(Some(p), Some(c)).added, ["aa.ts", "z.ts"]);
 }
@@ -1519,9 +1842,10 @@ fn declared_locale_tailoring_is_not_followed() {
 #[test]
 fn declared_overflowing_numbers_are_rejected() {
     let dir = scratch("decl-overflow");
+    let mut oracle = Oracle::new(RESOLVE, "decl-overflow", &[&dir]);
     // stdin: JSON.parse reads 1e999 as Infinity and fails the finite check;
     // serde refuses the number. Both exit 1 with nothing on stdout.
-    let (script, rust) = run_both(&dir, "", "{\"pr\":1e999}");
+    let (script, rust) = run_both(&mut oracle, &dir, "", "{\"pr\":1e999}");
     assert_eq!(
         script.stderr,
         "resolve-baseline: input must carry a numeric \"pr\"\n"
@@ -1533,7 +1857,13 @@ fn declared_overflowing_numbers_are_rejected() {
     // Ledger: a row holding such a number is kept by the script, dropped here.
     // JSON.stringify writes Infinity as null, so the harness never writes one.
     let row = "{\"schemaVersion\":3,\"pr\":1,\"headSha\":\"aaaa\",\"posted\":true,\"findings\":[{}],\"cost\":1e999}\n";
-    let (script, rust) = run_both(&dir, row, "{\"pr\":1,\"repo\":\"acme/widgets\"}");
+    let (script, rust) = run_both(
+        &mut oracle,
+        &dir,
+        row,
+        "{\"pr\":1,\"repo\":\"acme/widgets\"}",
+    );
+    oracle.finish();
     assert!(script.stdout.contains("\"found\":true"));
     assert!(rust.stdout.contains("\"found\":false"));
 }
@@ -1541,7 +1871,9 @@ fn declared_overflowing_numbers_are_rejected() {
 #[test]
 fn declared_type_error_stderr_has_no_stack() {
     let dir = scratch("decl-stack");
-    let (script, rust) = run_both(&dir, "", "null");
+    let mut oracle = Oracle::new(RESOLVE, "decl-stack", &[&dir]);
+    let (script, rust) = run_both(&mut oracle, &dir, "", "null");
+    oracle.finish();
     assert_eq!((script.code, rust.code), (Some(1), 1));
     assert!(script
         .stderr
@@ -1550,4 +1882,40 @@ fn declared_type_error_stderr_has_no_stack() {
         rust.stderr,
         "TypeError: Cannot read properties of null (reading 'pr')\n"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The goldens' module check
+
+#[test]
+fn a_retired_script_skips_only_the_module_check() {
+    let root = scratch("retired-root");
+    let scripts = root.join("skills/review-pr/scripts");
+    std::fs::create_dir_all(&scripts).unwrap();
+    std::fs::write(scripts.join("x.mjs"), "import { y } from \"./y.mjs\";\n").unwrap();
+    std::fs::write(scripts.join("y.mjs"), "export const y = 1;\n").unwrap();
+    let entry = "skills/review-pr/scripts/x.mjs";
+    let recorded = serde_json::to_value(module_hashes(&root, entry).unwrap()).unwrap();
+    assert_eq!(recorded.as_object().unwrap().len(), 2);
+    assert_eq!(check_modules(&root, entry, &recorded), Ok(()));
+    std::fs::write(scripts.join("y.mjs"), "export const y = 2;\n").unwrap();
+    let err = check_modules(&root, entry, &recorded).unwrap_err();
+    assert!(err.contains("skills/review-pr/scripts/y.mjs"), "{err}");
+    std::fs::remove_file(scripts.join("x.mjs")).unwrap();
+    assert_eq!(check_modules(&root, entry, &recorded), Ok(()));
+    // Every recorded case replays on a tree that holds neither script.
+    if regenerating() {
+        return;
+    }
+    for script in [RESOLVE, SCOPE] {
+        let text = std::fs::read_to_string(golden_path(script)).unwrap();
+        let golden: Value = serde_json::from_str(&text).unwrap();
+        for (key, case) in golden["cases"].as_object().unwrap() {
+            assert_eq!(
+                check_modules(&root, script, &case["modules"]),
+                Ok(()),
+                "{key}"
+            );
+        }
+    }
 }
