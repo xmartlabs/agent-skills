@@ -7,14 +7,36 @@ disprove it, and only the survivors are reported. A review that does not post le
 
 ## Setup
 
-1. Give Claude a credential, as a secret, through one of two inputs:
-   - `claude-token`: an OAuth token from `claude setup-token`. Runs on that account's Claude
-     subscription.
-   - `anthropic-api-key`: an API key from the Anthropic Console. Billed per use, and not tied to a
-     person's account. It needs a tribunal binary that reads `TRIBUNAL_ANTHROPIC_API_KEY`; with an
-     older one pinned, give `claude-token` as well and the review runs on it. When both are set and
-     the binary reads the key, the API key is used.
-2. Add the workflow:
+Five steps, about ten minutes. You need admin access to the repository (or the organization, for
+an organization secret).
+
+### 1. Get a Claude credential
+
+Pick one:
+
+- **Claude subscription (Pro or Max):** run `claude setup-token` on your machine and copy the token
+  it prints. Reviews run on that account's subscription.
+- **Anthropic API key:** create one in the [Anthropic Console](https://platform.claude.com/settings/keys).
+  Billed per use, not tied to a person. The binary pinned by `tribunal-action-v1.0.x`
+  (`tribunal-rust-v0.1.4`) does not read API keys yet; until a release that does, also give
+  `claude-token` and the review runs on it.
+
+### 2. Store it as a secret
+
+In the repository: **Settings → Secrets and variables → Actions → New repository secret**. Name it
+`CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY` for a key). To share it across repositories,
+create it once as an organization secret under the organization's **Settings → Secrets and
+variables → Actions** and give those repositories access.
+
+### 3. Create the `tribunal` label
+
+GitHub only lets you add a label that exists. In **Issues → Labels → New label**, or:
+
+```bash
+gh label create tribunal --description "Run the tribunal review on this pull request" --color 5319E7
+```
+
+### 4. Add the workflow
 
 ```yaml
 # .github/workflows/tribunal.yml
@@ -37,14 +59,48 @@ jobs:
       - uses: xmartlabs/agent-skills/actions/tribunal@tribunal-action-v1
         with:
           claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # reviewer: backend   # the generic profile to use when the repo has none
 ```
 
-3. Optional: describe the repository to tribunal in `.claude/review-profile.json` and
-   `.claude/review-rules.md` (see the plugin's [templates](../../plugins/tribunal/templates)).
-   Without them the action uses the generic profile for the `reviewer` input (`frontend` by
-   default). The profile is read at the pull request's base branch, then the default branch, so a
-   pull request cannot change the rules it is reviewed under; the pull request that adds the
-   profile is reviewed with its own copy.
+`@tribunal-action-v1` follows every compatible release. To freeze a version, use a full tag such
+as `@tribunal-action-v1.0.1`.
+
+### 5. Try it
+
+Open a pull request and add the `tribunal` label. Within a few minutes the review appears as a
+comment review on the pull request, the label is removed, and the run's page in the **Actions**
+tab shows a summary: posted (with a link), skipped or held and why, then the report.
+
+### Optional: describe your repository
+
+Without anything else, tribunal uses a generic profile for the `reviewer` kind. To tell it your
+stack, high-risk paths and project rules, add `.claude/review-profile.json` and
+`.claude/review-rules.md` (start from the plugin's [templates](../../plugins/tribunal/templates)
+and check them with its `templates/check.sh`). The profile is read at the pull request's base
+branch, then the default branch, so a pull request cannot change the rules it is reviewed under;
+the pull request that adds the profile is reviewed with its own copy.
+
+### Self-hosted runners
+
+The action needs a Linux x64 runner. On a pool that mixes operating systems, select Linux:
+
+```yaml
+    runs-on: [self-hosted, Linux, X64]
+```
+
+Everything a run writes stays in the job's temporary directory, so runners that share a host do
+not see each other's files, and Node is set up when the runner has none.
+
+### Skip bot pull requests
+
+Dependabot's runs get no secrets and are skipped on their own. Other bots that open pull requests
+in the repository itself (Renovate, for example) do get secrets; to keep them out, extend the
+job's condition:
+
+```yaml
+    if: github.event.label.name == 'tribunal' && github.event.pull_request.user.type != 'Bot'
+```
 
 ## When it runs
 
@@ -62,6 +118,21 @@ jobs:
 - The review is always posted as a comment, never as an approval or a change request. The
   report's own suggestion is in the body. The Actions token cannot tell which earlier reviews are
   its own, so each run posts the full review over any standing one.
+
+## Troubleshooting
+
+| What you see | Why | What to do |
+| --- | --- | --- |
+| Nothing happens when you add the label | The workflow is not on the pull request's branch yet, or the pull request has merge conflicts (GitHub does not run `pull_request` workflows then) | Merge the workflow first; resolve the conflicts; add the label again |
+| "Tribunal pending … NOT POSTED: …" | The post was held, for example because someone pushed during the review (the head moved) | Add the label again |
+| "Tribunal pending … the action's setup failed before the review started" | Downloading the binary or installing the tools failed | Open the run log linked in the comment |
+| "Tribunal skipped this pull request: …" | Tribunal chose not to review it, for example a deployment branch in the profile | Nothing to retry |
+| No comment at all, the run shows as cancelled | A newer label request replaced it, or the job hit `timeout-minutes` | Check the newer run, or raise the timeout for very large pull requests |
+| The run is skipped | A fork pull request, or no Claude credential reached the job | Use a branch of the repository; check the secret's name and access |
+
+The run record, the report and the logs are attached to each run as the
+`tribunal-pr-<number>-<attempt>` artifact (`upload-transcripts: true` adds every model call's
+transcript).
 
 ## Inputs
 

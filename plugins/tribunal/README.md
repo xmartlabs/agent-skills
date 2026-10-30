@@ -21,6 +21,10 @@ Works on any open PR, including your own.
 
 ## Quick start
 
+To run it in CI instead, on every pull request that gets a `tribunal` label, use the
+[tribunal GitHub Action](../../actions/tribunal/README.md): one workflow file and a secret, no
+install.
+
 You need `gh` (logged in) and `node`. The `codex` CLI is optional and adds a
 second model to the refutation panel.
 
