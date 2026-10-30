@@ -41,7 +41,9 @@ is accepted, and the fix is a new binary, not a JavaScript version.
   them together; cut one right after a merge only when users are blocked
   without it. A change to the methodology templates or other plugin files
   needs only a `tribunal/vN` freeze, since the binary reads them from the
-  plugin root.
+  plugin root. While a merged Rust change waits, the release gate refuses
+  every freeze (`docs/maintaining.md`, "What the gate checks"), so a
+  template change that must ship before then needs that binary release first.
 - **A fix to a rule both sides already share goes in Rust.** Leave the script
   as it is and declare the difference in the `diff_*.rs` test that compares
   them, with a witness input.
