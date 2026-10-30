@@ -55,6 +55,16 @@ runs:
         INPUT_LABEL: ${{ inputs.label }}
       run: bash "$GITHUB_ACTION_PATH/run.sh" gate
 
+    - id: node
+      if: steps.gate.outputs.run == 'true'
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/run.sh" node-check
+
+    - if: steps.gate.outputs.run == 'true' && steps.node.outputs.missing == 'true'
+      uses: actions/setup-node@v7
+      with:
+        node-version: '24'
+
     - id: prepare
       if: steps.gate.outputs.run == 'true'
       shell: bash
@@ -94,7 +104,7 @@ runs:
       run: bash "$GITHUB_ACTION_PATH/run.sh" summary
 
     - if: ${{ always() && steps.gate.outputs.run == 'true' && inputs.upload-run == 'true' }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: tribunal-pr-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
         path: |
@@ -105,7 +115,7 @@ runs:
         retention-days: 14
 
     - if: ${{ always() && steps.gate.outputs.run == 'true' && inputs.upload-transcripts == 'true' }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: tribunal-pr-${{ github.event.pull_request.number }}-${{ github.run_attempt }}-transcripts
         path: ${{ runner.temp }}/tribunal/tmp/tribunal-transcripts-*
