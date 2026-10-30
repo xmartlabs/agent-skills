@@ -24695,6 +24695,10 @@
       {"ok":["(found by:","lensC","lensC"]},
       {"ok":[]}
     ]},
+    "8a07f4ec34a7ca57c994ed4d36088fbfabf0f03593267ab0251373c1272f9ffd": {"region": "CARRY-FORWARD", "results": [
+      {"ok":true},
+      {"ok":"critical"}
+    ]},
     "d28cc0384d088d6fa9c9e88232ecfd798929383b4b324aa480b70813933c906a": {"region": "REPORT-FIDELITY-CHECKS", "results": [
       {"ok":[]},
       {"ok":[]},
