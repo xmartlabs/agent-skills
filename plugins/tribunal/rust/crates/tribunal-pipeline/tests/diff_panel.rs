@@ -514,36 +514,43 @@ const MAIN: Span = Span {
 };
 
 /// Declared difference (`panel_gates::place_survivor`): the port records a
-/// lower severity only when two or more votes filled `introducedByPr`. Clears
-/// the Workflow's proposal where fewer did, and counts how often.
-fn two_judges_rule(js: &mut [Value]) -> usize {
-    let mut cleared = 0;
-    for v in js
+/// lower severity only when two or more votes filled `introducedByPr`, where
+/// the Workflow takes one such vote's proposal. Puts the Workflow's rule back
+/// on the port's output, so the recorded Workflow answer, kept as a digest,
+/// can be compared, and counts how often it did.
+fn as_the_workflow_places(rust: &mut [Value]) -> usize {
+    const RANK: [&str; 3] = ["nit", "important", "critical"];
+    let rank = |v: &Value| RANK.iter().position(|r| v.as_str() == Some(*r));
+    let mut restored = 0;
+    for v in rust
         .iter_mut()
         .filter_map(|o| o.get_mut("verified").and_then(Value::as_array_mut))
         .flatten()
     {
-        let judging = v["votes"].as_array().map_or(0, |votes| {
-            votes
-                .iter()
-                .filter(|x| {
-                    x.is_object()
-                        && x["slotStatus"] != "UNAVAILABLE"
-                        && x["introducedByPr"].is_string()
-                })
-                .count()
-        });
-        let proposal = v
+        let judging: Vec<Value> = v["votes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|x| {
+                x.is_object() && x["slotStatus"] != "UNAVAILABLE" && x["introducedByPr"].is_string()
+            })
+            .cloned()
+            .collect();
+        let [only] = judging.as_slice() else {
+            continue;
+        };
+        let own = rank(&v["finding"]["severity"]);
+        let lower = rank(&only["proposedSeverity"]).filter(|r| own.is_some_and(|o| r < &o));
+        let slot = v
             .get_mut("placement")
             .and_then(Value::as_object_mut)
-            .and_then(|p| p.get_mut("proposedSeverity"))
-            .filter(|s| s.is_string());
-        if let (true, Some(s)) = (judging < 2, proposal) {
-            *s = Value::Null;
-            cleared += 1;
+            .and_then(|p| p.get_mut("proposedSeverity"));
+        if let (Some(r), Some(s)) = (lower, slot) {
+            *s = json!(RANK[r]);
+            restored += 1;
         }
     }
-    cleared
+    restored
 }
 
 #[test]
@@ -551,12 +558,12 @@ fn the_panel_runs_as_the_workflow_runs_it() {
     let cases = sample(case());
     let ret = RET.replace("__LOGS__", LOGS);
     let params: Vec<Value> = cases.iter().map(js_params).collect();
-    let mut js = span(&Span { ret: &ret, ..MAIN }, &params);
-    assert!(two_judges_rule(&mut js) > 0);
+    let js = span(&Span { ret: &ret, ..MAIN }, &params);
     let rt = tokio::runtime::Builder::new_current_thread()
         .build()
         .unwrap();
-    let rust: Vec<Value> = cases.iter().map(|c| rust_panel(c, &rt)).collect();
+    let mut rust: Vec<Value> = cases.iter().map(|c| rust_panel(c, &rt)).collect();
+    assert!(as_the_workflow_places(&mut rust) > 0);
     if let Some(dir) = std::env::var_os("TRIBUNAL_DUMP") {
         let dir = std::path::PathBuf::from(dir);
         let first = (0..cases.len()).find(|&i| !common::same(&rust[i], &js[i]));

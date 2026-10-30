@@ -708,7 +708,14 @@ fn verdict_case() -> impl Strategy<Value = Value> {
     )
         .prop_map(|(carried, re, results, sweep, unreturned): (Vec<Value>, Vec<Value>, Vec<Value>, Value, usize)| {
             let unreturned: Vec<Value> = (0..unreturned).map(|i| json!({"lens": format!("lens{i}"), "files": null})).collect();
-            json!({"carried": carried, "re": re, "surviving": surviving_for_synthesis(&results), "cleanSweep": sweep, "lensesUnreturned": unreturned})
+            {
+            // The vote count is a port-only field the verdict never reads.
+            let mut surviving = surviving_for_synthesis(&results);
+            for f in &mut surviving {
+                f.as_object_mut().unwrap().shift_remove("panelProposedSeverityVotes");
+            }
+            json!({"carried": carried, "re": re, "surviving": surviving, "cleanSweep": sweep, "lensesUnreturned": unreturned})
+        }
         })
 }
 
