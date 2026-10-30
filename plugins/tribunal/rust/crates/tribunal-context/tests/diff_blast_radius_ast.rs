@@ -3,15 +3,30 @@
 //! them. The port parses with oxc; these tests hold its output to the
 //! script's, whole, on git fixture repos and on generated sources.
 //!
-//! The script side needs a `typescript` package. `TRIBUNAL_TS_FROM` names a
-//! directory whose `node_modules` holds one, as for
-//! `eval/replay-attention-facts.mjs`. The tests are `#[ignore]` so the
-//! portable suite passes without it; run with `--include-ignored` and the
-//! variable unset, they fail and say why.
+//! What the scripts printed is read from `tests/goldens/blast-radius-ast/`,
+//! one file per test. Each keeps a SHA-256 of every module the scripts reach
+//! through a relative import, the `typescript` version they ran with, and for
+//! each time a test asks them, a SHA-256 of the input (the cases, or the
+//! fixture repo's files, HEAD and diff) with what they printed, the scratch
+//! directory and the plugin root stored as placeholders. A script or generator
+//! edited without a regeneration fails; a script that is gone is retired and
+//! its golden final, so only its staleness check is skipped. Regenerate on a
+//! Mac, with `TRIBUNAL_TS_FROM` naming a directory whose `node_modules` holds
+//! `typescript`, as for `eval/replay-attention-facts.mjs`:
+//! `TRIBUNAL_REGEN_GOLDENS=1 TRIBUNAL_TS_FROM=<repo> cargo test -p tribunal-context --test diff_blast_radius_ast -- --include-ignored`.
+//!
+//! The tests that compare oxc's own answers need nothing else. The ones where
+//! the port hands code oxc cannot parse cleanly to `typescript` need the
+//! package for the port, so they are `#[ignore]`; run with `--include-ignored`
+//! and the variable unset, they fail and say why. The two corpus tests read a
+//! repository `TRIBUNAL_AST_CORPUS` or `TRIBUNAL_TS_FROM` names, which no
+//! golden can hold, so they still ask the scripts. `TRIBUNAL_AST_SEED` asks
+//! them too: its inputs are not in any golden.
 
 mod common;
 use common::*;
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -20,9 +35,336 @@ use tribunal_context::ast_bindings::{self, PARSER};
 use tribunal_context::attention_facts::{self, Added};
 use tribunal_context::blast_radius;
 use tribunal_context::exec::Tools;
+use tribunal_context::harness_version::sha256_hex;
 use tribunal_context::typescript_fallback::{self, TypeScriptFallback};
 
 const BLAST: &str = "lib/blast-radius.mjs";
+const ATTENTION: &str = "lib/attention-facts.mjs";
+
+// ---------------------------------------------------------------------------
+// Goldens
+
+const REGENERATE: &str = "regenerate on a Mac: TRIBUNAL_REGEN_GOLDENS=1 TRIBUNAL_TS_FROM=<repo> cargo test -p tribunal-context --test diff_blast_radius_ast -- --include-ignored";
+
+fn regenerating() -> bool {
+    std::env::var("TRIBUNAL_REGEN_GOLDENS").is_ok_and(|v| v == "1")
+}
+
+fn exploring() -> bool {
+    std::env::var_os("TRIBUNAL_AST_SEED").is_some()
+}
+
+/// A SHA-256 of each module the oracle scripts reach through a relative
+/// import, by path in the plugin.
+fn module_hashes() -> BTreeMap<String, String> {
+    let import = regex::Regex::new(r#"(?:from|import)\s*\(?\s*"(\.{1,2}/[^"]+)""#).unwrap();
+    let root = plugin_root().canonicalize().unwrap();
+    let mut seen = BTreeMap::new();
+    let mut todo: Vec<PathBuf> = [BLAST, ATTENTION]
+        .iter()
+        .map(|s| {
+            root.join(s).canonicalize().unwrap_or_else(|e| {
+                panic!("{s}: {e}; the oracle is retired, its goldens are final")
+            })
+        })
+        .collect();
+    while let Some(file) = todo.pop() {
+        let key = file
+            .strip_prefix(&root)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        if seen.contains_key(&key) {
+            continue;
+        }
+        let text = std::fs::read_to_string(&file).unwrap();
+        for m in import.captures_iter(&text) {
+            let dep = file.parent().unwrap().join(&m[1]);
+            todo.push(
+                dep.canonicalize()
+                    .unwrap_or_else(|e| panic!("{}: {e}", dep.display())),
+            );
+        }
+        seen.insert(key, sha256_hex(text.as_bytes()));
+    }
+    seen
+}
+
+/// The scripts in `recorded` (path in `root` to SHA-256) whose text changed.
+/// A script no longer there is retired: the golden is its final record, so
+/// it is not checked.
+fn stale_in(root: &Path, recorded: &Value) -> Vec<String> {
+    recorded
+        .as_object()
+        .expect("recordedWith is an object")
+        .iter()
+        .filter_map(|(path, sha)| match std::fs::read(root.join(path)) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => panic!("{path}: {e}"),
+            Ok(text) => (json!(sha256_hex(&text)) != *sha).then(|| path.clone()),
+        })
+        .collect()
+}
+
+/// This run's machine-specific paths and the placeholders a golden keeps
+/// them as, longest first so a path inside another is replaced after it.
+fn path_pairs(root: Option<&Path>, ts: Option<&Path>) -> Vec<(String, &'static str)> {
+    let both = |p: &Path, raw: &'static str, real: &'static str| {
+        let real_path = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+        [
+            (p.to_string_lossy().into_owned(), raw),
+            (real_path.to_string_lossy().into_owned(), real),
+        ]
+    };
+    let mut v: Vec<(String, &'static str)> =
+        both(&plugin_root(), "<PLUGIN>", "<PLUGIN_REAL>").into();
+    if let Some(r) = root {
+        v.extend(both(r, "<ROOT>", "<ROOT_REAL>"));
+    }
+    if let Some(t) = ts {
+        v.extend(both(t, "<TS>", "<TS_REAL>"));
+    }
+    v.sort_by_key(|(p, _)| std::cmp::Reverse(p.len()));
+    v
+}
+
+fn to_golden(v: &Value, paths: &[(String, &str)]) -> Value {
+    let text = paths
+        .iter()
+        .fold(v.to_string(), |t, (p, ph)| t.replace(p.as_str(), ph));
+    serde_json::from_str(&text).unwrap()
+}
+
+fn from_golden(v: &Value, paths: &[(String, &str)]) -> Value {
+    let text = paths
+        .iter()
+        .fold(v.to_string(), |t, (p, ph)| t.replace(ph, p.as_str()));
+    serde_json::from_str(&text).unwrap()
+}
+
+/// One test's golden: what the scripts printed, in the order the test asks.
+/// Regenerating, each answer is the scripts' and is written as it comes;
+/// exploring, it is the scripts' and nothing is written; otherwise it is the
+/// recorded one, checked against the input the test asks it for.
+struct Golden {
+    path: PathBuf,
+    mode: Mode,
+    with: Value,
+    typescript: String,
+    records: Vec<Value>,
+    next: usize,
+}
+
+#[derive(PartialEq)]
+enum Mode {
+    Record,
+    Live,
+    Replay,
+}
+
+impl Golden {
+    fn open(name: &str) -> Golden {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/goldens/blast-radius-ast")
+            .join(format!("{name}.json"));
+        if regenerating() {
+            assert!(
+                !exploring(),
+                "unset TRIBUNAL_AST_SEED to regenerate: the goldens hold the default seeds"
+            );
+            return Golden {
+                path,
+                mode: Mode::Record,
+                with: json!(module_hashes()),
+                typescript: ts_parser_name(&ts_from()),
+                records: Vec::new(),
+                next: 0,
+            };
+        }
+        if exploring() {
+            return Golden::live();
+        }
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{}: {e}; {REGENERATE}", path.display()));
+        let golden: Value = serde_json::from_str(&text).unwrap();
+        let stale = stale_in(&plugin_root(), &golden["recordedWith"]);
+        assert!(
+            stale.is_empty(),
+            "{stale:?} changed since {} was recorded; {REGENERATE}",
+            path.display()
+        );
+        Golden {
+            path,
+            mode: Mode::Replay,
+            with: golden["recordedWith"].clone(),
+            typescript: golden["typescript"].as_str().unwrap().to_owned(),
+            records: golden["records"].as_array().unwrap().clone(),
+            next: 0,
+        }
+    }
+
+    /// Always the scripts' answers, never recorded: for inputs no golden can
+    /// hold.
+    fn live() -> Golden {
+        Golden {
+            path: PathBuf::new(),
+            mode: Mode::Live,
+            with: Value::Null,
+            typescript: ts_parser_name(&ts_from()),
+            records: Vec::new(),
+            next: 0,
+        }
+    }
+
+    /// The scripts' answer to `input`, which `run` asks them for.
+    fn answer(
+        &mut self,
+        input: &Value,
+        paths: &[(String, &str)],
+        run: impl FnOnce() -> Value,
+    ) -> Value {
+        let fingerprint = json!(sha256_hex(to_golden(input, paths).to_string().as_bytes()));
+        match self.mode {
+            Mode::Live => {
+                assert_not_retired();
+                run()
+            }
+            Mode::Record => {
+                assert_not_retired();
+                let v = run();
+                self.records
+                    .push(json!({"input": fingerprint, "js": to_golden(&v, paths)}));
+                std::fs::create_dir_all(self.path.parent().unwrap()).unwrap();
+                std::fs::write(&self.path, self.text()).unwrap();
+                v
+            }
+            Mode::Replay => {
+                let r = self.records.get(self.next).unwrap_or_else(|| {
+                    panic!(
+                        "{} holds {} answers and the test asks for more; {REGENERATE}",
+                        self.path.display(),
+                        self.records.len()
+                    )
+                });
+                assert_eq!(
+                    r["input"],
+                    fingerprint,
+                    "answer {} of {}: the generator changed; {REGENERATE}",
+                    self.next,
+                    self.path.display()
+                );
+                self.next += 1;
+                from_golden(&r["js"], paths)
+            }
+        }
+    }
+
+    /// The golden as written: one line per case of a batch, compact, so the
+    /// biggest stay small and a regeneration's diff names the cases it moved.
+    fn text(&self) -> String {
+        let line = |v: &Value| serde_json::to_string(v).unwrap();
+        let records: Vec<String> = self
+            .records
+            .iter()
+            .map(|r| {
+                let js = match r["js"].as_array() {
+                    Some(cases) => format!(
+                        "[\n{}\n    ]",
+                        cases
+                            .iter()
+                            .map(|c| format!("      {}", line(c)))
+                            .collect::<Vec<_>>()
+                            .join(",\n")
+                    ),
+                    None => line(&r["js"]),
+                };
+                format!("    {{\"input\": {}, \"js\": {js}}}", line(&r["input"]))
+            })
+            .collect();
+        let text = format!(
+            "{{\n  \"recordedWith\": {},\n  \"typescript\": {},\n  \"records\": [\n{}\n  ]\n}}\n",
+            line(&self.with),
+            line(&json!(self.typescript)),
+            records.join(",\n")
+        );
+        let back: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(back["records"], json!(self.records));
+        text
+    }
+
+    /// Every recorded answer was asked for.
+    fn done(&self) {
+        if self.mode == Mode::Replay {
+            assert_eq!(
+                self.next,
+                self.records.len(),
+                "{} holds answers the test no longer asks for; {REGENERATE}",
+                self.path.display()
+            );
+        }
+    }
+}
+
+fn assert_not_retired() {
+    for s in [BLAST, ATTENTION] {
+        assert!(
+            plugin_root().join(s).exists(),
+            "{s} is retired: this run needs the scripts' answers, and only the goldens hold them"
+        );
+    }
+}
+
+/// A file's text as a golden's input sees it: a hash, or that it is missing.
+fn file_fingerprint(p: &Path) -> Value {
+    std::fs::read(p).map_or(json!(null), |b| json!(sha256_hex(&b)))
+}
+
+/// A fixture repo as the script sees it: each file under it but `.git`, and
+/// the commit HEAD names, which fixes every commit before it.
+fn repo_fingerprint(repo: &Path) -> Value {
+    let mut out = BTreeMap::new();
+    let mut stack = vec![repo.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                if p.file_name().is_some_and(|n| n != ".git") {
+                    stack.push(p);
+                }
+            } else {
+                let rel = p.strip_prefix(repo).unwrap().to_string_lossy().into_owned();
+                out.insert(rel, file_fingerprint(&p));
+            }
+        }
+    }
+    let head = repo
+        .join(".git")
+        .exists()
+        .then(|| git(repo, &["rev-parse", "HEAD"]).trim().to_owned());
+    json!({"files": out, "head": head})
+}
+
+/// A recorded script that is gone is retired and skipped; one still there is
+/// checked, whatever else is gone.
+#[test]
+fn a_retired_script_is_not_checked_for_staleness() {
+    let root = scratch("ast-retired");
+    std::fs::create_dir_all(root.join("lib")).unwrap();
+    std::fs::write(root.join("lib/kept.mjs"), "export const a = 1;\n").unwrap();
+    let recorded = json!({
+        "lib/kept.mjs": sha256_hex(b"export const a = 1;\n"),
+        "lib/retired.mjs": sha256_hex(b"export const b = 1;\n"),
+    });
+    assert_eq!(stale_in(&root, &recorded), Vec::<String>::new());
+    std::fs::write(root.join("lib/kept.mjs"), "export const a = 2;\n").unwrap();
+    assert_eq!(stale_in(&root, &recorded), vec!["lib/kept.mjs".to_owned()]);
+    std::fs::remove_file(root.join("lib/kept.mjs")).unwrap();
+    assert_eq!(stale_in(&root, &recorded), Vec::<String>::new());
+    let _ = std::fs::remove_dir_all(&root);
+}
 
 // ---------------------------------------------------------------------------
 // The typescript package
@@ -120,8 +462,17 @@ const out = JSON.parse(input).map((c) => {
 process.stdout.write(JSON.stringify(out));
 "#;
 
+/// The script's answers to every case, from `g`.
+fn js_batch(g: &mut Golden, cases: &[Value]) -> Vec<Value> {
+    let input = json!({"harness": HARNESS, "cases": cases});
+    let v = g.answer(&input, &path_pairs(None, None), || {
+        Value::Array(run_harness(cases))
+    });
+    v.as_array().unwrap().clone()
+}
+
 /// Runs every case through the script's functions in one node process.
-fn js_batch(cases: &[Value]) -> Vec<Value> {
+fn run_harness(cases: &[Value]) -> Vec<Value> {
     static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let ts = ts_from();
     let dir = scratch(&format!(
@@ -254,8 +605,8 @@ fn rust_case(c: &Value) -> Value {
 
 /// Every case gives the same answer on both sides; a mismatch names the case.
 /// Returns the script's answers.
-fn assert_batch(label: &str, cases: &[Value]) -> Vec<Value> {
-    let js = js_batch(cases);
+fn assert_batch(g: &mut Golden, label: &str, cases: &[Value]) -> Vec<Value> {
+    let js = js_batch(g, cases);
     assert_eq!(js.len(), cases.len());
     let mut bad = Vec::new();
     for (i, (c, j)) in cases.iter().zip(&js).enumerate() {
@@ -564,8 +915,8 @@ const d = <Widget {...getAccount(1)} />;
 ];
 
 #[test]
-#[ignore = "needs TRIBUNAL_TS_FROM"]
 fn binding_refs_match_the_script_on_each_import_form() {
+    let mut g = Golden::open("binding_refs_match_the_script_on_each_import_form");
     let mut cases = Vec::new();
     for (file, content) in IMPORTERS {
         for target in [
@@ -587,7 +938,8 @@ fn binding_refs_match_the_script_on_each_import_form() {
         }
     }
     // The batch is only a test if it reached the forms it was built for.
-    let js = assert_batch("bindingRefs", &cases);
+    let js = assert_batch(&mut g, "bindingRefs", &cases);
+    g.done();
     let refs: usize = js
         .iter()
         .filter_map(|r| r["ok"]["refs"].as_array())
@@ -700,13 +1052,14 @@ const PROMISES: &[(&str, &str)] = &[
 ];
 
 #[test]
-#[ignore = "needs TRIBUNAL_TS_FROM"]
 fn returns_promise_matches_the_script() {
+    let mut g = Golden::open("returns_promise_matches_the_script");
     let cases: Vec<Value> = PROMISES
         .iter()
         .map(|(file, content)| json!({"fn": "returnsPromise", "file": file, "content": content, "name": "f"}))
         .collect();
-    let js = assert_batch("returnsPromise", &cases);
+    let js = assert_batch(&mut g, "returnsPromise", &cases);
+    g.done();
     for v in [json!(true), json!(false), Value::Null] {
         assert!(js.iter().any(|r| r["ok"] == v), "no case answered {v}");
     }
@@ -849,10 +1202,11 @@ fn attention_seeds() -> Vec<Value> {
 }
 
 #[test]
-#[ignore = "needs TRIBUNAL_TS_FROM"]
 fn attention_facts_match_the_script_on_the_replay_seeds() {
+    let mut g = Golden::open("attention_facts_match_the_script_on_the_replay_seeds");
     let cases = attention_seeds();
-    let js = assert_batch("attention seeds", &cases);
+    let js = assert_batch(&mut g, "attention seeds", &cases);
+    g.done();
     let kinds: std::collections::HashSet<String> = js
         .iter()
         .filter_map(|r| r["ok"].as_array())
@@ -1228,8 +1582,8 @@ fn gen_importer(rng: &mut Rng) -> (String, String) {
 }
 
 #[test]
-#[ignore = "needs TRIBUNAL_TS_FROM"]
 fn binding_refs_match_the_script_on_generated_importers() {
+    let mut g = Golden::open("binding_refs_match_the_script_on_generated_importers");
     let mut rng = Rng::new(seed(0xB1D));
     let mut cases = Vec::new();
     for _ in 0..1500 {
@@ -1242,7 +1596,8 @@ fn binding_refs_match_the_script_on_generated_importers() {
         let name = if rng.chance(90) { "getAccount" } else { "meta" };
         cases.push(bind_case(&file, &src, target, name));
     }
-    let js = assert_batch("generated importers", &cases);
+    let js = assert_batch(&mut g, "generated importers", &cases);
+    g.done();
     assert_valid("generated importers", &cases, &js);
     let refs = all_refs(&js);
     let count = |k: &str, v: Value| refs.iter().filter(|r| r[k] == v).count();
@@ -1398,8 +1753,8 @@ fn gen_promise_decl(rng: &mut Rng) -> (String, String) {
 }
 
 #[test]
-#[ignore = "needs TRIBUNAL_TS_FROM"]
 fn returns_promise_matches_the_script_on_generated_declarations() {
+    let mut g = Golden::open("returns_promise_matches_the_script_on_generated_declarations");
     let mut rng = Rng::new(seed(0x9_0A1));
     let cases: Vec<Value> = (0..1200)
         .map(|_| {
@@ -1407,7 +1762,8 @@ fn returns_promise_matches_the_script_on_generated_declarations() {
             json!({"fn": "returnsPromise", "file": file, "content": content, "name": "f"})
         })
         .collect();
-    let js = assert_batch("generated declarations", &cases);
+    let js = assert_batch(&mut g, "generated declarations", &cases);
+    g.done();
     assert_valid("generated declarations", &cases, &js);
     for v in [json!(true), json!(false), Value::Null] {
         let n = js.iter().filter(|r| r["ok"] == v).count();
@@ -1556,8 +1912,8 @@ fn added_subset(rng: &mut Rng, src: &str) -> Vec<usize> {
 }
 
 #[test]
-#[ignore = "needs TRIBUNAL_TS_FROM"]
 fn attention_facts_match_the_script_on_generated_files() {
+    let mut g = Golden::open("attention_facts_match_the_script_on_generated_files");
     let mut rng = Rng::new(seed(0xFAC7));
     let mut cases = Vec::new();
     for _ in 0..900 {
@@ -1566,7 +1922,8 @@ fn attention_facts_match_the_script_on_generated_files() {
         cases.push(facts_case("factsForFile", &file, &src, &added));
         cases.push(facts_case("statusOrderFacts", &file, &src, &added));
     }
-    let js = assert_batch("generated fact files", &cases);
+    let js = assert_batch(&mut g, "generated fact files", &cases);
+    g.done();
     assert_valid("generated fact files", &cases, &js);
     let counts = fact_counts(&js);
     for k in [
@@ -1646,8 +2003,8 @@ fn gen_test_file(rng: &mut Rng) -> (String, String) {
 }
 
 #[test]
-#[ignore = "needs TRIBUNAL_TS_FROM"]
 fn test_facts_match_the_script_on_generated_tests() {
+    let mut g = Golden::open("test_facts_match_the_script_on_generated_tests");
     let mut rng = Rng::new(seed(0x7E57));
     let mut cases = Vec::new();
     for _ in 0..600 {
@@ -1655,7 +2012,8 @@ fn test_facts_match_the_script_on_generated_tests() {
         let added = added_subset(&mut rng, &src);
         cases.push(facts_case("testFacts", &file, &src, &added));
     }
-    let js = assert_batch("generated tests", &cases);
+    let js = assert_batch(&mut g, "generated tests", &cases);
+    g.done();
     assert_valid("generated tests", &cases, &js);
     let counts = fact_counts(&js);
     for k in ["test-without-assertion", "mocks-subject"] {
@@ -1711,8 +2069,8 @@ fn gen_contract_fn(rng: &mut Rng, name: &str, ext: &str) -> String {
 }
 
 #[test]
-#[ignore = "needs TRIBUNAL_TS_FROM"]
 fn contract_facts_match_the_script_on_generated_pairs() {
+    let mut g = Golden::open("contract_facts_match_the_script_on_generated_pairs");
     let mut rng = Rng::new(seed(0xC0DE));
     let mut cases = Vec::new();
     for _ in 0..600 {
@@ -1730,7 +2088,8 @@ fn contract_facts_match_the_script_on_generated_pairs() {
         cases.push(json!({"fn": "contractFacts", "file": file, "base": base, "content": head}));
         cases.push(json!({"fn": "exportedShapes", "file": file, "content": head}));
     }
-    let js = assert_batch("generated contracts", &cases);
+    let js = assert_batch(&mut g, "generated contracts", &cases);
+    g.done();
     assert_valid("generated contracts", &cases, &js);
     let n = js
         .iter()
@@ -1865,18 +2224,21 @@ struct Pair {
     rust: Value,
     js_calls: String,
     rust_calls: String,
+    /// `typescript <version>`, the parser the script ran with.
+    ts_name: String,
 }
 
 /// The script, run from `TRIBUNAL_TS_FROM` so its `loadTypescript([repoDir,
 /// process.cwd()])` finds the parser, and the port, each through the logging
 /// `git`.
-async fn pair(root: &Path, diff: &Path, repo: &Path, rev: Option<&str>) -> Pair {
-    pair_with(root, diff, repo, rev, true).await
+async fn pair(g: &mut Golden, root: &Path, diff: &Path, repo: &Path, rev: Option<&str>) -> Pair {
+    pair_with(g, root, diff, repo, rev, true).await
 }
 
 /// [`pair`], the port finding `typescript` for the files oxc cannot parse
 /// cleanly where the script finds it, or nowhere.
 async fn pair_with(
+    g: &mut Golden,
     root: &Path,
     diff: &Path,
     repo: &Path,
@@ -1890,32 +2252,50 @@ async fn pair_with(
     let rust_log = root.join("git-rust.log");
     let _ = std::fs::remove_file(&js_log);
     let _ = std::fs::remove_file(&rust_log);
-    let mut args = vec![diff.to_str().unwrap(), repo.to_str().unwrap()];
-    if let Some(r) = rev {
-        args.extend(["--rev", r]);
-    }
-    let path = std::env::join_paths([wrap.clone(), shim_dir()].into_iter().chain(
-        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
-    ))
-    .unwrap();
-    let out = Command::new("node")
-        .arg(plugin_root().join(BLAST))
-        .args(&args)
-        .current_dir(&ts)
-        .env("PATH", path)
-        .env("GH_RECORDINGS", &rec)
-        .env("GIT_CALL_LOG", &js_log)
-        .env_remove("CLAUDE_PLUGIN_ROOT")
-        .env_remove("NODE_PATH")
-        .stdin(std::process::Stdio::null())
-        .output()
-        .expect("node must be on PATH");
-    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    // A live run records nothing: the corpus repos are too big to hash.
+    let input = if g.mode == Mode::Live {
+        Value::Null
+    } else {
+        json!({
+            "diff": [diff.to_string_lossy(), file_fingerprint(diff)],
+            "repo": [repo.to_string_lossy(), repo_fingerprint(repo)],
+            "rev": rev,
+        })
+    };
+    let script = g.answer(&input, &path_pairs(Some(root), Some(&ts)), || {
+        let mut args = vec![diff.to_str().unwrap(), repo.to_str().unwrap()];
+        if let Some(r) = rev {
+            args.extend(["--rev", r]);
+        }
+        let path = std::env::join_paths([wrap.clone(), shim_dir()].into_iter().chain(
+            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+        ))
+        .unwrap();
+        let out = Command::new("node")
+            .arg(plugin_root().join(BLAST))
+            .args(&args)
+            .current_dir(&ts)
+            .env("PATH", path)
+            .env("GH_RECORDINGS", &rec)
+            .env("GIT_CALL_LOG", &js_log)
+            .env_remove("CLAUDE_PLUGIN_ROOT")
+            .env_remove("NODE_PATH")
+            .stdin(std::process::Stdio::null())
+            .output()
+            .expect("node must be on PATH");
+        json!({
+            "code": out.status.code(),
+            "stdout": String::from_utf8_lossy(&out.stdout),
+            "stderr": String::from_utf8_lossy(&out.stderr),
+            "calls": std::fs::read_to_string(&js_log).unwrap_or_default(),
+        })
+    });
+    let stdout = script["stdout"].as_str().unwrap();
     assert_eq!(
-        out.status.code(),
-        Some(0),
+        script["code"],
+        json!(0),
         "script failed: {stdout}{}",
-        String::from_utf8_lossy(&out.stderr)
+        script["stderr"].as_str().unwrap()
     );
     let mut lines = stdout.lines();
     assert!(
@@ -1944,8 +2324,9 @@ async fn pair_with(
     Pair {
         js,
         rust,
-        js_calls: std::fs::read_to_string(&js_log).unwrap_or_default(),
+        js_calls: script["calls"].as_str().unwrap().to_owned(),
         rust_calls: std::fs::read_to_string(&rust_log).unwrap_or_default(),
+        ts_name: g.typescript.clone(),
     }
 }
 
@@ -1975,17 +2356,14 @@ fn assert_same_resolving(case: &str, p: &Pair, files: Option<&[&str]>) -> Value 
         rust,
         js_calls: p.js_calls.clone(),
         rust_calls: p.rust_calls.clone(),
+        ts_name: p.ts_name.clone(),
     };
     assert_eq!(
         p.js["resolver"], "bindings",
         "{case}: the script found no typescript"
     );
     assert_eq!(p.rust["resolver"], "bindings", "{case}");
-    assert_eq!(
-        p.js["attention"]["parser"],
-        json!(ts_parser_name(&ts_from())),
-        "{case}"
-    );
+    assert_eq!(p.js["attention"]["parser"], json!(p.ts_name), "{case}");
     assert_eq!(p.rust["attention"]["parser"], json!(PARSER), "{case}");
     let mut js = p.js.clone();
     js["attention"]["parser"] = json!(PARSER);
@@ -2290,8 +2668,10 @@ fn realistic_head() -> Files {
 #[tokio::test]
 #[ignore = "needs TRIBUNAL_TS_FROM"]
 async fn blast_radius_matches_the_script_with_typescript_on_a_realistic_repo() {
+    let mut g = Golden::open("blast_radius_matches_the_script_with_typescript_on_a_realistic_repo");
     let f = fixture("ast-real", &realistic_base(), &realistic_head());
-    let p = pair(&f.root, &f.diff, &f.repo, None).await;
+    let p = pair(&mut g, &f.root, &f.diff, &f.repo, None).await;
+    g.done();
     let out = assert_same("checkout", &p);
     // The fixture is only a test if it reaches the paths it was built for.
     let callers = out["callers"].as_array().unwrap();
@@ -2342,6 +2722,7 @@ async fn blast_radius_matches_the_script_with_typescript_on_a_realistic_repo() {
 #[tokio::test]
 #[ignore = "needs TRIBUNAL_TS_FROM"]
 async fn blast_radius_matches_the_script_with_typescript_at_a_revision() {
+    let mut g = Golden::open("blast_radius_matches_the_script_with_typescript_at_a_revision");
     let f = fixture("ast-rev", &realistic_base(), &realistic_head());
     // The working tree moves on; --rev must read the commit, not the files.
     write_files(
@@ -2354,7 +2735,8 @@ async fn blast_radius_matches_the_script_with_typescript_at_a_revision() {
             ("src/services/results.ts", "export {};\n"),
         ]),
     );
-    let p = pair(&f.root, &f.diff, &f.repo, Some(&f.head)).await;
+    let p = pair(&mut g, &f.root, &f.diff, &f.repo, Some(&f.head)).await;
+    g.done();
     let out = assert_same("--rev", &p);
     assert!(p.js_calls.contains("cat-file"), "no base blob read");
     assert!(p.js_calls.contains("show"), "no file read at the revision");
@@ -2368,6 +2750,7 @@ async fn blast_radius_matches_the_script_with_typescript_at_a_revision() {
 #[tokio::test]
 #[ignore = "needs TRIBUNAL_TS_FROM"]
 async fn blast_radius_matches_the_script_with_typescript_when_truncated() {
+    let mut g = Golden::open("blast_radius_matches_the_script_with_typescript_when_truncated");
     let mut base = realistic_base();
     let mut extra = Vec::new();
     for i in 0..30 {
@@ -2383,7 +2766,8 @@ async fn blast_radius_matches_the_script_with_typescript_when_truncated() {
     let mut head = realistic_head();
     head.push(("src/jobs/many.ts".to_owned(), Some(many)));
     let f = fixture("ast-trunc", &base, &head);
-    let p = pair(&f.root, &f.diff, &f.repo, None).await;
+    let p = pair(&mut g, &f.root, &f.diff, &f.repo, None).await;
+    g.done();
     let out = assert_same("truncated", &p);
     assert_eq!(out["truncated"], true);
     assert_eq!(out["attention"]["truncated"], true);
@@ -2394,6 +2778,7 @@ async fn blast_radius_matches_the_script_with_typescript_when_truncated() {
 #[tokio::test]
 #[ignore = "needs TRIBUNAL_TS_FROM"]
 async fn blast_radius_matches_the_script_with_typescript_on_the_replay_repos() {
+    let mut g = Golden::open("blast_radius_matches_the_script_with_typescript_on_the_replay_repos");
     let auth = |body: &str| {
         format!("export const getAccount = async (id) => {{\n  return db.get(id, {body});\n}};\n\nexport const makeMw = (roles) => async (req, res, next) => {{\n  if (!roles.includes(req.role)) return res.status({body});\n  next();\n}};\n")
     };
@@ -2407,7 +2792,7 @@ async fn blast_radius_matches_the_script_with_typescript_on_the_replay_repos() {
     }
     let head: Files = vec![("src/services/auth.ts".into(), Some(auth("2")))];
     let f = fixture("ast-replay-bindings", &base, &head);
-    let p = pair(&f.root, &f.diff, &f.repo, None).await;
+    let p = pair(&mut g, &f.root, &f.diff, &f.repo, None).await;
     let out = assert_same("replay-binding-graph", &p);
     assert!(out["callers"].as_array().unwrap().len() >= 6, "{out}");
 
@@ -2432,7 +2817,8 @@ async fn blast_radius_matches_the_script_with_typescript_on_the_replay_repos() {
         ),
     ]);
     let f = fixture("ast-replay-edges", &base, &head);
-    let p = pair(&f.root, &f.diff, &f.repo, None).await;
+    let p = pair(&mut g, &f.root, &f.diff, &f.repo, None).await;
+    g.done();
     let out = assert_same("replay-attention-facts edges", &p);
     let kinds: Vec<&str> = out["attention"]["facts"]
         .as_array()
@@ -2510,6 +2896,7 @@ fn gen_repo(rng: &mut Rng) -> (Files, Files) {
 #[tokio::test]
 #[ignore = "needs TRIBUNAL_TS_FROM"]
 async fn blast_radius_matches_the_script_with_typescript_on_generated_repos() {
+    let mut g = Golden::open("blast_radius_matches_the_script_with_typescript_on_generated_repos");
     let mut rng = Rng::new(seed(0x0005_EED5));
     let mut listed = 0;
     let mut facts = 0;
@@ -2521,7 +2908,7 @@ async fn blast_radius_matches_the_script_with_typescript_on_generated_repos() {
         } else {
             None
         };
-        let p = pair(&f.root, &f.diff, &f.repo, rev.as_deref()).await;
+        let p = pair(&mut g, &f.root, &f.diff, &f.repo, rev.as_deref()).await;
         // oxc reports some early errors TypeScript's parser leaves to its
         // checker (a duplicated export): those files go to TypeScript.
         let out = assert_same_resolving(&format!("generated repo {i}"), &p, None);
@@ -2529,6 +2916,7 @@ async fn blast_radius_matches_the_script_with_typescript_on_generated_repos() {
         facts += out["attention"]["facts"].as_array().unwrap().len();
         let _ = std::fs::remove_dir_all(&f.root);
     }
+    g.done();
     assert!(
         listed > 150,
         "only {listed} callers across the generated repos"
@@ -2541,6 +2929,7 @@ async fn blast_radius_matches_the_script_with_typescript_on_generated_repos() {
 #[tokio::test]
 #[ignore = "needs TRIBUNAL_TS_FROM"]
 async fn edge_facts_match_the_script_on_a_repo_of_writers_and_emits() {
+    let mut g = Golden::open("edge_facts_match_the_script_on_a_repo_of_writers_and_emits");
     let mut base: Files = files(&[
         (
             "src/services/widgets.ts",
@@ -2572,7 +2961,7 @@ async fn edge_facts_match_the_script_on_a_repo_of_writers_and_emits() {
         "export const a = () => {\n  socket.emit('widgets:sync', { id, tenant, $meta: 1, 'acme-key': 2 });\n  prisma.widget.upsert({ where: { id }, create: { id, tenant, sku: 1, $meta: 1, 'acme-key': 2 }, update: {} });\n  prisma.widget.createMany({ data: [{ id, tenant, sku: 2, $meta: 1, 'acme-key': 2 }] });\n  return queue.add('widgets-sync', { id });\n};\nexport const b = () => {\n  socket.emit('widgets:sync', { id });\n  socket.emit(\"widgets:sync\", { id });\n  prisma.widget.create({ data: { id } });\n  prisma.widget.upsert({ create: [{ id, tenant, sku: 3, $meta: 1, 'acme-key': 2 }] });\n  queue.add('widgets-sync', { id });\n  queue.add(\"widgets-sync\", { id });\n  queue.add(WidgetJobs.RENDER, {});\n  queue.add(WidgetJobs.LOST, {});\n  queue.add('', {});\n  queue.add(`widgets-${x}`, {});\n  socket.emit(WIDGET_EVENTS.MANY, { id: 99 });\n  this.#bus.add(this.#job, {});\n};\n",
     )]);
     let f = fixture("ast-edges", &base, &head);
-    let p = pair(&f.root, &f.diff, &f.repo, None).await;
+    let p = pair(&mut g, &f.root, &f.diff, &f.repo, None).await;
     let out = assert_same("edges", &p);
     let kinds: Vec<&str> = out["attention"]["facts"]
         .as_array()
@@ -2583,7 +2972,8 @@ async fn edge_facts_match_the_script_on_a_repo_of_writers_and_emits() {
     for k in ["payload-parity", "writer-parity", "job-without-handler"] {
         assert!(kinds.contains(&k), "no {k}: {out}");
     }
-    let p = pair(&f.root, &f.diff, &f.repo, Some(&f.head)).await;
+    let p = pair(&mut g, &f.root, &f.diff, &f.repo, Some(&f.head)).await;
+    g.done();
     assert_same("edges at --rev", &p);
 }
 
@@ -2593,22 +2983,24 @@ async fn edge_facts_match_the_script_on_a_repo_of_writers_and_emits() {
 #[tokio::test]
 #[ignore = "needs TRIBUNAL_TS_FROM"]
 async fn failure_paths_match_the_script_with_typescript() {
+    let mut g = Golden::open("failure_paths_match_the_script_with_typescript");
     let f = fixture("ast-fail", &realistic_base(), &realistic_head());
     // An empty diff, a diff of only non-source files, a repo that is not one.
     let empty = f.root.join("empty.diff");
     std::fs::write(&empty, "").unwrap();
-    let p = pair(&f.root, &empty, &f.repo, None).await;
+    let p = pair(&mut g, &f.root, &empty, &f.repo, None).await;
     assert_same("empty diff", &p);
     let docs = f.root.join("docs.diff");
     std::fs::write(&docs, "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-a\n+b\n").unwrap();
-    let p = pair(&f.root, &docs, &f.repo, None).await;
+    let p = pair(&mut g, &f.root, &docs, &f.repo, None).await;
     assert_same("docs only", &p);
     let not_a_repo = f.root.join("plain");
     std::fs::create_dir_all(not_a_repo.join("src/services")).unwrap();
     std::fs::write(not_a_repo.join("src/services/queue.ts"), queue_src("1", "")).unwrap();
-    let p = pair(&f.root, &f.diff, &not_a_repo, None).await;
+    let p = pair(&mut g, &f.root, &f.diff, &not_a_repo, None).await;
     assert_same("not a git repo", &p);
     let p = pair(
+        &mut g,
         &f.root,
         &f.diff,
         &f.repo,
@@ -2626,15 +3018,24 @@ async fn failure_paths_match_the_script_with_typescript() {
     )
     .await;
     let err = rust.expect_err("a missing diff is fatal");
-    let js = Command::new("node")
-        .arg(plugin_root().join(BLAST))
-        .arg(&missing)
-        .arg(&f.repo)
-        .current_dir(ts_from())
-        .output()
-        .unwrap();
-    assert_eq!(js.status.code(), Some(1));
-    assert_eq!(String::from_utf8_lossy(&js.stdout), format!("{err}\n"));
+    let ts = ts_from();
+    let input = json!({
+        "missing": missing.to_string_lossy(),
+        "repo": [f.repo.to_string_lossy(), repo_fingerprint(&f.repo)],
+    });
+    let js = g.answer(&input, &path_pairs(Some(&f.root), Some(&ts)), || {
+        let out = Command::new("node")
+            .arg(plugin_root().join(BLAST))
+            .arg(&missing)
+            .arg(&f.repo)
+            .current_dir(&ts)
+            .output()
+            .unwrap();
+        json!({"code": out.status.code(), "stdout": String::from_utf8_lossy(&out.stdout)})
+    });
+    g.done();
+    assert_eq!(js["code"], json!(1));
+    assert_eq!(js["stdout"], json!(format!("{err}\n")));
 }
 
 /// Nested past what either parser takes: TypeScript's parser overflows the
@@ -2643,6 +3044,7 @@ async fn failure_paths_match_the_script_with_typescript() {
 #[tokio::test]
 #[ignore = "needs TRIBUNAL_TS_FROM"]
 async fn deep_nesting_yields_nothing_on_both_sides() {
+    let mut g = Golden::open("deep_nesting_yields_nothing_on_both_sides");
     let deep = |n: usize| {
         format!(
             "import {{ getAccount }} from '../services/queue';\nexport const deep = () => {}getAccount(1){};\nexport async function ok() {{ try {{ getAccount(1); }} finally {{ addSyncJob(1); }} }}\n",
@@ -2656,7 +3058,8 @@ async fn deep_nesting_yields_nothing_on_both_sides() {
     let mut head = realistic_head();
     head.push(("src/widgets/added-deep.ts".into(), Some(deep(5000))));
     let f = fixture("ast-deep", &base, &head);
-    let p = pair(&f.root, &f.diff, &f.repo, None).await;
+    let p = pair(&mut g, &f.root, &f.diff, &f.repo, None).await;
+    g.done();
     let out = assert_same_resolving(
         "deep nesting",
         &p,
@@ -2682,9 +3085,11 @@ async fn deep_nesting_yields_nothing_on_both_sides() {
 #[tokio::test]
 #[ignore = "needs TRIBUNAL_TS_FROM"]
 async fn declared_difference_parser_name() {
+    let mut g = Golden::open("declared_difference_parser_name");
     let f = fixture("ast-parser-name", &realistic_base(), &realistic_head());
-    let p = pair(&f.root, &f.diff, &f.repo, None).await;
-    let name = ts_parser_name(&ts_from());
+    let p = pair(&mut g, &f.root, &f.diff, &f.repo, None).await;
+    g.done();
+    let name = p.ts_name.clone();
     assert!(name.starts_with("typescript "), "{name}");
     assert_eq!(p.js["attention"]["parser"], json!(name));
     assert_eq!(p.rust["attention"]["parser"], json!("oxc_parser 0.155.0"));
@@ -2713,6 +3118,7 @@ fn the_parser_name_matches_the_locked_oxc() {
 #[tokio::test]
 #[ignore = "needs TRIBUNAL_TS_FROM"]
 async fn error_recovery_follows_the_script() {
+    let mut g = Golden::open("error_recovery_follows_the_script");
     let witnesses = [
         ("src/widgets/w.ts", "import { getAccount } from '../services/auth';\ngetAccount(1);\nconst = ;\n"),
         ("src/widgets/w.js", "const { getAccount } = require('../services/auth');\nfunction f(x: number) { getAccount(x); }\n"),
@@ -2722,7 +3128,8 @@ async fn error_recovery_follows_the_script() {
         .iter()
         .map(|(f, c)| bind_case(f, c, "src/services/auth.ts", "getAccount"))
         .collect();
-    let js = js_batch(&cases);
+    let js = js_batch(&mut g, &cases);
+    g.done();
     let mut ts = TypeScriptFallback::new(vec![ts_from()]);
     for ((file, content), j) in witnesses.iter().zip(&js) {
         let refs = j["ok"]["refs"]
@@ -2752,8 +3159,8 @@ async fn error_recovery_follows_the_script() {
 /// 2026-10-22 the script parsed it as TS, so TypeScript's error recovery
 /// decided the answer for a component; both sides now parse the JSX.
 #[test]
-#[ignore = "needs TRIBUNAL_TS_FROM"]
 fn returns_promise_reads_jsx_as_jsx() {
+    let mut g = Golden::open("returns_promise_reads_jsx_as_jsx");
     let cases = [
         ("export const f = async () => <div />;", "f", Some(true)),
         // A returned JSX element is not on the script's list of plainly
@@ -2775,7 +3182,8 @@ fn returns_promise_reads_jsx_as_jsx() {
             json!({"fn": "returnsPromise", "file": "src/w.jsx", "content": content, "name": name})
         })
         .collect();
-    let js = js_batch(&calls);
+    let js = js_batch(&mut g, &calls);
+    g.done();
     for ((content, name, want), j) in cases.iter().zip(&js) {
         let rust = ast_bindings::returns_promise("src/w.jsx", content, name);
         assert_eq!(rust, *want, "{content}");
@@ -2792,6 +3200,7 @@ fn returns_promise_reads_jsx_as_jsx() {
 #[tokio::test]
 #[ignore = "needs TRIBUNAL_TS_FROM"]
 async fn nesting_band_follows_the_script() {
+    let mut g = Golden::open("nesting_band_follows_the_script");
     let content = format!(
         "import {{ getAccount }} from '../services/auth';\nconst a = {}getAccount(1){};\n",
         "[".repeat(990),
@@ -2799,12 +3208,16 @@ async fn nesting_band_follows_the_script() {
     );
     assert!(ast_bindings::nesting_depth(&content) <= ast_bindings::MAX_NESTING);
     assert!(ast_bindings::nesting_depth(&content) > typescript_fallback::TS_NESTING);
-    let js = js_batch(&[bind_case(
-        "src/widgets/w.ts",
-        &content,
-        "src/services/auth.ts",
-        "getAccount",
-    )]);
+    let js = js_batch(
+        &mut g,
+        &[bind_case(
+            "src/widgets/w.ts",
+            &content,
+            "src/services/auth.ts",
+            "getAccount",
+        )],
+    );
+    g.done();
     assert!(
         js[0]["err"]
             .as_str()
@@ -2839,28 +3252,36 @@ async fn nesting_band_follows_the_script() {
 /// `JSON.stringify` escapes it), a Rust string cannot, so the port writes
 /// U+FFFD in its place.
 #[test]
-#[ignore = "needs TRIBUNAL_TS_FROM"]
 fn declared_difference_lone_surrogate_in_a_literal() {
+    let mut g = Golden::open("declared_difference_lone_surrogate_in_a_literal");
     let src = "io.emit('\\uD800', 1);";
-    let dir = scratch("ast-surrogate");
-    let script = dir.join("s.mjs");
-    std::fs::write(
-        &script,
-        format!(
-            "const af = await import({:?});\nconst ts = af.loadTypescript([process.env.TRIBUNAL_TS_FROM]);\nprocess.stdout.write(JSON.stringify(af.factsForFile(ts, 'x.ts', {src:?}, new Set([1]))));\n",
-            format!("file://{}", plugin_root().join("lib/attention-facts.mjs").display())
-        ),
-    )
-    .unwrap();
-    let out = Command::new("node")
-        .arg(&script)
-        .env("TRIBUNAL_TS_FROM", ts_from())
-        .output()
-        .unwrap();
-    let js = String::from_utf8(out.stdout).unwrap();
+    let text = format!(
+        "const af = await import({:?});\nconst ts = af.loadTypescript([process.env.TRIBUNAL_TS_FROM]);\nprocess.stdout.write(JSON.stringify(af.factsForFile(ts, 'x.ts', {src:?}, new Set([1]))));\n",
+        format!("file://{}", plugin_root().join(ATTENTION).display())
+    );
+    let js = run_module(&mut g, "ast-surrogate", &text);
+    g.done();
     assert!(js.contains("emits \\\"\\ud800\\\""), "{js}");
     let rust = attention_facts::facts_for_file("x.ts", src, &Added::of(&[1]));
     assert_eq!(rust[0].detail, "emits \"\u{fffd}\"");
+}
+
+/// What `text`, a module run by node from a scratch directory, printed, from
+/// `g`. Kept as text: the witnesses print lone surrogates, which a JSON parser
+/// refuses.
+fn run_module(g: &mut Golden, name: &str, text: &str) -> String {
+    let v = g.answer(&json!({"module": text}), &path_pairs(None, None), || {
+        let dir = scratch(name);
+        let script = dir.join("s.mjs");
+        std::fs::write(&script, text).unwrap();
+        let out = Command::new("node")
+            .arg(&script)
+            .env("TRIBUNAL_TS_FROM", ts_from())
+            .output()
+            .unwrap();
+        json!(String::from_utf8(out.stdout).unwrap())
+    });
+    v.as_str().unwrap().to_owned()
 }
 
 /// writer-parity names the missing keys readers filter on by building a
@@ -2872,6 +3293,7 @@ fn declared_difference_lone_surrogate_in_a_literal() {
 #[tokio::test]
 #[ignore = "needs TRIBUNAL_TS_FROM"]
 async fn declared_difference_regex_syntax_in_a_key() {
+    let mut g = Golden::open("declared_difference_regex_syntax_in_a_key");
     let reader = "export const r = (widget) => widget.where.aXb;\n";
     let mk = |key: &str| {
         files(&[
@@ -2890,7 +3312,7 @@ async fn declared_difference_regex_syntax_in_a_key() {
     };
     // `.` matches the `X` in `where.aXb` in the script, not in the port.
     let f = fixture("ast-key-dot", &mk("a.b"), &head("a.b"));
-    let p = pair(&f.root, &f.diff, &f.repo, None).await;
+    let p = pair(&mut g, &f.root, &f.diff, &f.repo, None).await;
     let detail = |v: &Value| {
         v["attention"]["facts"]
             .as_array()
@@ -2911,7 +3333,8 @@ async fn declared_difference_regex_syntax_in_a_key() {
     );
     // `(` does not compile: the script loses every edge fact, the port keeps them.
     let f = fixture("ast-key-paren", &mk("("), &head("("));
-    let p = pair(&f.root, &f.diff, &f.repo, None).await;
+    let p = pair(&mut g, &f.root, &f.diff, &f.repo, None).await;
+    g.done();
     let kinds = |v: &Value| -> Vec<String> {
         v["attention"]["facts"]
             .as_array()
@@ -2943,8 +3366,8 @@ async fn declared_difference_regex_syntax_in_a_key() {
 /// title) UTF-16 unit keeps the lead surrogate in JavaScript; the port drops
 /// the pair, as the word resolver's port already declares.
 #[test]
-#[ignore = "needs TRIBUNAL_TS_FROM"]
 fn declared_difference_cut_through_a_surrogate_pair() {
+    let mut g = Golden::open("declared_difference_cut_through_a_surrogate_pair");
     let title = format!("{}\u{1F680}tail", "a".repeat(79));
     let src = format!("it('{title}', () => {{ run(); }});\n");
     let rust = attention_facts::test_facts("src/a.test.ts", &src, &Added::of(&[1]));
@@ -2955,22 +3378,12 @@ fn declared_difference_cut_through_a_surrogate_pair() {
             "a".repeat(79)
         )
     );
-    let dir = scratch("ast-cut");
-    let script = dir.join("s.mjs");
-    std::fs::write(
-        &script,
-        format!(
-            "const af = await import({:?});\nconst ts = af.loadTypescript([process.env.TRIBUNAL_TS_FROM]);\nprocess.stdout.write(JSON.stringify(af.testFacts(ts, 'src/a.test.ts', {src:?}, new Set([1]))[0].detail));\n",
-            format!("file://{}", plugin_root().join("lib/attention-facts.mjs").display())
-        ),
-    )
-    .unwrap();
-    let out = Command::new("node")
-        .arg(&script)
-        .env("TRIBUNAL_TS_FROM", ts_from())
-        .output()
-        .unwrap();
-    let js = String::from_utf8(out.stdout).unwrap();
+    let text = format!(
+        "const af = await import({:?});\nconst ts = af.loadTypescript([process.env.TRIBUNAL_TS_FROM]);\nprocess.stdout.write(JSON.stringify(af.testFacts(ts, 'src/a.test.ts', {src:?}, new Set([1]))[0].detail));\n",
+        format!("file://{}", plugin_root().join(ATTENTION).display())
+    );
+    let js = run_module(&mut g, "ast-cut", &text);
+    g.done();
     assert!(
         js.contains(&format!("{}\\ud83d\\\"", "a".repeat(79))),
         "{js}"
@@ -3072,22 +3485,23 @@ let s: `a${Foo}`;
 ];
 
 #[test]
-#[ignore = "needs TRIBUNAL_TS_FROM"]
 fn binding_refs_match_the_script_on_differently_shaped_forms() {
+    let mut g = Golden::open("binding_refs_match_the_script_on_differently_shaped_forms");
     let mut cases = Vec::new();
     for (file, content) in SHAPED {
         for name in ["Foo", "Inner", "constructor", "Bar"] {
             cases.push(bind_case(file, content, "src/services/b.ts", name));
         }
     }
-    let js = assert_batch("bindingRefs (shaped)", &cases);
+    let js = assert_batch(&mut g, "bindingRefs (shaped)", &cases);
+    g.done();
     assert!(all_refs(&js).len() > 40);
 }
 
 /// Attention facts over forms whose shape differs between the two parsers.
 #[test]
-#[ignore = "needs TRIBUNAL_TS_FROM"]
 fn attention_facts_match_the_script_on_differently_shaped_forms() {
+    let mut g = Golden::open("attention_facts_match_the_script_on_differently_shaped_forms");
     let ctor = "export class A {\n  static constructor() {\n    if (a) return null;\n    try { return x(); } catch { return null; }\n  }\n  'constructor'() { if (a) return false; try { return 1; } catch { return false; } }\n  get v() { if (a) return []; try { return 1; } catch { return []; } }\n}\nexport function outer() {\n  const o = { get v() { if (a) return null; try { return 1; } catch { return null; } } };\n  class K { constructor() { if (a) return undefined; try { return 1; } catch { return undefined; } } }\n}\nconst o2 = { constructor() { if (a) return null; try { return 1; } catch { return null; } } };\n";
     let calls = "export default function lookup(id) {\n  try { return db.get(id); } catch { return null; }\n}\nexport function run() {\n  lookup(1);\n  lookup(2);\n  addJob(x)!;\n  addJob(x) as any;\n  addJob?.(x);\n  if (a) addJob(x);\n  else enqueueIt(x);\n  lbl: addJob(x);\n  const f = () => addJob(x);\n  io.emit('a' as const, {});\n  io.emit(<const>'b', {});\n  io?.emit(`c\\u0064`, {});\n  io.emit('e')!;\n}\n";
     let fills = "export async function save(req) {\n  let x, list = [], m;\n  try {\n    switch (req.kind) {\n      case 1: return 1;\n      case 2: throw new Error();\n    }\n    lbl: { if (a) break lbl; return 2; }\n    (x) = 1;\n    x! = 2;\n    ({ x } = req);\n    list?.push(1);\n    (list).push(2);\n    m = new Map();\n    const cb = () => { x = 3; };\n  } finally {\n    done(x, list, m);\n  }\n}\n";
@@ -3121,7 +3535,8 @@ fn attention_facts_match_the_script_on_differently_shaped_forms() {
         let content = cases.iter().find(|c| c["file"] == f).unwrap()["content"].clone();
         cases.push(json!({"fn": "exportedShapes", "file": f, "content": content}));
     }
-    let js = assert_batch("attention facts (shaped)", &cases);
+    let js = assert_batch(&mut g, "attention facts (shaped)", &cases);
+    g.done();
     assert_valid("attention facts (shaped)", &cases, &js);
     assert!(fact_counts(&js).len() >= 5, "{:?}", fact_counts(&js));
 }
@@ -3186,8 +3601,8 @@ const AMBIGUOUS: &[(&str, &str)] = &[
 ];
 
 #[test]
-#[ignore = "needs TRIBUNAL_TS_FROM"]
 fn binding_refs_match_the_script_on_grammar_ambiguities() {
+    let mut g = Golden::open("binding_refs_match_the_script_on_grammar_ambiguities");
     let cases: Vec<Value> = AMBIGUOUS
         .iter()
         .map(|(ext, body)| {
@@ -3205,7 +3620,8 @@ fn binding_refs_match_the_script_on_grammar_ambiguities() {
             )
         })
         .collect();
-    let js = assert_batch("bindingRefs (ambiguities)", &cases);
+    let js = assert_batch(&mut g, "bindingRefs (ambiguities)", &cases);
+    g.done();
     assert!(all_refs(&js).len() > 40);
 }
 
@@ -3213,8 +3629,8 @@ fn binding_refs_match_the_script_on_grammar_ambiguities() {
 /// JSX text hold quotes and brackets: the nesting guard must not read those
 /// as unclosed brackets, or the port drops a file TypeScript parses.
 #[test]
-#[ignore = "needs TRIBUNAL_TS_FROM"]
 fn shallow_files_with_quotes_in_regexes_and_text_are_parsed() {
+    let mut g = Golden::open("shallow_files_with_quotes_in_regexes_and_text_are_parsed");
     let lines = |l: &str| l.repeat(1100);
     let bodies = [
         ("src/w/quotes.ts", lines("s = s.replace(/'/g, '');\n")),
@@ -3244,7 +3660,8 @@ fn shallow_files_with_quotes_in_regexes_and_text_are_parsed() {
             )
         })
         .collect();
-    let js = assert_batch("bindingRefs (shallow, quoted)", &cases);
+    let js = assert_batch(&mut g, "bindingRefs (shallow, quoted)", &cases);
+    g.done();
     assert_valid("bindingRefs (shallow, quoted)", &cases, &js);
     assert!(js
         .iter()
@@ -3382,9 +3799,12 @@ fn import_names(src: &str) -> Vec<(String, Vec<String>)> {
 /// Every parser-backed function of both scripts over a real repository's
 /// files: each file's facts with every line added, its exported shapes, the
 /// promise verdict of each declaration, and the bindings of each import.
+/// The corpus is whatever repository the run names, so the scripts are asked
+/// every time: no golden holds it, and one would copy its code.
 #[test]
-#[ignore = "needs TRIBUNAL_TS_FROM"]
+#[ignore = "needs TRIBUNAL_TS_FROM and the scripts"]
 fn every_function_matches_the_script_on_a_real_repository() {
+    let mut g = Golden::live();
     let (root, files) = corpus_files();
     assert!(
         files.len() > 20,
@@ -3451,7 +3871,7 @@ fn every_function_matches_the_script_on_a_real_repository() {
             }
         }
     }
-    let js = js_batch(&cases);
+    let js = js_batch(&mut g, &cases);
     assert_eq!(js.len(), cases.len());
     let mut bad = Vec::new();
     let mut parsed_clean = 0usize;
@@ -3508,10 +3928,12 @@ fn every_function_matches_the_script_on_a_real_repository() {
 /// The whole run, both resolvers' halves and every attention fact, on the
 /// corpus repository's own recent commits, each at its revision: real diffs
 /// over real code. Read-only: `git log`, `diff`, `show`, `grep`, `cat-file`.
-/// Each commit's git calls are logged under the scratch directory.
+/// Each commit's git calls are logged under the scratch directory. Like the
+/// test above, it asks the scripts every time.
 #[tokio::test]
-#[ignore = "needs TRIBUNAL_TS_FROM"]
+#[ignore = "needs TRIBUNAL_TS_FROM and the scripts"]
 async fn blast_radius_matches_the_script_on_the_corpus_history() {
+    let mut g = Golden::live();
     let (repo, _) = corpus_files();
     // `TRIBUNAL_AST_HISTORY` widens the sample for an exploration run.
     let n = std::env::var("TRIBUNAL_AST_HISTORY").unwrap_or_else(|_| "8".into());
@@ -3538,7 +3960,7 @@ async fn blast_radius_matches_the_script_on_the_corpus_history() {
         let root = scratch(&format!("ast-history-{}", &sha[..8]));
         let diff = root.join("pr.diff");
         std::fs::write(&diff, git(&repo, &["diff", &format!("{sha}^"), sha])).unwrap();
-        let p = pair(&root, &diff, &repo, Some(sha)).await;
+        let p = pair(&mut g, &root, &diff, &repo, Some(sha)).await;
         let js = assert_same(&format!("commit {sha}"), &p);
         callers += js["callers"].as_array().map_or(0, Vec::len);
         facts += js["attention"]["facts"].as_array().map_or(0, Vec::len);
@@ -3722,6 +4144,7 @@ fn oxc_case(c: &Value) -> Value {
 #[tokio::test]
 #[ignore = "needs TRIBUNAL_TS_FROM"]
 async fn every_step_matches_the_script_on_code_with_syntax_errors() {
+    let mut g = Golden::open("every_step_matches_the_script_on_code_with_syntax_errors");
     let mut rng = Rng::new(seed(0xB20C));
     let mut cases = Vec::new();
     for _ in 0..250 {
@@ -3757,7 +4180,8 @@ async fn every_step_matches_the_script_on_code_with_syntax_errors() {
         }
         cases.push(json!({"fn": "contractFacts", "file": file, "base": base, "content": head}));
     }
-    let js = js_batch(&cases);
+    let js = js_batch(&mut g, &cases);
+    g.done();
     assert_eq!(js.len(), cases.len());
     let mut ts = TypeScriptFallback::new(vec![ts_from()]);
     let (mut bad, mut routed, mut oxc_wrong, mut ts_diag, mut ts_only) = (Vec::new(), 0, 0, 0, 0);
@@ -3820,6 +4244,7 @@ fn break_file(files: &mut Files, file: &str, junk: &str) {
 #[tokio::test]
 #[ignore = "needs TRIBUNAL_TS_FROM"]
 async fn blast_radius_matches_the_script_on_a_repo_with_syntax_errors() {
+    let mut g = Golden::open("blast_radius_matches_the_script_on_a_repo_with_syntax_errors");
     let mut base = realistic_base();
     break_file(
         &mut base,
@@ -3840,7 +4265,7 @@ async fn blast_radius_matches_the_script_on_a_repo_with_syntax_errors() {
     );
     break_file(&mut head, "src/controllers/acme.controller.ts", "@@");
     let f = fixture("ast-broken", &base, &head);
-    let p = pair(&f.root, &f.diff, &f.repo, None).await;
+    let p = pair(&mut g, &f.root, &f.diff, &f.repo, None).await;
     let out = assert_same_resolving(
         "syntax errors",
         &p,
@@ -3854,7 +4279,8 @@ async fn blast_radius_matches_the_script_on_a_repo_with_syntax_errors() {
     );
     assert!(!out["callers"].as_array().unwrap().is_empty(), "{out}");
 
-    let q = pair_with(&f.root, &f.diff, &f.repo, None, false).await;
+    let q = pair_with(&mut g, &f.root, &f.diff, &f.repo, None, false).await;
+    g.done();
     let fallback = &q.rust["typescriptFallback"];
     assert_eq!(fallback["typescript"], Value::Null, "{fallback}");
     assert_eq!(fallback["files"], json!([]), "{fallback}");
@@ -4009,13 +4435,18 @@ fn the_fallback_runs_without_node() {
         return;
     }
     let content = "import { getAccount } from '../services/auth';\ngetAccount(1);\nconst = ;\n";
-    let want = js_batch(&[bind_case(
-        "src/widgets/w.ts",
-        content,
-        "src/services/auth.ts",
-        "getAccount",
-    )])[0]["ok"]
+    let mut g = Golden::open("the_fallback_runs_without_node");
+    let want = js_batch(
+        &mut g,
+        &[bind_case(
+            "src/widgets/w.ts",
+            content,
+            "src/services/auth.ts",
+            "getAccount",
+        )],
+    )[0]["ok"]
         .to_string();
+    g.done();
     let out = Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",

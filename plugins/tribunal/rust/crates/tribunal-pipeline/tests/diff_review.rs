@@ -1,6 +1,13 @@
 //! The Review phase's pure half against the workflow: the bot-vetting task,
 //! lens labels, and the candidates from the lens answers through the
 //! out-of-diff gate.
+//!
+//! The workflow's side is read from `tests/goldens/span/diff_review.json` (see
+//! `common`), with a SHA-256 of the workflow code each span came from, so an
+//! edit there without regenerating fails here. Results over 1 KiB are kept as
+//! a SHA-256; the bot-vetting task is kept whole.
+//! Regenerate after changing a span, its cases or the workflow:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-pipeline --test diff_review`.
 
 mod common;
 

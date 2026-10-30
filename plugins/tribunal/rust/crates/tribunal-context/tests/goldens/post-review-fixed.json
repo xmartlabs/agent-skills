@@ -1,0 +1,1679 @@
+{
+  "a_date_only_submitted_at_is_a_declared_difference": {
+    "recordedWith": {
+      "skills/review-pr/scripts/post-review.mjs": "67245ed7f9968829f7582638f7cdc67f91e8690b9839f589ef98b4a7892affad",
+      "skills/review-pr/scripts/strip-draft-comments.mjs": "d52d94d18c1dc8934171b879b8eaea489a43b005b48ebc7595d681c2b2f01b43"
+    },
+    "cases": [
+      {
+        "input": {
+          "name": "witness",
+          "case": "f5642b68ec773df4e917801b5747bc385c5ce5753b77d785e7ce802a99929f06",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "1\n",
+          "stderr": "",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      }
+    ]
+  },
+  "the_posted_body_is_banner_report_and_footer": {
+    "recordedWith": {
+      "skills/review-pr/scripts/post-review.mjs": "67245ed7f9968829f7582638f7cdc67f91e8690b9839f589ef98b4a7892affad",
+      "skills/review-pr/scripts/strip-draft-comments.mjs": "d52d94d18c1dc8934171b879b8eaea489a43b005b48ebc7595d681c2b2f01b43"
+    },
+    "cases": [
+      {
+        "input": {
+          "name": "request-changes",
+          "case": "401595511b279731aa1b96ab9a681dcf77861d69cd189691d26e5942d8ec0386",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "https://github.com/acme/widgets/pull/42\n",
+          "stderr": "",
+          "calls": [
+            {
+              "args": [
+                "pr",
+                "review",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--body-file",
+                "<BODY>",
+                "--request-changes"
+              ],
+              "stdin": "",
+              "body": "### 🔴 Changes requested\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "pr",
+                "view",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--json",
+                "url",
+                "--jq",
+                ".url"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      }
+    ]
+  },
+  "post_review_matches_js_on_fixtures": {
+    "recordedWith": {
+      "skills/review-pr/scripts/post-review.mjs": "67245ed7f9968829f7582638f7cdc67f91e8690b9839f589ef98b4a7892affad",
+      "skills/review-pr/scripts/strip-draft-comments.mjs": "d52d94d18c1dc8934171b879b8eaea489a43b005b48ebc7595d681c2b2f01b43"
+    },
+    "cases": [
+      {
+        "input": {
+          "name": "approve",
+          "case": "b6cefa4ba08fcce13348f0b8acff60a9206b4d54e57fd15572537bc2702607d6",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "https://github.com/acme/widgets/pull/42\n",
+          "stderr": "",
+          "calls": [
+            {
+              "args": [
+                "pr",
+                "review",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--body-file",
+                "<BODY>",
+                "--approve"
+              ],
+              "stdin": "",
+              "body": "### ✅ Approved\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "pr",
+                "view",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--json",
+                "url",
+                "--jq",
+                ".url"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "request-changes",
+          "case": "401595511b279731aa1b96ab9a681dcf77861d69cd189691d26e5942d8ec0386",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "https://github.com/acme/widgets/pull/42\n",
+          "stderr": "",
+          "calls": [
+            {
+              "args": [
+                "pr",
+                "review",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--body-file",
+                "<BODY>",
+                "--request-changes"
+              ],
+              "stdin": "",
+              "body": "### 🔴 Changes requested\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "pr",
+                "view",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--json",
+                "url",
+                "--jq",
+                ".url"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "comment",
+          "case": "214b81b66a8c7018741f785e437d6c9aecaf790846bb322f10a566392b422955",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "https://github.com/acme/widgets/pull/42\n",
+          "stderr": "",
+          "calls": [
+            {
+              "args": [
+                "pr",
+                "review",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--body-file",
+                "<BODY>",
+                "--comment"
+              ],
+              "stdin": "",
+              "body": "### 💬 Comment\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "pr",
+                "view",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--json",
+                "url",
+                "--jq",
+                ".url"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "approve-wins-over-comment",
+          "case": "3aa01cb84e79990b3b64c405c633334a60ee3c921cbbd7eda0b40d0e8129b4ec",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "https://github.com/acme/widgets/pull/42\n",
+          "stderr": "",
+          "calls": [
+            {
+              "args": [
+                "pr",
+                "review",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--body-file",
+                "<BODY>",
+                "--approve"
+              ],
+              "stdin": "",
+              "body": "### ✅ Approved\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "pr",
+                "view",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--json",
+                "url",
+                "--jq",
+                ".url"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "overwrite-approved",
+          "case": "4ea0804e5399489ad6b2804add1d0ea256b7e2a6ff15e777d2f8cf8397b65e31",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "https://github.com/acme/widgets/pull/42\n",
+          "stderr": "",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews/77"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews/77",
+                "-X",
+                "PUT",
+                "-F",
+                "body=@<BODY>"
+              ],
+              "stdin": "",
+              "body": "### ✅ Approved\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "pr",
+                "view",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--json",
+                "url",
+                "--jq",
+                ".url"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "overwrite-changes",
+          "case": "aabba6c34cf23bb4647681dbb3727587da87b1e149195bb92cea8753b2af0a63",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "https://github.com/acme/widgets/pull/42\n",
+          "stderr": "",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews/77"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews/77",
+                "-X",
+                "PUT",
+                "-F",
+                "body=@<BODY>"
+              ],
+              "stdin": "",
+              "body": "### 🔴 Changes requested\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "pr",
+                "view",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--json",
+                "url",
+                "--jq",
+                ".url"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "overwrite-commented",
+          "case": "4ebee82918471ce9aa998b0e32d52f2c4b6403f35e48a35dd58d7e39cb689605",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "https://github.com/acme/widgets/pull/42\n",
+          "stderr": "",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews/77"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews/77",
+                "-X",
+                "PUT",
+                "-F",
+                "body=@<BODY>"
+              ],
+              "stdin": "",
+              "body": "### 💬 Comment\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "pr",
+                "view",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--json",
+                "url",
+                "--jq",
+                ".url"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "overwrite-array-state",
+          "case": "0e35621fdc7089c8101647c4aa1ff87f605eda2e2ee2fea6e15f42dde1ff7209",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "https://github.com/acme/widgets/pull/42\n",
+          "stderr": "",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews/77"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews/77",
+                "-X",
+                "PUT",
+                "-F",
+                "body=@<BODY>"
+              ],
+              "stdin": "",
+              "body": "### ✅ Approved\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "pr",
+                "view",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--json",
+                "url",
+                "--jq",
+                ".url"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "overwrite-dismissed",
+          "case": "33b41a34727ee6b5ff7c18895a08b38eec6f67ea8cfe330a4d7cae0767b83bd5",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "cannot determine verdict banner: review 77 has state \"DISMISSED\"\n",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews/77"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "overwrite-no-state",
+          "case": "cfa17b441905e1faa1993d9a0c2fed8d4587739476c0f2d03cabf8d48eac2a7c",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "cannot determine verdict banner: review 77 has state \"undefined\"\n",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews/77"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "overwrite-prototype-state",
+          "case": "cb814f6fcd1957af3a3e212566be7005fa36729b6368e8c1c076eb8c1a046cd5",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:93\n  if (!banner) throw new Error(`buildVerdictBanner: unknown verdict \"${verdict}\"`);\n                     ^\n\nError: buildVerdictBanner: unknown verdict \"function toString() { [native code] }\"\n    at buildVerdictBanner (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:93:22)\n    at composeBody (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:105:18)\n    at main (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:192:16)\n    at file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:234:3\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.1\n",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews/77"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "overwrite-null",
+          "case": "6ff4d894f8bd5f5b5a1e5631a8267ac7da8680f539771ac1f52c72a053b5069a",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:182\n    verdict = stateMap[existing.state];\n                                ^\n\nTypeError: Cannot read properties of null (reading 'state')\n    at main (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:182:33)\n    at file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:234:3\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.1\n",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews/77"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "overwrite-bad-json",
+          "case": "835d83ea496c34f47a0cb82e59b6faea557c6d6c42898d0845c97004f1190990",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "<anonymous_script>:1\n{nope\n ^\n\nSyntaxError: Expected property name or '}' in JSON at position 1 (line 1 column 2)\n    at JSON.parse (<anonymous>)\n    at main (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:180:27)\n    at file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:234:3\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.1\n",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews/77"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "overwrite-flag",
+          "case": "eecd883b5860300717d0a1528d87019231c1acf8945896e706f02d2e5508fb2c",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "https://github.com/acme/widgets/pull/42\n",
+          "stderr": "",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews/true"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews/true",
+                "-X",
+                "PUT",
+                "-F",
+                "body=@<BODY>"
+              ],
+              "stdin": "",
+              "body": "### ✅ Approved\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "pr",
+                "view",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--json",
+                "url",
+                "--jq",
+                ".url"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "overwrite-target-missing",
+          "case": "ab88218a674d20e0be787cccce6d7e94a2f2a438f22bdbbcb85af827f509be7e",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "https://github.com/acme/widgets/pull/42\n",
+          "stderr": "",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews/77"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews/77",
+                "-X",
+                "PUT",
+                "-F",
+                "body=@<BODY>"
+              ],
+              "stdin": "",
+              "body": "### ✅ Approved\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "pr",
+                "view",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--json",
+                "url",
+                "--jq",
+                ".url"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "leak",
+          "case": "004d46a34b84ad17b6c6f5427aa9e672f0629347383b3e5723164e40244708d7",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "FATAL: posted review body still contains a 'Draft comments' section — strip step failed or was bypassed\n",
+          "calls": [
+            {
+              "args": [
+                "pr",
+                "review",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--body-file",
+                "<BODY>",
+                "--approve"
+              ],
+              "stdin": "",
+              "body": "### ✅ Approved\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 1
+        }
+      },
+      {
+        "input": {
+          "name": "leak-string-ids",
+          "case": "4158bdcbaec7afd06b31b9c60c778526a7a8adadf56563929ef1cd35cb4b7bf4",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "FATAL: posted review body still contains a 'Draft comments' section — strip step failed or was bypassed\n",
+          "calls": [
+            {
+              "args": [
+                "pr",
+                "review",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--body-file",
+                "<BODY>",
+                "--comment"
+              ],
+              "stdin": "",
+              "body": "### 💬 Comment\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 1
+        }
+      },
+      {
+        "input": {
+          "name": "reduce-skips-leading-null",
+          "case": "c5802969d97a0fb701540573275a3d85f6005b252acb72bc065056610c1dfcf0",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "FATAL: posted review body still contains a 'Draft comments' section — strip step failed or was bypassed\n",
+          "calls": [
+            {
+              "args": [
+                "pr",
+                "review",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--body-file",
+                "<BODY>",
+                "--comment"
+              ],
+              "stdin": "",
+              "body": "### 💬 Comment\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 1
+        }
+      },
+      {
+        "input": {
+          "name": "reduce-hits-null",
+          "case": "ae95b53ac3bb8233631bed64f24ac4a9a38b7a07eb7d8838c48d10880563a26c",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:213\n        : reviews.reduce((max, r) => (!max || r.id > max.id ? r : max), null);\n                                                ^\n\nTypeError: Cannot read properties of null (reading 'id')\n    at file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:213:49\n    at Array.reduce (<anonymous>)\n    at main (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:213:19)\n    at file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:234:3\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.1\n",
+          "calls": [
+            {
+              "args": [
+                "pr",
+                "review",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--body-file",
+                "<BODY>",
+                "--comment"
+              ],
+              "stdin": "",
+              "body": "### 💬 Comment\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "empty-review-list",
+          "case": "dd710f309cda3a4d004ce0b931bb0f8207b6bb80d88a220249940ec194284b3c",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "https://github.com/acme/widgets/pull/42\n",
+          "stderr": "",
+          "calls": [
+            {
+              "args": [
+                "pr",
+                "review",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--body-file",
+                "<BODY>",
+                "--comment"
+              ],
+              "stdin": "",
+              "body": "### 💬 Comment\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "pr",
+                "view",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--json",
+                "url",
+                "--jq",
+                ".url"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "reviews-not-an-array",
+          "case": "97e42fe7feb60e9e51c919257cbc18b92b4dd8ce3a2f49d56c6a47f85fd822b2",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:213\n        : reviews.reduce((max, r) => (!max || r.id > max.id ? r : max), null);\n                  ^\n\nTypeError: reviews.reduce is not a function\n    at main (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:213:19)\n    at file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:234:3\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.1\n",
+          "calls": [
+            {
+              "args": [
+                "pr",
+                "review",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--body-file",
+                "<BODY>",
+                "--comment"
+              ],
+              "stdin": "",
+              "body": "### 💬 Comment\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "post-fails",
+          "case": "45fcb15a7767030c363077605fdc673956ac40469dfea9a2a56e8a78e16f63b0",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "HTTP 422\nnode:internal/errors:986\n  const err = new Error(message);\n              ^\n\nError: Command failed: gh pr review 42 --repo acme/widgets --body-file <SCRATCH>/post-fails/tmp-js/post-review-body-<PID>.md --approve\nHTTP 422\n\n    at genericNodeError (node:internal/errors:986:15)\n    at wrappedFn (node:internal/errors:540:14)\n    at checkExecSyncError (node:child_process:943:11)\n    at execFileSync (node:child_process:979:15)\n    at gh (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:76:10)\n    at main (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:202:7)\n    at file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:234:3\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  status: 1,\n  signal: null,\n  output: [ null, '', 'HTTP 422\\n' ],\n  pid: <PID>,\n  stdout: '',\n  stderr: 'HTTP 422\\n'\n}\n\nNode.js v24.22.1\n",
+          "calls": [
+            {
+              "args": [
+                "pr",
+                "review",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--body-file",
+                "<BODY>",
+                "--approve"
+              ],
+              "stdin": "",
+              "body": "### ✅ Approved\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "refetch-unparseable",
+          "case": "29bc22264d9f068fb590e506312c6998d7363e2f32127100e0193761558580f9",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "<anonymous_script>:1\n<html>\n^\n\nSyntaxError: Unexpected token '<', \"<html>\" is not valid JSON\n    at JSON.parse (<anonymous>)\n    at main (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:209:26)\n    at file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:234:3\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.1\n",
+          "calls": [
+            {
+              "args": [
+                "pr",
+                "review",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--body-file",
+                "<BODY>",
+                "--approve"
+              ],
+              "stdin": "",
+              "body": "### ✅ Approved\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "view-fails",
+          "case": "e6783c7ccee1f1dd4d5c8da0baba59181661d226f5ebbffd99d36d7dc99f4803",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "node:internal/errors:986\n  const err = new Error(message);\n              ^\n\nError: Command failed: gh pr view 42 --repo acme/widgets --json url --jq .url\n    at genericNodeError (node:internal/errors:986:15)\n    at wrappedFn (node:internal/errors:540:14)\n    at checkExecSyncError (node:child_process:943:11)\n    at execFileSync (node:child_process:979:15)\n    at gh (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:76:10)\n    at main (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:222:17)\n    at file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:234:3\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  status: 4,\n  signal: null,\n  output: [ null, '', '' ],\n  pid: <PID>,\n  stdout: '',\n  stderr: ''\n}\n\nNode.js v24.22.1\n",
+          "calls": [
+            {
+              "args": [
+                "pr",
+                "review",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--body-file",
+                "<BODY>",
+                "--approve"
+              ],
+              "stdin": "",
+              "body": "### ✅ Approved\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "pr",
+                "view",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--json",
+                "url",
+                "--jq",
+                ".url"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "refetch-over-max-buffer",
+          "case": "b3f32377728ae85e6b55869910516cec0bd59f5b13c84a4da79723c1e87d19c2",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "node:internal/child_process:1191\n    result.error = new ErrnoException(result.error, 'spawnSync ' + options.file);\n                   ^\n\n<ref *1> Error: spawnSync gh ENOBUFS\n    at Object.spawnSync (node:internal/child_process:1191:20)\n    at spawnSync (node:child_process:929:24)\n    at execFileSync (node:child_process:972:15)\n    at gh (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:76:10)\n    at main (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:209:32)\n    at file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:234:3\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  errno: -55,\n  code: 'ENOBUFS',\n  syscall: 'spawnSync gh',\n  path: 'gh',\n  spawnargs: [ 'api', 'repos/acme/widgets/pulls/42/reviews' ],\n  error: [Circular *1],\n  status: null,\n  signal: 'SIGTERM',\n  output: [\n    null,\n    '                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                '... 1038584 more characters,\n    ''\n  ],\n  pid: <PID>,\n  stdout: '                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                '... 1038584 more characters,\n  stderr: ''\n}\n\nNode.js v24.22.1\n",
+          "calls": [
+            {
+              "args": [
+                "pr",
+                "review",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--body-file",
+                "<BODY>",
+                "--approve"
+              ],
+              "stdin": "",
+              "body": "### ✅ Approved\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "gh-stderr-passes-through",
+          "case": "c43adfe45d119ad4c6f31f81a35c5d8cac59de60c1455d415c4b2baff2dc0f71",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "https://github.com/acme/widgets/pull/42\n",
+          "stderr": "! note from gh\n",
+          "calls": [
+            {
+              "args": [
+                "pr",
+                "review",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--body-file",
+                "<BODY>",
+                "--approve"
+              ],
+              "stdin": "",
+              "body": "### ✅ Approved\n\n## Review of #42\n\nOne blocker.\n### Verdict\n\nRequest changes.\n\n<sub>tribunal · tribunal-v105 · full review · 3 agents · 2025-01-02T03:04:05Z</sub>\n",
+              "inTmp": true
+            },
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            },
+            {
+              "args": [
+                "pr",
+                "view",
+                "42",
+                "--repo",
+                "acme/widgets",
+                "--json",
+                "url",
+                "--jq",
+                ".url"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "no-pr",
+          "case": "a63f890c43d0d0ea133a29c40565171f0569300362e223785301b66f90b5faf4",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 2,
+          "stdout": "",
+          "stderr": "usage: --pr <n> --repo <owner/repo> [--find-review-id <login> | --report-file <path> (--approve|--request-changes|--comment|--overwrite <id>)]\n",
+          "calls": [],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "no-repo",
+          "case": "a377337adb968238f725be72e6b996e95880a04bdfe92c1c7b6e51f19c00347f",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 2,
+          "stdout": "",
+          "stderr": "--report-file is required to post\n",
+          "calls": [],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "no-report",
+          "case": "9087d02c3b2d2101f0cceadd03c6f966762613b836fec3a6e711730b133ebe3a",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 2,
+          "stdout": "",
+          "stderr": "--report-file is required to post\n",
+          "calls": [],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "no-mode",
+          "case": "06f5c2b94026466d763381d60469929fe7c80f4ebdaa6e6cd41ee1a8c1cb7b7a",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 2,
+          "stdout": "",
+          "stderr": "one of --approve, --request-changes, --comment, --overwrite <id> is required\n",
+          "calls": [],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "no-footer",
+          "case": "ba28c027e57472212b3a3bf92c193a59f49790660c1ac73ee7fd5763964ac927",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 2,
+          "stdout": "",
+          "stderr": "--footer-file is required — build it with scripts/build-post-footer.mjs; every posted review ends with a metadata footer, never hand-typed\n",
+          "calls": [],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "footer-flag",
+          "case": "93016a2dc259e106ad38f85f5dbf0f938d32182b52f35b54bc45f0aeef5fcefa",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 2,
+          "stdout": "",
+          "stderr": "--footer-file could not be read: The \"path\" argument must be of type string or an instance of Buffer or URL. Received type boolean (true)\n",
+          "calls": [],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "footer-missing",
+          "case": "983c21ff02473c5d41c4bd8a3eeb91f07370a6d5a3eb72ebe3de9805d42a58b4",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 2,
+          "stdout": "",
+          "stderr": "--footer-file could not be read: ENOENT: no such file or directory, open 'nope.txt'\n",
+          "calls": [],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "footer-is-a-directory",
+          "case": "85a9d02869553312826a8788f3a2948633cbcb4173a552ab0df7f14bae0ac392",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 2,
+          "stdout": "",
+          "stderr": "--footer-file could not be read: EISDIR: illegal operation on a directory, read\n",
+          "calls": [],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "footer-empty",
+          "case": "028cc32e9d2e1fe70c5760d43d3953fe2e07c73597e81f017c005c035a02fc1d",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 2,
+          "stdout": "",
+          "stderr": "--footer-file is empty — refusing to post without a footer\n",
+          "calls": [],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "report-missing",
+          "case": "249739bba12c08d34e1b9808625533d3173791dcad9c7935f30f4e7f0aa6abbe",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "node:fs:483\n    return binding.readFileUtf8(path, stringToFlags(options.flag));\n                   ^\n\nError: ENOENT: no such file or directory, open 'gone.md'\n    at readFileSync (node:fs:483:20)\n    at main (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:191:21)\n    at file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:234:3\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  errno: -2,\n  code: 'ENOENT',\n  syscall: 'open',\n  path: 'gone.md'\n}\n\nNode.js v24.22.1\n",
+          "calls": [],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "report-flag",
+          "case": "abbf8e62008df83f34c2b840b1148c13e2d2b42c855f054388f07e3f00a97828",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "node:fs:481\n      path = getValidatedPath(path);\n             ^\n\nTypeError [ERR_INVALID_ARG_TYPE]: The \"path\" argument must be of type string or an instance of Buffer or URL. Received type boolean (true)\n    at readFileSync (node:fs:481:14)\n    at main (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:191:21)\n    at file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:234:3\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  code: 'ERR_INVALID_ARG_TYPE'\n}\n\nNode.js v24.22.1\n",
+          "calls": [],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "find-newest",
+          "case": "e34b83f4cf66a45b3b624375ee68a889313940406d727dbfb63e10b3b54a4d62",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "2\n",
+          "stderr": "",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "find-none",
+          "case": "5f91aa6dda6356f615591c4cef707265be4a256dda20397527a7a2fa0002467d",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "no review found by ghost on PR #42\n",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "find-null-id",
+          "case": "d62f412b7aea3f703b9b12226dc173f4e6fa1c03c385f6fe209c91aad68a7fdb",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "no review found by bot on PR #42\n",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "find-missing-id",
+          "case": "e5b96302838b9ebccafa9e46964fad6ef69edc944fe86f0334ed6bcd428296f9",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "undefined\n",
+          "stderr": "",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "find-object-id",
+          "case": "8f54e6952562c61336d129bb51388972152f75791da469e95b83039b9b179741",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "[object Object]\n",
+          "stderr": "",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "find-flag-login",
+          "case": "10cff7e0f28ee219979a2271ca8f080c0e3dc24117305e55819b1f8de7411689",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 0,
+          "stdout": "8\n",
+          "stderr": "",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "find-null-review",
+          "case": "50ea299c8b8f2174ee20985abe96f28065c90f9057b0386bcd9ff7f96681a6d5",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:112\n  const matches = reviews.filter((r) => r.user && r.user.login === authorLogin);\n                                          ^\n\nTypeError: Cannot read properties of null (reading 'user')\n    at file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:112:43\n    at Array.filter (<anonymous>)\n    at findReviewId (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:112:27)\n    at main (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:129:16)\n    at file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:234:3\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.1\n",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "find-not-an-array",
+          "case": "df440795c8c6b7d6c52ba51f6311a8edb755bf79cd85ac7a0320e67759830239",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:112\n  const matches = reviews.filter((r) => r.user && r.user.login === authorLogin);\n                          ^\n\nTypeError: reviews.filter is not a function\n    at findReviewId (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:112:27)\n    at main (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:129:16)\n    at file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:234:3\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.1\n",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "find-bad-json",
+          "case": "3e592790cca2263bd5cf24b53f366763b9fc6c3bbd24402e57708f791a71bcef",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "<anonymous_script>:1\nnope\n ^\n\nSyntaxError: Unexpected token 'o', \"nope\" is not valid JSON\n    at JSON.parse (<anonymous>)\n    at findReviewId (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:111:24)\n    at main (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:129:16)\n    at file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:234:3\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.1\n",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      },
+      {
+        "input": {
+          "name": "find-gh-fails",
+          "case": "1a9cba96edb237067bfbc426d47a84b8ba952f5c0ec09be4ec5465b3581b18bb",
+          "fakeGh": "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6"
+        },
+        "js": {
+          "code": 1,
+          "stdout": "",
+          "stderr": "node:internal/errors:986\n  const err = new Error(message);\n              ^\n\nError: Command failed: gh api repos/acme/widgets/pulls/42/reviews\n    at genericNodeError (node:internal/errors:986:15)\n    at wrappedFn (node:internal/errors:540:14)\n    at checkExecSyncError (node:child_process:943:11)\n    at execFileSync (node:child_process:979:15)\n    at gh (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:76:10)\n    at findReviewId (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:110:15)\n    at main (file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:129:16)\n    at file://<PLUGIN>/skills/review-pr/scripts/post-review.mjs:234:3\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26 {\n  status: 1,\n  signal: null,\n  output: [ null, '[]', '' ],\n  pid: <PID>,\n  stdout: '[]',\n  stderr: ''\n}\n\nNode.js v24.22.1\n",
+          "calls": [
+            {
+              "args": [
+                "api",
+                "repos/acme/widgets/pulls/42/reviews"
+              ],
+              "stdin": "",
+              "body": null,
+              "inTmp": null
+            }
+          ],
+          "left": 0
+        }
+      }
+    ]
+  }
+}

@@ -1,4 +1,12 @@
 //! The panel's prompts against the workflow's own template literals.
+//!
+//! The workflow's side is read from
+//! `tests/goldens/span/diff_panel_prompts.json` (see `common`), with a SHA-256
+//! of the workflow code each span came from, so an edit there without
+//! regenerating fails here. Each prompt is over 1 KiB, so the file keeps a
+//! SHA-256 of each; a failure shows the port's prompt and the input.
+//! Regenerate after changing a span, its cases or the workflow:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-pipeline --test diff_panel_prompts`.
 
 mod common;
 

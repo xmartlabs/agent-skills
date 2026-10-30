@@ -12,6 +12,13 @@ use common::*;
 //
 // Where the JavaScript throws, the Rust returns `Err` and only the fact of
 // the error is compared: V8's message text is not part of the contract.
+//
+// The JavaScript's side is read from `tests/goldens/oracle/diff_evidence.json`
+// (see `common`): the workflow is being retired, so a run starts only the
+// port. The file keeps each call's results under a SHA-256 of its inputs and a
+// SHA-256 of every region's text, so a region edited without regenerating
+// fails here; with the workflow gone the golden is final. Regenerate:
+// `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-core --test diff_evidence`.
 
 use std::collections::HashSet;
 

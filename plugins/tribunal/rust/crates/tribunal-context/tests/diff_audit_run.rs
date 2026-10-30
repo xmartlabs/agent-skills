@@ -2,12 +2,25 @@
 //! metrics on stdin and the same vote directory and arguments on both sides,
 //! run as `persist-run.sh` runs it, compared on the exit code and on the
 //! printed line, byte for byte.
+//!
+//! The script's side of every case is read from
+//! `tests/goldens/audit-run.json`, keyed by test. The scratch directory is
+//! stored as `<ROOT>`, and a timestamp the script printed as its distance
+//! from the vote directory's birth, `<BIRTH+ms>`, since the directory is born
+//! anew on every run and the files' times are set from it. The file keeps the
+//! text of the script and of every module it imports, and a SHA-256 of each
+//! case's input, so editing any of them without a regeneration fails here; a
+//! script no longer on disk is retired and is not compared. Regenerate the
+//! whole binary at once:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_audit_run`.
 mod common;
 #[path = "../../tribunal-core/tests/common/mod.rs"]
 mod core_common;
+mod posting;
 
 use common::scratch;
 use core_common::{assert_same, sample};
+use posting::{golden_path, module_texts, regenerating};
 
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -21,10 +34,166 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use proptest::collection::vec;
 use proptest::prelude::*;
 use proptest::sample::select;
+use regex::Regex;
 use serde_json::{json, Map, Value};
 use tribunal_context::audit_run::run;
+use tribunal_context::harness_version::sha256_hex;
 
 const SCRIPT: &str = "lib/audit-run.mjs";
+const GOLDEN: &str = "audit-run.json";
+const REGENERATE: &str =
+    "regenerate: TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_audit_run";
+
+/// The text of `rel` in the plugin, `None` once it is gone: a deleted oracle
+/// is retired, and the golden recorded from it is final.
+fn on_disk(rel: &str) -> Option<String> {
+    match std::fs::read_to_string(common::plugin_root().join(rel)) {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => panic!("{rel}: {e}"),
+    }
+}
+
+fn recorded_with() -> Value {
+    json!({"modules": module_texts(SCRIPT)})
+}
+
+/// Fails when a recorded module changed on disk since the golden was
+/// recorded, or the script now imports another. What is no longer there is
+/// skipped.
+fn assert_fresh(with: &Value) {
+    let modules = with["modules"].as_object().unwrap();
+    for (rel, text) in modules {
+        if let Some(now) = on_disk(rel) {
+            assert!(
+                now == text.as_str().unwrap(),
+                "{rel} changed since {GOLDEN} was recorded; {REGENERATE}"
+            );
+        }
+    }
+    if on_disk(SCRIPT).is_some() {
+        let now: Vec<String> = module_texts(SCRIPT).into_keys().collect();
+        let then: Vec<&String> = modules.keys().collect();
+        assert!(
+            now.iter().eq(then.iter().copied()),
+            "{SCRIPT} imports {now:?} now, not {then:?}; {REGENERATE}"
+        );
+    }
+}
+
+/// The golden, checked against the script on disk; `None` when regenerating.
+fn golden() -> Option<&'static Value> {
+    static GOLDEN_CELL: OnceLock<Option<Value>> = OnceLock::new();
+    GOLDEN_CELL
+        .get_or_init(|| {
+            if regenerating() {
+                return None;
+            }
+            let path = golden_path(GOLDEN);
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{}: {e}; {REGENERATE}", path.display()));
+            let golden: Value = serde_json::from_str(&text).unwrap();
+            assert_fresh(&golden["recordedWith"]);
+            Some(golden)
+        })
+        .as_ref()
+}
+
+/// Adds a test's cases to the golden and writes it out. Tests record from
+/// several threads, so the file is rewritten each time and is whole once the
+/// binary finishes.
+fn record(name: &str, cases: Value) {
+    static CASES: Mutex<BTreeMap<String, Value>> = Mutex::new(BTreeMap::new());
+    let mut all = CASES.lock().unwrap();
+    assert!(all.insert(name.to_owned(), cases).is_none(), "{name} twice");
+    let text =
+        serde_json::to_string_pretty(&json!({"recordedWith": recorded_with(), "cases": *all}))
+            .unwrap();
+    std::fs::write(golden_path(GOLDEN), text + "\n").unwrap();
+}
+
+/// Days since 1970-01-01 of a proleptic Gregorian date.
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y.rem_euclid(400);
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+fn iso_pattern() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{3})Z").unwrap()
+    })
+}
+
+fn iso_to_ms(c: &regex::Captures) -> i64 {
+    let n = |i: usize| c[i].parse::<i64>().unwrap();
+    days_from_civil(n(1), n(2), n(3)) * 86_400_000
+        + n(4) * 3_600_000
+        + n(5) * 60_000
+        + n(6) * 1000
+        + n(7)
+}
+
+fn ms_to_iso(ms: i64) -> String {
+    let days = ms.div_euclid(86_400_000);
+    let r = ms.rem_euclid(86_400_000);
+    let (mut lo, mut hi) = (0i64, 9999i64);
+    while lo < hi {
+        let mid = (lo + hi + 1) / 2;
+        if days_from_civil(mid, 1, 1) <= days {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    let y = lo;
+    let m = (1..=12)
+        .rev()
+        .find(|&m| days_from_civil(y, m, 1) <= days)
+        .unwrap();
+    let d = days - days_from_civil(y, m, 1) + 1;
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.{:03}Z",
+        r / 3_600_000,
+        r / 60_000 % 60,
+        r / 1000 % 60,
+        r % 1000
+    )
+}
+
+/// `v` as the golden keeps it: `root` as `<ROOT>`, and each timestamp as its
+/// distance from `birth`, the vote directory's birth second.
+fn to_golden(v: &Value, root: &str, birth: Option<i64>) -> Value {
+    let text = v.to_string().replace(root, "<ROOT>");
+    let text = iso_pattern().replace_all(&text, |c: &regex::Captures| {
+        let ms = iso_to_ms(c);
+        assert_eq!(
+            ms_to_iso(ms),
+            c[0],
+            "a timestamp this test cannot read back"
+        );
+        let birth = birth.unwrap_or_else(|| panic!("{} with no vote directory", &c[0]));
+        format!("<BIRTH{:+}>", ms - birth * 1000)
+    });
+    serde_json::from_str(&text).unwrap()
+}
+
+/// [`to_golden`] undone for this run's `root` and `birth`.
+fn from_golden(v: &Value, root: &str, birth: Option<i64>) -> Value {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"<BIRTH([+-]\d+)>").unwrap());
+    let text = v.to_string();
+    let text = re.replace_all(&text, |c: &regex::Captures| {
+        let birth = birth.expect("a recorded timestamp with no vote directory");
+        ms_to_iso(birth * 1000 + c[1].parse::<i64>().unwrap())
+    });
+    serde_json::from_str(&text.replace("<ROOT>", root)).unwrap()
+}
 
 fn node(args: &[String], stdin: &str) -> (Option<i32>, String, String) {
     let mut child = Command::new("node")
@@ -735,17 +904,54 @@ fn rust_value(out: Result<tribunal_context::audit_run::Audit, String>) -> Value 
     }
 }
 
-fn check(root: &Path, case: &Case) -> Outcome {
-    std::fs::create_dir_all(root).unwrap();
-    let args = build(root, case);
-    let stdin = case.stdin.text();
-    let (code, stdout, stderr) = node(&args, &stdin);
-    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    Outcome {
-        input: json!({"args": args, "stdin": stdin, "case": format!("{case:?}")}),
-        js: js_value(code, &stdout, &stderr),
-        rust: rust_value(run(&refs, &stdin)),
+/// [`js_value`] as the golden keeps it: `value` is the parse of `line`, so
+/// only `line` is kept.
+fn js_kept(js: &Value, root: &str, birth: Option<i64>) -> Value {
+    let mut v = js.clone();
+    v.as_object_mut().unwrap().remove("value");
+    to_golden(&v, root, birth)
+}
+
+fn js_from_kept(v: &Value, root: &str, birth: Option<i64>) -> Value {
+    let mut js = from_golden(v, root, birth);
+    if let Some(line) = js.get("line").and_then(Value::as_str) {
+        let value: Value = serde_json::from_str(line).unwrap();
+        js["value"] = value;
     }
+    js
+}
+
+/// `case` run in `dir`, under the scratch directory `root`. `recorded` is the
+/// golden's entry for it, when not regenerating.
+fn check(root: &str, dir: &Path, case: &Case, recorded: Option<&Value>) -> (Outcome, Value) {
+    std::fs::create_dir_all(dir).unwrap();
+    let args = build(dir, case);
+    let stdin = case.stdin.text();
+    let votes = dir.join("votes");
+    let birth = votes.exists().then(|| birth_second(&votes));
+    let digest = json!(sha256_hex(
+        json!({"case": format!("{case:?}"), "stdin": stdin, "names": NAMES, "offsets": OFFSETS})
+            .to_string()
+            .as_bytes()
+    ));
+    let js = match recorded {
+        Some(r) => {
+            assert_eq!(r["input"], digest, "the generator changed; {REGENERATE}");
+            js_from_kept(&r["js"], root, birth)
+        }
+        None => {
+            let (code, stdout, stderr) = node(&args, &stdin);
+            js_value(code, &stdout, &stderr)
+        }
+    };
+    let kept = json!({"input": digest, "js": js_kept(&js, root, birth)});
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let outcome = Outcome {
+        input: json!({"args": args, "stdin": stdin, "case": format!("{case:?}")}),
+        js,
+        rust: rust_value(run(&refs, &stdin)),
+    };
+    (outcome, kept)
 }
 
 fn outcomes() -> &'static [Outcome] {
@@ -753,8 +959,55 @@ fn outcomes() -> &'static [Outcome] {
     CELL.get_or_init(|| {
         let cases = sample(case());
         let root = scratch("audit-run-gen");
-        par_map(&cases, |i, case| check(&root.join(i.to_string()), case))
+        let root_text = root.to_string_lossy().into_owned();
+        let replay = golden().map(|g| {
+            let r = g["cases"]["generated"]
+                .as_array()
+                .unwrap_or_else(|| panic!("no generated cases in {GOLDEN}; {REGENERATE}"));
+            assert_eq!(r.len(), cases.len(), "the generator changed; {REGENERATE}");
+            r
+        });
+        let (out, kept): (Vec<Outcome>, Vec<Value>) = par_map(&cases, |i, case| {
+            check(
+                &root_text,
+                &root.join(i.to_string()),
+                case,
+                replay.map(|r| &r[i]),
+            )
+        })
+        .into_iter()
+        .unzip();
+        if replay.is_none() {
+            record("generated", Value::Array(kept));
+        }
+        out
     })
+}
+
+/// The script's [`js_value`] for the witness `name`: run and recorded when
+/// regenerating, read back otherwise. `root` is the test's scratch
+/// directory, where it has one; no witness has a vote directory to be born.
+fn js_side(
+    name: &str,
+    root: Option<&Path>,
+    args: &[String],
+    stdin: &str,
+    js: impl FnOnce() -> Value,
+) -> Value {
+    let root = root.map_or_else(|| "<ROOT>".to_owned(), |r| r.to_string_lossy().into_owned());
+    let input = to_golden(&json!({"args": args, "stdin": stdin}), &root, None);
+    let Some(g) = golden() else {
+        let out = js();
+        record(
+            name,
+            json!({"input": input, "js": js_kept(&out, &root, None)}),
+        );
+        return out;
+    };
+    let case = &g["cases"][name];
+    assert!(case.is_object(), "{name} is not in {GOLDEN}; {REGENERATE}");
+    assert_eq!(case["input"], input, "{name}'s input changed; {REGENERATE}");
+    js_from_kept(&case["js"], &root, None)
 }
 
 #[test]
@@ -895,13 +1148,13 @@ fn the_generated_cases_reach_both_run_starts() {
     assert!(by_birth >= 5 && by_arg >= 5, "{by_birth} {by_arg}");
 }
 
-fn both(args: &[String], stdin: &str) -> (Value, Value) {
-    let (code, stdout, stderr) = node(args, stdin);
+fn both(name: &str, root: Option<&Path>, args: &[String], stdin: &str) -> (Value, Value) {
+    let js = js_side(name, root, args, stdin, || {
+        let (code, stdout, stderr) = node(args, stdin);
+        js_value(code, &stdout, &stderr)
+    });
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    (
-        js_value(code, &stdout, &stderr),
-        rust_value(run(&refs, stdin)),
-    )
+    (js, rust_value(run(&refs, stdin)))
 }
 
 /// Declared difference: a relay reason cut at 120 units inside a surrogate
@@ -912,8 +1165,19 @@ fn witness_relay_reason_cut_inside_a_pair() {
     let reason = format!("{}😀", "x".repeat(119));
     let stdin =
         json!({"relays": [{"label": "l", "verified": false, "reason": reason}]}).to_string();
-    let (code, stdout, _) = node(&[], &stdin);
-    assert_eq!(code, Some(0));
+    let js = js_side(
+        "witness_relay_reason_cut_inside_a_pair",
+        None,
+        &[],
+        &stdin,
+        // Kept whole: the lone half is not JSON `js_value` can parse.
+        || {
+            let (code, stdout, stderr) = node(&[], &stdin);
+            json!({"code": code, "stdout": stdout, "stderr": stderr})
+        },
+    );
+    assert_eq!(js["code"], 0);
+    let stdout = js["stdout"].as_str().unwrap();
     assert!(stdout.contains("x\\ud83d)"), "{stdout}");
     let line = run(&[], &stdin).unwrap().to_line();
     assert!(line.contains("x\u{FFFD})"), "{line}");
@@ -924,7 +1188,7 @@ fn witness_relay_reason_cut_inside_a_pair() {
 #[test]
 fn witness_number_beyond_double_range() {
     let stdin = r#"{"voteReconciliation": {"classifierFailed": 1e400}}"#;
-    let (js, rust) = both(&[], stdin);
+    let (js, rust) = both("witness_number_beyond_double_range", None, &[], stdin);
     assert_eq!(js["value"]["violations"][0]["id"], "classifier-unavailable");
     assert_eq!(rust["value"]["violations"], json!([]));
 }
@@ -946,7 +1210,12 @@ fn a_vote_dir_older_than_its_files_is_clean() {
         0,
     );
     let args = vec![votes.to_string_lossy().into_owned()];
-    let (js, rust) = both(&args, "{}");
+    let (js, rust) = both(
+        "a_vote_dir_older_than_its_files_is_clean",
+        Some(&root),
+        &args,
+        "{}",
+    );
     assert_eq!(js, rust);
     assert_eq!(rust["value"]["passed"], true);
 }

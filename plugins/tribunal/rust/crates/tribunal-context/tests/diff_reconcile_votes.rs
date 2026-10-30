@@ -5,6 +5,16 @@
 //! classifier in process. A classifier that cannot run is stood in on both
 //! sides: `TRIBUNAL_CLASSIFIER` naming a missing file for the script, a
 //! classifier returning the same error text for the port.
+//!
+//! The script's side is read from `tests/goldens/reconcile-votes.json` (the
+//! generated cases) and `tests/goldens/reconcile-votes-witnesses.json` (the
+//! declared differences), so a run starts only the port. Each keeps the text
+//! of both scripts, and the cases file a SHA-256 of each case's input; the
+//! scratch directories and the plugin are stored as placeholders. A script or
+//! generator edited without a regeneration fails here; a script no longer on
+//! disk has been retired and its golden is final. Regenerate after changing
+//! either: `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test
+//! diff_reconcile_votes`.
 mod common;
 #[path = "../../tribunal-core/tests/common/mod.rs"]
 mod core_common;
@@ -12,19 +22,133 @@ mod core_common;
 use common::{plugin_root, scratch};
 use core_common::{assert_same, sample};
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use proptest::prelude::*;
 use serde_json::{json, Map, Value};
+use tribunal_context::harness_version::sha256_hex;
 use tribunal_context::reconcile_votes::{classify_in_process, reconcile, run, Printed};
 
 const SCRIPT: &str = "lib/reconcile-votes.mjs";
+/// What the cases ran: the script, then the classifier it shells out to.
+const SCRIPTS: [&str; 2] = [SCRIPT, "lib/classify-verdict.sh"];
 const MISSING_CLASSIFIER: &str = "/nonexistent/tribunal/classify-verdict.sh";
+const GOLDEN: &str = "reconcile-votes.json";
+const WITNESS_GOLDEN: &str = "reconcile-votes-witnesses.json";
+const REGENERATE: &str =
+    "regenerate: TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_reconcile_votes";
+
+// ---------------------------------------------------------------- goldens
+
+fn regenerating() -> bool {
+    std::env::var("TRIBUNAL_REGEN_GOLDENS").is_ok_and(|v| v == "1")
+}
+
+fn golden_path(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/goldens")
+        .join(name)
+}
+
+fn script_texts() -> Value {
+    let texts: BTreeMap<&str, String> = SCRIPTS
+        .iter()
+        .map(|s| (*s, std::fs::read_to_string(plugin_root().join(s)).unwrap()))
+        .collect();
+    json!(texts)
+}
+
+/// The scripts in `recorded` (`{path: text}`) or `scripts` whose text under
+/// `root` is not what was recorded. A script no longer on disk was retired
+/// with the Workflow and its golden is final, so it is skipped; when
+/// `scripts[0]`, the one the cases run, is gone, the rest are only what it
+/// read and are skipped too.
+fn stale_scripts(recorded: &Value, scripts: &[&str], root: &Path) -> Vec<String> {
+    let on_disk = |s: &str| match std::fs::read_to_string(root.join(s)) {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => panic!("{s}: {e}"),
+    };
+    if on_disk(scripts[0]).is_none() {
+        return Vec::new();
+    }
+    let mut names: BTreeSet<String> = scripts.iter().map(|s| (*s).to_owned()).collect();
+    names.extend(
+        recorded
+            .as_object()
+            .into_iter()
+            .flat_map(|m| m.keys().cloned()),
+    );
+    names
+        .into_iter()
+        .filter(|s| on_disk(s).is_some_and(|text| recorded.get(s) != Some(&json!(text))))
+        .collect()
+}
+
+/// The golden `name`, checked against the scripts on disk; `None` when
+/// regenerating.
+fn recorded(name: &str) -> Option<Value> {
+    if regenerating() {
+        return None;
+    }
+    let path = golden_path(name);
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("{}: {e}; {REGENERATE}", path.display()));
+    let golden: Value = serde_json::from_str(&text).unwrap();
+    let stale = stale_scripts(&golden["scripts"], &SCRIPTS, &plugin_root());
+    assert!(
+        stale.is_empty(),
+        "{stale:?} changed since {} was recorded; {REGENERATE}",
+        path.display()
+    );
+    Some(golden)
+}
+
+fn write_golden(name: &str, golden: Value) {
+    let text = serde_json::to_string_pretty(&golden).unwrap();
+    std::fs::write(golden_path(name), text + "\n").unwrap();
+}
+
+fn plugin_text() -> String {
+    plugin_root()
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// `dir` and the plugin as placeholders, both ways: node names the real path
+/// (`/private/var/…` on macOS), so it goes before the one `dir` is spelled as.
+fn placeholders(dir: &Path, name: &'static str) -> [(String, &'static str); 3] {
+    let real = dir.canonicalize().map_or_else(
+        |_| dir.to_string_lossy().into_owned(),
+        |d| d.to_string_lossy().into_owned(),
+    );
+    [
+        (real, name),
+        (dir.to_string_lossy().into_owned(), name),
+        (plugin_text(), "<PLUGIN>"),
+    ]
+}
+
+fn to_golden(v: &Value, pairs: &[(String, &'static str)]) -> Value {
+    let text = pairs
+        .iter()
+        .fold(v.to_string(), |t, (from, to)| t.replace(from.as_str(), to));
+    serde_json::from_str(&text).unwrap()
+}
+
+fn from_golden(v: &Value, pairs: &[(String, &'static str)]) -> Value {
+    let text = pairs[1..]
+        .iter()
+        .fold(v.to_string(), |t, (to, from)| t.replace(from, to));
+    serde_json::from_str(&text).unwrap()
+}
 
 // ---------------------------------------------------------------- pools
 
@@ -316,15 +440,31 @@ fn case() -> impl Strategy<Value = Case> {
         prop::bool::weighted(0.04),
     )
         .prop_map(
-            |(votes, orphans, flood, stdin, args, broken_classifier)| Case {
-                votes,
-                orphans,
-                flood,
-                stdin,
-                args,
-                broken_classifier,
+            |(mut votes, orphans, flood, stdin, args, broken_classifier)| {
+                unfold_case(&mut votes);
+                Case {
+                    votes,
+                    orphans,
+                    flood,
+                    stdin,
+                    args,
+                    broken_classifier,
+                }
             },
         )
+}
+
+/// Slots `a` and `A` in one case name the same artifacts on macOS's
+/// case-insensitive disk and different ones on Linux, so a golden recorded on
+/// one cannot speak for the other. Each stays covered in cases of its own.
+fn unfold_case(votes: &mut [VoteF]) {
+    let named = |name: &str| slot_pool().iter().position(|(_, s)| *s == name).unwrap();
+    let (lower, upper) = (named("a"), named("A"));
+    if votes.iter().any(|v| v.slot == lower) {
+        for v in votes.iter_mut().filter(|v| v.slot == upper) {
+            v.slot = lower;
+        }
+    }
 }
 
 // ---------------------------------------------------------------- building
@@ -460,6 +600,21 @@ struct NodeRun {
     stderr: String,
 }
 
+impl NodeRun {
+    fn to_json(&self) -> Value {
+        json!({"code": self.code, "stdout": self.stdout, "stderr": self.stderr})
+    }
+
+    fn from_json(v: &Value) -> Self {
+        Self {
+            code: v["code"].as_i64().map(|c| i32::try_from(c).unwrap()),
+            stdout: v["stdout"].as_str().unwrap().to_owned(),
+            stderr: v["stderr"].as_str().unwrap().to_owned(),
+        }
+    }
+}
+
+/// Runs the script; only a regeneration reaches it.
 fn node(args: &[String], stdin: &str, cwd: &Path, broken: bool) -> NodeRun {
     let mut cmd = Command::new("node");
     cmd.arg(plugin_root().join(SCRIPT))
@@ -529,10 +684,23 @@ struct Outcome {
     case: Case,
 }
 
-fn check(dir: &Path, case: &Case) -> Outcome {
+/// One case: the script's side from `replay`, the golden's record of it, or
+/// from the script when regenerating. Also returns what the golden keeps.
+fn check(dir: &Path, root: &Path, case: &Case, replay: Option<&Value>) -> (Outcome, Value) {
     let stdin = build(dir, case);
     let args = args_for(case, dir);
-    let js = node(&args, &stdin, dir, case.broken_classifier);
+    let pairs = placeholders(root, "<ROOT>");
+    let input = json!({ "case": format!("{case:?}"), "args": args, "stdin": stdin });
+    // A hash: the cases' stdin would be most of the file.
+    let hash = json!(sha256_hex(to_golden(&input, &pairs).to_string().as_bytes()));
+    let js = match replay {
+        Some(r) => {
+            assert_eq!(r["input"], hash, "the generator changed; {REGENERATE}");
+            NodeRun::from_json(&from_golden(&r["js"], &pairs))
+        }
+        None => node(&args, &stdin, dir, case.broken_classifier),
+    };
+    let kept = json!({"input": hash, "js": to_golden(&js.to_json(), &pairs)});
     let rust = rust_side(&args, &stdin, case.broken_classifier);
     let _ = std::fs::remove_dir_all(dir);
     let js_text = if js.code == Some(0) {
@@ -551,15 +719,16 @@ fn check(dir: &Path, case: &Case) -> Outcome {
         }
     };
     let js_out = (js.code == Some(0)).then(|| serde_json::from_str(js.stdout.trim()).unwrap());
-    Outcome {
-        input: json!({ "case": format!("{case:?}"), "args": args, "stdin": stdin }),
+    let outcome = Outcome {
+        input,
         rust: Value::String(rust_text),
         js: Value::String(js_text),
         js_out,
         js_stderr: js.stderr,
         compact: args.iter().any(|a| a == "--compact"),
         case: case.clone(),
-    }
+    };
+    (outcome, kept)
 }
 
 fn outcomes() -> &'static [Outcome] {
@@ -567,24 +736,40 @@ fn outcomes() -> &'static [Outcome] {
     CELL.get_or_init(|| {
         let cases = sample(case());
         let root = scratch("reconcile-votes");
+        let golden = recorded(GOLDEN);
+        let replay: Option<&Vec<Value>> = golden.as_ref().map(|g| {
+            let recorded = g["cases"].as_array().unwrap();
+            assert_eq!(
+                recorded.len(),
+                cases.len(),
+                "the generator changed; {REGENERATE}"
+            );
+            recorded
+        });
         let next = AtomicUsize::new(0);
-        let slots: Vec<Mutex<Option<Outcome>>> = cases.iter().map(|_| Mutex::new(None)).collect();
+        let slots: Vec<Mutex<Option<(Outcome, Value)>>> =
+            cases.iter().map(|_| Mutex::new(None)).collect();
         let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
         std::thread::scope(|s| {
             for _ in 0..workers {
                 s.spawn(|| loop {
                     let i = next.fetch_add(1, Ordering::Relaxed);
                     let Some(case) = cases.get(i) else { break };
-                    let o = check(&root.join(i.to_string()), case);
+                    let dir = root.join(i.to_string());
+                    let o = check(&dir, &root, case, replay.map(|r| &r[i]));
                     *slots[i].lock().unwrap() = Some(o);
                 });
             }
         });
         let _ = std::fs::remove_dir_all(&root);
-        slots
+        let (out, kept): (Vec<Outcome>, Vec<Value>) = slots
             .into_iter()
             .map(|m| m.into_inner().unwrap().unwrap())
-            .collect()
+            .unzip();
+        if replay.is_none() {
+            write_golden(GOLDEN, json!({"scripts": script_texts(), "cases": kept}));
+        }
+        out
     })
 }
 
@@ -688,21 +873,105 @@ fn the_in_process_classifier_never_fails() {
 // ---------------------------------------------------------------------------
 // Witnesses for the declared differences.
 
-fn witness_raw(name: &str, files: &[&str], stdin: &str, broken: bool) -> (Value, String) {
-    let dir = scratch(name);
-    for f in files {
-        std::fs::write(dir.join(f), "VERDICT: REFUTED\n").unwrap();
-    }
-    let args = vec![dir.to_string_lossy().into_owned(), "--compact".to_owned()];
-    let js = node(&args, stdin, &dir, broken);
-    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
-    let rust = run(&argv, stdin).unwrap().value;
-    let _ = std::fs::remove_dir_all(&dir);
-    (rust, js.stdout)
+struct Witness {
+    name: &'static str,
+    files: &'static [&'static str],
+    stdin: &'static str,
+    broken: bool,
 }
 
-fn witness(name: &str, files: &[&str], stdin: &str, broken: bool) -> (Value, Value) {
-    let (rust, js) = witness_raw(name, files, stdin, broken);
+const WITNESSES: [Witness; 4] = [
+    Witness {
+        name: "rv-collation",
+        files: &["\u{e9}-codex.out", "f-codex.out"],
+        stdin: "[]",
+        broken: false,
+    },
+    Witness {
+        name: "rv-seam",
+        files: &["1-codex.out"],
+        stdin: r#"[{"slotId":1,"source":"codex","verdict":"REFUTED"}]"#,
+        broken: true,
+    },
+    Witness {
+        name: "rv-infinity",
+        files: &["Infinity-codex.out"],
+        stdin: r#"[{"slotId":1e400,"source":"codex","verdict":"REFUTED"}]"#,
+        broken: false,
+    },
+    Witness {
+        name: "rv-surrogate",
+        files: &[],
+        stdin: r#"[{"slotId":"\ud800","source":"codex"}]"#,
+        broken: false,
+    },
+];
+
+fn witness_dir(w: &Witness, suffix: &str) -> PathBuf {
+    let dir = scratch(&format!("{}{suffix}", w.name));
+    for f in w.files {
+        std::fs::write(dir.join(f), "VERDICT: REFUTED\n").unwrap();
+    }
+    dir
+}
+
+fn witness_args(dir: &Path) -> Vec<String> {
+    vec![dir.to_string_lossy().into_owned(), "--compact".to_owned()]
+}
+
+/// What the script printed for each witness, by name, with its directory as
+/// `<DIR>`: from the golden, or from the script when regenerating, in
+/// directories of its own so the tests' are left alone.
+fn witness_stdouts() -> &'static BTreeMap<&'static str, Value> {
+    static CELL: OnceLock<BTreeMap<&'static str, Value>> = OnceLock::new();
+    CELL.get_or_init(|| {
+        let input = |w: &Witness| json!({"files": w.files, "stdin": w.stdin, "broken": w.broken});
+        if let Some(g) = recorded(WITNESS_GOLDEN) {
+            return WITNESSES
+                .iter()
+                .map(|w| {
+                    let r = &g["witnesses"][w.name];
+                    assert_eq!(r["input"], input(w), "the witness changed; {REGENERATE}");
+                    (w.name, r["stdout"].clone())
+                })
+                .collect();
+        }
+        let out: BTreeMap<&'static str, Value> = WITNESSES
+            .iter()
+            .map(|w| {
+                let dir = witness_dir(w, "-js");
+                let js = node(&witness_args(&dir), w.stdin, &dir, w.broken);
+                let stdout = to_golden(&json!(js.stdout), &placeholders(&dir, "<DIR>"));
+                let _ = std::fs::remove_dir_all(&dir);
+                (w.name, stdout)
+            })
+            .collect();
+        let kept: BTreeMap<&str, Value> = WITNESSES
+            .iter()
+            .map(|w| (w.name, json!({"input": input(w), "stdout": out[w.name]})))
+            .collect();
+        write_golden(
+            WITNESS_GOLDEN,
+            json!({"scripts": script_texts(), "witnesses": kept}),
+        );
+        out
+    })
+}
+
+fn witness_raw(name: &str) -> (Value, String) {
+    let w = WITNESSES.iter().find(|w| w.name == name).unwrap();
+    let recorded = &witness_stdouts()[name];
+    let dir = witness_dir(w, "");
+    let js = from_golden(recorded, &placeholders(&dir, "<DIR>"));
+    let args = witness_args(&dir);
+    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+    let rust = run(&argv, w.stdin).unwrap().value;
+    let _ = std::fs::remove_dir_all(&dir);
+    (rust, js.as_str().unwrap().to_owned())
+}
+
+fn witness(name: &str) -> (Value, Value) {
+    let (rust, js) = witness_raw(name);
     (rust, serde_json::from_str(js.trim()).unwrap())
 }
 
@@ -717,20 +986,14 @@ fn keys(v: &Value) -> Vec<String> {
 
 #[test]
 fn orphan_keys_outside_ascii_are_a_declared_difference() {
-    let (rust, js) = witness(
-        "rv-collation",
-        &["\u{e9}-codex.out", "f-codex.out"],
-        "[]",
-        false,
-    );
+    let (rust, js) = witness("rv-collation");
     assert_eq!(keys(&js), ["\u{e9}-codex", "f-codex"]);
     assert_eq!(keys(&rust), ["f-codex", "\u{e9}-codex"]);
 }
 
 #[test]
 fn the_classifier_test_seam_is_a_declared_difference() {
-    let stdin = r#"[{"slotId":1,"source":"codex","verdict":"REFUTED"}]"#;
-    let (rust, js) = witness("rv-seam", &["1-codex.out"], stdin, true);
+    let (rust, js) = witness("rv-seam");
     assert_eq!(js["classifierFailed"], 1);
     assert_eq!(rust["classifierFailed"], 0);
     assert_eq!(rust["ok"], 1);
@@ -738,18 +1001,42 @@ fn the_classifier_test_seam_is_a_declared_difference() {
 
 #[test]
 fn an_out_of_range_number_is_a_declared_difference() {
-    let stdin = r#"[{"slotId":1e400,"source":"codex","verdict":"REFUTED"}]"#;
-    let (rust, js) = witness("rv-infinity", &["Infinity-codex.out"], stdin, false);
+    let (rust, js) = witness("rv-infinity");
     assert_eq!(js["ok"], 1);
     assert_eq!(rust["counts"]["missing-artifact"], 1);
 }
 
 #[test]
 fn a_lone_surrogate_is_a_declared_difference() {
-    let stdin = r#"[{"slotId":"\ud800","source":"codex"}]"#;
-    let (rust, js) = witness_raw("rv-surrogate", &[], stdin, false);
+    let (rust, js) = witness_raw("rv-surrogate");
     assert!(js.contains(r#""counts":{"missing-artifact":1}"#), "{js}");
     assert!(js.contains(r#""slotId":"\ud800""#), "{js}");
     assert_eq!(rust["counts"]["missing-artifact"], 1);
     assert_eq!(rust["mismatches"][0]["slotId"], "\u{fffd}");
+}
+
+/// The staleness check on a tree of its own: a script edited since the
+/// recording is stale, one deleted (retired with the Workflow) is not, and
+/// with the script the cases run deleted nothing is.
+#[test]
+fn a_retired_script_is_not_stale() {
+    let root = scratch("rv-retired");
+    std::fs::create_dir_all(root.join("lib")).unwrap();
+    let write = |name: &str, text: &str| std::fs::write(root.join(name), text).unwrap();
+    write("lib/run.mjs", "run");
+    write("lib/dep.sh", "dep edited");
+    let recorded = json!({"lib/run.mjs": "run", "lib/dep.sh": "dep", "lib/gone.sh": "gone"});
+    let scripts = ["lib/run.mjs", "lib/dep.sh", "lib/gone.sh"];
+    assert_eq!(stale_scripts(&recorded, &scripts, &root), ["lib/dep.sh"]);
+    write("lib/dep.sh", "dep");
+    assert!(stale_scripts(&recorded, &scripts, &root).is_empty());
+    write("lib/new.sh", "new");
+    assert_eq!(
+        stale_scripts(&recorded, &["lib/run.mjs", "lib/new.sh"], &root),
+        ["lib/new.sh"]
+    );
+    std::fs::remove_file(root.join("lib/run.mjs")).unwrap();
+    write("lib/dep.sh", "dep edited again");
+    assert!(stale_scripts(&recorded, &scripts, &root).is_empty());
+    let _ = std::fs::remove_dir_all(&root);
 }
