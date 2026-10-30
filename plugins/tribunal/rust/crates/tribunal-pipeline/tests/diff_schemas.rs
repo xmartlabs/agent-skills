@@ -30,12 +30,21 @@ fn constant(name: &str) -> serde_json::Value {
     .remove(0)
 }
 
+/// Declared difference: the port asks each `notReached` entry for its kind,
+/// `{surface, file, kind}`, where the Workflow takes a plain string. The rest
+/// of the schema is the Workflow's.
 #[test]
-fn findings_schema_is_the_workflows() {
+fn findings_schema_is_the_workflows_but_for_not_reached() {
+    let mut ours = schemas::findings();
+    let theirs = constant("FINDINGS_SCHEMA");
+    let item = &ours["properties"]["notReached"]["items"];
+    assert_eq!(item["required"], serde_json::json!(["surface", "kind"]));
     assert_eq!(
-        canon(&schemas::findings()),
-        canon(&constant("FINDINGS_SCHEMA"))
+        theirs["properties"]["notReached"]["items"],
+        serde_json::json!({"type": "string"})
     );
+    ours["properties"]["notReached"] = theirs["properties"]["notReached"].clone();
+    assert_eq!(canon(&ours), canon(&theirs));
 }
 
 #[test]
