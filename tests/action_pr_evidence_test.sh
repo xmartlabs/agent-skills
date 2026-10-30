@@ -13,10 +13,11 @@ mkdir -p "$TMP/bin" "$TMP/fx" "$TMP/ws"
 cat > "$TMP/bin/gh" <<'SH'
 #!/usr/bin/env bash
 echo "$*" >> "$FX/gh.log"
-jq_expr=""; args=()
+jq_expr=""; method=GET; args=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --jq) jq_expr="$2"; shift 2 ;;
+    -X) method="$2"; shift 2 ;;
     --paginate) shift ;;
     -H) shift 2 ;;
     *) args+=("$1"); shift ;;
@@ -31,10 +32,13 @@ case "${args[0]} ${args[1]:-}" in
     body=""; for ((i = 0; i < ${#args[@]}; i++)); do [ "${args[$i]}" = --body-file ] && body="${args[$((i + 1))]}"; done
     cp "$body" "$FX/posted-body.md" ;;
   api*)
-    case "${args[1]}" in
-      */issues/*/comments*) emit "$FX/comments.json" ;;
-      */pulls/*/files*) emit "$FX/files.json" ;;
-      */contents/*)
+    case "$method ${args[1]}" in
+      "DELETE "*/issues/*/labels/*)
+        if [ -f "$FX/label-missing" ]; then echo "gh: Label does not exist (HTTP 404)" >&2; exit 1; fi
+        echo "${args[1]}" >> "$FX/deleted-labels" ;;
+      "GET "*/issues/*/comments*) emit "$FX/comments.json" ;;
+      "GET "*/pulls/*/files*) emit "$FX/files.json" ;;
+      "GET "*/contents/*)
         if [ -f "$FX/base-config.json" ]; then cat "$FX/base-config.json"
         elif [ -f "$FX/contents-error" ]; then cat "$FX/contents-error" >&2; exit 1
         else echo "gh: Not Found (HTTP 404)" >&2; exit 1; fi ;;
@@ -114,6 +118,63 @@ assert_eq "posted evidence from the attach-token user stops the run" "false" "$(
 new_job labeled false pr-evidence
 echo '[{"user":{"login":"github-actions[bot]","type":"Bot"},"body":"<!-- pr-evidence:posted -->"}]' > "$FX/comments.json"
 assert_eq "the label runs even after posted evidence" "true" "$(gate)"
+
+# once and drafts. Given explicitly, the defaults keep the rules above.
+POSTED_BY_BOT='[{"user":{"login":"github-actions[bot]","type":"Bot"},"body":"<!-- pr-evidence:posted -->\nshot","html_url":"https://github.com/acme/web-app/pull/12#issuecomment-99"}]'
+new_job opened true
+assert_eq "drafts: false skips a draft" "false" "$(INPUT_DRAFTS=false gate)"
+new_job opened false; echo "$POSTED_BY_BOT" > "$FX/comments.json"
+assert_eq "once: true skips after posted evidence" "false" "$(INPUT_ONCE=true gate)"
+new_job opened false; echo "$POSTED_BY_BOT" > "$FX/comments.json"
+assert_eq "once: false runs again after posted evidence" "true" "$(INPUT_ONCE=false gate)"
+new_job opened true
+assert_eq "drafts: true runs a draft on an automatic event" "true" "$(INPUT_DRAFTS=true gate)"
+new_job opened true
+assert_eq "drafts: true still applies paths" "false" "$(INPUT_DRAFTS=true gate 'apps/**')"
+new_job labeled true pr-evidence; echo "$POSTED_BY_BOT" > "$FX/comments.json"
+assert_eq "the label ignores once, drafts and paths" "true" "$(INPUT_ONCE=true INPUT_DRAFTS=false gate 'apps/**')"
+
+# The gate sub-action computes HAS_CLAUDE_AUTH from its inputs. gate_has_auth NAME=VALUE...
+# evaluates that expression as GitHub would; inputs not given take their manifest defaults.
+GATE_YML="$DIR/actions/pr-evidence/gate/action.yml"
+gate_has_auth() {
+  python3 - "$GATE_YML" "$@" <<'PY'
+import re, sys
+text = open(sys.argv[1]).read()
+given = dict(a.split("=", 1) for a in sys.argv[2:])
+expr = re.search(r"HAS_CLAUDE_AUTH: \$\{\{(.*?)\}\}", text).group(1)
+def value(name):
+    if name in given: return given[name]
+    m = re.search(r"^  " + re.escape(name) + r":\n(?:    .*\n)*?    default: '?([^'\n]*)'?$", text, re.M)
+    return m.group(1) if m else ""
+terms = []
+for t in expr.split("||"):
+    m = re.fullmatch(r"\s*inputs\.([\w-]+)\s*(==|!=)\s*'([^']*)'\s*", t)
+    if not m: sys.exit("unsupported term: " + t)
+    terms.append((value(m[1]) == m[3]) == (m[2] == "=="))
+print("true" if any(terms) else "false")
+PY
+}
+assert_eq "gate: claude-token alone is a credential" "true" "$(gate_has_auth claude-token=x)"
+assert_eq "gate: anthropic-api-key alone is a credential" "true" "$(gate_has_auth anthropic-api-key=x)"
+assert_eq "gate: the deprecated has-claude-credential still counts" "true" "$(gate_has_auth has-claude-credential=true)"
+assert_eq "gate: has-claude-credential false and no credential" "false" "$(gate_has_auth has-claude-credential=false)"
+assert_eq "gate: no credential at all" "false" "$(gate_has_auth)"
+# manifest_input FILE NAME: the input's raw default, `required` when it has none, or <missing>.
+manifest_input() {
+  python3 -c 'import re,sys
+t = open(sys.argv[1]).read()
+m = re.search(r"^  " + re.escape(sys.argv[2]) + r":\n((?:    .*\n)*)", t, re.M)
+d = m and re.search(r"^    default: (.*)$", m.group(1), re.M)
+print(d.group(1) if d else ("required" if m else "<missing>"))' "$1" "$2"
+}
+assert_eq "gate: has-claude-credential is optional" "''" "$(manifest_input "$GATE_YML" has-claude-credential)"
+for m in action.yml gate/action.yml; do
+  assert_eq "$m: once defaults to true" "'true'" "$(manifest_input "$DIR/actions/pr-evidence/$m" once)"
+  assert_eq "$m: drafts defaults to false" "'false'" "$(manifest_input "$DIR/actions/pr-evidence/$m" drafts)"
+  assert_eq "$m: claude-token defaults to empty" "''" "$(manifest_input "$DIR/actions/pr-evidence/$m" claude-token)"
+  assert_eq "$m: anthropic-api-key defaults to empty" "''" "$(manifest_input "$DIR/actions/pr-evidence/$m" anthropic-api-key)"
+done
 
 # --- prepare ------------------------------------------------------------------------------------
 prepare() { (cd "$TMP/ws" && INPUT_CONFIG=.pr-evidence/config.json ATTACH_TOKEN="${1:-}" bash "$RUN" prepare 2>/dev/null); }
@@ -220,5 +281,35 @@ assert_fail "cleanup removes the job directory" test -d "$TMP/runner/pr-evidence
 new_job opened false; printf '%s' "$base_cfg" > "$FX/base-config.json"; rm -rf "$TMP/ws/.pr-evidence"; prepare
 (cd "$TMP/ws" && bash "$RUN" cleanup >/dev/null 2>&1)
 assert_fail "cleanup removes a config the checkout did not have" test -f "$TMP/ws/.pr-evidence/config.json"
+new_job opened false; printf '%s' "$base_cfg" > "$FX/base-config.json"; prepare
+(cd "$TMP/ws" && INPUT_LABEL="pr evidence/ui" bash "$RUN" cleanup >/dev/null 2>&1)
+assert_eq "cleanup removes the URL-encoded label" "repos/acme/web-app/issues/12/labels/pr%20evidence%2Fui" "$(cat "$FX/deleted-labels" 2>/dev/null)"
+new_job opened false; printf '%s' "$base_cfg" > "$FX/base-config.json"; prepare; touch "$FX/label-missing"
+(cd "$TMP/ws" && INPUT_LABEL=pr-evidence bash "$RUN" cleanup >/dev/null 2>&1); RC=$?
+assert_eq "cleanup tolerates a label that is not there" "0" "$RC"
+assert_fail "cleanup still removes the job directory after a 404" test -d "$TMP/runner/pr-evidence"
+
+# --- summary ------------------------------------------------------------------------------------
+summary() { GITHUB_STEP_SUMMARY="$TMP/runner/summary.md" bash "$RUN" summary 2>/dev/null; }
+new_job opened false; printf '%s' "$base_cfg" > "$FX/base-config.json"; prepare; capture
+echo "$POSTED_BY_BOT" > "$FX/comments.json"
+summary; RC=$?
+assert_eq "summary exits 0" "0" "$RC"
+assert_eq "summary: posted" "### PR evidence — PR #12 · ✅ posted" "$(head -n 1 "$TMP/runner/summary.md")"
+assert_ok "summary links the posted comment" grep -qF "(https://github.com/acme/web-app/pull/12#issuecomment-99)" "$TMP/runner/summary.md"
+assert_ok "summary reads only comments since the run started" \
+  grep -qF "comments?per_page=100&since=$(cat "$TMP/runner/pr-evidence/started-at")" "$FX/gh.log"
+new_job opened false; printf '%s' "$base_cfg" > "$FX/base-config.json"; prepare; capture
+echo '[{"user":{"login":"dev","type":"User"},"body":"<!-- pr-evidence:posted -->","html_url":"https://x/1"}]' > "$FX/comments.json"
+summary
+assert_eq "summary: a person's comment is not the evidence" "### PR evidence — PR #12 · ⏳ not posted: the evidence run ended without posting a result" "$(head -n 1 "$TMP/runner/summary.md")"
+new_job opened false; echo "gh: Server Error (HTTP 502)" > "$FX/contents-error"; prepare
+summary
+assert_eq "summary: setup failed before the capture" "### PR evidence — PR #12 · ⏳ not posted: the action's setup failed before the capture started" "$(head -n 1 "$TMP/runner/summary.md")"
+new_job opened false; printf '%s' "$base_cfg" > "$FX/base-config.json"; prepare; capture; : > "$FX/gh.log"
+(unset GITHUB_STEP_SUMMARY; bash "$RUN" summary >/dev/null 2>&1); RC=$?
+assert_eq "summary without GITHUB_STEP_SUMMARY exits 0" "0" "$RC"
+assert_eq "summary without GITHUB_STEP_SUMMARY calls nothing" "" "$(cat "$FX/gh.log")"
+assert_fail "summary without GITHUB_STEP_SUMMARY writes nothing" test -f "$TMP/runner/summary.md"
 
 finish_tests

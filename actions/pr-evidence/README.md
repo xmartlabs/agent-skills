@@ -5,6 +5,7 @@ UI: it boots your app locally on the runner, captures a screenshot or recording 
 posts it as a comment on the pull request. A capture that does not work out does not fail the job:
 it posts an "Evidence pending" comment with the reason and a link to the run. Setup errors do fail
 it: no config on either branch, a config `check` refuses, or a tool that cannot be installed.
+Either way, the run's job summary says whether evidence was posted, with a link to it, or why not.
 
 ## Setup
 
@@ -50,9 +51,16 @@ jobs:
 
 The action decides whether to capture only after your setup steps ran. When they are slow (a large
 `npm ci`), put the decision in a cheap job first with the `gate` action, which reads the pull
-request through the API and checks out nothing:
+request through the API and checks out nothing. It takes the action's own inputs (`claude-token`,
+`anthropic-api-key`, `github-token`, `attach-token`, `paths`, `label`, `once`, `drafts`), so define
+the credential and `paths` once in the workflow's `env:` and pass the same `with:` to both:
 
 ```yaml
+env:
+  CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+  EVIDENCE_PATHS: |
+    src/*
+    !src/*.test.tsx
 jobs:
   gate:
     runs-on: ubuntu-latest
@@ -63,25 +71,40 @@ jobs:
       - id: gate
         uses: xmartlabs/agent-skills/actions/pr-evidence/gate@pr-evidence-v1
         with:
-          has-claude-credential: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
-          paths: src/*
+          claude-token: ${{ env.CLAUDE_TOKEN }}
+          paths: ${{ env.EVIDENCE_PATHS }}
   evidence:
     needs: gate
     if: needs.gate.outputs.run == 'true'
-    # ... the job above, with the same `paths`
+    # ... the job above, ending with:
+    steps:
+      - uses: xmartlabs/agent-skills/actions/pr-evidence@pr-evidence-v1
+        with:
+          claude-token: ${{ env.CLAUDE_TOKEN }}
+          paths: ${{ env.EVIDENCE_PATHS }}
 ```
 
-The evidence job's action checks again, with the same rules, so both agree.
+The evidence job's action checks again, with the same rules, so both agree. The gate only checks
+that a credential is set. Its older `has-claude-credential` input (`true` when the evidence job
+has a credential) still works but is deprecated: pass `claude-token` or `anthropic-api-key`.
 
 ## When it runs
 
-- Once per pull request, on `opened` or `ready_for_review`, never on drafts, and only when a
-  changed file matches `paths` (any file when `paths` is empty).
-- It skips a pull request that already has a comment with `<!-- pr-evidence:posted -->` from the
-  action. Adding the `pr-evidence` label forces a run, drafts included. Remove and add it again to
-  run once more.
-- Fork pull requests never run, and neither do runs without a Claude credential (Dependabot's,
-  for example): they get no secrets.
+The events come from your workflow's `on:`. The action applies these rules, in order:
+
+1. A run that is not on a pull request, a fork pull request, or a run without a Claude credential
+   (Dependabot's, for example: it gets no secrets) is skipped.
+2. Adding the action's `label` (default `pr-evidence`) forces a run: `drafts`, `paths` and `once`
+   do not apply. The action removes the label at the end, so adding it again runs again.
+3. A run for adding any other label is skipped.
+4. Any other event (`opened`, `ready_for_review`, `synchronize`...) runs, unless:
+   - the pull request is a draft and `drafts` is `false` (the default);
+   - `paths` is set and no changed file matches it;
+   - `once` is `true` (the default) and the pull request already has a comment with
+     `<!-- pr-evidence:posted -->` from the action.
+
+Also:
+
 - A cancelled run posts nothing; the run that replaced it reports. A job that hits its
   `timeout-minutes` counts as cancelled too, so it posts nothing either: check the Actions tab.
 - Only the action's own comments count as "already posted": `github-actions[bot]`'s, the
@@ -106,7 +129,9 @@ sets the config's `host.target` from the token, whatever the config says:
 | `github-token` | `github.token` | Reads the pull request, posts comments, pushes to the hosting branch. |
 | `attach-token` | empty | User token for native attachments (see above). |
 | `paths` | empty | Newline-separated globs (fnmatch: `*` also crosses `/`, so `src/*` is the whole tree; a leading `!` excludes). |
-| `label` | `pr-evidence` | The label that forces a run. |
+| `label` | `pr-evidence` | The label that forces a run; removed at the end of the run. |
+| `once` | `true` | `true`: automatic events skip a pull request that already has the action's evidence. `false`: every automatic event runs. |
+| `drafts` | `false` | `true`: automatic events run on draft pull requests too. |
 | `config` | `.pr-evidence/config.json` | Config path, read at the base branch. |
 | `instructions` | empty | A repository document Claude reads first, for example how to log in, pick data or which route shows a component. |
 | `warmup-path` | empty | Request this path once before Claude starts, so a dev server's first compile does not hit the skill's readiness timeout. |

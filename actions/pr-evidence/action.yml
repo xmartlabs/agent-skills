@@ -28,12 +28,22 @@ inputs:
     default: ''
   paths:
     description: >-
-      Newline-separated glob patterns (fnmatch, `*` crosses `/`; a leading `!` excludes). The run
-      starts on opened or ready_for_review only when a changed file matches. Empty: any change.
+      Newline-separated glob patterns (fnmatch, `*` crosses `/`; a leading `!` excludes). On an
+      automatic event the run starts only when a changed file matches. Empty: any change.
     default: ''
   label:
-    description: Adding this label forces a run, drafts included, even when evidence was posted.
+    description: >-
+      Adding this label forces a run, ignoring `drafts`, `paths` and `once`. The action removes it
+      at the end, so adding it again runs again.
     default: pr-evidence
+  once:
+    description: >-
+      `true`: an automatic event skips a pull request that already has the action's evidence.
+      `false`: every automatic event runs.
+    default: 'true'
+  drafts:
+    description: '`true`: automatic events run on draft pull requests too.'
+    default: 'false'
   config:
     description: Path of the pr-evidence config, read from the base branch.
     default: .pr-evidence/config.json
@@ -68,6 +78,8 @@ runs:
         HAS_CLAUDE_AUTH: ${{ inputs.claude-token != '' || inputs.anthropic-api-key != '' }}
         INPUT_PATHS: ${{ inputs.paths }}
         INPUT_LABEL: ${{ inputs.label }}
+        INPUT_ONCE: ${{ inputs.once }}
+        INPUT_DRAFTS: ${{ inputs.drafts }}
       run: bash "$GITHUB_ACTION_PATH/run.sh" gate
 
     - if: steps.gate.outputs.run == 'true'
@@ -112,4 +124,13 @@ runs:
 
     - if: ${{ always() && steps.gate.outputs.run == 'true' }}
       shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" summary
+
+    - if: ${{ always() && steps.gate.outputs.run == 'true' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_LABEL: ${{ inputs.label }}
       run: bash "$GITHUB_ACTION_PATH/run.sh" cleanup
