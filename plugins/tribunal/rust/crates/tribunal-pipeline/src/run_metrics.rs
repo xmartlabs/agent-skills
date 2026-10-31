@@ -492,12 +492,6 @@ fn lens_failures(labels: &[String], lenses: &[DispatchResult]) -> Value {
     )
 }
 
-/// The end of the Synthesize phase: build the row, write the payload files,
-/// run `persist-run`, fold what it prints back into the row, and check the
-/// row landed.
-///
-/// # Errors
-/// When the row cannot be built or the vote directory cannot be written.
 fn stage_seconds(
     review: &ReviewOutcome,
     verify: &VerifyOutcome,
@@ -532,6 +526,12 @@ fn stage_seconds_row(seconds: [f64; 6]) -> Value {
     )
 }
 
+/// The end of the Synthesize phase: build the row, write the payload files,
+/// run `persist-run`, fold what it prints back into the row, and check the
+/// row landed.
+///
+/// # Errors
+/// When the row cannot be built or the vote directory cannot be written.
 pub fn persist_phase(
     rt: &Runtime,
     args: &RunArgs,
