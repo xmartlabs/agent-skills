@@ -72,7 +72,7 @@ import { execFile } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { RELAY_CRC_PREFIX, relayLines } from "../../../lib/relay.mjs";
+import { RELAY_CRC_PREFIX, relayLines } from "../../../rust/crates/tribunal-context/src/js/relay.mjs";
 
 const LIB = join(dirname(fileURLToPath(import.meta.url)), "../../../lib");
 
@@ -403,7 +403,7 @@ export async function prepareReview(context, { worktreeScript, sectionsAbove = I
   prep.worktree = wt.stdout.trim();
   const path = worktreePathOf(prep.worktree);
   if (path && context.diffPath)
-    prep.blastRadius = relayData(await exec(process.execPath, [join(LIB, "blast-radius.mjs"), context.diffPath, path]));
+    prep.blastRadius = relayData(await exec(process.execPath, [join(LIB, "../rust/crates/tribunal-context/src/js/blast-radius.mjs"), context.diffPath, path]));
   prep.sections = await sectionsP;
   return prep;
 }

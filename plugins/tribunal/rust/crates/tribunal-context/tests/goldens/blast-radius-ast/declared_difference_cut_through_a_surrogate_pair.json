@@ -1,7 +1,7 @@
 {
-  "recordedWith": {"lib/attention-facts.mjs":"2d07aea57f17f656608821521bf00d9defed1134737067d762ed8b39c5aa447b","lib/blast-radius.mjs":"9b41e6a48711efd413d41f8dfdec1b0af87301e4ced8f95faec4631a94f470ee","lib/relay.mjs":"bb05411e6b51cb228b4eb0769c1c42640cc346536092261c126192f04b395b7d"},
+  "recordedWith": {"rust/crates/tribunal-context/src/js/attention-facts.mjs":"2d07aea57f17f656608821521bf00d9defed1134737067d762ed8b39c5aa447b","rust/crates/tribunal-context/src/js/blast-radius.mjs":"9b41e6a48711efd413d41f8dfdec1b0af87301e4ced8f95faec4631a94f470ee","rust/crates/tribunal-context/src/js/relay.mjs":"bb05411e6b51cb228b4eb0769c1c42640cc346536092261c126192f04b395b7d"},
   "typescript": "typescript 6.0.3",
   "records": [
-    {"input": "4025397d5d53777a13b0b9e79caf3d219ffaa4551b1b58cdcdc6cfbaa54be609", "js": "\"the test \\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\ud83d\\\" asserts nothing, so it passes whatever the code does\""}
+    {"input": "035273618a2f4e79ca0255927bb30fae5388de666eb9d3ab4efed2a3f76ca842", "js": "\"the test \\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\ud83d\\\" asserts nothing, so it passes whatever the code does\""}
   ]
 }

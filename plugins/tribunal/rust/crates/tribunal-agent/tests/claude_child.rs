@@ -96,8 +96,22 @@ async fn a_timeout_kills_the_whole_group() {
         .trim()
         .parse()
         .unwrap();
-    let alive = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_ok();
-    assert!(!alive, "the grandchild {pid} survived the timeout");
+    assert!(!running(pid), "the grandchild {pid} survived the timeout");
+}
+
+/// A killed process nobody has waited for is a zombie: `kill(pid, 0)` still
+/// succeeds on it, which is the case in a container with no init process.
+fn running(pid: i32) -> bool {
+    if nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_err() {
+        return false;
+    }
+    let state = std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        .ok()
+        .and_then(|s| {
+            s.rsplit_once(')')
+                .map(|(_, rest)| rest.trim_start().chars().next())
+        });
+    state != Some(Some('Z'))
 }
 
 #[tokio::test]

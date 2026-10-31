@@ -1,8 +1,8 @@
 {
-  "recordedWith": {"lib/attention-facts.mjs":"2d07aea57f17f656608821521bf00d9defed1134737067d762ed8b39c5aa447b","lib/blast-radius.mjs":"9b41e6a48711efd413d41f8dfdec1b0af87301e4ced8f95faec4631a94f470ee","lib/relay.mjs":"bb05411e6b51cb228b4eb0769c1c42640cc346536092261c126192f04b395b7d"},
+  "recordedWith": {"rust/crates/tribunal-context/src/js/attention-facts.mjs":"2d07aea57f17f656608821521bf00d9defed1134737067d762ed8b39c5aa447b","rust/crates/tribunal-context/src/js/blast-radius.mjs":"9b41e6a48711efd413d41f8dfdec1b0af87301e4ced8f95faec4631a94f470ee","rust/crates/tribunal-context/src/js/relay.mjs":"bb05411e6b51cb228b4eb0769c1c42640cc346536092261c126192f04b395b7d"},
   "typescript": "typescript 6.0.3",
   "records": [
-    {"input": "8147005300a23b5e9960899dd9f2cee21747ad58aa4b9b60512f65b31ba145a4", "js": [
+    {"input": "9e396da01a703a668cb497dcd591bc4063c50ab47f18ad8fc5d54eaec6867104", "js": [
       {"ok":[{"kind":"contract-change","file":"src/helpers/h.ts","line":1,"detail":"find now takes 0 parameter(s), 0 required; the base version took 1, 0 required"},{"kind":"contract-change","file":"src/helpers/h.ts","line":4,"detail":"opt now takes 2 parameter(s), 2 required; the base version took 3, 0 required"}],"diag":[]},
       {"ok":[["find",{"params":0,"required":0,"sentinels":[],"throws":0,"line":1}],["sum",{"params":0,"required":0,"sentinels":[],"throws":0,"line":2}],["opt",{"params":2,"required":2,"sentinels":["[]"],"throws":0,"line":4}]],"diag":[]},
       {"ok":[],"diag":[]},

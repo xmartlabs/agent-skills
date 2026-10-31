@@ -22,6 +22,8 @@
 //
 // A missing file is a HARD failure, not a skipped line: silently hashing 11 of
 // 12 files would produce a stable-looking id for a harness that lost a piece.
+// A missing directory is not: it holds no files, so it adds none to the hash,
+// and the id changes with the files it lost.
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
@@ -126,7 +128,7 @@ const BATTERY_DIR = "skills/review-pr/eval";
 
 function filesUnder(dir, exts) {
   const abs = join(ROOT, dir);
-  if (!existsSync(abs)) throw new Error(`harness surface directory missing: ${dir}`);
+  if (!existsSync(abs)) return [];
   const out = [];
   for (const entry of readdirSync(abs, { withFileTypes: true })) {
     const rel = `${dir}/${entry.name}`;

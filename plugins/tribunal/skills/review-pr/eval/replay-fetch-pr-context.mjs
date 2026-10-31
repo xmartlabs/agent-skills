@@ -18,7 +18,7 @@ import { WORKFLOW } from "./paths.mjs";
 // Literal: these are the deploy branches the pinned behaviour used.
 const DEPLOY_BRANCHES = ["staging", "uat", "production"];
 import { loadRegion } from "./extract-pure-region.mjs";
-import { relayLines } from "../../../lib/relay.mjs";
+import { relayLines } from "../../../rust/crates/tribunal-context/src/js/relay.mjs";
 import {
   BOT_LOGIN,
   DIFF_FIELD_MAX_BYTES,

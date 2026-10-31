@@ -12,7 +12,7 @@
 //   prompt text   workflow LENS-PROMPT region (byte-identical to a Workflow lens)
 //   foci          workflow LENS-FOCI region (selectFoci) over the profile's foci
 //   lens count    the Workflow's budget (build-lens-prompts workflowLensBudget) or --lenses / --foci
-//   dependents    lib/blast-radius.mjs rendered by the DEPENDENTS-BLOCK region
+//   dependents    rust/.../js/blast-radius.mjs rendered by the DEPENDENTS-BLOCK region
 //   schema        the workflow's FINDINGS_SCHEMA, requested as a JSON block
 //
 // Policy is pinned by the caller: pass the methodology, conventions and
@@ -49,7 +49,7 @@ import {
   loadWorkflowPieces as loadPieces,
   planLenses,
 } from "../scripts/build-lens-prompts.mjs";
-import { blastRadius, makeRepo } from "../../../lib/blast-radius.mjs";
+import { blastRadius, makeRepo } from "../../../rust/crates/tribunal-context/src/js/blast-radius.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WORKFLOW_SRC = resolve(HERE, "..", "..", "..", "workflow-src", "tribunal.js");

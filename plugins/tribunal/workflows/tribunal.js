@@ -1418,7 +1418,7 @@ ${
     `"${CONTEXT_DIR}/head-worktree.sh"`,
     "TRIBUNAL_HEAD_WORKTREE",
     headWorktreeBash("$PREP_SHA", repo, prNumber),
-    `"$(tribunal-root)"/lib/relay.mjs`,
+    `"$(tribunal-root)"/rust/crates/tribunal-context/src/js/relay.mjs`,
   )
 }
 `
@@ -2435,7 +2435,7 @@ const blastRelay =
         `Mechanical step. Run the bash below and return its relay line. Decide nothing yourself.
 
 \`\`\`bash
-node "$(tribunal-root)"/lib/blast-radius.mjs "${diffPath}" "${headPin.path}"${relayFilePipe(RELAY_FILE_SCRIPT)}
+node "$(tribunal-root)"/rust/crates/tribunal-context/src/js/blast-radius.mjs "${diffPath}" "${headPin.path}"${relayFilePipe(RELAY_FILE_SCRIPT)}
 \`\`\`
 
 ${RELAY_RULES}`,
@@ -3022,7 +3022,7 @@ if (allCandidates.length > 0 && diffPath) {
     noteBashSize("evidence-resolver", `Mechanical step. Return the relay line of the bash below. Decide nothing yourself. The only text you compose yourself is copying each \`printf\` line, verbatim, on one line. ${RUN_BLOCKS_RULE}
 
 ${bashBlocksText([
-      ...verifiedWrite(evidenceFile, evidenceCandidates, `"$(tribunal-root)"/lib/relay.mjs`),
+      ...verifiedWrite(evidenceFile, evidenceCandidates, `"$(tribunal-root)"/rust/crates/tribunal-context/src/js/relay.mjs`),
       `node "$(tribunal-root)"/skills/review-pr/scripts/resolve-evidence-line.mjs "${diffPath}" ${evidenceFile} --relay${relayFilePipe(RELAY_FILE_SCRIPT)}\nrm -f ${evidenceFile} ${evidenceFile}.wire`,
     ])}
 
@@ -3168,7 +3168,7 @@ PRF=$(mktemp "\${TMPDIR:-/tmp}/tribunal-prfiles-XXXXXX")
 cat > "$PRF" <<'__PR_FILES__'
 ${(files || []).join("\n")}
 __PR_FILES__
-if node "$(tribunal-root)"/lib/relay.mjs check "$PRF" ${utf8Crc32((files || []).join("\n"))} >/dev/null; then
+if node "$(tribunal-root)"/rust/crates/tribunal-context/src/js/relay.mjs check "$PRF" ${utf8Crc32((files || []).join("\n"))} >/dev/null; then
   printf '%s\\n' "---COVERED--- $(printf '%s\\n' "$COV" | grep -c .)"
   printf '%s\\n' "$COV" | grep -F -x -f "$PRF"
 else
@@ -4987,7 +4987,7 @@ function anchorResolverRelay(payload, ref, label, phase) {
     noteBashSize(label, `Mechanical step. Return the relay line of the bash below. Decide nothing yourself. The only text you compose yourself is copying each \`printf\` line, verbatim, on one line. ${RUN_BLOCKS_RULE}
 
 ${bashBlocksText([
-      ...verifiedWrite(anchorsFile, payload, `"$(tribunal-root)"/lib/relay.mjs`),
+      ...verifiedWrite(anchorsFile, payload, `"$(tribunal-root)"/rust/crates/tribunal-context/src/js/relay.mjs`),
       `node "$(tribunal-root)"/lib/resolve-verified-anchors.mjs ${anchorsFile} "${ref}" --repo "${repo}" --relay${crossRepoFlags(PROFILE)}${relayFilePipe(RELAY_FILE_SCRIPT)}\nrm -f ${anchorsFile} ${anchorsFile}.wire`,
     ])}
 

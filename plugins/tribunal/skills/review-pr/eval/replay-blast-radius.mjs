@@ -5,7 +5,7 @@
 // fail-fast Redis connection, and the unchanged controller that enqueues its webhooks
 // without await kept answering 200. Lenses raised it in 2 of 10 runs, because
 // nothing listed that caller and the methodology keeps caller checks in the
-// same file. lib/blast-radius.mjs lists such callers; this pins what it lists,
+// same file. rust/.../js/blast-radius.mjs lists such callers; this pins what it lists,
 // on a fixture repo built here with the #2167 shape, so the gate needs no BE
 // checkout.
 //
@@ -34,7 +34,7 @@ const check = (name, cond, detail) => {
   }
 };
 
-const { blastRadius, makeRepo, changedLines, declarations, readAliases, specPointsAt, MAX_CALLERS } = await import(lib("blast-radius.mjs"));
+const { blastRadius, makeRepo, changedLines, declarations, readAliases, specPointsAt, MAX_CALLERS } = await import(lib("../rust/crates/tribunal-context/src/js/blast-radius.mjs"));
 const relay = loadRegion(WORKFLOW, "VERIFIED-RELAY", ["checkRelay"]);
 const block = loadRegion(WORKFLOW, "DEPENDENTS-BLOCK", ["dependentsBlock"]);
 
@@ -210,7 +210,7 @@ try {
   // the fixture, which has none, so the labels below do not depend on where the
   // battery is started: from a checkout with `typescript` installed they gained
   // ", no try around it" and section 4 failed.
-  const cli = spawnSync(process.execPath, [lib("blast-radius.mjs"), diffFile, work, "--rev", head], { encoding: "utf8", cwd: work });
+  const cli = spawnSync(process.execPath, [lib("../rust/crates/tribunal-context/src/js/blast-radius.mjs"), diffFile, work, "--rev", head], { encoding: "utf8", cwd: work });
   const out = cli.stdout.trimEnd().split("\n");
   check("it prints a RELAY-CRC line and one JSON line", cli.status === 0 && out.length === 2 && out[0].startsWith("RELAY-CRC "), cli.stderr);
   check("a faithful copy verifies", () => relay.api.checkRelay({ relayCrc: out[0].slice(10), data: JSON.parse(out[1]) }).ok);
@@ -229,7 +229,7 @@ try {
     dependentsBlockFromWorkflow()(JSON.parse(out[1])) === text,
   );
 
-  const bad = spawnSync(process.execPath, [lib("blast-radius.mjs"), join(work, "missing.patch"), work], { encoding: "utf8" });
+  const bad = spawnSync(process.execPath, [lib("../rust/crates/tribunal-context/src/js/blast-radius.mjs"), join(work, "missing.patch"), work], { encoding: "utf8" });
   check("an unreadable diff is a FATAL, not an empty list", bad.status === 1 && /^FATAL: /.test(bad.stdout));
 } finally {
   rmSync(work, { recursive: true, force: true });
@@ -328,7 +328,7 @@ shared(1);
 console.log("\n--- 5. the workflow is wired that way ---");
 const src = readFileSync(WORKFLOW, "utf8");
 const dispatch = src.slice(src.indexOf("const blastRelay ="), src.indexOf("const dependents = dependentsBlock(blastRadius);"));
-check("it runs as a verified relay on the pinned checkout", dispatch.includes("relayAgent(") && dispatch.includes('lib/blast-radius.mjs "${diffPath}" "${headPin.path}"') && dispatch.includes("headPin.ok && diffMode === \"path\""));
+check("it runs as a verified relay on the pinned checkout", dispatch.includes("relayAgent(") && dispatch.includes('rust/crates/tribunal-context/src/js/blast-radius.mjs "${diffPath}" "${headPin.path}"') && dispatch.includes("headPin.ok && diffMode === \"path\""));
 check("an unverified relay sends no block", /const blastRadius = blastRelay && blastRelay\.ok \? blastRelay\.data : null;/.test(src));
 check("the block sits in the shared lens prefix, above YOUR PASS", () => {
   const lens = src.slice(src.indexOf("Review PR #${p.prNumber} in repo ${p.repo}.\n\n<diff>"), src.indexOf("===== YOUR PASS ====="));

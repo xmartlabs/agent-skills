@@ -1,4 +1,4 @@
-//! The parser half of `lib/blast-radius.mjs` and `lib/attention-facts.mjs`
+//! The parser half of `rust/crates/tribunal-context/src/js/blast-radius.mjs` and `lib/attention-facts.mjs`
 //! against the scripts WITH `typescript` loaded, which is how production runs
 //! them. The port parses with oxc; these tests hold its output to the
 //! script's, whole, on git fixture repos and on generated sources.
@@ -38,8 +38,8 @@ use tribunal_context::exec::Tools;
 use tribunal_context::harness_version::sha256_hex;
 use tribunal_context::typescript_fallback::{self, TypeScriptFallback};
 
-const BLAST: &str = "lib/blast-radius.mjs";
-const ATTENTION: &str = "lib/attention-facts.mjs";
+const BLAST: &str = "rust/crates/tribunal-context/src/js/blast-radius.mjs";
+const ATTENTION: &str = "rust/crates/tribunal-context/src/js/attention-facts.mjs";
 
 // ---------------------------------------------------------------------------
 // Goldens
@@ -413,8 +413,8 @@ const HARNESS: &str = r#"
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 const root = process.argv[2];
-const br = await import(pathToFileURL(path.join(root, "lib/blast-radius.mjs")).href);
-const af = await import(pathToFileURL(path.join(root, "lib/attention-facts.mjs")).href);
+const br = await import(pathToFileURL(path.join(root, "rust/crates/tribunal-context/src/js/blast-radius.mjs")).href);
+const af = await import(pathToFileURL(path.join(root, "rust/crates/tribunal-context/src/js/attention-facts.mjs")).href);
 const ts = af.loadTypescript([process.env.TRIBUNAL_TS_FROM]);
 if (!ts) {
   process.stderr.write("no typescript under TRIBUNAL_TS_FROM\n");

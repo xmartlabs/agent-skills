@@ -13,7 +13,7 @@
 //! ([`crate::js_engine`]) with the `typescript.js` the script would load
 //! (`loadTypescript([repoDir, cwd])`), read from disk. No `node` runs.
 //!
-//! The functions run are `lib/blast-radius.mjs` and `lib/attention-facts.mjs`
+//! The functions run are `js/blast-radius.mjs` and `js/attention-facts.mjs`
 //! as this binary was built with them. The engine starts on the first file
 //! that needs it and serves the rest of the run. Without a `typescript`
 //! package, or when the engine cannot answer, the step keeps the oxc answer
@@ -43,13 +43,10 @@ pub const V8_ARRAY_DEPTH: u32 = 611;
 const SOURCES: [(&str, &str); 3] = [
     (
         "attention-facts.mjs",
-        include_str!("../../../../lib/attention-facts.mjs"),
+        include_str!("js/attention-facts.mjs"),
     ),
-    (
-        "blast-radius.mjs",
-        include_str!("../../../../lib/blast-radius.mjs"),
-    ),
-    ("relay.mjs", include_str!("../../../../lib/relay.mjs")),
+    ("blast-radius.mjs", include_str!("js/blast-radius.mjs")),
+    ("relay.mjs", include_str!("js/relay.mjs")),
 ];
 
 const DRIVER: &str = include_str!("js/typescript_driver.mjs");

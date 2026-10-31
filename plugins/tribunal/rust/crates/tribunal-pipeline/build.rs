@@ -34,10 +34,6 @@ fn main() {
     collect(&root.join("schemas"), &mut files);
     files.push(root.join("Cargo.lock"));
     files.push(root.join("Cargo.toml"));
-    // The scripts `tribunal_context::typescript_fallback` embeds.
-    let embedded = ["attention-facts.mjs", "blast-radius.mjs", "relay.mjs"]
-        .map(|f| root.join("../lib").join(f));
-    files.extend(embedded.iter().cloned());
     files.sort();
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     let mut feed = |bytes: &[u8]| {
@@ -63,7 +59,4 @@ fn main() {
         "cargo:rerun-if-changed={}",
         root.join("Cargo.lock").display()
     );
-    for f in &embedded {
-        println!("cargo:rerun-if-changed={}", f.display());
-    }
 }

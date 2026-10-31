@@ -22,7 +22,7 @@
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkCopy, wireDecode } from "./relay.mjs";
+import { checkCopy, wireDecode } from "../rust/crates/tribunal-context/src/js/relay.mjs";
 
 export function parseSpec(args) {
   return args.map((arg) => {

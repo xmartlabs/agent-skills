@@ -150,8 +150,8 @@ object the script prints or relays; the `--relay` line itself is not ported.
 | `skills/review-pr/scripts/resolve-baseline.mjs` | `resolve_baseline` | `diff_incremental.rs` |
 | `skills/review-pr/scripts/incremental-scope.mjs` | `incremental_scope` | `diff_incremental.rs` |
 | `skills/review-pr/scripts/import-adjacency.mjs` | `import_adjacency` | `diff_dependents.rs` |
-| `lib/blast-radius.mjs` | `blast_radius` | `diff_dependents.rs`, `diff_blast_radius_ast.rs` |
-| `lib/attention-facts.mjs` | `attention_facts` | `diff_blast_radius_ast.rs` |
+| `rust/crates/tribunal-context/src/js/blast-radius.mjs` | `blast_radius` | `diff_dependents.rs`, `diff_blast_radius_ast.rs` |
+| `rust/crates/tribunal-context/src/js/attention-facts.mjs` | `attention_facts` | `diff_blast_radius_ast.rs` |
 | `lib/section-diff.mjs` | `section_diff` | `diff_section_diff.rs` (index JSON and every written file, byte for byte) |
 | `skills/review-pr/scripts/resolve-evidence-line.mjs` | `resolve_evidence_line` | `diff_resolve_evidence.rs` |
 | `lib/resolve-verified-anchors.mjs` | `resolve_verified_anchors` | `diff_resolve_verified_anchors.rs` |
@@ -272,9 +272,10 @@ Each has a witness input asserted in its group's test file.
   `Err` for the TypeError a vote field with its own `toString` raises (same
   message) and for a `.meta` it cannot read (Rust's I/O wording).
   harness-version returns `Err` with the script's own message for a missing
-  surface directory or file, and Rust's I/O wording where Node's `readdirSync`
+  surface file, and Rust's I/O wording where Node's `readdirSync`
   or `readFileSync` throws (a surface directory that is a file, a symlink to a
-  directory named like a surface file).
+  directory named like a surface file). A missing surface directory holds no
+  files on both sides.
 - reconcile-votes orders orphan keys by `localeCompare`, which the port
   emulates as ICU's root collation measured for ASCII (Node gives `en-US`
   under every locale tried, `C` included). A key with a character outside
@@ -387,7 +388,7 @@ Each has a witness input asserted in its group's test file.
   `typescript` parser, and `attention.parser` names oxc. A JS or TS file oxc
   parses with any diagnostic, or nested deeper than 256 levels, goes to the
   script's own function instead (`typescript_fallback`). The binary runs
-  `lib/blast-radius.mjs` and `lib/attention-facts.mjs`, as it was built
+  `src/js/blast-radius.mjs` and `src/js/attention-facts.mjs`, as it was built
   with them, in an embedded JavaScript engine (`js_engine`, QuickJS through
   `rquickjs`). It loads the `typescript.js` the script would load: the
   nearest `node_modules/typescript` above the repo, then above the working

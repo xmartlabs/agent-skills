@@ -137,7 +137,7 @@ async fn a_missing_member_says_unsupported() {
 /// one the scripts would not link, and the fallback would never start.
 #[test]
 fn the_stand_ins_cover_every_node_import() {
-    let lib = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../lib");
+    let lib = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/js");
     let re =
         regex::Regex::new(r#"import\s+(?:(\w+)|\{([^}]*)\})\s+from\s+"(node:[\w_]+)""#).unwrap();
     let mut seen = 0;

@@ -1,8 +1,8 @@
 {
-  "recordedWith": {"lib/attention-facts.mjs":"2d07aea57f17f656608821521bf00d9defed1134737067d762ed8b39c5aa447b","lib/blast-radius.mjs":"9b41e6a48711efd413d41f8dfdec1b0af87301e4ced8f95faec4631a94f470ee","lib/relay.mjs":"bb05411e6b51cb228b4eb0769c1c42640cc346536092261c126192f04b395b7d"},
+  "recordedWith": {"rust/crates/tribunal-context/src/js/attention-facts.mjs":"2d07aea57f17f656608821521bf00d9defed1134737067d762ed8b39c5aa447b","rust/crates/tribunal-context/src/js/blast-radius.mjs":"9b41e6a48711efd413d41f8dfdec1b0af87301e4ced8f95faec4631a94f470ee","rust/crates/tribunal-context/src/js/relay.mjs":"bb05411e6b51cb228b4eb0769c1c42640cc346536092261c126192f04b395b7d"},
   "typescript": "typescript 6.0.3",
   "records": [
-    {"input": "3e01aea57f24b6eff91a377bffd28159f0c8ec6bd6fb45a55a81b11b08862d1c", "js": [
+    {"input": "a569eb2b559ed603f329d52760f45d8d8e3fd6764621efd17c99e5b7da88d51d", "js": [
       {"ok":{"refs":[{"line":27,"call":true,"awaited":false,"inTry":false,"text":"get g() { `${require('../services/auth').getAccount(id)}`; return 1; },"},{"line":1,"call":false,"awaited":null,"inTry":null,"text":"import { \"getAccount\" as quoted } from '@lib';"},{"line":39,"call":true,"awaited":false,"inTry":false,"text":"v = quoted(id;"}],"reexports":false},"diag":["')' expected."]},
       {"ok":null,"diag":["Expression expected.","Declaration or statement expected.","Identifier expected."]},
       {"ok":[{"kind":"unawaited-enqueue","file":"src/controllers/c.ts","line":20,"detail":"enqueueLater(...) is called and its promise is not awaited, returned or caught"},{"kind":"new-emit","file":"src/controllers/c.ts","line":64,"detail":"emits \"widgets:pong\""},{"kind":"unawaited-enqueue","file":"src/controllers/c.ts","line":75,"detail":"addOtherJob(...) is called and its promise is not awaited, returned or caught"},{"kind":"status-order","file":"src/controllers/c.ts","line":69,"detail":"a 401 added here comes after the 403 at line 59 in the same function, so a request that fails both checks gets the 403"}],"diag":["')' expected."]},
