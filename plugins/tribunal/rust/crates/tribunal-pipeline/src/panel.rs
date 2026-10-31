@@ -143,6 +143,8 @@ pub struct PanelOutcome {
     pub dropped_pre_panel: Vec<Value>,
     pub clean_sweep: Option<Value>,
     pub critic_output: String,
+    /// Wall-clock seconds the completeness critic took; 0 when it did not run.
+    pub critic_seconds: f64,
     pub panel_skipped_for_budget: Vec<Value>,
     pub refines_skipped_for_budget: Vec<Value>,
     pub cost_breaker_fired: Option<Value>,
@@ -658,6 +660,7 @@ pub async fn panel_phase<I: PanelIo>(
 
     // --- Completeness critic ---
     if env.file_count > 2.0 {
+        let critic_started = std::time::Instant::now();
         let critic = io
             .ask(
                 "completeness-critic".into(),
@@ -671,6 +674,7 @@ pub async fn panel_phase<I: PanelIo>(
                 Ask::Critic,
             )
             .await;
+        out.critic_seconds = critic_started.elapsed().as_secs_f64();
         out.critic_output = critic
             .as_ref()
             .and_then(|c| js::get(c, "summary"))

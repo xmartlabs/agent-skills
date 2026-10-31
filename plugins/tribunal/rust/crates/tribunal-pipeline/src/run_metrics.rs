@@ -498,6 +498,40 @@ fn lens_failures(labels: &[String], lenses: &[DispatchResult]) -> Value {
 ///
 /// # Errors
 /// When the row cannot be built or the vote directory cannot be written.
+fn stage_seconds(
+    review: &ReviewOutcome,
+    verify: &VerifyOutcome,
+    synthesis: &SynthesisOutcome,
+) -> Value {
+    stage_seconds_row([
+        review.context_seconds,
+        review.lenses_seconds,
+        verify.dedup_seconds,
+        verify.panel_seconds,
+        verify.panel.critic_seconds,
+        synthesis.synthesize_seconds,
+    ])
+}
+
+fn stage_seconds_row(seconds: [f64; 6]) -> Value {
+    let tenth = |x: f64| (x * 10.0).round() / 10.0;
+    let names = [
+        "context",
+        "lenses",
+        "dedup",
+        "panel",
+        "critic",
+        "synthesize",
+    ];
+    Value::Object(
+        names
+            .iter()
+            .zip(seconds)
+            .map(|(k, v)| ((*k).to_owned(), json!(tenth(v))))
+            .collect(),
+    )
+}
+
 pub fn persist_phase(
     rt: &Runtime,
     args: &RunArgs,
@@ -529,6 +563,7 @@ pub fn persist_phase(
         &review.prepared.profile,
         &review.dispatches[..lenses.min(review.dispatches.len())],
     );
+    metrics["stageSeconds"] = stage_seconds(review, verify, synthesis);
     metrics["engine"] = json!("rust");
     metrics["engineVersion"] = json!(ENGINE_VERSION);
     metrics["pluginVersion"] =
@@ -707,6 +742,16 @@ mod tests {
             "foci": {"correctness": "c", "security": "s", "migration": "m"},
             "riskPaths": [{"focus": "migration", "pattern": "^tests/signup"}],
         })
+    }
+
+    #[test]
+    fn stage_seconds_rounds_to_a_tenth_and_names_every_stage() {
+        let row = stage_seconds_row([1.04, 20.26, 0.0, 99.95, 5.5, 12.0]);
+        assert_eq!(
+            row,
+            json!({"context": 1.0, "lenses": 20.3, "dedup": 0.0, "panel": 100.0,
+                   "critic": 5.5, "synthesize": 12.0})
+        );
     }
 
     #[test]
