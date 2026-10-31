@@ -672,7 +672,7 @@ A release:
 `skills/review-pr/scripts/rust-engine.mjs`, which downloads the archive for
 the machine once, refuses it unless its sha256 matches, and caches it under
 `<tribunal-data>/bin/`. `TRIBUNAL_BIN` points it at a local build instead.
-`eval/replay-rust-engine.mjs` covers it offline.
+`rust/scripts/replay-rust-engine.mjs` covers it offline.
 
 ## Live A/B against the installed plugin (2026-10-23)
 
