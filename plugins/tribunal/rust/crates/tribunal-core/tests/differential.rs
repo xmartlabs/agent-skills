@@ -340,3 +340,19 @@ fn a_call_missing_from_the_golden_fails() {
     );
     oracle_replay(&golden, "R", &["f"], &["D"], &calls);
 }
+
+/// A composite call is named by its driver's source too: a driver edited
+/// without regenerating is a call the golden lacks.
+#[test]
+#[should_panic(
+    expected = "TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-core --test differential"
+)]
+fn an_edited_composite_driver_fails() {
+    let calls = [json!({"fn": "f", "args": [1]})];
+    let key = composite_call_key("driver", "R", &["f"], &[], &calls);
+    let golden = json!({"calls": {key.clone(): {"region": "R", "results": [{"ok": 2}]}}});
+    assert_eq!(replay_key(&golden, "R", &key, 1), [json!({"ok": 2})]);
+    assert_ne!(key, oracle_call_key("R", &["f"], &[], &calls));
+    let edited = composite_call_key("driver 2", "R", &["f"], &[], &calls);
+    replay_key(&golden, "R", &edited, 1);
+}
