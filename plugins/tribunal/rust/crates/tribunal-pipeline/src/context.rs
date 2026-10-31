@@ -218,8 +218,8 @@ pub async fn prepare(rt: &Runtime, args: &RunArgs) -> Result<Prepared, String> {
         ));
     }
 
-    let lists_conventions =
-        matches!(js::get(&profile, "conventionFiles"), Some(Value::Array(a)) if !a.is_empty());
+    let lists = |k: &str| matches!(js::get(&profile, k), Some(Value::Array(a)) if !a.is_empty());
+    let lists_conventions = lists("conventionFiles") || lists("conventionSources");
     let conventions_args = if lists_conventions {
         let patch = fetch_patch(rt, &repo, &args.pr, &args.head_sha).await?;
         let patch_file = tmp(rt, &format!("peer-review-diff-{}.patch", args.pr));
@@ -232,7 +232,7 @@ pub async fn prepare(rt: &Runtime, args: &RunArgs) -> Result<Prepared, String> {
             Some(Value::String(r)) => r.clone(),
             _ => to_js_string(loaded.get("baseRef")),
         };
-        let argv: Vec<String> = [
+        let mut argv: Vec<String> = [
             "--profile",
             &profile_file,
             "--ref",
@@ -241,12 +241,26 @@ pub async fn prepare(rt: &Runtime, args: &RunArgs) -> Result<Prepared, String> {
             &patch_file,
             "--out",
             &out,
+            "--pr",
+            &args.pr,
         ]
         .into_iter()
         .map(str::to_owned)
         .collect();
+        // A `submodule:` source reads its pointer at the commit under review.
+        if !args.head_sha.is_empty() {
+            argv.extend(["--head-sha".to_owned(), args.head_sha.clone()]);
+        }
         let got = load_conventions::main(&rt.tools, &argv).await;
         let got = json_line(&got.stdout, "load-conventions")?;
+        for w in got
+            .get("warnings")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            logs.push(format!("conventions warning: {}", to_js_string(Some(w))));
+        }
         if let Some(missing) = got
             .get("missing")
             .and_then(Value::as_array)

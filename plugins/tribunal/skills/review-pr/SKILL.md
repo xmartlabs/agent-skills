@@ -72,6 +72,7 @@ a Tier-1 pass into evidence it does not carry.
 |---|---|
 | `--engine rust` / `--engine workflow` | Which engine runs the review. The default is `rust`: the Rust binary runs it (see *The Rust engine*), and the first run on a machine downloads the binary for it from the pinned release. When there is no binary for the machine or it fails, the run says why and uses the Workflow. `--engine workflow` skips the binary and runs the Workflow. |
 | `--repo <owner/repo>` | The repo to review. Default: `defaultRepo` in this machine's `~/.claude/review-harness.json`, else the `owner/name` of the current directory's `origin` remote. Either way the repo must have a project profile (see *Dispatch decision*). |
+| `--profile <path>` / `--rules <path>` | **Rust engine.** Review with this profile file instead of the repo's `.claude/review-profile.json`, and, with it, this rules file instead of the one the profile names. For trying a profile before committing it; the profile must still describe the repo under review. |
 | `--post` | Post the review to GitHub automatically (no prompt), using the report's suggested verdict. |
 | `--no-post` | Never post, never ask — just show the report. |
 | `--queue-reset` | Discard the existing backlog and start clean instead of merging into it. |
@@ -133,7 +134,7 @@ assemble-methodology or load-conventions, no Workflow call.
    ```
 
    Pass on, spelled the same, each of these that was given: `--repo`,
-   `--head-sha`, `--thread-before`, `--full`, `--since`, `--lenses`,
+   `--profile`, `--rules`, `--head-sha`, `--thread-before`, `--full`, `--since`, `--lenses`,
    `--context` (for `--context @<file>`, the file's text), `--bot-comments`,
    `--preflight`, `--max-panels`, `--codex`/`--no-codex`,
    `--gemini`/`--no-gemini`, `--batch-panels`/`--no-batch-panels`. Then stop
@@ -245,6 +246,7 @@ patch into your own context: scanning it is a script's job.
 
 **Then load the repo's conventions, when the profile lists any.** Skip this
 when `profile.conventionFiles` is absent or empty.
+Only the Rust engine loads `profile.conventionSources`; this path prints a warning and skips them.
 
 ```bash
 node "$(tribunal-root)"/skills/review-pr/scripts/load-conventions.mjs --profile "${TMPDIR:-/tmp}/review-profile-<n>.json" \

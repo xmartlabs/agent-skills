@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "convention-manifest.schema.json",
+  "title": "Convention manifest",
+  "description": "The docs a conventionSources entry with select \"manifest\" reads, committed to the docs repo and read at the same pinned commit. The Rust engine's parser is the authority; this schema documents the same shape for editors, generators and CI. The loader collapses whitespace in a description before it counts the 300 characters. Unknown keys are ignored, at the top level and in a doc.",
+  "type": "object",
+  "required": ["schemaVersion", "docs"],
+  "properties": {
+    "schemaVersion": {
+      "description": "The manifest format. This loader reads 1.",
+      "const": 1
+    },
+    "docs": {
+      "description": "The docs, in any order. The first entry for a path wins.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "description"],
+        "properties": {
+          "path": {
+            "description": "A file in the docs repo, from its root. Any extension: the doc is loaded verbatim. With the source's root set, a path outside it is not loaded.",
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "description": "The doc's line in the on-demand menu. Each run of whitespace becomes one space and the ends are trimmed; the 300 limit is counted in UTF-16 code units after that collapse.",
+            "type": "string",
+            "maxLength": 300
+          },
+          "type": {
+            "description": "A doc of type \"convention\" that matches no changed path is still offered in the menu.",
+            "type": "string"
+          },
+          "covers": {
+            "description": "The repo paths the doc describes: an entry ending in / holds every path under it, one with *, ? or { is a glob, any other must equal the path. A list applies to every consumer; an object of lists is read through the source's consumer. Without covers a doc is reached only through include.",
+            "oneOf": [
+              { "$ref": "#/$defs/entries" },
+              { "type": "object", "additionalProperties": { "$ref": "#/$defs/entries" } }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "entries": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

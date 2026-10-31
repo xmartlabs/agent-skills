@@ -221,6 +221,8 @@ if (isMain) {
   const got = loadConventions({ profile: prof.profile, repo, ref: flag("--ref"), changed: changedPaths(patch) });
   if (!got.ok) done(got);
   const { text, ...out } = got;
+  if (Array.isArray(prof.profile.conventionSources) && prof.profile.conventionSources.length)
+    out.warnings = ["profile.conventionSources is loaded only by the Rust engine; this run skips it"];
   if (text === null) done({ ok: true, out: null, sha256: null, ref: null, ...out });
   try {
     writeFileSync(outPath, text);

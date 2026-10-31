@@ -8,6 +8,9 @@
 //! (literals, `[^/]`, `.*`, an optional `(?:.*/)?`, and brace alternations
 //! whose raw `?` can quantify), so [`Glob`] compiles that family itself and
 //! matches over UTF-16 code units, as V8 does.
+//!
+//! `profile.conventionSources` (documentation bundles in other repos) is
+//! [`crate::convention_sources`], appended after the files.
 
 use std::collections::HashSet;
 
@@ -333,7 +336,7 @@ fn list_item(l: &str) -> Option<&str> {
 }
 
 /// `/^---\n([\s\S]*?)\n---(?:\n|$)/`: the frontmatter body.
-fn frontmatter(text: &str) -> Option<&str> {
+pub(crate) fn frontmatter(text: &str) -> Option<&str> {
     if !text.starts_with("---\n") {
         return None;
     }
@@ -492,23 +495,42 @@ pub async fn load_conventions(
     repo: Option<&Value>,
     ref_: &str,
     changed: &[String],
+    head_sha: &str,
+    pr: &str,
 ) -> Result<Map<String, Value>, String> {
     let entries = match js::get(profile, "conventionFiles") {
         Some(Value::Array(a)) if !a.is_empty() => a.clone(),
-        _ => {
-            let mut m = Map::new();
-            m.insert("ok".into(), Value::Bool(true));
-            for k in ["files", "skipped", "missing"] {
-                m.insert(k.into(), Value::Array(Vec::new()));
-            }
-            m.insert("text".into(), Value::Null);
-            return Ok(m);
-        }
+        _ => Vec::new(),
     };
+    let (sources, shape_warning) = match js::get(profile, "conventionSources") {
+        Some(Value::Array(a)) => (a.clone(), None),
+        Some(_) => (
+            Vec::new(),
+            Some("conventionSources must be an array of documentation sources. Reviewing without it.".to_owned()),
+        ),
+        None => (Vec::new(), None),
+    };
+    if entries.is_empty() && sources.is_empty() {
+        let mut m = Map::new();
+        m.insert("ok".into(), Value::Bool(true));
+        for k in ["files", "skipped", "missing"] {
+            m.insert(k.into(), Value::Array(Vec::new()));
+        }
+        if let Some(w) = shape_warning {
+            m.insert("warnings".into(), Value::Array(vec![Value::String(w)]));
+        }
+        m.insert("text".into(), Value::Null);
+        return Ok(m);
+    }
     if ref_.is_empty() {
-        return Ok(fail(
-            "--ref <the ref the profile was read at> is required when the profile lists conventionFiles".into(),
-        ));
+        let field = if entries.is_empty() {
+            "conventionSources"
+        } else {
+            "conventionFiles"
+        };
+        return Ok(fail(format!(
+            "--ref <the ref the profile was read at> is required when the profile lists {field}"
+        )));
     }
     let repo = template(repo);
     let mut seen = HashSet::new();
@@ -602,7 +624,17 @@ pub async fn load_conventions(
             None => skipped.push(Value::Object(meta)),
         }
     }
-    let text = render(&repo, ref_, &files, &skipped, &missing);
+    let mut text = render(&repo, ref_, &files, &skipped, &missing);
+    let got = if sources.is_empty() {
+        None
+    } else {
+        Some(
+            crate::convention_sources::load_sources(
+                tools, &sources, &repo, ref_, head_sha, pr, changed,
+            )
+            .await,
+        )
+    };
     let mut out = Map::new();
     out.insert("ok".into(), Value::Bool(true));
     out.insert(
@@ -614,6 +646,16 @@ pub async fn load_conventions(
         "missing".into(),
         Value::Array(missing.into_iter().map(Value::String).collect()),
     );
+    if let Some(got) = got {
+        out.insert("sources".into(), Value::Array(got.sources));
+        out.insert(
+            "warnings".into(),
+            Value::Array(got.warnings.into_iter().map(Value::String).collect()),
+        );
+        text = format!("{text}\n{}", got.text);
+    } else if let Some(w) = shape_warning {
+        out.insert("warnings".into(), Value::Array(vec![Value::String(w)]));
+    }
     out.insert("text".into(), Value::String(text));
     Ok(out)
 }
@@ -714,6 +756,8 @@ pub async fn main(tools: &Tools, argv: &[String]) -> CliOutput {
         repo.as_ref(),
         &ref_,
         &changed_paths(&patch),
+        &flag(argv, "--head-sha"),
+        &flag(argv, "--pr"),
     )
     .await
     {

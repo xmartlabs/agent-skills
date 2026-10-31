@@ -18,6 +18,7 @@ that live in that repo, not in the plugin:
 | [`review-rules.md`](review-rules.md) | `.claude/review-rules.md` |
 | [`review-harness.json`](review-harness.json) | `~/.claude/review-harness.json`, on your machine only |
 | [`check.sh`](check.sh) | nothing, run it where it is (needs `node` and `python3`) |
+| [`convention-manifest.schema.json`](convention-manifest.schema.json) | nothing: the JSON Schema of a `conventionSources` manifest, for editors, generators and the docs repo's CI |
 
 ## Steps
 
@@ -41,6 +42,7 @@ that live in that repo, not in the plugin:
    | `riskPaths` | `{focus, pattern}` pairs. A changed path matching `pattern` (case-insensitive regular expression) forces that focus: `migration`, `security` or `dataContract`. Without it no path is high risk |
    | `projectRules` | Path of the rules file in the repo, normally `.claude/review-rules.md`. Remove the field if you have no rules file |
    | `conventionFiles` | The repo's own policy files, such as `["CLAUDE.md", ".claude/rules/*.md"]`, which every reviewer reads. `*` only in the last segment |
+   | `conventionSources` | Optional. Documentation bundles, kept in another repo or in a folder of this one, as `{repo, ref}` (both absent for this repo, read at the profile's ref) plus optional `root` (a folder ending in `/`), `select` (`okf-code`, `all` or `manifest`), `manifest` (required with `select: "manifest"`: a JSON file listing the docs, for any non-OKF format, described by `convention-manifest.schema.json`), `include`, `exclude`, `consumer` and `budgetBytes`. `ref` is a git ref, or `submodule:<path>` for the commit a submodule of this repo points to at the PR's head. The docs whose frontmatter `code:` names a changed path are loaded up to `budgetBytes` (default 30000) per source, and the rest are offered as a menu. Remove the field if the repo has no such bundle. [The profile doc](../plugins/tribunal/docs/project-profile.md) has the rules |
    | `crossRepoAnchors` | Sibling repos a finding may point into, as `{repo, ref}`. Use it to pair a frontend with its API. `[]` if none |
 
 3. **Copy the rules file and fill `intro` and `project-traps`.** Those two carry
