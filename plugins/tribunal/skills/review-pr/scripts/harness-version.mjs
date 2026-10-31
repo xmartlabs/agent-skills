@@ -27,9 +27,8 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PLUGIN_ROOT } from "../eval/paths.mjs";
 
 // A strict `import.meta.url === file://${process.argv[1]}` comparison breaks
 // when the script is invoked through a symlink (e.g. the ~/.claude/skills/...
@@ -49,12 +48,11 @@ function isMainModule() {
 // plugin is copied into a version-keyed cache directory, so a hash anchored to
 // the home directory would have hashed whatever older copy still sat in
 // ~/.claude — or thrown on a machine that never had one.
-const ROOT = PLUGIN_ROOT;
+const ROOT =
+  process.env.CLAUDE_PLUGIN_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
-// THE SURFACE — defined once here and imported by eval/release.mjs, so a freeze
-// and a version id can never disagree about what the harness is.
-// THE SURFACE — defined once here and imported by eval/release.mjs, so a freeze
-// and a version id can never disagree about what the harness is.
+// THE SURFACE — defined once here and imported by rust/scripts/release.mjs, so a
+// freeze and a version id can never disagree about what the harness is.
 //
 // `lib/` and `workflows/` are DIRECTORIES, not a hand-kept list of names, since
 // 2026-09-09. They were a list, and a list fails in the direction that costs
