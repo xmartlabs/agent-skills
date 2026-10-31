@@ -78,5 +78,5 @@ the `tribunal-script-exception` label, and the pull request says why.
   <crate> --test <name>`, over the whole binary, and commit it. The test names
   that command and fails on every platform until then. The classifier goldens
   of `diff_classify_heads.rs` regenerate only on a Mac.
-- `diff_profile.rs`, `diff_plan.rs` and `diff_loaders.rs` have no golden yet
-  and still run the scripts. `rust/README.md` describes the rest.
+- `diff_profile.rs` and `diff_loaders.rs` have no golden yet and still run
+  the scripts. `rust/README.md` describes the rest.
