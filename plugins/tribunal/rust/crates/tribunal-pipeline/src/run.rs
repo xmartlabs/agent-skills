@@ -401,6 +401,7 @@ pub async fn verify_phase<A: Agent>(
         }
     };
     let dedup_seconds = dedup_started.elapsed().as_secs_f64();
+    let panel_started = std::time::Instant::now();
     let rc = &review.context;
     let pr_files = &rc.plan.files;
     let eligible = dedup.panel_candidates.iter().any(|c| {
@@ -594,7 +595,6 @@ pub async fn verify_phase<A: Agent>(
         spent: &spent,
         spent_before: output_of(&before),
     };
-    let panel_started = std::time::Instant::now();
     let panel = panel_phase(
         &io,
         &env,
