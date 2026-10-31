@@ -1,7 +1,7 @@
 # Tribunal releases
 
 One row per freeze of the tribunal plugin, appended by `plugins/tribunal/release.sh`
-(through `eval/release.mjs --record`). A row asserts one thing: **the offline gate
+(through `rust/scripts/release.mjs --record`). A row asserts one thing: **the offline gate
 was green at that content hash.** It is not a quality claim, and no single run can
 support one: candidate generation reproduces at only 14 to 16 percent between
 identical runs.

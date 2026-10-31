@@ -75,15 +75,18 @@ binary, from `rust/`: `cargo fmt --check`, `cargo clippy -D warnings` and
 `cargo test --workspace --locked`. It then checks the pin. The tag in
 `rust/release.json` has to be in the clone, and nothing that ships in the binary may
 have changed since that tag. That means everything under `rust/` except Markdown,
-`crates/*/tests/` and `release.json`, plus the files outside `rust/` that the crates
+`crates/*/tests/`, `scripts/` and `release.json`, plus the files outside `rust/` that the crates
 compile in with `include_str!`. The pinned archive is then downloaded into an empty
 directory, checked against its sha256, and has to print the tag's version. A Rust
 change merged without a release turns the gate red with the list of files, so cut a
 binary first (`rust/README.md`, "A release"). Last come the two replays of
-JavaScript the Rust path still runs: `replay-rust-engine.mjs` (the launcher) and
-`replay-frontier.mjs` (the client-name ratchet). The Workflow's own replays are not
-in the gate. Run them by hand, as above, when a change touches the Workflow or its
-scripts.
+JavaScript the Rust path still runs: `rust/scripts/replay-rust-engine.mjs` (the
+launcher) and `rust/scripts/replay-frontier.mjs` (the client-name ratchet). The
+gate itself, `rust/scripts/release.mjs`, lives next to them, outside the Workflow's
+files. The Workflow's own replays are not in the gate. Run them by hand, as above,
+when a change touches the Workflow or its scripts. The corpus score
+(`eval/score.mjs`) is no longer part of the gate: it imports `eval/` helpers, which
+cannot be reached from the gate, and it only reported.
 
 **Which gate runs.** With `TRIBUNAL_HARNESS_DATA` set, the full gate. Without it,
 `release.sh` refuses unless you pass `--portable`: then the client-name scan cannot
@@ -128,7 +131,7 @@ The order it enforces, and why each step sits where it does:
 #    if the gate is red, if --notes-file is missing, or if that file
 #    is empty. --tag is passed in because the tag does not exist until step 4,
 #    so release.mjs cannot derive it without naming the PREVIOUS release.
-node eval/release.mjs --record --tag tribunal/v31 --notes-file <path>   # from skills/review-pr
+node rust/scripts/release.mjs --record --tag tribunal/v31 --notes-file <path>   # from plugins/tribunal
 
 # 2. Bump `version` in .claude-plugin/plugin.json to match the tag. This is the
 #    cache key /plugin update keys off — leave it and users are told they

@@ -12,15 +12,13 @@
 // is NOT evidence that a change improved the review. Two measured facts forbid
 // that reading: candidate generation reproduces at only 14-16% between identical
 // runs (specs/2026-07-24-candidate-generation-noise-floor.md), so no single run
-// can attribute a difference to a code change; and the corpus's only two
-// labelled false negatives sit on a pre-canonical row that score.mjs skips, so
-// the TP/FP/FN line below is thinner than it looks. The honest artifact of a
-// freeze is the signed row it appends — including the defects known to be open
-// at that moment — not a number that says "better".
+// can attribute a difference to a code change. The honest artifact of a freeze
+// is the signed row it appends — including the defects known to be open at that
+// moment — not a number that says "better".
 //
 // Usage:
-//   node eval/release.mjs             # run the gate, print the verdict
-//   node eval/release.mjs --record --tag tribunal/v44 --notes-file <path>
+//   node rust/scripts/release.mjs             # run the gate, print the verdict
+//   node rust/scripts/release.mjs --record --tag tribunal/v44 --notes-file <path>
 //
 // Exits non-zero if anything in the battery is red. `--record` on a red gate is
 // refused: a RELEASES.md row is a claim that the battery passed.
@@ -46,13 +44,12 @@ import { appendFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmS
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { harnessVersion } from "../scripts/harness-version.mjs";
-import { resolveBinary } from "../scripts/rust-engine.mjs";
-import { HARNESS_DATA, RELEASES_PATH } from "./paths.mjs";
+import { harnessVersion } from "../../skills/review-pr/scripts/harness-version.mjs";
+import { resolveBinary } from "../../skills/review-pr/scripts/rust-engine.mjs";
+import { HARNESS_DATA, RELEASES_PATH } from "./gate-paths.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SKILL = resolve(HERE, "..");
-const CLAUDE = resolve(SKILL, "../..");
+const CLAUDE = resolve(HERE, "..", "..");
 const record = process.argv.includes("--record");
 const argValue = (name) => {
   const prefixed = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -120,12 +117,12 @@ if (record) {
   }
 }
 
-function run(label, args, { blocking = true } = {}) {
+function run(label, args) {
   try {
-    const out = execFileSync("node", args, { cwd: SKILL, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    return { label, ok: true, blocking, out };
+    const out = execFileSync("node", args, { cwd: CLAUDE, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    return { label, ok: true, blocking: true, out };
   } catch (err) {
-    return { label, ok: false, blocking, out: `${err.stdout || ""}${err.stderr || ""}` };
+    return { label, ok: false, blocking: true, out: `${err.stdout || ""}${err.stderr || ""}` };
   }
 }
 
@@ -180,10 +177,14 @@ function embeddedOutsideRust() {
   return [...out].sort();
 }
 
-// What changes the binary: everything under rust/ except the docs, the tests
-// and the pin itself, plus the files it embeds from elsewhere in the plugin.
+// What changes the binary: everything under rust/ except the docs, the tests,
+// the pin itself and rust/scripts/ (the gate and the release tooling; no crate
+// embeds them), plus the files it embeds from elsewhere in the plugin.
 const shipsInBinary = (rel) =>
-  !rel.endsWith(".md") && rel !== "rust/release.json" && !/^rust\/crates\/[^/]+\/tests\//.test(rel);
+  !rel.endsWith(".md") &&
+  rel !== "rust/release.json" &&
+  !rel.startsWith("rust/scripts/") &&
+  !/^rust\/crates\/[^/]+\/tests\//.test(rel);
 
 function pinCheck() {
   const label = "rust-pin";
@@ -244,13 +245,15 @@ const { id, entries } = harnessVersion();
 // battery, and the harness hash never covered it: `pr-harness-4af7ff70ff8e` is
 // the same id `main` carried while `replay-embedded-bash` was red, so "green at
 // this hash" could not be re-verified by checking the hash out. Two ids, and the
-// row records both. The battery is the Rust tests, the replays above and this
-// file; `rust-battery-` marks rows recorded since the battery moved off the
+// row records both. The battery is the Rust tests, the replays above, the files
+// they read and this file; `rust-battery-` marks rows recorded since the battery moved off the
 // Workflow's replays (`pr-battery-`).
 const battery = (() => {
   const files = [
     ...walk(join(RUST, "crates")).filter((f) => /[/\\]tests[/\\]/.test(f)),
     ...RUST_PATH_REPLAYS.map((f) => join(HERE, f)),
+    join(HERE, "gate-paths.mjs"),
+    join(HERE, "frontier.json"),
     fileURLToPath(import.meta.url),
   ];
   const fileEntries = files
@@ -286,7 +289,7 @@ const steps = [
   () => runIn("cargo clippy", "cargo", ["clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"], RUST),
   () => runIn("cargo test", "cargo", ["test", "--workspace", "--locked", "--no-fail-fast"], RUST),
   () => pinCheck(),
-  ...RUST_PATH_REPLAYS.map((f) => () => run(f.replace(/\.mjs$/, ""), [`eval/${f}`])),
+  ...RUST_PATH_REPLAYS.map((f) => () => run(f.replace(/\.mjs$/, ""), [join(HERE, f)])),
 ];
 const results = [];
 console.log("\n  running");
@@ -295,13 +298,7 @@ for (const step of steps) {
   console.log(`    ${r.ok ? "ok  " : "FAIL"}  ${r.label}`);
   results.push(r);
 }
-// The corpus score REPORTS, it does not gate. It is too thin to block on today
-// and pretending otherwise would be the kind of gate that lies (see the header).
-const score = portable ? { out: "" } : run("score", ["eval/score.mjs"], { blocking: false });
-
 const red = results.filter((r) => !r.ok);
-const totals = (score.out.match(/^\s*TP=.*$/m) || ["  (score unavailable)"])[0].trim();
-console.log(`\n  corpus    ${totals}  [reported, not gated]`);
 
 if (red.length) {
   console.log(`\nGATE RED — ${red.length} failing:`);
@@ -312,7 +309,10 @@ if (red.length) {
     const lines = r.out.trim().split("\n");
     const failing = lines.filter((l) => /^test \S+ \.\.\. FAILED$|panicked at/.test(l));
     const summary = lines.filter((l) => /^error: \d+ targets? failed|^ {4}`-p /.test(l));
-    const shown = failing.length ? [...failing.slice(0, 30), ...summary] : lines.slice(-12);
+    // The pin's output is the list of changed files plus a one-line fix; a tail
+    // of it would hide the files that sort first.
+    const shown =
+      r.label === "rust-pin" ? lines : failing.length ? [...failing.slice(0, 30), ...summary] : lines.slice(-12);
     console.log(shown.join("\n"));
   }
   if (record) console.log("\n--record refused: a RELEASES.md row asserts the battery passed.");
@@ -368,9 +368,9 @@ if (!existsSync(RELEASES)) {
     RELEASES,
     `# Frozen versions of the peer-review harness
 
-Appended by \`node eval/release.mjs --record\`, one row per freeze. A row asserts
+Appended by \`node rust/scripts/release.mjs --record\`, one row per freeze. A row asserts
 exactly one thing: **the offline battery was green at that content hash.** It is
-not a quality claim — see the header of \`eval/release.mjs\` for why no single run
+not a quality claim — see the header of \`rust/scripts/release.mjs\` for why no single run
 can support one.
 
 The **Known open** section below the table is what earns this file: what is

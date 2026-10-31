@@ -3,7 +3,7 @@
 // binary its pin names. A stand-in `gh` serves a stand-in release, so this
 // costs 0 tokens and no network. Tier 0.
 //
-// Usage: node eval/replay-rust-engine.mjs
+// Usage: node rust/scripts/replay-rust-engine.mjs
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -11,11 +11,11 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, st
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PLUGIN_ROOT, resolveBinary, targetFor } from "../scripts/rust-engine.mjs";
-import { manifestFrom, TARGETS } from "../../../rust/scripts/pin-release.mjs";
+import { PLUGIN_ROOT, resolveBinary, targetFor } from "../../skills/review-pr/scripts/rust-engine.mjs";
+import { manifestFrom, TARGETS } from "./pin-release.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const LAUNCHER = join(HERE, "..", "scripts", "rust-engine.mjs");
+const LAUNCHER = join(HERE, "..", "..", "skills", "review-pr", "scripts", "rust-engine.mjs");
 const failures = [];
 const check = (name, cond, detail) => {
   if (cond) console.log(`  ok    ${name}`);
