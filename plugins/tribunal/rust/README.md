@@ -634,7 +634,7 @@ in another order. `tribunal-core`'s `common::oracle` and
 the Workflow, record and replay per test binary: a binary with
 `tests/goldens/oracle/<name>.json` (or `span/<name>.json`) replays it and
 fails on a call it does not hold, and a binary without one runs node as
-before. `diff_profile.rs`, `diff_plan.rs` and `diff_loaders.rs` have no golden
+before. `diff_profile.rs` and `diff_loaders.rs` have no golden
 yet. To start recording a binary, create its golden as `{}` and regenerate.
 `diff_resolve_evidence.rs` and `diff_section_diff.rs` read commits of this
 repository's history: their goldens keep the commit SHAs and replay them with
