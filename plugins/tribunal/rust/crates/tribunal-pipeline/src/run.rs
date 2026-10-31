@@ -30,7 +30,9 @@ use crate::context::{
 };
 use crate::decisions::is_retest_target;
 use crate::live::{LiveIo, PanelAgents};
-use crate::panel::{panel_phase, PanelEnv, PanelFlags, PanelOutcome, OUTPUT_CEILING_DEFAULT};
+use crate::panel::{
+    panel_phase, CriticGap, PanelEnv, PanelFlags, PanelOutcome, OUTPUT_CEILING_DEFAULT,
+};
 use crate::prompts::{lens_dispatch_prompt, DiffExposure, LensPromptInput};
 use crate::review::{
     answer_of, bot_task, bot_vetting_prompt, check_lenses_returned, collect_candidates,
@@ -564,6 +566,8 @@ pub async fn verify_phase<A: Agent>(
     };
     let mut exposure = DiffExposure::default();
     let diff_block = rc.delivery.refuter_diff_block(&mut exposure)?;
+    let not_reached = &review.candidates.lens_not_reached;
+    let uncovered = uncovered_files(pr_files, all);
     let claims = &rc.decisions.retest_claims;
     let retest = |f: &Value| is_retest_target(claims, f);
     let spent = || io.spent();
@@ -583,6 +587,10 @@ pub async fn verify_phase<A: Agent>(
         diff_block: &diff_block,
         section_index: rc.section_index.as_ref(),
         diff_path: rc.delivery.diff_path.as_deref(),
+        critic_gap: Some(CriticGap {
+            not_reached,
+            uncovered: &uncovered,
+        }),
         blast_radius: rc.blast_radius.as_ref(),
         file_count: rc.plan.file_count,
         flags,
@@ -645,6 +653,25 @@ pub struct SynthesisOutcome {
     /// budget, which keep the verdict from APPROVE.
     pub unread_risk_files: Vec<String>,
     pub dispatches: Vec<(String, DispatchResult)>,
+}
+
+/// The changed files no candidate names, worked out here so the critic is
+/// handed the set difference instead of asked to compute it.
+fn uncovered_files(files: &[String], candidates: &[Value]) -> Vec<String> {
+    let named: Vec<String> = candidates
+        .iter()
+        .map(|c| to_js_string(js::get(c, "file")))
+        .filter(|f| !f.is_empty())
+        .collect();
+    files
+        .iter()
+        .filter(|f| {
+            !named
+                .iter()
+                .any(|n| *f == n || f.ends_with(n.as_str()) || n.ends_with(f.as_str()))
+        })
+        .cloned()
+        .collect()
 }
 
 fn cross_repo_flags(profile: &Value) -> Vec<String> {
@@ -1042,6 +1069,19 @@ pub async fn run_full<A: Agent>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn uncovered_files_are_the_changed_files_no_candidate_names() {
+        let files = ["src/a.ts", "src/b.ts", "src/c.ts"].map(String::from);
+        let candidates = [
+            json!({"file": "src/a.ts"}),
+            json!({"file": "b.ts"}),
+            json!({"file": ""}),
+            json!({"title": "no file at all"}),
+        ];
+        assert_eq!(uncovered_files(&files, &candidates), vec!["src/c.ts"]);
+        assert_eq!(uncovered_files(&files, &[]), files.to_vec());
+    }
 
     #[test]
     fn an_unread_risk_file_turns_approve_into_comment_only() {

@@ -37,9 +37,9 @@ use tribunal_core::votes::panel_ceiling_tiebreak::{
 use tribunal_core::votes::vote_quotes::{checkable_vote_quotes, vote_quote_verdicts};
 
 use crate::panel_prompts::{
-    batch_prompt, context_instruction, critic_prompt, defense_prompt, external_context_instruction,
-    external_prompt, judge_prompt, refute_prompt, strengthen_prompt, sweep_prompt, tiebreak_prompt,
-    REFUTER_LENSES,
+    batch_prompt, context_instruction, critic_gap_prompt, critic_prompt, defense_prompt,
+    external_context_instruction, external_prompt, judge_prompt, refute_prompt, strengthen_prompt,
+    sweep_prompt, tiebreak_prompt, CriticBase, REFUTER_LENSES,
 };
 use crate::synthesize::Relay;
 use crate::verify::{
@@ -108,6 +108,12 @@ pub struct PanelFlags {
 }
 
 /// The run's facts the panel reads.
+#[derive(Debug, Clone, Copy)]
+pub struct CriticGap<'a> {
+    pub not_reached: &'a [String],
+    pub uncovered: &'a [String],
+}
+
 pub struct PanelEnv<'a> {
     pub pr_number: &'a Value,
     pub repo: &'a str,
@@ -119,6 +125,11 @@ pub struct PanelEnv<'a> {
     /// `sectionIndex`, when section-diff ran.
     pub section_index: Option<&'a Value>,
     pub diff_path: Option<&'a str>,
+    /// Set by the Rust engine: the critic audits what the lenses left (what
+    /// they did not reach, the changed files no candidate names) from the diff
+    /// already on disk. `None` keeps the Workflow's critic, which the
+    /// differential tests compare against.
+    pub critic_gap: Option<CriticGap<'a>>,
     pub blast_radius: Option<&'a Value>,
     pub file_count: f64,
     pub flags: PanelFlags,
@@ -661,18 +672,29 @@ pub async fn panel_phase<I: PanelIo>(
     // --- Completeness critic ---
     if env.file_count > 2.0 {
         let critic_started = std::time::Instant::now();
+        let critic_text = match (env.critic_gap, env.diff_path) {
+            (Some(gap), Some(diff_path)) => critic_gap_prompt(
+                &CriticBase {
+                    pr_number: env.pr_number,
+                    repo: env.repo,
+                    head: js::get(env.pr_context, "headRefOid"),
+                    files: &pr_files,
+                    panel_input: &panel_input,
+                },
+                diff_path,
+                gap.uncovered,
+                gap.not_reached,
+            ),
+            _ => critic_prompt(
+                env.pr_number,
+                env.repo,
+                js::get(env.pr_context, "headRefOid"),
+                &pr_files,
+                &panel_input,
+            ),
+        };
         let critic = io
-            .ask(
-                "completeness-critic".into(),
-                critic_prompt(
-                    env.pr_number,
-                    env.repo,
-                    js::get(env.pr_context, "headRefOid"),
-                    &pr_files,
-                    &panel_input,
-                ),
-                Ask::Critic,
-            )
+            .ask("completeness-critic".into(), critic_text, Ask::Critic)
             .await;
         out.critic_seconds = critic_started.elapsed().as_secs_f64();
         out.critic_output = critic
