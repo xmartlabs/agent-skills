@@ -6,11 +6,11 @@
 //! `node_modules` holds typescript; the comparison is `#[ignore]` without it.
 //!
 //! The bash's side is read from `tests/goldens/grounded-typecheck.json`: the
-//! workflow and the `lib/relay.mjs` its bash runs are being retired, so a run
+//! workflow and the `rust/crates/tribunal-context/src/js/relay.mjs` its bash runs are being retired, so a run
 //! starts only the port. The file keeps each fixture, the bash the span oracle
 //! cut out for it, the typescript version it ran, and a SHA-256 of the
 //! workflow code that bash came from, of the span oracle's own files and of
-//! `lib/relay.mjs`, so editing any of them without a regeneration fails here.
+//! `rust/crates/tribunal-context/src/js/relay.mjs`, so editing any of them without a regeneration fails here.
 //! A source that is gone from disk is retired and is not checked; the golden
 //! is final. The scratch directory and each fixture's head commit are stored
 //! as `<ROOT>` and `<SHA>`. Regenerate after changing them:
@@ -243,7 +243,7 @@ const WORKFLOW: &str = "workflow-src/tribunal.js";
 const ORACLE_FILES: &[&str] = &[
     "rust/oracle/span-oracle.mjs",
     "skills/review-pr/eval/extract-pure-region.mjs",
-    "lib/relay.mjs",
+    "rust/crates/tribunal-context/src/js/relay.mjs",
 ];
 
 fn regenerating() -> bool {
@@ -396,7 +396,10 @@ fn a_retired_source_is_not_checked_but_a_changed_one_is() {
         .map(|k| (k, "recorded"))
         .collect::<BTreeMap<_, _>>());
     assert!(stale(&recorded, &gone).is_empty());
-    for (i, f) in [WORKFLOW, "lib/relay.mjs"].into_iter().enumerate() {
+    for (i, f) in [WORKFLOW, "rust/crates/tribunal-context/src/js/relay.mjs"]
+        .into_iter()
+        .enumerate()
+    {
         let at = root.join(f);
         std::fs::create_dir_all(at.parent().unwrap()).unwrap();
         std::fs::write(&at, "edited").unwrap();

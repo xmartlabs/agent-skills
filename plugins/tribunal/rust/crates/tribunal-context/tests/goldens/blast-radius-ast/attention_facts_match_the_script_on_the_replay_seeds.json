@@ -1,8 +1,8 @@
 {
-  "recordedWith": {"lib/attention-facts.mjs":"2d07aea57f17f656608821521bf00d9defed1134737067d762ed8b39c5aa447b","lib/blast-radius.mjs":"9b41e6a48711efd413d41f8dfdec1b0af87301e4ced8f95faec4631a94f470ee","lib/relay.mjs":"bb05411e6b51cb228b4eb0769c1c42640cc346536092261c126192f04b395b7d"},
+  "recordedWith": {"rust/crates/tribunal-context/src/js/attention-facts.mjs":"2d07aea57f17f656608821521bf00d9defed1134737067d762ed8b39c5aa447b","rust/crates/tribunal-context/src/js/blast-radius.mjs":"9b41e6a48711efd413d41f8dfdec1b0af87301e4ced8f95faec4631a94f470ee","rust/crates/tribunal-context/src/js/relay.mjs":"bb05411e6b51cb228b4eb0769c1c42640cc346536092261c126192f04b395b7d"},
   "typescript": "typescript 6.0.3",
   "records": [
-    {"input": "fe32f7cf4ceeb070ce7683916528502a49ebbccc259f8615c9a2c222a5a5bde4", "js": [
+    {"input": "6555a120c4c7ee5dd4b63d4f6a1f4efbf6ff7e719f80db7e3a9b8e436c640245", "js": [
       {"ok":[{"kind":"exit-before-finally","file":"src/x.ts","line":5,"detail":"a return added inside a try whose finally (line 9) reads filesToClean, which the try fills only after this line"}],"diag":[]},
       {"ok":[],"diag":[]},
       {"ok":[],"diag":[]},

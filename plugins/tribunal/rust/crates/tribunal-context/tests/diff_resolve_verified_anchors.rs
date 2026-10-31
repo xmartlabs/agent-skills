@@ -1321,7 +1321,10 @@ fn a_retired_script_is_not_held_to_the_golden() {
         std::fs::write(path, text.as_str().unwrap()).unwrap();
     }
     assert!(!stale(with, oracle_texts(&root, &shim).as_ref()));
-    for key in ["lib/resolve-verified-anchors.mjs", "lib/relay.mjs"] {
+    for key in [
+        "lib/resolve-verified-anchors.mjs",
+        "rust/crates/tribunal-context/src/js/relay.mjs",
+    ] {
         let path = root.join(key);
         let text = std::fs::read_to_string(&path).unwrap();
         std::fs::write(&path, format!("{text}// edited\n")).unwrap();

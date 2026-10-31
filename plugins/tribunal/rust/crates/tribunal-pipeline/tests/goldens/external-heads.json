@@ -6,7 +6,7 @@
     "lib/gemini-exec.sh": "e7013bf950c3d39e978bc363170ddfd503f54f19db5ab39f40520ff97fb397f4",
     "rust/oracle/span-oracle.mjs": "743d242f99cf629907da52eb254c024fc78d6b7e96983885c0954bf58869fff3",
     "skills/review-pr/eval/extract-pure-region.mjs": "97769df2f5f39666765504272b70c273ed213da3b17d4bdc6e081f150979c98c",
-    "workflow-src/tribunal.js": "1893232decd3e690869a22ba7c4bd57f33fb65215f058471c1c833a9d46d8805"
+    "workflow-src/tribunal.js": "1f9e66438a8c0b336a4ad39f883962f152b5e3112dc23de24c82c1f028bc4da8"
   },
   "setup": {
     "fake": "3d5dd46aeff2072bf1b2e66d58a1fbb75d5b64aefb53aefd3c19add3578cdd26",

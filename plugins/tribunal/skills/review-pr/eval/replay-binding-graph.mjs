@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// replay-binding-graph.mjs — lib/blast-radius.mjs with a parser: callers found
+// replay-binding-graph.mjs — rust/.../js/blast-radius.mjs with a parser: callers found
 // by binding, not by word, and ranked by what a changed failure mode would hit.
 //
 // The word scan listed a file that merely shared a name with the changed
@@ -29,8 +29,8 @@ const check = (name, cond, detail) => {
   }
 };
 
-const { blastRadius, makeRepo, returnsPromise } = await import(lib("blast-radius.mjs"));
-const { loadTypescript } = await import(lib("attention-facts.mjs"));
+const { blastRadius, makeRepo, returnsPromise } = await import(lib("../rust/crates/tribunal-context/src/js/blast-radius.mjs"));
+const { loadTypescript } = await import(lib("../rust/crates/tribunal-context/src/js/attention-facts.mjs"));
 let top = null;
 try {
   top = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -182,7 +182,7 @@ console.log("\n--- the lens sees the try ---");
   check("a call outside a try says so", block.includes("a.ts:1 [call, NOT awaited, no try around it]"));
   check("a call inside a try says so", block.includes("b.ts:2 [call, NOT awaited, inside a try]"));
   check("a caller from the word scan, with no try verdict, reads as before", block.includes("c.ts:3 [call, NOT awaited] via f"));
-  check("the relay names the resolver it used", readFileSync(lib("blast-radius.mjs"), "utf8").includes('out.resolver = ts ? "bindings" : "words";'));
+  check("the relay names the resolver it used", readFileSync(lib("../rust/crates/tribunal-context/src/js/blast-radius.mjs"), "utf8").includes('out.resolver = ts ? "bindings" : "words";'));
 }
 
 if (failures.length) {

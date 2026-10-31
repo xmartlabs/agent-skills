@@ -10,7 +10,7 @@
 // every prompt heredoc.
 //
 // What this pins:
-//   1. VERIFIED-RELAY and lib/relay.mjs agree on the checksum.
+//   1. VERIFIED-RELAY and rust/.../js/relay.mjs agree on the checksum.
 //   2. section-diff.mjs cuts exactly what DIFF-SECTIONING's splitDiffByFile
 //      cuts, and writes the excerpt externalDiffSlice used to build, byte for
 //      byte (Layer 1 equivalence for v80).
@@ -47,7 +47,7 @@ const check = (name, cond, detail) => {
 };
 
 const src = readFileSync(WORKFLOW, "utf8");
-const { relayCrc, relayLines } = await import(lib("relay.mjs"));
+const { relayCrc, relayLines } = await import(lib("../rust/crates/tribunal-context/src/js/relay.mjs"));
 const { sectionDiff, sliceFor, wholeSliceFor, SLICE_CHARS } = await import(lib("section-diff.mjs"));
 
 let relay, usable, assembly;

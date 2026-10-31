@@ -17,7 +17,7 @@
 
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { relayLines } from "../../../lib/relay.mjs";
+import { relayLines } from "../../../rust/crates/tribunal-context/src/js/relay.mjs";
 
 // A strict `import.meta.url === file://${process.argv[1]}` comparison breaks
 // when the script is invoked through a symlink (e.g. the ~/.claude/skills/...

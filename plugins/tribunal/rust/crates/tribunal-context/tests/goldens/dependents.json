@@ -1,13 +1,13 @@
 {
   "recordedWith": {
     "scripts": {
-      "lib/attention-facts.mjs": "2d07aea57f17f656608821521bf00d9defed1134737067d762ed8b39c5aa447b",
-      "lib/blast-radius.mjs": "9b41e6a48711efd413d41f8dfdec1b0af87301e4ced8f95faec4631a94f470ee",
-      "lib/relay.mjs": "bb05411e6b51cb228b4eb0769c1c42640cc346536092261c126192f04b395b7d",
+      "rust/crates/tribunal-context/src/js/attention-facts.mjs": "2d07aea57f17f656608821521bf00d9defed1134737067d762ed8b39c5aa447b",
+      "rust/crates/tribunal-context/src/js/blast-radius.mjs": "9b41e6a48711efd413d41f8dfdec1b0af87301e4ced8f95faec4631a94f470ee",
+      "rust/crates/tribunal-context/src/js/relay.mjs": "bb05411e6b51cb228b4eb0769c1c42640cc346536092261c126192f04b395b7d",
       "skills/review-pr/scripts/import-adjacency.mjs": "c6d700a68aa49eccd45d2bffce8391e8707afdddfaf24199a60096abeccd6851"
     },
     "generators": {
-      "driver": "06261c4ac3a210ca0881001896ce5e4d7873ba5b94cc551222f50fe0f6b4e6ce",
+      "driver": "d3b1b75c4ac6d70b9197dbad1e24ff6097dda7ed5034b7d10e1604c6df855657",
       "git wrapper": "e1656ca2f0ae4ae566433b703770822b2dcb89fbaf17f81e26bfe055132bb64c"
     }
   },

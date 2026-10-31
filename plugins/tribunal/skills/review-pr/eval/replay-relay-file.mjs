@@ -38,7 +38,7 @@ const check = (name, cond, detail) => {
   }
 };
 
-const { relayLines } = await import(lib("relay.mjs"));
+const { relayLines } = await import(lib("../rust/crates/tribunal-context/src/js/relay.mjs"));
 const { findRelay, relayFileScript, writeRelayFile, relayDirFor, pruneRelayFiles, RELAY_FILE_PREFIX, RELAY_FILE_MAX_BYTES, RELAY_FILE_KEEP_MS } = await import(lib("relay-file.mjs"));
 
 // The runtime parses `export const meta = {...}` and runs the rest as a body

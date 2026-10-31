@@ -24,7 +24,7 @@ import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractRegion } from "./check-report-fidelity.mjs";
-import { relayLines } from "./relay.mjs";
+import { relayLines } from "../rust/crates/tribunal-context/src/js/relay.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WORKFLOW = resolve(HERE, "..", "workflows", "tribunal.js");

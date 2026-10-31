@@ -338,7 +338,7 @@ function noteBashSize(label, text) {
   return text;
 }
 
-// eval/replay-verified-relay.mjs pins this region against lib/relay.mjs.
+// eval/replay-verified-relay.mjs pins this region against rust/crates/tribunal-context/src/js/relay.mjs.
 // ===== BEGIN VERIFIED-RELAY =====
 // The Claude Code Bash tool on Windows (Git Bash) fails a command longer than
 // about 7,300 characters with `unexpected EOF while looking for matching "'"`:
@@ -390,7 +390,7 @@ const RUN_BLOCKS_RULE =
 // that size and fail above ~16 KB (tribunal's persist relay, rule 16).
 //
 // So a script prints `RELAY-CRC <crc32:bytes>` and one compact JSON line
-// (lib/relay.mjs), the mechanic copies both, and checkRelay recomputes the
+// (rust/crates/tribunal-context/src/js/relay.mjs), the mechanic copies both, and checkRelay recomputes the
 // checksum over JSON.stringify(data). The JSON the script printed was itself
 // JSON.stringify output, so a faithful copy re-serialises to the same bytes and
 // any dropped, invented, changed or reordered field does not. Heredocs carry
@@ -501,7 +501,7 @@ function relayEntry(label, first, check, retried) {
 // was reported to turn `\\` into `\` inside a quoted heredoc on Windows, and a
 // tool call's JSON decodes `\u0041` to `A`. wireEncode writes `\` as U+29F5 `b`,
 // `'` as U+29F5 `q` and U+29F5 as U+29F5 `e`, so wire text needs no quoting
-// inside printf's single quotes; lib/relay.mjs decodes on disk.
+// inside printf's single quotes; rust/crates/tribunal-context/src/js/relay.mjs decodes on disk.
 const WIRE_ESC = "\u29f5";
 const WIRE_CODES = { "\\": "b", [WIRE_ESC]: "e", "'": "q" };
 const WIRE_CHARS = { b: "\\", e: WIRE_ESC, q: "'" };
@@ -2192,7 +2192,7 @@ ${
     `"${CONTEXT_DIR}/head-worktree.sh"`,
     "TRIBUNAL_HEAD_WORKTREE",
     headWorktreeBash("$PREP_SHA", repo, prNumber),
-    `"$(tribunal-root)"/lib/relay.mjs`,
+    `"$(tribunal-root)"/rust/crates/tribunal-context/src/js/relay.mjs`,
   )
 }
 `
@@ -3597,7 +3597,7 @@ const blastRelay =
         `Mechanical step. Run the bash below and return its relay line. Decide nothing yourself.
 
 \`\`\`bash
-node "$(tribunal-root)"/lib/blast-radius.mjs "${diffPath}" "${headPin.path}"${relayFilePipe(RELAY_FILE_SCRIPT)}
+node "$(tribunal-root)"/rust/crates/tribunal-context/src/js/blast-radius.mjs "${diffPath}" "${headPin.path}"${relayFilePipe(RELAY_FILE_SCRIPT)}
 \`\`\`
 
 ${RELAY_RULES}`,
@@ -4421,7 +4421,7 @@ if (allCandidates.length > 0 && diffPath) {
 
 ${bashBlocksText([
       // windows-size: verifiedWrite chunks the candidates into printf lines under 3,500 characters, each Bash block under BASH_COMMAND_LIMIT
-      ...verifiedWrite(evidenceFile, evidenceCandidates, `"$(tribunal-root)"/lib/relay.mjs`),
+      ...verifiedWrite(evidenceFile, evidenceCandidates, `"$(tribunal-root)"/rust/crates/tribunal-context/src/js/relay.mjs`),
       `node "$(tribunal-root)"/skills/review-pr/scripts/resolve-evidence-line.mjs "${diffPath}" ${evidenceFile} --relay${relayFilePipe(RELAY_FILE_SCRIPT)}\nrm -f ${evidenceFile} ${evidenceFile}.wire`,
     ])}
 
@@ -4641,7 +4641,7 @@ PRF=$(mktemp "\${TMPDIR:-/tmp}/tribunal-prfiles-XXXXXX")
 cat > "$PRF" <<'__PR_FILES__'
 ${(files || []).join("\n")}
 __PR_FILES__
-if node "$(tribunal-root)"/lib/relay.mjs check "$PRF" ${utf8Crc32((files || []).join("\n"))} >/dev/null; then
+if node "$(tribunal-root)"/rust/crates/tribunal-context/src/js/relay.mjs check "$PRF" ${utf8Crc32((files || []).join("\n"))} >/dev/null; then
   printf '%s\\n' "---COVERED--- $(printf '%s\\n' "$COV" | grep -c .)"
   printf '%s\\n' "$COV" | grep -F -x -f "$PRF"
 else
@@ -7319,7 +7319,7 @@ function anchorResolverRelay(payload, ref, label, phase) {
 
 ${bashBlocksText([
       // windows-size: verifiedWrite chunks the anchors payload into printf lines under 3,500 characters, each Bash block under BASH_COMMAND_LIMIT
-      ...verifiedWrite(anchorsFile, payload, `"$(tribunal-root)"/lib/relay.mjs`),
+      ...verifiedWrite(anchorsFile, payload, `"$(tribunal-root)"/rust/crates/tribunal-context/src/js/relay.mjs`),
       `node "$(tribunal-root)"/lib/resolve-verified-anchors.mjs ${anchorsFile} "${ref}" --repo "${repo}" --relay${crossRepoFlags(PROFILE)}${relayFilePipe(RELAY_FILE_SCRIPT)}\nrm -f ${anchorsFile} ${anchorsFile}.wire`,
     ])}
 
