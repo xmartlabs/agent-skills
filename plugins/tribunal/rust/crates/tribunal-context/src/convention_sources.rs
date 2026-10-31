@@ -1426,6 +1426,135 @@ fn render_source(
     out.join("\n")
 }
 
+fn is_name(s: &str) -> bool {
+    !s.is_empty()
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b))
+}
+
+fn is_repo_path(s: &str) -> bool {
+    !s.is_empty()
+        && !s.starts_with('/')
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-/".contains(&b))
+        && s.split('/').all(|seg| seg != "..")
+}
+
+fn is_source_glob(v: &Value) -> bool {
+    matches!(v, Value::String(g) if !g.is_empty()
+        && !g.starts_with('/')
+        && g.bytes().all(|b| b.is_ascii_alphanumeric() || b"._*?{},/-".contains(&b))
+        && g.split('/').all(|seg| seg != ".."))
+}
+
+/// What is wrong with one `conventionSources` entry; empty when it is valid.
+/// The loader skips an entry that has problems and reports them as warnings.
+#[must_use]
+pub fn source_problems(source: &Value, index: usize) -> Vec<String> {
+    let at = format!("conventionSources[{index}]");
+    if !source.is_object() {
+        return vec![format!("{at} must be an object")];
+    }
+    let get = |k: &str| js::get(source, k);
+    let mut problems = Vec::new();
+    let ref_str = get("ref").and_then(Value::as_str);
+    if get("repo").is_some() {
+        if !matches!(get("repo"), Some(Value::String(r)) if r.split_once('/').is_some_and(|(o, n)| is_name(o) && is_name(n)))
+        {
+            problems.push(format!("{at}.repo must be owner/name"));
+        }
+        let ref_ok = ref_str.is_some_and(|r| match r.strip_prefix("submodule:") {
+            Some(sub) => is_repo_path(sub) && !sub.ends_with('/'),
+            None => is_repo_path(r),
+        });
+        if !ref_ok {
+            problems.push(format!(
+                "{at}.ref must be a git ref, or submodule:<path> naming a submodule of this repo"
+            ));
+        }
+    } else if get("ref").is_some() {
+        problems.push(format!(
+            "{at}.ref needs a repo: without one the source is the reviewed repo, read at the profile's ref"
+        ));
+    }
+    if let Some(root) = get("root") {
+        let ok = matches!(root, Value::String(r) if r.strip_suffix('/').is_some_and(is_repo_path));
+        if !ok {
+            problems.push(format!(
+                "{at}.root must be a folder inside the repo, ending in /"
+            ));
+        }
+    }
+    let select = get("select");
+    if let Some(sel) = select {
+        if !matches!(sel, Value::String(v) if ["okf-code", "all", "manifest"].contains(&v.as_str()))
+        {
+            problems.push(format!(
+                "{at}.select must be \"okf-code\", \"all\" or \"manifest\""
+            ));
+        }
+    }
+    if matches!(select, Some(Value::String(v)) if v == "manifest") {
+        match get("manifest") {
+            Some(Value::String(m)) if is_repo_path(m) && !m.ends_with('/') => {
+                if let Some(Value::String(root)) = get("root") {
+                    if !m.starts_with(root.as_str()) {
+                        problems.push(format!("{at}.manifest must lie under root {root}"));
+                    }
+                }
+            }
+            _ => problems.push(format!("{at}.manifest must be a path inside the docs repo")),
+        }
+    }
+    for k in ["include", "exclude"] {
+        if let Some(v) = get(k) {
+            if !matches!(v, Value::Array(gs) if gs.iter().all(is_source_glob)) {
+                problems.push(format!(
+                    "{at}.{k} must be an array of paths or globs inside the docs repo"
+                ));
+            }
+        }
+    }
+    if let Some(c) = get("consumer") {
+        if !matches!(c, Value::String(c) if is_name(c)) {
+            problems.push(format!(
+                "{at}.consumer must be a key of a mapping-shaped code: field"
+            ));
+        }
+    }
+    if let Some(b) = get("budgetBytes") {
+        let ok = matches!(b, Value::Number(n) if n.as_f64().is_some_and(|f| f.fract() == 0.0 && f >= 1.0));
+        if !ok {
+            problems.push(format!("{at}.budgetBytes must be a positive integer"));
+        }
+    }
+    problems
+}
+
+fn invalid_source(source: &Value, problems: &[String]) -> Loaded {
+    let mut entry = Map::new();
+    entry.insert(
+        "repo".into(),
+        js::get(source, "repo").cloned().unwrap_or(Value::Null),
+    );
+    entry.insert(
+        "ref".into(),
+        js::get(source, "ref").cloned().unwrap_or(Value::Null),
+    );
+    entry.insert("loaded".into(), Value::Array(Vec::new()));
+    entry.insert("offered".into(), Value::Array(Vec::new()));
+    entry.insert("missing".into(), Value::Array(Vec::new()));
+    entry.insert("error".into(), Value::String(problems.join("; ")));
+    Loaded {
+        entry,
+        warnings: problems
+            .iter()
+            .map(|p| format!("{p}. Reviewing without it."))
+            .collect(),
+        text: String::new(),
+    }
+}
+
 /// What `loadSources` returns.
 pub struct Sources {
     pub sources: Vec<Value>,
@@ -1491,6 +1620,11 @@ pub async fn load_sources(
             head_why: None,
             base: ref_.to_owned(),
         });
+        let problems = source_problems(source, index);
+        if !problems.is_empty() {
+            results.push(invalid_source(source, &problems));
+            continue;
+        }
         results
             .push(load_source(tools, source, index, repo, ref_, &refs, changed, &mut cache).await);
     }

@@ -56,7 +56,8 @@ it) names documentation bundles: kept in another repo, such as
 a docs repo mounted as a git submodule (which the contents API cannot read
 through the reviewed repo), or in a folder of the reviewed repo itself. Each
 entry is
-`{repo, ref, root, select, manifest, include, exclude, consumer, budgetBytes}`.
+`{repo, ref, root, select, manifest, include, exclude, consumer, budgetBytes}`. An entry
+with an invalid field is skipped and named in a warning, and the review goes on.
 A source is a locator (`repo`, `ref`, `root`) plus a selector (`select` and the
 fields it reads), and every field is optional except that `ref` goes with
 `repo`:

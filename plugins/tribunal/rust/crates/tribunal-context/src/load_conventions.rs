@@ -502,15 +502,22 @@ pub async fn load_conventions(
         Some(Value::Array(a)) if !a.is_empty() => a.clone(),
         _ => Vec::new(),
     };
-    let sources = match js::get(profile, "conventionSources") {
-        Some(Value::Array(a)) => a.clone(),
-        _ => Vec::new(),
+    let (sources, shape_warning) = match js::get(profile, "conventionSources") {
+        Some(Value::Array(a)) => (a.clone(), None),
+        Some(_) => (
+            Vec::new(),
+            Some("conventionSources must be an array of documentation sources. Reviewing without it.".to_owned()),
+        ),
+        None => (Vec::new(), None),
     };
     if entries.is_empty() && sources.is_empty() {
         let mut m = Map::new();
         m.insert("ok".into(), Value::Bool(true));
         for k in ["files", "skipped", "missing"] {
             m.insert(k.into(), Value::Array(Vec::new()));
+        }
+        if let Some(w) = shape_warning {
+            m.insert("warnings".into(), Value::Array(vec![Value::String(w)]));
         }
         m.insert("text".into(), Value::Null);
         return Ok(m);
@@ -646,6 +653,8 @@ pub async fn load_conventions(
             Value::Array(got.warnings.into_iter().map(Value::String).collect()),
         );
         text = format!("{text}\n{}", got.text);
+    } else if let Some(w) = shape_warning {
+        out.insert("warnings".into(), Value::Array(vec![Value::String(w)]));
     }
     out.insert("text".into(), Value::String(text));
     Ok(out)

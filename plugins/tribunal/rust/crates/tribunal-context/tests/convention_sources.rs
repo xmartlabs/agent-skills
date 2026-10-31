@@ -404,3 +404,171 @@ fn a_17_file_pr_against_a_26_doc_bundle_loads_in_rank_order_within_the_budget() 
         .iter()
         .any(|&d| docs[d].path == "feature/bracket-alerts.md"));
 }
+
+fn problems(source: Value) -> Vec<String> {
+    cs::source_problems(&source, 0)
+}
+
+#[test]
+fn a_valid_source_has_no_problems() {
+    for source in [
+        json!({}),
+        json!({"root": "docs/", "select": "all", "include": ["guides/*.md"], "exclude": ["a/{b,c}.md"]}),
+        json!({"repo": "acme/handbook", "ref": "submodule:docs", "consumer": "server", "budgetBytes": 5000}),
+        json!({"repo": "acme/handbook", "ref": "release/1.0", "root": "docs/", "select": "manifest", "manifest": "docs/m.json"}),
+    ] {
+        assert!(problems(source.clone()).is_empty(), "{source}");
+    }
+}
+
+#[test]
+fn each_invalid_field_is_named() {
+    let cases = [
+        (json!("docs"), "must be an object"),
+        (
+            json!({"repo": "handbook", "ref": "main"}),
+            ".repo must be owner/name",
+        ),
+        (json!({"repo": "acme/handbook"}), ".ref must be a git ref"),
+        (
+            json!({"repo": "acme/handbook", "ref": "submodule:../x"}),
+            ".ref must be a git ref",
+        ),
+        (json!({"ref": "main"}), ".ref needs a repo"),
+        (json!({"root": "docs"}), ".root must be a folder"),
+        (json!({"root": "../docs/"}), ".root must be a folder"),
+        (json!({"select": "everything"}), ".select must be"),
+        (json!({"select": "manifest"}), ".manifest must be a path"),
+        (
+            json!({"select": "manifest", "root": "docs/", "manifest": "m.json"}),
+            ".manifest must lie under root docs/",
+        ),
+        (json!({"include": "a.md"}), ".include must be an array"),
+        (
+            json!({"exclude": ["/etc/passwd"]}),
+            ".exclude must be an array",
+        ),
+        (json!({"consumer": "a b"}), ".consumer must be a key"),
+        (
+            json!({"budgetBytes": 0}),
+            ".budgetBytes must be a positive integer",
+        ),
+        (
+            json!({"budgetBytes": 1.5}),
+            ".budgetBytes must be a positive integer",
+        ),
+        (
+            json!({"budgetBytes": "30000"}),
+            ".budgetBytes must be a positive integer",
+        ),
+    ];
+    for (source, expect) in cases {
+        let got = problems(source.clone());
+        assert!(
+            got.iter()
+                .any(|p| p.starts_with("conventionSources[0]") && p.contains(expect)),
+            "{source}: {got:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_invalid_source_is_skipped_with_warnings_and_the_next_still_loads() {
+    let t = tools_for(
+        "cs-invalid",
+        vec![
+            tree("acme/handbook", SHA_A, "", true, &[("routes.md", "1", 10)]),
+            graphql("acme/handbook", SHA_A, &[("routes.md", GUIDE)]),
+        ],
+    );
+    let got = load(
+        &t,
+        json!([
+            {"repo": "acme/handbook", "ref": SHA_A, "select": "everything"},
+            {"repo": "acme/handbook", "ref": SHA_A}
+        ]),
+        "",
+    )
+    .await;
+    assert!(got.sources[0]["error"]
+        .as_str()
+        .unwrap()
+        .contains(".select must be"));
+    assert!(got.sources[0]["loaded"].as_array().unwrap().is_empty());
+    assert!(
+        got.warnings[0].contains("conventionSources[0]")
+            && got.warnings[0].ends_with("Reviewing without it.")
+    );
+    assert_eq!(got.sources[1]["loaded"][0]["path"], "routes.md");
+}
+
+#[tokio::test]
+async fn a_sources_field_that_is_not_an_array_is_a_warning() {
+    let t = tools_for("cs-shape", vec![]);
+    let profile = json!({"conventionSources": "docs"});
+    let got = tribunal_context::load_conventions::load_conventions(
+        &t,
+        &profile,
+        None,
+        "main",
+        &[],
+        "",
+        "",
+    )
+    .await
+    .unwrap();
+    assert_eq!(got["ok"], true);
+    assert!(
+        got["warnings"][0]
+            .as_str()
+            .unwrap()
+            .contains("must be an array"),
+        "{got:?}"
+    );
+    assert_eq!(got["text"], Value::Null);
+}
+
+#[tokio::test]
+async fn the_pr_head_comes_from_gh_when_only_the_pr_number_is_given() {
+    let t = tools_for(
+        "cs-pr-view",
+        vec![
+            call(
+                &[
+                    "pr",
+                    "view",
+                    "17",
+                    "--repo",
+                    "acme/web-app",
+                    "--json",
+                    "headRefOid",
+                    "--jq",
+                    ".headRefOid",
+                ],
+                &format!("{HEAD}\n"),
+                0,
+            ),
+            submodule_pointer(HEAD, SHA_A),
+            submodule_pointer("main", SHA_A),
+            tree("acme/handbook", SHA_A, "", true, &[("routes.md", "1", 10)]),
+            graphql("acme/handbook", SHA_A, &[("routes.md", GUIDE)]),
+        ],
+    );
+    let sources = json!([{"repo": "acme/handbook", "ref": "submodule:docs"}]);
+    let got = cs::load_sources(
+        &t,
+        sources.as_array().unwrap(),
+        "acme/web-app",
+        "main",
+        "",
+        "17",
+        &changed(),
+    )
+    .await;
+    assert_eq!(
+        got.sources[0]["pointerFrom"], "head",
+        "{:?}",
+        got.sources[0]
+    );
+    assert!(got.warnings.is_empty(), "{:?}", got.warnings);
+}
