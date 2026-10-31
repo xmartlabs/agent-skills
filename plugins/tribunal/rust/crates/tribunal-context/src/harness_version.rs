@@ -50,7 +50,7 @@ fn utf16_sort(v: &mut [String]) {
 fn files_under(root: &str, dir: &str, exts: Option<&[&str]>) -> Result<Vec<String>, String> {
     let abs = posix_join(&[root, dir]);
     if !Path::new(&abs).exists() {
-        return Err(format!("harness surface directory missing: {dir}"));
+        return Ok(Vec::new());
     }
     let mut entries: Vec<(String, bool)> = std::fs::read_dir(&abs)
         .map_err(|e| e.to_string())?
@@ -101,8 +101,7 @@ fn digest(root: &str, mut paths: Vec<String>) -> Result<(Vec<Entry>, String, Str
 /// `surfaceFiles()`.
 ///
 /// # Errors
-/// The script's throw for a missing surface directory, or an I/O error
-/// reading one.
+/// An I/O error reading a surface directory.
 pub fn surface_files(root: &str) -> Result<Vec<String>, String> {
     let mut files: Vec<String> = SURFACE.iter().map(|s| (*s).to_owned()).collect();
     for (dir, exts) in SURFACE_DIRS {
@@ -125,8 +124,8 @@ pub fn battery_files(root: &str) -> Result<Vec<String>, String> {
 /// `harnessVersion()`.
 ///
 /// # Errors
-/// Where the script throws: a surface directory or file missing, or one that
-/// cannot be read.
+/// Where the script throws: a surface file missing, or a directory or file
+/// that cannot be read.
 pub fn harness_version(root: &str) -> Result<Version, String> {
     let (entries, manifest, short) = digest(root, surface_files(root)?)?;
     Ok(Version {

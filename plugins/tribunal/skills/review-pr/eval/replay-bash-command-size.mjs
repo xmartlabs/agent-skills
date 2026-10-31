@@ -13,7 +13,7 @@
 // real bash to check that what lands on disk is the payload:
 //   - persist-parts, joined by lib/persist-parts.mjs;
 //   - verifiedWrite (evidence resolver, anchors),
-//     decoded and checked by lib/relay.mjs assemble;
+//     decoded and checked by rust/.../js/relay.mjs assemble;
 //   - the external head prompt, written by promptWriteLines.
 // The wire form has no backslash and no single quote inside its printf lines,
 // because a Bash tool was reported to turn `\\` into `\` on Windows.
@@ -50,7 +50,7 @@ const { persistPartsOf, partsSpec, persistBlocksFor, PERSIST_PART_BYTES, PERSIST
 const { promptWriteLines } = promptRegion.api;
 // Independent of the workflow's own constant: 7,264 characters ran on Windows, 7,418 did not.
 const WINDOWS_SAFE = 7000;
-const RELAY = lib("relay.mjs");
+const RELAY = lib("../rust/crates/tribunal-context/src/js/relay.mjs");
 
 console.log(`\nregions extracted from ${WORKFLOW}`);
 console.log(`\n--- the helpers ---`);

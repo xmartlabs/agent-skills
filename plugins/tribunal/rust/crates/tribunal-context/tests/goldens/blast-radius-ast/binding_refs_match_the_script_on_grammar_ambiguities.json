@@ -1,8 +1,8 @@
 {
-  "recordedWith": {"lib/attention-facts.mjs":"2d07aea57f17f656608821521bf00d9defed1134737067d762ed8b39c5aa447b","lib/blast-radius.mjs":"9b41e6a48711efd413d41f8dfdec1b0af87301e4ced8f95faec4631a94f470ee","lib/relay.mjs":"bb05411e6b51cb228b4eb0769c1c42640cc346536092261c126192f04b395b7d"},
+  "recordedWith": {"rust/crates/tribunal-context/src/js/attention-facts.mjs":"2d07aea57f17f656608821521bf00d9defed1134737067d762ed8b39c5aa447b","rust/crates/tribunal-context/src/js/blast-radius.mjs":"9b41e6a48711efd413d41f8dfdec1b0af87301e4ced8f95faec4631a94f470ee","rust/crates/tribunal-context/src/js/relay.mjs":"bb05411e6b51cb228b4eb0769c1c42640cc346536092261c126192f04b395b7d"},
   "typescript": "typescript 6.0.3",
   "records": [
-    {"input": "12eba96f04a77bf6ec3c278ba6ab4d004ed76b47628b97a6f99688cc6d31794c", "js": [
+    {"input": "9a12d1b7accb816f09ff4944482c394b8f05c4d9dda0354fb4f0b9a572506cf6", "js": [
       {"ok":{"refs":[{"line":2,"call":true,"awaited":true,"inTry":false,"text":"const r = a ? (b) : (c) => Foo(c);"}],"reexports":false},"diag":[]},
       {"ok":{"refs":[{"line":2,"call":true,"awaited":true,"inTry":false,"text":"const r = a ? (b) : c => Foo(c);"}],"reexports":false},"diag":[]},
       {"ok":{"refs":[{"line":2,"call":true,"awaited":true,"inTry":false,"text":"const r = a ? (b): T => Foo(b) : d;"}],"reexports":false},"diag":[]},

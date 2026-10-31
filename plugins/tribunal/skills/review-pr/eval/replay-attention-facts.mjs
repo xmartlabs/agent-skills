@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// replay-attention-facts.mjs — lib/attention-facts.mjs on fixtures, each fact
+// replay-attention-facts.mjs — rust/.../js/attention-facts.mjs on fixtures, each fact
 // with a case that must fire and one that must not.
 //
 // The parser is the `typescript` package of a reviewed repo; this plugin ships
@@ -23,7 +23,7 @@ const check = (name, cond, detail) => {
   }
 };
 
-const { addedLines, attentionFacts, baseBlobs, contractFacts, edgeFacts, factsForFile, loadTypescript, statusOrderFacts, testFacts } = await import(lib("attention-facts.mjs"));
+const { addedLines, attentionFacts, baseBlobs, contractFacts, edgeFacts, factsForFile, loadTypescript, statusOrderFacts, testFacts } = await import(lib("../rust/crates/tribunal-context/src/js/attention-facts.mjs"));
 let top = null;
 try {
   top = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -316,7 +316,7 @@ console.log("\n--- the lens sees them ---");
   check("facts render even with no callers", /<attention>/.test(onlyFacts) && !/<dependents>/.test(onlyFacts) && onlyFacts.includes("src/a.ts:2 [unawaited-enqueue]"));
   check("each fact is framed as a question, not a finding", /Question: if the queue rejects/.test(onlyFacts) && /not a finding/.test(onlyFacts));
   check("no facts, no block", region.api.dependentsBlock({ changed: [], callers: [], total: 0, attention: { facts: [] } }) === "");
-  const src = readFileSync(lib("blast-radius.mjs"), "utf8");
+  const src = readFileSync(lib("../rust/crates/tribunal-context/src/js/blast-radius.mjs"), "utf8");
   check("blast-radius attaches the facts to its relay, with the same parser it resolves bindings with", src.includes("const ts = loadTypescript([repoDir, process.cwd()]);") && src.includes("out.attention = attentionFacts(diff, repo, ts);") && src.includes("blastRadius(diff, repo, { ts })"));
 
   // The workflow calls dependentsBlock ABOVE the region's text, so anything the

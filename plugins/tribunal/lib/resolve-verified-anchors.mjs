@@ -48,7 +48,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { relayLines } from "./relay.mjs";
+import { relayLines } from "../rust/crates/tribunal-context/src/js/relay.mjs";
 
 // Whitespace is the difference that matters least and breaks matching most.
 // Quotes are transcribed by a model out of a file it read, so leading indent,

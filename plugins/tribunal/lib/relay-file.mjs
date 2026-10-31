@@ -30,7 +30,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { RELAY_CRC_PREFIX, relayCrc } from "./relay.mjs";
+import { RELAY_CRC_PREFIX, relayCrc } from "../rust/crates/tribunal-context/src/js/relay.mjs";
 
 export const RELAY_FILE_PREFIX = "RELAY-FILE ";
 export const RELAY_FILE_MAX_BYTES = 480 * 1024;

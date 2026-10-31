@@ -32,7 +32,7 @@ use std::sync::{Mutex, OnceLock};
 
 use proptest::prelude::*;
 use serde_json::{json, Value};
-use tribunal_context::harness_version::{battery_version, run, surface_files};
+use tribunal_context::harness_version::{battery_version, harness_version, run, surface_files};
 
 const SCRIPT: &str = "skills/review-pr/scripts/harness-version.mjs";
 
@@ -647,8 +647,8 @@ fn the_generated_trees_reach_every_branch() {
         let js = o.js.as_str().unwrap();
         hit("ok", o.error.is_none());
         hit(
-            "dir-missing",
-            e.starts_with("harness surface directory missing"),
+            "dir-absent",
+            o.error.is_none() && o.case.dirs[..6].contains(&1),
         );
         hit(
             "file-missing",
@@ -713,5 +713,36 @@ fn a_retired_script_is_not_stale() {
     std::fs::remove_file(root.join("lib/run.mjs")).unwrap();
     write("lib/dep.mjs", "dep edited again");
     assert!(stale_scripts(&recorded, &scripts, &root).is_empty());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A surface directory that is not there holds no files: a tree without
+/// `workflows/` and `lib/` has the id of the same tree with both empty, and
+/// the id still moves with a file that is there.
+#[test]
+fn a_tree_without_workflows_and_lib_has_a_version() {
+    let root = scratch("harness-version-no-workflow");
+    let write = |name: &str, text: &str| {
+        let at = root.join(name);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::fs::write(at, text).unwrap();
+    };
+    write("skills/review-pr/SKILL.md", "skill");
+    write("agents/a.md", "agent");
+    let bare = root.to_string_lossy().into_owned();
+    let without = harness_version(&bare).unwrap();
+    assert!(without
+        .entries
+        .iter()
+        .all(|e| !e.path.starts_with("workflows/") && !e.path.starts_with("lib/")));
+    std::fs::create_dir_all(root.join("workflows")).unwrap();
+    std::fs::create_dir_all(root.join("lib")).unwrap();
+    assert_eq!(harness_version(&bare).unwrap().id, without.id);
+    write("lib/x.mjs", "x");
+    assert_ne!(harness_version(&bare).unwrap().id, without.id);
+    std::fs::remove_dir_all(root.join("lib")).unwrap();
+    std::fs::remove_dir_all(root.join("agents")).unwrap();
+    assert_ne!(harness_version(&bare).unwrap().id, without.id);
+    assert!(battery_version(&bare).is_ok());
     let _ = std::fs::remove_dir_all(&root);
 }

@@ -23,7 +23,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath as toPath } from "node:url";
-import { relayCrc } from "../../../../lib/relay.mjs";
+import { relayCrc } from "../../../../rust/crates/tribunal-context/src/js/relay.mjs";
 
 export const SIZES = [6000, 7000, 7264, 7500, 8000];
 export const TOOLS = ["python3", "python", "node", "jq", "timeout", "mktemp", "gh", "git"];

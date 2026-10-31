@@ -1,4 +1,4 @@
-//! `lib/blast-radius.mjs` and `skills/review-pr/scripts/import-adjacency.mjs`
+//! `rust/crates/tribunal-context/src/js/blast-radius.mjs` and `skills/review-pr/scripts/import-adjacency.mjs`
 //! against `tribunal_context::blast_radius` and
 //! `tribunal_context::import_adjacency`: the CLIs on generated git
 //! repositories and manifests, compared on stdout and on the git calls each
@@ -33,7 +33,7 @@ use tribunal_context::exec::Tools;
 use tribunal_context::harness_version::sha256_hex;
 use tribunal_context::import_adjacency;
 
-const BLAST: &str = "lib/blast-radius.mjs";
+const BLAST: &str = "rust/crates/tribunal-context/src/js/blast-radius.mjs";
 const ADJ: &str = "skills/review-pr/scripts/import-adjacency.mjs";
 
 // ---------------------------------------------------------------------------
@@ -1033,7 +1033,7 @@ async fn blast_radius_matches_js_on_generated_repos() {
 /// The node driver behind [`js_batch`], with `<PLUGIN>` for the plugin.
 const DRIVER: &str = r#"import path from "node:path";
 import { readFileSync } from "node:fs";
-import { changedLines, declarations, readAliases, specPointsAt } from "<PLUGIN>/lib/blast-radius.mjs";
+import { changedLines, declarations, readAliases, specPointsAt } from "<PLUGIN>/rust/crates/tribunal-context/src/js/blast-radius.mjs";
 import { extractSpecifiers, computeAdjacency } from "<PLUGIN>/skills/review-pr/scripts/import-adjacency.mjs";
 const cases = JSON.parse(readFileSync(0, "utf8"));
 const run = (c) => {

@@ -1,5 +1,5 @@
 {
-  "recordedWith": {"lib/attention-facts.mjs":"2d07aea57f17f656608821521bf00d9defed1134737067d762ed8b39c5aa447b","lib/blast-radius.mjs":"9b41e6a48711efd413d41f8dfdec1b0af87301e4ced8f95faec4631a94f470ee","lib/relay.mjs":"bb05411e6b51cb228b4eb0769c1c42640cc346536092261c126192f04b395b7d"},
+  "recordedWith": {"rust/crates/tribunal-context/src/js/attention-facts.mjs":"2d07aea57f17f656608821521bf00d9defed1134737067d762ed8b39c5aa447b","rust/crates/tribunal-context/src/js/blast-radius.mjs":"9b41e6a48711efd413d41f8dfdec1b0af87301e4ced8f95faec4631a94f470ee","rust/crates/tribunal-context/src/js/relay.mjs":"bb05411e6b51cb228b4eb0769c1c42640cc346536092261c126192f04b395b7d"},
   "typescript": "typescript 6.0.3",
   "records": [
     {"input": "d71683c694bae070ad6f6578909a583e5e5ba40b565f6b79e8b05941ece4edd5", "js": {"code":0,"stdout":"RELAY-CRC 00127407:158\n{\"changed\":[],\"callers\":[],\"total\":0,\"truncated\":false,\"resolver\":\"bindings\",\"attention\":{\"facts\":[],\"total\":0,\"truncated\":false,\"parser\":\"typescript 6.0.3\"}}\n","stderr":"","calls":""}},

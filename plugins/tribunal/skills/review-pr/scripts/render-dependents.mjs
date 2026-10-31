@@ -19,8 +19,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { blastRadius, makeRepo } from "../../../lib/blast-radius.mjs";
-import { attentionFacts, loadTypescript } from "../../../lib/attention-facts.mjs";
+import { blastRadius, makeRepo } from "../../../rust/crates/tribunal-context/src/js/blast-radius.mjs";
+import { attentionFacts, loadTypescript } from "../../../rust/crates/tribunal-context/src/js/attention-facts.mjs";
 
 const WORKFLOW = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "workflows", "tribunal.js");
 

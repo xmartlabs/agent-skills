@@ -1,8 +1,8 @@
 {
-  "recordedWith": {"lib/attention-facts.mjs":"2d07aea57f17f656608821521bf00d9defed1134737067d762ed8b39c5aa447b","lib/blast-radius.mjs":"9b41e6a48711efd413d41f8dfdec1b0af87301e4ced8f95faec4631a94f470ee","lib/relay.mjs":"bb05411e6b51cb228b4eb0769c1c42640cc346536092261c126192f04b395b7d"},
+  "recordedWith": {"rust/crates/tribunal-context/src/js/attention-facts.mjs":"2d07aea57f17f656608821521bf00d9defed1134737067d762ed8b39c5aa447b","rust/crates/tribunal-context/src/js/blast-radius.mjs":"9b41e6a48711efd413d41f8dfdec1b0af87301e4ced8f95faec4631a94f470ee","rust/crates/tribunal-context/src/js/relay.mjs":"bb05411e6b51cb228b4eb0769c1c42640cc346536092261c126192f04b395b7d"},
   "typescript": "typescript 6.0.3",
   "records": [
-    {"input": "8ecc5ec5128a3d928c344975ad8d67c92e0d8b7b7a76e599958261958ebe8069", "js": [
+    {"input": "02288ad5e9097d722e7ea1d2bdd1dcf69880086aa5b393f01a4f98b4723919dc", "js": [
       {"err":"Maximum call stack size exceeded"}
     ]}
   ]
