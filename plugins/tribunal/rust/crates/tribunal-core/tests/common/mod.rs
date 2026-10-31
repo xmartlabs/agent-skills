@@ -163,9 +163,56 @@ fn mode() -> &'static Mode {
 }
 
 fn recorded_oracle(region: &str, exports: &[&str], deps: &[&str], calls: &[Value]) -> Vec<Value> {
+    recorded_call(
+        oracle_call_key(region, exports, deps, calls),
+        region,
+        deps,
+        calls.len(),
+        || run_oracle(region, exports, deps, calls),
+    )
+}
+
+/// The results of a call that evaluates `region` (and `deps`) of the Workflow
+/// through a driver of the test's own: `driver` is the driver's source, kept
+/// in the call's key so editing it without regenerating fails, and `run`
+/// evaluates it live. Records and replays like `oracle_raw`.
+pub fn recorded_composite(
+    driver: &str,
+    region: &str,
+    exports: &[&str],
+    deps: &[&str],
+    calls: &[Value],
+    run: impl FnOnce() -> Vec<Value>,
+) -> Vec<Value> {
+    let key = composite_call_key(driver, region, exports, deps, calls);
+    recorded_call(key, region, deps, calls.len(), run)
+}
+
+/// The SHA-256 that names one composite call in the golden.
+pub fn composite_call_key(
+    driver: &str,
+    region: &str,
+    exports: &[&str],
+    deps: &[&str],
+    calls: &[Value],
+) -> String {
+    sha256_hex(
+        serde_json::to_string(&json!(["composite", driver, region, exports, deps, calls]))
+            .unwrap()
+            .as_bytes(),
+    )
+}
+
+fn recorded_call(
+    key: String,
+    region: &str,
+    deps: &[&str],
+    n_calls: usize,
+    run: impl FnOnce() -> Vec<Value>,
+) -> Vec<Value> {
     match mode() {
-        Mode::Live => run_oracle(region, exports, deps, calls),
-        Mode::Replay(golden) => oracle_replay(golden, region, exports, deps, calls),
+        Mode::Live => run(),
+        Mode::Replay(golden) => replay_key(golden, region, &key, n_calls),
         Mode::Record(rec) => {
             let mut names = vec![region];
             names.extend_from_slice(deps);
@@ -177,13 +224,10 @@ fn recorded_oracle(region: &str, exports: &[&str], deps: &[&str], calls: &[Value
                     (k, sha)
                 })
                 .collect();
-            let results = run_oracle(region, exports, deps, calls);
+            let results = run();
             let mut rec = rec.lock().unwrap_or_else(|e| e.into_inner());
             rec.sources.extend(sources);
-            rec.calls.insert(
-                oracle_call_key(region, exports, deps, calls),
-                (region.to_owned(), results.clone()),
-            );
+            rec.calls.insert(key, (region.to_owned(), results.clone()));
             std::fs::write(oracle_golden_path(), render_golden(&rec)).unwrap();
             results
         }
@@ -209,7 +253,11 @@ pub fn oracle_replay(
     calls: &[Value],
 ) -> Vec<Value> {
     let key = oracle_call_key(region, exports, deps, calls);
-    let Some(results) = golden["calls"][&key]["results"].as_array() else {
+    replay_key(golden, region, &key, calls.len())
+}
+
+pub fn replay_key(golden: &Value, region: &str, key: &str, n_calls: usize) -> Vec<Value> {
+    let Some(results) = golden["calls"][key]["results"].as_array() else {
         panic!(
             "{region}: call {key} is not in {}; {}",
             oracle_golden_path().display(),
@@ -218,7 +266,7 @@ pub fn oracle_replay(
     };
     assert_eq!(
         results.len(),
-        calls.len(),
+        n_calls,
         "{region}: call {key} has the wrong number of results; {}",
         oracle_regenerate()
     );

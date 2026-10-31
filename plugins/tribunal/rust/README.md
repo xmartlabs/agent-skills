@@ -634,8 +634,13 @@ in another order. `tribunal-core`'s `common::oracle` and
 the Workflow, record and replay per test binary: a binary with
 `tests/goldens/oracle/<name>.json` (or `span/<name>.json`) replays it and
 fails on a call it does not hold, and a binary without one runs node as
-before. `diff_profile.rs` and `diff_loaders.rs` have no golden
-yet. To start recording a binary, create its golden as `{}` and regenerate.
+before. `diff_profile.rs` also runs a composite driver of its own; that call
+is recorded in the same file, keyed by the driver's source too, so an edited
+driver is a call the golden lacks. `diff_loaders.rs` keeps one golden,
+`tests/goldens/loaders.json`: each call to a script, to its bulk oracle or to
+the buffer probe is keyed by a SHA-256 of its script, arguments, recorded `gh`
+answers, a snapshot of the fixture tree and generated cases. To start
+recording a binary, create its golden as `{}` and regenerate.
 `diff_resolve_evidence.rs` and `diff_section_diff.rs` read commits of this
 repository's history: their goldens keep the commit SHAs and replay them with
 `git show`, so they need the full history. The `#[ignore]` tests that compare
