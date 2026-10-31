@@ -39,4 +39,5 @@ pub mod resolve_evidence_line;
 pub mod resolve_verified_anchors;
 pub mod review_record;
 pub mod section_diff;
+pub mod siblings;
 pub mod typescript_fallback;

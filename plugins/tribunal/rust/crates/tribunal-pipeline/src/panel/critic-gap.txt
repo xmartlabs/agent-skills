@@ -17,7 +17,10 @@ Files no lens raised a finding on (zero coverage), worked out by comparing the c
 What the lenses reported they did not reach:
 {{notReached}}
 
-Audit those two lists first, in that order. Read each file's part of the diff and the code around it, and report a defect only if you trace it. Spend what is left of your calls on the same bug class elsewhere or a risk dimension no lens covered. If both lists are empty, say so in one sentence and check only the second of those.
+Code outside this PR that shares a callee with the changed lines, or writes a model they write, found by grep at the pinned head (a heuristic list: it can miss a sibling and include a harmless one):
+{{siblings}}
+
+Audit the first two lists first, in that order. Read each file's part of the diff and the code around it, and report a defect only if you trace it. Then go through the sibling list: for each entry, ask whether the defect this PR introduces or fixes also applies there, because the PR did not touch it. Spend what is left of your calls on a risk dimension no lens covered. If the lists are empty, say so in one sentence.
 
 Return two things.
 - summary: 3-5 sentences, or one sentence if nothing is missing. Any claim about what the code does carries its quote; anything you could not check is named as unchecked rather than asserted either way.

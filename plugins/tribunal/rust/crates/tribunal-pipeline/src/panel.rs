@@ -112,6 +112,7 @@ pub struct PanelFlags {
 pub struct CriticGap<'a> {
     pub not_reached: &'a [String],
     pub uncovered: &'a [String],
+    pub siblings: &'a [String],
 }
 
 pub struct PanelEnv<'a> {
@@ -684,6 +685,7 @@ pub async fn panel_phase<I: PanelIo>(
                 diff_path,
                 gap.uncovered,
                 gap.not_reached,
+                gap.siblings,
             ),
             _ => critic_prompt(
                 env.pr_number,

@@ -328,6 +328,7 @@ pub fn critic_gap_prompt(
     diff_path: &str,
     uncovered: &[String],
     not_reached: &[String],
+    siblings: &[String],
 ) -> String {
     let list = |v: &[String]| {
         if v.is_empty() {
@@ -351,6 +352,7 @@ pub fn critic_gap_prompt(
             ("raised", if raised.is_empty() { "(none)" } else { &raised }),
             ("uncovered", &list(uncovered)),
             ("notReached", &list(not_reached)),
+            ("siblings", &list(siblings)),
         ],
     )
 }
@@ -488,6 +490,7 @@ mod gap_prompt_tests {
             "/tmp/pr-7.patch",
             uncovered,
             not_reached,
+            &["src/c.ts:4 [shared-callee x] `x(1)`".to_owned()],
         )
     }
 
@@ -497,6 +500,7 @@ mod gap_prompt_tests {
         assert!(p.contains("/tmp/pr-7.patch"));
         assert!(p.contains("- src/b.ts"));
         assert!(p.contains("- db layer"));
+        assert!(p.contains("- src/c.ts:4 [shared-callee x]"));
         assert!(p.contains("- T (src/a.ts:3, important)"));
         assert!(!p.contains("{{"));
     }

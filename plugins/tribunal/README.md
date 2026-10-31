@@ -102,7 +102,9 @@ To report a vulnerability, see [SECURITY.md](../../SECURITY.md).
    the code becomes a finding and goes through the same checks and panel as a
    lens finding. The Rust engine hands the critic the changed files no finding
    names and what the lenses reported they did not reach, works those lists out
-   in code, and gives it the diff already on disk and about 20 tool calls.
+   in code, and gives it the diff already on disk and about 20 tool calls. It also
+   gets a short list of siblings: code outside the PR that calls a name the changed
+   lines call, or writes a model they write, nearest directory first.
 4. **Panel**: each critical or behavior-changing candidate faces refuters that
    try to disprove it, including **Codex** as a second model family. Verdicts come
    from a weighted vote: a finding dies when it's *refuted*, not when a reviewer
