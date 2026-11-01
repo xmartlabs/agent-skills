@@ -31,10 +31,13 @@ use crate::context::{
 use crate::decisions::is_retest_target;
 use crate::live::{LiveIo, PanelAgents};
 use crate::panel::{panel_phase, PanelEnv, PanelFlags, PanelOutcome, OUTPUT_CEILING_DEFAULT};
-use crate::prompts::{lens_dispatch_prompt, DiffExposure, LensPromptInput};
+use crate::prompts::{
+    lens_dispatch_prompt, lens_system_prompt, DiffExposure, LensPromptInput, LensReference,
+    SHARED_REFERENCE_NOTICE,
+};
 use crate::review::{
     answer_of, bot_task, bot_vetting_prompt, check_lenses_returned, collect_candidates,
-    dispatch_all, lens_labels, lens_task, Candidates, ReviewerSetup, ReviewerTask,
+    dispatch_all, dispatch_lenses, lens_labels, lens_task, Candidates, ReviewerSetup, ReviewerTask,
 };
 use crate::schemas;
 use crate::synthesize::{
@@ -147,6 +150,9 @@ pub struct ReviewOutcome {
     pub lens_agent: String,
     pub labels: Vec<String>,
     pub dispatches: Vec<DispatchResult>,
+    /// The cache warm-up request, when one ran. It is not a lens: its result
+    /// stays out of `dispatches` so those keep the task order.
+    pub warmup: Option<DispatchResult>,
     pub candidates: Candidates,
     /// The planned lenses whose dispatch came back empty.
     pub lenses_unreturned: Vec<Value>,
@@ -159,6 +165,36 @@ pub enum RunOutcome {
     Skipped { reason: String },
     Preflight { summary: Value },
     Reviewed(Box<ReviewOutcome>),
+}
+
+/// The methodology and the conventions as text, for the lenses' shared system
+/// prompt. `None`, with a log line, when a file cannot be read: the lenses then
+/// read both by path, as they did before the system prompt carried them.
+fn shared_reference(
+    methodology_path: &str,
+    conventions_path: Option<&str>,
+    logs: &mut Vec<String>,
+) -> Option<(String, Option<String>)> {
+    let read = |path: &str| {
+        std::fs::read_to_string(path)
+            .ok()
+            .filter(|t| !t.trim().is_empty())
+    };
+    let Some(methodology) = read(methodology_path) else {
+        logs.push("Lenses read the methodology by path: its file could not be read for the shared system prompt.".into());
+        return None;
+    };
+    let conventions = match conventions_path {
+        None => None,
+        Some(path) => {
+            let Some(text) = read(path) else {
+                logs.push("Lenses read the conventions by path: the file could not be read for the shared system prompt.".into());
+                return None;
+            };
+            Some(text)
+        }
+    };
+    Some((methodology, conventions))
 }
 
 /// The run up to the end of the Review phase. `logs` receives every line the
@@ -182,7 +218,15 @@ pub async fn run_review<A: Agent>(
     };
     let profile = &prepared.profile;
     let lens_agent = lens_agent_for(profile)?.to_owned();
-    let definition = agent_def::load(&rt.plugin_root, &lens_agent)?;
+    let mut definition = agent_def::load(&rt.plugin_root, &lens_agent)?;
+    let shared = shared_reference(
+        &prepared.methodology_path,
+        prepared.conventions.file_path(),
+        logs,
+    );
+    if let Some((methodology, conventions)) = &shared {
+        definition.body = lens_system_prompt(&definition.body, methodology, conventions.as_deref());
+    }
     let label_map = foci_label_for(profile)?;
     let foci: Vec<Value> = rc.plan.lens_plan.iter().map(|s| s.focus.clone()).collect();
     let labels = lens_labels(&foci, &label_map);
@@ -191,6 +235,14 @@ pub async fn run_review<A: Agent>(
     let pr_number = args.pr.parse::<u64>().map_or(json!(args.pr), |n| json!(n));
     let high_risk = js::get(profile, "highRiskSurface");
     let mut tasks = Vec::new();
+    let reference = if shared.is_some() {
+        LensReference::Shared
+    } else {
+        LensReference::Paths {
+            methodology_line: &rc.methodology_line,
+            conventions: &prepared.conventions,
+        }
+    };
     for (i, slot) in rc.plan.lens_plan.iter().enumerate() {
         let prompt = lens_dispatch_prompt(
             &LensPromptInput {
@@ -204,8 +256,7 @@ pub async fn run_review<A: Agent>(
                 files: slot.files.as_deref(),
             },
             &rc.delivery,
-            &prepared.conventions,
-            &rc.methodology_line,
+            &reference,
             &mut exposure,
         )?;
         tasks.push(lens_task(format!("lens:{}", i + 1), prompt));
@@ -220,11 +271,13 @@ pub async fn run_review<A: Agent>(
             &prepared.repo,
             &to_js_string(js::get(&rc.pr_context, "botCommentsPath")),
         );
-        tasks.push(bot_task(
+        tasks.push(bot_task(if shared.is_some() {
+            format!("{SHARED_REFERENCE_NOTICE}\n\n{prompt}")
+        } else {
             prepared
                 .conventions
-                .reviewer_prompt(&rc.methodology_line, &prompt),
-        ));
+                .reviewer_prompt(&rc.methodology_line, &prompt)
+        }));
     }
     let setup = ReviewerSetup {
         agent: definition,
@@ -234,7 +287,7 @@ pub async fn run_review<A: Agent>(
         concurrency: policy.concurrency,
         effort: policy.effort.clone(),
     };
-    let dispatches = dispatch_all(agent, &setup, &tasks).await;
+    let (dispatches, warmup) = dispatch_lenses(agent, &setup, &tasks, shared.is_some()).await;
     let answers: Vec<Option<Value>> = dispatches.iter().map(answer_of).collect();
     let bot_vetting = if has_bot_comments {
         answers.get(rc.plan.lens_plan.len()).cloned().flatten()
@@ -291,6 +344,7 @@ pub async fn run_review<A: Agent>(
         lens_agent,
         labels,
         dispatches,
+        warmup,
         candidates,
         lenses_unreturned,
         evidence,
@@ -1047,5 +1101,50 @@ mod tests {
         assert!(out.as_posted.contains("Check by hand"));
         assert!(!out.as_posted.contains("### Draft comments"));
         assert_eq!(with_coverage(r.clone(), ""), r);
+    }
+}
+
+#[cfg(test)]
+mod shared_reference_tests {
+    use super::shared_reference;
+
+    fn file(dir: &std::path::Path, name: &str, text: &str) -> String {
+        let p = dir.join(name);
+        std::fs::write(&p, text).unwrap();
+        p.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn both_files_are_read_and_a_repo_without_conventions_is_fine() {
+        let dir = std::env::temp_dir().join(format!("tribunal-shared-ref-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let m = file(&dir, "m.md", "METHOD");
+        let c = file(&dir, "c.md", "CONV");
+        let mut logs = Vec::new();
+        assert_eq!(
+            shared_reference(&m, Some(&c), &mut logs),
+            Some(("METHOD".into(), Some("CONV".into())))
+        );
+        assert_eq!(
+            shared_reference(&m, None, &mut logs),
+            Some(("METHOD".into(), None))
+        );
+        assert!(logs.is_empty());
+    }
+
+    #[test]
+    fn an_unreadable_or_empty_file_sends_the_lenses_back_to_paths() {
+        let dir =
+            std::env::temp_dir().join(format!("tribunal-shared-ref-b-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let m = file(&dir, "m.md", "METHOD");
+        let empty = file(&dir, "empty.md", "  \n");
+        let gone = dir.join("gone.md").to_string_lossy().into_owned();
+        let mut logs = Vec::new();
+        assert_eq!(shared_reference(&gone, None, &mut logs), None);
+        assert_eq!(shared_reference(&empty, None, &mut logs), None);
+        assert_eq!(shared_reference(&m, Some(&gone), &mut logs), None);
+        assert_eq!(logs.len(), 3);
+        assert!(logs[2].contains("conventions"));
     }
 }
