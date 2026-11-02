@@ -102,8 +102,10 @@ fn from_shim(shim: &Path) -> Result<PathBuf, String> {
     match ext(&target).as_deref() {
         Some("exe") if meta.len() < STUB_BYTES => Err(format!(
             "{} is still the npm package's placeholder: its postinstall did not \
-             run (--ignore-scripts) or the native package was not downloaded \
-             (--omit=optional); reinstall without those, or {FIX}",
+             run (npm did not allow its install scripts, or --ignore-scripts) \
+             or the native package was not downloaded (--omit=optional); run \
+             `npm install -g --allow-scripts=@anthropic-ai/claude-code \
+             @anthropic-ai/claude-code`, or {FIX}",
             target.display()
         )),
         Some("exe") => Ok(target),
@@ -209,6 +211,10 @@ mod tests {
         file(&npm_exe(&prefix), 500);
         let e = resolve(Path::new("claude"), Some(&path_of(&[&prefix]))).unwrap_err();
         assert!(e.contains("placeholder"), "{e}");
+        assert!(
+            e.contains("--allow-scripts=@anthropic-ai/claude-code"),
+            "{e}"
+        );
         assert!(e.contains("native installer"), "{e}");
     }
 
