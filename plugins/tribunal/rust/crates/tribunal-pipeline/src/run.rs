@@ -19,6 +19,7 @@ use tribunal_core::js;
 use tribunal_core::lens::coverage_gaps::{coverage_banner, unread_risk_files};
 use tribunal_core::lens::diff_usable::diff_is_usable;
 use tribunal_core::lens::js_ext::{to_js_string, utf16_prefix_lossy};
+use tribunal_core::profile::high_risk_surface::with_risk_path_surface;
 use tribunal_core::profile::lens_foci::foci_label_for;
 use tribunal_core::profile::lens_routing::lens_agent_for;
 use tribunal_core::profile::profile_lookup::risk_path_rules;
@@ -51,6 +52,7 @@ use crate::synthesize::{
     side_payloads, surviving_for_synthesis, synthesis_prompt, verdict, verified_anchors,
     verify_prior_prompt, with_banners, PriorCheck, Relay, Report, SynthesisInput, Verdict,
 };
+use crate::verdict_basis::{verdict_basis, with_verdict_basis};
 use crate::verify::{
     apply_dedup, apply_typecheck_result, dedup_prompt, grounded_gate, partition_results, Dedup,
     Grounded, GroundedGate, Verdicts, MAX_AGENTS_DEFAULT, MAX_PANELS_DEFAULT,
@@ -1069,6 +1071,15 @@ pub async fn synthesize_phase<A: Agent>(
         report,
         &coverage_banner(&review.candidates.lens_gaps, &unread_risk),
     );
+    let report = match (verdict.guess, risk_path_rules(profile)) {
+        ("REQUEST CHANGES", Ok(rules)) => {
+            match verdict_basis(&with_risk_path_surface(Some(&surviving), Some(&rules))) {
+                Some(basis) => with_verdict_basis(report, &basis),
+                None => report,
+            }
+        }
+        _ => report,
+    };
     Ok(SynthesisOutcome {
         synthesize_seconds: synthesize_started.elapsed().as_secs_f64(),
         prior,
