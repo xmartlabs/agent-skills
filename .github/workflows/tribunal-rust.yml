@@ -33,6 +33,7 @@ on:
       - "plugins/tribunal/rust/**"
       - "!plugins/tribunal/rust/**/*.md"
       - "plugins/tribunal/lib/**"
+      - "plugins/tribunal/bin/**"
       - ".github/workflows/tribunal-rust.yml"
   # A merge to main runs the linux job once more, so main holds a warm cargo
   # cache: a pull request can restore the cache of main but not that of
@@ -44,6 +45,7 @@ on:
       - "plugins/tribunal/rust/**"
       - "!plugins/tribunal/rust/**/*.md"
       - "plugins/tribunal/lib/**"
+      - "plugins/tribunal/bin/**"
       - ".github/workflows/tribunal-rust.yml"
     tags: ["tribunal-rust-v*"]
   workflow_dispatch:
@@ -264,6 +266,26 @@ jobs:
       - run: cargo build --release --locked --target "$TARGET" -p tribunal-cli
       # rust/.cargo/config.toml puts target/ at the repository root.
       - run: '"../../../target/$TARGET/release/tribunal.exe" --version'
+      # The launcher a review starts the binary with, in Git Bash as Claude
+      # Code's Bash tool runs it: it downloads the pinned release into the
+      # default data directory, checks its sha256, unpacks the .zip and starts
+      # it, then reuses the cache. The built binary then shows the plugin root
+      # reaches a native program in a form it can open.
+      - name: the launcher starts the pinned binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          out=$(../bin/tribunal-engine resolve)
+          echo "$out"
+          case "$out" in '{"ok":true,'*'"source":"download"'*'"target":"x86_64-pc-windows-msvc"}') ;; *) exit 1 ;; esac
+          want=$(sed -n 's/.*"tag": *"tribunal-rust-v\([^"]*\)".*/\1/p' release.json)
+          got=$(../bin/tribunal-engine run -- --version)
+          echo "$got"
+          case "$got" in "tribunal $want "*) ;; *) exit 1 ;; esac
+          case "$(../bin/tribunal-engine resolve)" in *'"source":"cache"'*) ;; *) exit 1 ;; esac
+          export TRIBUNAL_BIN="../../../target/$TARGET/release/tribunal.exe" TRIBUNAL_DATA_DIR="$RUNNER_TEMP\\tribunal-data"
+          ../bin/tribunal-engine run -- harness-version --short | grep -E '^pr-harness-[0-9a-f]{12}$'
+          [ -z "$(../bin/tribunal-engine run -- lost-runs --recent 7)" ]
 
   # The jobs a tag runs (build, build-darwin, release) take the runner the
   # RELEASE_RUNNER variable names, else RUNNER: a runner that never builds pull
@@ -331,7 +353,7 @@ jobs:
       - name: package
         run: |
           # tribunal-v0.1.0-<target>: rust/scripts/pin-release.mjs and the
-          # launcher (skills/review-pr/scripts/rust-engine.mjs) read this shape.
+          # launcher (bin/tribunal-engine) read this shape.
           name="tribunal-${GITHUB_REF_NAME#tribunal-rust-}-${{ matrix.target }}"
           mkdir -p "$RUNNER_TEMP/$name"
           cp "$RUNNER_TEMP/bin/${{ matrix.bin }}" "$RUNNER_TEMP/$name/"
@@ -455,7 +477,7 @@ jobs:
       - name: package
         run: |
           # tribunal-v<version>-<target>, the shape rust/scripts/pin-release.mjs
-          # and the launcher (skills/review-pr/scripts/rust-engine.mjs) read.
+          # and the launcher (bin/tribunal-engine) read.
           ver=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/tribunal-cli/Cargo.toml | head -1)
           name="tribunal-v$ver-$TARGET"
           mkdir -p "$RUNNER_TEMP/$name"

@@ -27,6 +27,7 @@ pub mod js_engine;
 pub mod ledger;
 pub mod load_conventions;
 pub mod load_profile;
+pub mod lost_runs;
 pub mod operator;
 pub mod persist_run;
 pub mod post_footer;

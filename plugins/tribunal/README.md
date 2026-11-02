@@ -25,8 +25,12 @@ To run it in CI instead, on every pull request that gets a `tribunal` label, use
 [tribunal GitHub Action](../../actions/tribunal/README.md): one workflow file and a secret, no
 install.
 
-You need `gh` (logged in) and `node`. The `codex` CLI is optional and adds a
-second model to the refutation panel.
+You need `gh` (logged in). The default engine, a binary the plugin downloads on
+first use, needs nothing else; on a TypeScript repository it also runs the
+repository's own type check with that repository's `npm`/`npx` when they are
+there. `node` is needed only for the older Workflow engine: `--engine workflow`,
+or the fallback on a machine with no binary build.
+The `codex` CLI is optional and adds a second model to the refutation panel.
 
 **1. Install both plugins** in Claude Code. Tribunal runs its report through
 homosapiens before posting, so install it too.

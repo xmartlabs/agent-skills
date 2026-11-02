@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+# Finds the `tribunal` binary for this machine and runs it.
+#
+#   tribunal-engine resolve          prints {"ok":true,"bin","source","tag","target"}
+#                                    or {"ok":false,"error"}; exits 0 either way
+#   tribunal-engine run -- <args>    resolves, then runs the binary with <args>
+#                                    and exits with its status; 3 when there is
+#                                    no binary to run
+#
+# The binary is not in the plugin: each `tribunal-rust-v*` release attaches one
+# archive per platform, and rust/release.json pins the release and every
+# archive's sha256. The first run on a machine downloads its archive with
+# `gh release download`, refuses it unless the sha256 matches the pin, and
+# unpacks it under <tribunal-data>/bin/<tag>/<target>/; later runs reuse it.
+# TRIBUNAL_BIN, when set, is used as is and nothing is downloaded.
+#
+# Bash, not node: Claude Code needs no node, and on Windows its Bash tool is
+# Git Bash, which runs this too. `bin/` is on the Bash tool's PATH while the
+# plugin is enabled.
+set -uo pipefail
+
+root=$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+die() {
+  printf 'tribunal-engine: %s\n' "$*" >&2
+  exit "${2:-3}"
+}
+
+json_str() {
+  local s=${1//\\/\\\\}
+  s=${s//\"/\\\"}
+  printf '"%s"' "$s"
+}
+
+windows() {
+  case "$(uname -s)" in MINGW* | MSYS* | CYGWIN*) return 0 ;; *) return 1 ;; esac
+}
+
+# The release target for this machine, or nothing when no release builds one.
+# Windows on ARM runs the x64 build through its own emulation.
+target_for() {
+  local os arch
+  os=$(uname -s)
+  arch=$(uname -m)
+  case "$os" in
+    Darwin)
+      case "$arch" in
+        arm64 | aarch64) echo aarch64-apple-darwin ;;
+        x86_64) echo x86_64-apple-darwin ;;
+      esac
+      ;;
+    Linux)
+      case "$arch" in x86_64 | amd64) echo x86_64-unknown-linux-musl ;; esac
+      ;;
+    MINGW* | MSYS* | CYGWIN*) echo x86_64-pc-windows-msvc ;;
+  esac
+}
+
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | cut -d' ' -f1
+  else
+    return 1
+  fi
+}
+
+# tar on Windows: System32's bsdtar unpacks a .zip, and Git Bash's GNU tar
+# does not.
+tar_cmd() {
+  if windows; then
+    local sysroot=${SYSTEMROOT:-${SystemRoot:-C:\\Windows}}
+    if command -v cygpath >/dev/null 2>&1; then sysroot=$(cygpath -u "$sysroot"); fi
+    echo "$sysroot/System32/tar.exe"
+  else
+    echo tar
+  fi
+}
+
+# Sets bin, source, tag and target, or error. release.json is written by
+# rust/scripts/pin-release.mjs, so a flat match on its keys is enough.
+resolve() {
+  bin="" source="" tag="" target="" error=""
+  if [ -n "${TRIBUNAL_BIN:-}" ]; then
+    if [ -e "$TRIBUNAL_BIN" ]; then
+      bin=$TRIBUNAL_BIN source=env
+      return 0
+    fi
+    error="TRIBUNAL_BIN is $TRIBUNAL_BIN, which does not exist"
+    return 1
+  fi
+  local manifest=${TRIBUNAL_RUST_MANIFEST:-$root/rust/release.json} flat repo
+  if ! flat=$(tr -d '\r\n' <"$manifest" 2>/dev/null); then
+    error="cannot read $manifest"
+    return 1
+  fi
+  tag=$(printf '%s' "$flat" | sed -n 's/.*"tag"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+  repo=$(printf '%s' "$flat" | sed -n 's/.*"repo"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+  if [ -z "$tag" ]; then
+    error="no release is pinned in $manifest"
+    return 1
+  fi
+  target=$(target_for)
+  if [ -z "$target" ]; then
+    local built
+    built=$(printf '%s' "$flat" | grep -o '"[a-z0-9_]*-[a-z0-9_-]*"[[:space:]]*:[[:space:]]*{' | cut -d'"' -f2 | paste -sd, - | sed 's/,/, /g')
+    error="no $tag build for $(uname -s) $(uname -m); $tag has builds for ${built:-no platform}. Set TRIBUNAL_BIN to a tribunal binary built for this machine (cargo build --release in the plugin's rust/)"
+    return 1
+  fi
+  local entry name sha
+  entry=$(printf '%s' "$flat" | sed -n "s/.*\"$target\"[[:space:]]*:[[:space:]]*{\([^}]*\)}.*/\1/p")
+  name=$(printf '%s' "$entry" | sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+  sha=$(printf '%s' "$entry" | sed -n 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{64\}\)".*/\1/p')
+  if [ -z "$name" ] || [ -z "$sha" ]; then
+    error="$manifest pins no $target archive with a sha256"
+    return 1
+  fi
+  local exe=tribunal base dir marker
+  case "$target" in *windows*) exe=tribunal.exe ;; esac
+  base=${name%.tar.gz}
+  base=${base%.zip}
+  dir=${TRIBUNAL_DATA_DIR:-${HOME:-${USERPROFILE:-}}/.claude/tribunal-data}/bin/$tag/$target
+  bin=$dir/$base/$exe
+  marker=$dir/verified
+  if [ -f "$bin" ] && [ -f "$marker" ] && [ "$(tr -d '\r\n' <"$marker")" = "$sha" ]; then
+    source=cache
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$dir")" || {
+    error="cannot create $(dirname "$dir")"
+    return 1
+  }
+  local work
+  work=$(mktemp -d "$dir.tmp-XXXXXX") || {
+    error="cannot create a directory next to $dir"
+    return 1
+  }
+  # shellcheck disable=SC2064
+  trap "rm -rf '$work'" EXIT
+  local out got
+  if ! out=$("${TRIBUNAL_GH:-gh}" release download "$tag" --repo "$repo" --pattern "$name" --dir "$work" --clobber 2>&1) ||
+    [ ! -f "$work/$name" ]; then
+    error="gh release download $tag $name failed: $(printf '%s' "$out" | tail -n 1)"
+    return 1
+  fi
+  if ! got=$(sha256_of "$work/$name"); then
+    error="neither sha256sum nor shasum is on PATH, so $name cannot be checked against the pin"
+    return 1
+  fi
+  if [ "$got" != "$sha" ]; then
+    error="$name has sha256 $got, the pin is $sha; refusing it"
+    return 1
+  fi
+  if ! out=$("$(tar_cmd)" -xf "$work/$name" -C "$work" 2>&1); then
+    error="cannot unpack $name: $(printf '%s' "$out" | tail -n 1)"
+    return 1
+  fi
+  rm -f "$work/$name"
+  if [ ! -f "$work/$base/$exe" ]; then
+    error="$name holds no $base/$exe"
+    return 1
+  fi
+  chmod +x "$work/$base/$exe" 2>/dev/null
+  printf '%s\n' "$sha" >"$work/verified"
+  rm -rf "$dir"
+  mv "$work" "$dir" 2>/dev/null
+  # Another run unpacked the same archive in between: theirs is as good, and
+  # mv put this one inside it.
+  rm -rf "$dir/${work##*/}"
+  if [ ! -f "$bin" ] || [ ! -f "$marker" ]; then
+    error="cannot move the unpacked $name to $dir"
+    return 1
+  fi
+  source=download
+}
+
+case "${1:-}" in
+  resolve)
+    if resolve; then
+      printf '{"ok":true,"bin":%s,"source":%s,"tag":%s,"target":%s}\n' \
+        "$(json_str "$bin")" "$(json_str "$source")" \
+        "$([ -n "$tag" ] && json_str "$tag" || echo null)" \
+        "$([ -n "$target" ] && json_str "$target" || echo null)"
+    else
+      printf '{"ok":false,"error":%s}\n' "$(json_str "$error")"
+    fi
+    exit 0
+    ;;
+  run)
+    [ "${2:-}" = "--" ] || die "usage: tribunal-engine resolve | run -- <tribunal args>" 2
+    shift 2
+    resolve || die "$error"
+    [ -x "$bin" ] || die "cannot start $bin: it is not executable"
+    # The binary finds agents/ and methodology/ through this; its compiled-in
+    # default is the CI machine's checkout. On Windows it gets C:/... rather
+    # than Git Bash's /c/... form, which a native program cannot open.
+    if windows && command -v cygpath >/dev/null 2>&1; then root=$(cygpath -m "$root"); fi
+    TRIBUNAL_PLUGIN_ROOT=${TRIBUNAL_PLUGIN_ROOT:-$root} exec "$bin" "$@"
+    ;;
+  *)
+    die "usage: tribunal-engine resolve | run -- <tribunal args>" 2
+    ;;
+esac

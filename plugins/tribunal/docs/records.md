@@ -47,4 +47,4 @@ updates replace wholesale; this file is the one thing here that can't be
 reconstructed. Never delete `~/.claude/tribunal-data/`.
 
 **A run that dies before persisting is a run you paid for and lost.**
-`node eval/lost-runs.mjs` lists them: a killed run is otherwise silent.
+`tribunal-engine run -- lost-runs` lists them: a killed run is otherwise silent.
