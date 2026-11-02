@@ -1,4 +1,5 @@
 mod common;
+mod posting;
 use common::*;
 
 // Differential tests for the loaders group: `load-profile.mjs`,
@@ -18,18 +19,275 @@ use common::*;
 // the scratch paths both sides were given, so they need no normalization;
 // the template path `assemble-methodology.mjs` reports is the script's real
 // path, so the Rust side gets the canonicalized plugin root.
+//
+// Nothing here runs node outside a regeneration. Every call to a script, to
+// the bulk oracle or to the buffer probe is read from `tests/goldens/
+// loaders.json`, keyed by a SHA-256 of everything that call could depend on:
+// the script, its arguments, the recorded `gh` answers, a snapshot of the
+// fixture tree and the generated cases. A call the golden does not hold fails
+// with the regeneration command. The golden keeps the SHA-256 of every module
+// the four scripts reach and of the methodology templates; a module no longer
+// on disk was retired with the Workflow, so its check is skipped and the
+// golden is final. Scratch and plugin paths go in as placeholders and come
+// back as this run's. Regenerate over the whole binary:
+// `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_loaders`.
 
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Mutex, OnceLock};
 
 use serde_json::{json, Value};
 use tribunal_context::assemble_methodology as am;
 use tribunal_context::exec::Tools;
+use tribunal_context::harness_version::sha256_hex;
 use tribunal_context::load_conventions as lc;
 use tribunal_context::load_profile as lp;
 use tribunal_context::operator::{self as op, CliOutput, OperatorEnv};
 use tribunal_core::profile::js_ext::json_stringify;
+
+// ---------------------------------------------------------------------------
+// the recorded side of every node call
+
+const REGEN: &str =
+    "regenerate with `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_loaders`";
+const GOLDEN: &str = "loaders.json";
+const OPERATOR: &str = "lib/operator.mjs";
+const ENTRIES: [&str; 4] = [LOAD_PROFILE, LOAD_CONVENTIONS, ASSEMBLE, OPERATOR];
+
+fn template_shas() -> Value {
+    let dir = root().join("methodology/templates");
+    let mut out = serde_json::Map::new();
+    let mut names: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    for n in names {
+        let text = std::fs::read(dir.join(&n)).unwrap();
+        out.insert(n, json!(sha256_hex(&text)));
+    }
+    Value::Object(out)
+}
+
+fn shim_sha() -> Value {
+    let p = shim_dir().join("gh");
+    json!(sha256_hex(&std::fs::read(&p).unwrap()))
+}
+
+fn recorded_with() -> Value {
+    let entries: serde_json::Map<String, Value> = ENTRIES
+        .iter()
+        .map(|e| ((*e).to_owned(), posting::module_shas(e)))
+        .collect();
+    json!({"entries": entries, "templates": template_shas(), "shim": shim_sha()})
+}
+
+fn stale(rw: &Value) -> Vec<String> {
+    let mut out = Vec::new();
+    for e in ENTRIES {
+        out.extend(posting::stale_module_shas(&rw["entries"][e], e));
+    }
+    if rw["templates"] != template_shas() {
+        out.push("methodology/templates".to_owned());
+    }
+    if rw["shim"] != shim_sha() {
+        out.push("tests/shim/gh".to_owned());
+    }
+    out
+}
+
+struct Tape {
+    replay: Option<Value>,
+    calls: Mutex<BTreeMap<String, (String, Value)>>,
+}
+
+fn tape() -> &'static Tape {
+    static TAPE: OnceLock<Tape> = OnceLock::new();
+    TAPE.get_or_init(|| Tape {
+        replay: posting::recorded(GOLDEN, REGEN, stale),
+        calls: Mutex::new(BTreeMap::new()),
+    })
+}
+
+/// The recorded result of the call `input` names. Regenerating runs `live`
+/// (node) and writes the golden again, one call per line; otherwise a call
+/// the golden lacks fails.
+fn js_call(label: &str, input: &Value, live: impl FnOnce() -> Value) -> Value {
+    let key = sha256_hex(serde_json::to_string(input).unwrap().as_bytes());
+    let tape = tape();
+    let Some(golden) = &tape.replay else {
+        let result = live();
+        let mut calls = tape
+            .calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        calls.insert(key, (label.to_owned(), result.clone()));
+        let q = |v: &Value| serde_json::to_string(v).unwrap();
+        let lines: Vec<String> = calls
+            .iter()
+            .map(|(k, (l, r))| {
+                format!(
+                    "    {}: {{\"label\": {}, \"result\": {}}}",
+                    q(&json!(k)),
+                    q(&json!(l)),
+                    q(r)
+                )
+            })
+            .collect();
+        let text = format!(
+            "{{\n  \"recordedWith\": {},\n  \"calls\": {{\n{}\n  }}\n}}\n",
+            serde_json::to_string_pretty(&recorded_with())
+                .unwrap()
+                .replace('\n', "\n  "),
+            lines.join(",\n")
+        );
+        std::fs::write(posting::golden_path(GOLDEN), text).unwrap();
+        return result;
+    };
+    let entry = &golden["calls"][&key];
+    assert!(
+        entry.is_object(),
+        "[{label}] call {key} is not in {}; {REGEN}",
+        posting::golden_path(GOLDEN).display()
+    );
+    entry["result"].clone()
+}
+
+/// A scratch directory (and its real path, which differs on macOS) and the
+/// plugin as placeholders, so a golden holds no path of the machine that
+/// recorded it.
+struct Subst {
+    pairs: Vec<(String, &'static str)>,
+}
+
+impl Subst {
+    fn new(scratch: &Path) -> Subst {
+        let canon = scratch
+            .canonicalize()
+            .unwrap_or_else(|_| scratch.to_path_buf());
+        Subst {
+            pairs: vec![
+                (canon.to_string_lossy().into_owned(), "<SCRATCH-C>"),
+                (scratch.to_string_lossy().into_owned(), "<SCRATCH>"),
+                (root().to_string_lossy().into_owned(), "<PLUGIN>"),
+            ],
+        }
+    }
+    /// The same with one placeholder for both forms of the scratch path, for
+    /// what names a call: the two forms are one path on Linux, so a key
+    /// holding both would differ between the machines.
+    fn for_key(&self) -> Subst {
+        Subst {
+            pairs: self
+                .pairs
+                .iter()
+                .map(|(from, to)| {
+                    (
+                        from.clone(),
+                        if *to == "<PLUGIN>" { *to } else { "<SCRATCH>" },
+                    )
+                })
+                .collect(),
+        }
+    }
+    fn text(&self, t: &str) -> String {
+        self.pairs
+            .iter()
+            .fold(t.to_owned(), |t, (from, to)| t.replace(from, to))
+    }
+    fn to_ph(&self, v: &Value) -> Value {
+        serde_json::from_str(&self.text(&v.to_string())).unwrap()
+    }
+    fn restore(&self, v: &Value) -> Value {
+        let t = self
+            .pairs
+            .iter()
+            .rev()
+            .fold(v.to_string(), |t, (from, to)| t.replace(to, from));
+        serde_json::from_str(&t).unwrap()
+    }
+}
+
+fn perms(meta: &std::fs::Metadata) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let m = meta.permissions().mode();
+    [(0o400, 'r'), (0o200, 'w'), (0o100, 'x')]
+        .iter()
+        .map(|(bit, c)| if m & bit != 0 { *c } else { '-' })
+        .collect()
+}
+
+/// The origin URLs a checkout's `.git/config` names: all a script reads of
+/// the repository. The rest of `.git` differs between git versions.
+fn git_urls(git_dir: &Path) -> Vec<String> {
+    std::fs::read_to_string(git_dir.join("config"))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("url = ").map(str::to_owned))
+        .collect()
+}
+
+fn walk(
+    sub: &Subst,
+    base: &Path,
+    dir: &Path,
+    skip: &[PathBuf],
+    out: &mut serde_json::Map<String, Value>,
+) {
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut paths: Vec<PathBuf> = read.flatten().map(|e| e.path()).collect();
+    paths.sort();
+    for path in paths {
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let rel = path
+            .strip_prefix(base)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        if skip.contains(&path)
+            || name == "js-calls.log"
+            || name == "rs-calls.log"
+            || rel.ends_with(ASSEMBLE)
+        {
+            continue;
+        }
+        let meta = std::fs::symlink_metadata(&path).unwrap();
+        let entry = if meta.file_type().is_symlink() {
+            let target = std::fs::read_link(&path).unwrap();
+            json!({"link": sub.text(&target.to_string_lossy())})
+        } else if meta.is_dir() {
+            if name == ".git" {
+                out.insert(rel, json!({"git": git_urls(&path)}));
+                continue;
+            }
+            out.insert(rel.clone(), json!({"dir": perms(&meta)}));
+            walk(sub, base, &path, skip, out);
+            continue;
+        } else {
+            let content = std::fs::read(&path)
+                .map(|b| {
+                    json!(sha256_hex(
+                        sub.text(&String::from_utf8_lossy(&b)).as_bytes()
+                    ))
+                })
+                .unwrap_or_else(|_| json!("unreadable"));
+            json!({"file": content, "perms": perms(&meta)})
+        };
+        out.insert(rel, entry);
+    }
+}
+
+/// Everything under `dir` a script could read, as a golden's key holds it.
+fn snapshot(sub: &Subst, dir: &Path, skip: &[PathBuf]) -> Value {
+    let mut out = serde_json::Map::new();
+    walk(sub, dir, dir, skip, &mut out);
+    Value::Object(out)
+}
 
 // ---------------------------------------------------------------------------
 // harness
@@ -62,14 +320,66 @@ fn root() -> PathBuf {
 
 /// `node <script> <args>` with the recorded `gh` first on PATH, `HOME` at the
 /// fixture's home and `REVIEW_HARNESS_CONFIG` only when given, so neither side
-/// can read the real operator settings.
+/// can read the real operator settings. The run is read from the golden: its
+/// `gh` call log is written to the fixture's `js_log` and the files it wrote
+/// (`written`) are put back, where the caller reads them.
 fn node(
     script: &Path,
     args: &[String],
     cwd: &Path,
     fx: &Fx,
     config_env: Option<&str>,
+    written: &[PathBuf],
 ) -> ScriptRun {
+    let sub = Subst::new(&fx.dir);
+    let ksub = sub.for_key();
+    let input = ksub.to_ph(&json!({
+        "kind": "script",
+        "script": script.to_string_lossy(),
+        "args": args,
+        "cwd": cwd.to_string_lossy(),
+        "configEnv": config_env,
+        "written": written.iter().map(|p| p.to_string_lossy()).collect::<Vec<_>>(),
+        "tree": snapshot(&ksub, &fx.dir, written),
+    }));
+    let label = ksub.text(&format!(
+        "{} {}",
+        script.file_name().unwrap().to_string_lossy(),
+        args.join(" ")
+    ));
+    let stored = js_call(&label, &input, || {
+        sub.to_ph(&live_node(script, args, cwd, fx, config_env, written))
+    });
+    let v = sub.restore(&stored);
+    match v["log"].as_str() {
+        Some(log) => std::fs::write(&fx.js_log, log).unwrap(),
+        None => {
+            let _ = std::fs::remove_file(&fx.js_log);
+        }
+    }
+    for (p, f) in written.iter().zip(v["files"].as_array().unwrap()) {
+        match f.as_str() {
+            Some(text) => std::fs::write(p, text).unwrap(),
+            None => {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+    }
+    ScriptRun {
+        code: v["code"].as_i64().map(|c| i32::try_from(c).unwrap()),
+        stdout: v["stdout"].as_str().unwrap().to_owned(),
+        stderr: v["stderr"].as_str().unwrap().to_owned(),
+    }
+}
+
+fn live_node(
+    script: &Path,
+    args: &[String],
+    cwd: &Path,
+    fx: &Fx,
+    config_env: Option<&str>,
+    written: &[PathBuf],
+) -> Value {
     let path = std::env::join_paths(std::iter::once(shim_dir()).chain(std::env::split_paths(
         &std::env::var_os("PATH").unwrap_or_default(),
     )))
@@ -89,11 +399,25 @@ fn node(
         cmd.env("REVIEW_HARNESS_CONFIG", c);
     }
     let out = cmd.output().expect("node must be on PATH");
-    ScriptRun {
-        code: out.status.code(),
-        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
-    }
+    let files: Vec<Value> = written
+        .iter()
+        .map(|p| {
+            if p.is_file() {
+                json!(
+                    String::from_utf8(std::fs::read(p).unwrap()).expect("a recorded file is UTF-8")
+                )
+            } else {
+                Value::Null
+            }
+        })
+        .collect();
+    json!({
+        "code": out.status.code(),
+        "stdout": String::from_utf8_lossy(&out.stdout),
+        "stderr": String::from_utf8_lossy(&out.stderr),
+        "log": std::fs::read_to_string(&fx.js_log).ok(),
+        "files": files,
+    })
 }
 
 fn rs_tools(fx: &Fx) -> Tools {
@@ -158,7 +482,7 @@ async fn same(
         let _ = std::fs::remove_file(p);
     }
     take(written);
-    let js = node(script, &args, cwd, fx, config_env);
+    let js = node(script, &args, cwd, fx, config_env, written);
     let js_files = take(written);
     let tools = rs_tools(fx);
     let rs: CliOutput = match port {
@@ -885,11 +1209,7 @@ async fn load_profile_save_failures_match_js() {
 /// report whether the call came back or failed with ENOBUFS.
 #[tokio::test]
 async fn exec_buffer_limit_matches_node() {
-    let dir = scratch("loaders-enobufs");
-    let probe = dir.join("probe.cjs");
-    std::fs::write(
-        &probe,
-        r#"const { execFileSync } = require("node:child_process");
+    const PROBE: &str = r#"const { execFileSync } = require("node:child_process");
 const out = [];
 for (const n of [1048576, 1048577]) {
   try {
@@ -900,22 +1220,36 @@ for (const n of [1048576, 1048577]) {
   }
 }
 console.log(JSON.stringify(out));
-"#,
-    )
-    .unwrap();
-    let rec = recordings(&dir, vec![]);
-    let js = run_script(probe.to_str().unwrap(), &[], &dir, &rec, None);
+"#;
+    let js = js_call(
+        "buffer probe",
+        &json!({"kind": "probe", "script": PROBE}),
+        || {
+            let dir = scratch("loaders-enobufs");
+            let probe = dir.join("probe.cjs");
+            std::fs::write(&probe, PROBE).unwrap();
+            let rec = recordings(&dir, vec![]);
+            let run = run_script(probe.to_str().unwrap(), &[], &dir, &rec, None);
+            json!({"stdout": run.stdout, "stderr": run.stderr})
+        },
+    );
     let mut rust = Vec::new();
     for n in [1_048_576, 1_048_577] {
-        let code = format!("process.stdout.write(\"a\".repeat({n}))");
-        let args = ["-e", code.as_str()];
-        let res = tribunal_context::exec::run("node", &args, None, &[]).await;
+        let count = n.to_string();
+        let args = ["-c", count.as_str(), "/dev/zero"];
+        let res = tribunal_context::exec::run("head", &args, None, &[]).await;
         rust.push(match lp::exec_file_sync(res, &args) {
             Ok(_) => "ok".to_owned(),
             Err(f) => f.message.rsplit(' ').next().unwrap_or_default().to_owned(),
         });
     }
-    assert_eq!(json!(rust), last_json(&js.stdout), "{}", js.stderr);
+    let stdout = js["stdout"].as_str().unwrap();
+    assert_eq!(
+        json!(rust),
+        last_json(stdout),
+        "{}",
+        js["stderr"].as_str().unwrap()
+    );
     assert_eq!(rust, ["ok", "ENOBUFS"]);
 }
 
@@ -931,7 +1265,7 @@ async fn load_profile_regex_error_wording_is_a_declared_difference() {
     let args: Vec<String> = ["--profile", path.to_str().unwrap(), "--repo", REPO]
         .map(String::from)
         .to_vec();
-    let js = node(&script(LOAD_PROFILE), &args, &fx.dir, &fx, None);
+    let js = node(&script(LOAD_PROFILE), &args, &fx.dir, &fx, None, &[]);
     let rs = lp::main(&rs_tools(&fx), &rs_env(&fx, None, &fx.dir), &args).await;
     let prefix = "riskPaths[0].pattern does not compile (Invalid regular expression: /(/i: ";
     assert!(
@@ -1412,7 +1746,14 @@ async fn load_conventions_crashes_where_js_crashes() {
     ]
     .map(String::from)
     .to_vec();
-    let js = node(&script(LOAD_CONVENTIONS), &args, &c.fx.dir, &c.fx, None);
+    let js = node(
+        &script(LOAD_CONVENTIONS),
+        &args,
+        &c.fx.dir,
+        &c.fx,
+        None,
+        &[],
+    );
     let rs = lc::main(&rs_tools(&c.fx), &args).await;
     assert!(js.stderr.contains("Nothing to repeat"), "{}", js.stderr);
     assert_eq!(
@@ -1610,7 +1951,9 @@ async fn assemble_methodology_matches_js_on_template_edges() {
     let fake = fx.dir.join("plugin");
     std::fs::create_dir_all(fake.join("skills/review-pr/scripts")).unwrap();
     std::fs::create_dir_all(fake.join("methodology/templates")).unwrap();
-    std::fs::copy(root().join(ASSEMBLE), fake.join(ASSEMBLE)).unwrap();
+    if posting::regenerating() {
+        std::fs::copy(root().join(ASSEMBLE), fake.join(ASSEMBLE)).unwrap();
+    }
     let fake = fake.canonicalize().unwrap();
     let out = fx.dir.join("m.md");
     let o = out.to_str().unwrap();
@@ -1667,25 +2010,41 @@ const fns = {
 process.stdout.write(JSON.stringify(cases.map(fns[kind])) + "\n");
 "#;
 
-fn batch(kind: &str, cases: &[Value]) -> Vec<Value> {
-    let dir = scratch(&format!("loaders-oracle-{kind}"));
-    let file = dir.join("oracle.mjs");
-    std::fs::write(&file, ORACLE).unwrap();
-    let rec = recordings(&dir, vec![]);
-    let input = json!({"kind": kind, "cases": cases}).to_string();
-    let run = run_script(
-        file.to_str().unwrap(),
-        &[root().to_str().unwrap()],
-        &dir,
-        &rec,
-        Some(&input),
-    );
-    match last_json(&run.stdout) {
+/// The oracle's answer to `cases`. `scratch` is the directory the cases name
+/// files in, if any, and `context` what else the answers depend on (the
+/// bodies of those files).
+fn batch(kind: &str, cases: &[Value], scratch_dir: Option<&Path>, context: &Value) -> Vec<Value> {
+    let sub = Subst::new(scratch_dir.unwrap_or(Path::new("/nonexistent-scratch")));
+    let input = sub.for_key().to_ph(&json!({
+        "kind": "oracle", "script": ORACLE, "case": kind, "cases": cases, "context": context,
+    }));
+    let stored = js_call(kind, &input, || {
+        let dir = scratch(&format!("loaders-oracle-{kind}"));
+        let file = dir.join("oracle.mjs");
+        std::fs::write(&file, ORACLE).unwrap();
+        let rec = recordings(&dir, vec![]);
+        let input = json!({"kind": kind, "cases": cases}).to_string();
+        let run = run_script(
+            file.to_str().unwrap(),
+            &[root().to_str().unwrap()],
+            &dir,
+            &rec,
+            Some(&input),
+        );
+        match last_json(&run.stdout) {
+            Value::Array(a) => {
+                assert_eq!(a.len(), cases.len(), "{}", run.stderr);
+                sub.to_ph(&Value::Array(a))
+            }
+            other => panic!("oracle: {other} {}", run.stderr),
+        }
+    });
+    match sub.restore(&stored) {
         Value::Array(a) => {
-            assert_eq!(a.len(), cases.len(), "{}", run.stderr);
+            assert_eq!(a.len(), cases.len(), "{kind}: the cases changed; {REGEN}");
             a
         }
-        other => panic!("oracle: {other} {}", run.stderr),
+        other => panic!("oracle: {other}"),
     }
 }
 
@@ -1722,7 +2081,18 @@ impl Rng {
 /// `min` cases fall in each class `classes` names (a substring of the
 /// oracle's answer), so a generator that misses a class cannot pass.
 fn compare(kind: &str, cases: &[Value], rust: &[Value], classes: &[(&str, usize)]) {
-    let js = batch(kind, cases);
+    compare_in(kind, cases, rust, classes, None, &Value::Null);
+}
+
+fn compare_in(
+    kind: &str,
+    cases: &[Value],
+    rust: &[Value],
+    classes: &[(&str, usize)],
+    scratch_dir: Option<&Path>,
+    context: &Value,
+) {
+    let js = batch(kind, cases, scratch_dir, context);
     for (class, min) in classes {
         let n = js.iter().filter(|j| j.to_string().contains(class)).count();
         assert!(
@@ -2290,7 +2660,7 @@ fn operator_helpers_match_js() {
             json!({"ok": json_stringify(Some(&v))})
         })
         .collect();
-    compare(
+    compare_in(
         "opconfig",
         &paths,
         &rust,
@@ -2301,6 +2671,8 @@ fn operator_helpers_match_js() {
             ("defaultRepo must be", 5),
             ("is not valid JSON", 3),
         ],
+        Some(&dir),
+        &json!(bodies),
     );
 }
 
