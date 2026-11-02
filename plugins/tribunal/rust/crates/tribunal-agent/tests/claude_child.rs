@@ -67,6 +67,74 @@ echo '{"type":"result","subtype":"success","is_error":false,"structured_output":
 }
 
 #[tokio::test]
+async fn a_long_system_prompt_reaches_the_child_in_a_private_file_that_goes_afterwards() {
+    let _spawn = SPAWN.lock().await;
+    let dir = scratch("system-prompt-file");
+    let bin = stand_in(
+        &dir,
+        r#"printf '%s\n' "$@" > args.txt
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "--system-prompt-file" ]; then
+    cat "$a" > system.txt
+    ls -l "$a" | cut -c1-10 > mode.txt
+    echo "$a" > path.txt
+  fi
+  prev="$a"
+done
+cat > /dev/null
+echo '{"type":"result","subtype":"success","is_error":false,"num_turns":1}'"#,
+    );
+    // Over the 128 KiB Linux allows for one argument.
+    let long = format!("lens agent\n{}", "m".repeat(200_000));
+    let mut req = DispatchRequest::new("lens:1", "p", &dir);
+    req.system_prompt = Some(long.clone());
+    let res = ClaudeAgent::new(bin).run(&req).await;
+    assert_eq!(res.exit, Exit::Code(0));
+    let args = std::fs::read_to_string(dir.join("args.txt")).unwrap();
+    assert!(args.lines().any(|l| l == "--system-prompt-file"));
+    assert!(!args.lines().any(|l| l == "--system-prompt"));
+    assert!(args.len() < 2_000);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("system.txt")).unwrap(),
+        long
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("mode.txt"))
+            .unwrap()
+            .trim(),
+        "-rw-------"
+    );
+    let path = std::fs::read_to_string(dir.join("path.txt")).unwrap();
+    assert!(!Path::new(path.trim()).exists());
+}
+
+#[tokio::test]
+async fn a_short_system_prompt_stays_on_the_command_line() {
+    let _spawn = SPAWN.lock().await;
+    let dir = scratch("system-prompt-arg");
+    let bin = stand_in(
+        &dir,
+        r#"printf '%s\n' "$@" > args.txt
+cat > /dev/null
+echo '{"type":"result","subtype":"success","is_error":false,"num_turns":1}'"#,
+    );
+    let mut req = DispatchRequest::new("lens:1", "p", &dir);
+    req.system_prompt = Some("You read files and answer briefly.".into());
+    let res = ClaudeAgent::new(bin).run(&req).await;
+    assert_eq!(res.exit, Exit::Code(0));
+    let args: Vec<String> = std::fs::read_to_string(dir.join("args.txt"))
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    assert!(args
+        .windows(2)
+        .any(|w| w[0] == "--system-prompt" && w[1] == "You read files and answer briefly."));
+    assert!(!args.iter().any(|a| a == "--system-prompt-file"));
+}
+
+#[tokio::test]
 async fn an_error_exit_without_a_result_has_no_answer() {
     let _spawn = SPAWN.lock().await;
     let dir = scratch("err");

@@ -2,8 +2,10 @@
 //! kill path that takes the whole group, tool subprocesses included.
 
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(unix)]
 use std::time::Duration;
 
@@ -18,6 +20,44 @@ use crate::{Agent, Credentials, DispatchRequest, DispatchResult, Exit};
 const GRACE: Duration = Duration::from_secs(5);
 
 const STDERR_TAIL_BYTES: usize = 4096;
+
+/// A system prompt longer than this goes to the child in a file instead of on
+/// the command line. Windows caps a whole command line at 32,767 characters
+/// and Linux caps one argument at 128 KiB, and a lens prompt that carries the
+/// methodology and the conventions passes both.
+const SYSTEM_PROMPT_ARG_BYTES: usize = 12_000;
+
+/// A system prompt written for one child. The file is private to the user,
+/// since the conventions of a private repository are in it, and it goes when
+/// the dispatch ends, whichever way that is.
+struct PromptFile(PathBuf);
+
+impl PromptFile {
+    fn create(text: &str) -> std::io::Result<Self> {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "tribunal-system-prompt-{}-{}.md",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let file = Self(path);
+        opts.open(&file.0)?.write_all(text.as_bytes())?;
+        Ok(file)
+    }
+}
+
+impl Drop for PromptFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
 
 /// Variables a parent Claude Code session sets for itself. A child that
 /// inherits them believes it is part of that session.
@@ -110,6 +150,16 @@ impl ClaudeAgent {
     /// 32,767 characters and Linux caps one argument at 128 KiB.
     #[must_use]
     pub fn args(&self, req: &DispatchRequest) -> Vec<String> {
+        self.args_with_prompt_file(req, None)
+    }
+
+    /// [`ClaudeAgent::args`], with the system prompt read from `prompt_file`
+    /// when there is one.
+    fn args_with_prompt_file(
+        &self,
+        req: &DispatchRequest,
+        prompt_file: Option<&Path>,
+    ) -> Vec<String> {
         let mut a = vec![
             "-p".to_owned(),
             "--output-format".to_owned(),
@@ -117,8 +167,13 @@ impl ClaudeAgent {
             "--verbose".to_owned(),
             "--no-session-persistence".to_owned(),
         ];
-        if let Some(sp) = &req.system_prompt {
-            a.extend(["--system-prompt".to_owned(), sp.clone()]);
+        match (prompt_file, &req.system_prompt) {
+            (Some(path), _) => a.extend([
+                "--system-prompt-file".to_owned(),
+                path.to_string_lossy().into_owned(),
+            ]),
+            (None, Some(sp)) => a.extend(["--system-prompt".to_owned(), sp.clone()]),
+            (None, None) => {}
         }
         if let Some(m) = req.model.as_deref().filter(|m| !m.is_empty()) {
             a.extend(["--model".to_owned(), m.to_owned()]);
@@ -181,9 +236,25 @@ impl Agent for ClaudeAgent {
                 req.cwd.display()
             ));
         }
+        let prompt_file = match req
+            .system_prompt
+            .as_deref()
+            .filter(|sp| sp.len() > SYSTEM_PROMPT_ARG_BYTES)
+        {
+            Some(text) => match PromptFile::create(text) {
+                Ok(file) => Some(file),
+                Err(e) => {
+                    return not_started(format!(
+                        "cannot write the system prompt of {} to a file: {e}",
+                        req.label
+                    ))
+                }
+            },
+            None => None,
+        };
         let mut cmd = Command::new(&self.bin);
         cmd.args(&self.lead)
-            .args(self.args(req))
+            .args(self.args_with_prompt_file(req, prompt_file.as_ref().map(|f| f.0.as_path())))
             .env_clear()
             .envs(self.env(std::env::vars_os()))
             .current_dir(&req.cwd)
@@ -380,6 +451,26 @@ mod tests {
         assert!(has(["--setting-sources", "project"]));
         assert!(a.contains(&"--strict-mcp-config".to_owned()));
         assert!(!a.iter().any(|x| x == "--agent" || x == "--bare"));
+    }
+
+    #[test]
+    fn a_system_prompt_goes_on_the_command_line_unless_a_file_carries_it() {
+        let mut r = req();
+        r.system_prompt = Some("short prompt".into());
+        let a = ClaudeAgent::new("claude").args(&r);
+        assert!(a
+            .windows(2)
+            .any(|w| w[0] == "--system-prompt" && w[1] == "short prompt"));
+
+        let long = "x".repeat(SYSTEM_PROMPT_ARG_BYTES + 1);
+        r.system_prompt = Some(long.clone());
+        let a = ClaudeAgent::new("claude").args_with_prompt_file(&r, Some(Path::new("/t/sp.md")));
+        assert!(a
+            .windows(2)
+            .any(|w| w[0] == "--system-prompt-file" && w[1] == "/t/sp.md"));
+        assert!(!a
+            .iter()
+            .any(|x| x == "--system-prompt" || x.contains(&long)));
     }
 
     #[test]
