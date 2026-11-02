@@ -252,10 +252,14 @@ jobs:
       - run: cargo test --target "$TARGET" --workspace --lib --bins --locked
       # Claude Code installed with npm is a claude.cmd launcher the binary
       # reads to find the claude.exe it starts (tribunal-agent's launch.rs).
+      # The latest release on purpose: a change to how the package installs
+      # turns this job red on the next run instead of reaching users first.
+      # The package's postinstall runs here with a read-only token and no
+      # secrets, and a tag never runs this job, so it cannot reach a release.
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 24
-      - run: npm install -g @anthropic-ai/claude-code@2.1.316
+      - run: npm install -g @anthropic-ai/claude-code@latest
       - run: cargo test --target "$TARGET" -p tribunal-agent --lib --locked launch -- --ignored
       - run: cargo build --release --locked --target "$TARGET" -p tribunal-cli
       # rust/.cargo/config.toml puts target/ at the repository root.
