@@ -23,6 +23,7 @@ its text reaches no reviewer. The slots that exist:
   tribunal, frontend: intro branch-review stay-in-project literal-duplication
                       api-layer-siblings enforce project-traps
                       checklist-data-contracts checklist-conventions
+  tribunal, python:   the same slots as backend
   tribunal, e2e:      intro branch-review stay-in-project ignored-paths enforce
                       project-traps correctness failure-modes real-data-writes
                       external-calls differential-gate differential-tooling

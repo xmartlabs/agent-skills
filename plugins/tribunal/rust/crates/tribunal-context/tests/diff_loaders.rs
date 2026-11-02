@@ -463,8 +463,14 @@ enum Port<'a> {
     Methodology { root: &'a str },
 }
 
-/// Runs the script and the port on the same inputs and asserts they agree.
-/// Returns the script's stdout.
+/// Declared difference: the port also admits the reviewer kind `python`, which
+/// the script refuses, so a message that lists the kinds names it in the port
+/// only. `reviewer_kind_python_is_a_declared_difference` shows the witness.
+const REVIEWER_KINDS_RUST: &str = "backend, frontend, e2e, python";
+const REVIEWER_KINDS_JS: &str = "backend, frontend, e2e";
+
+/// Runs the script and the port on the same inputs and asserts they agree,
+/// apart from the declared kind list above. Returns the script's stdout.
 #[allow(clippy::too_many_arguments)]
 async fn same(
     label: &str,
@@ -491,8 +497,9 @@ async fn same(
         Port::Methodology { root } => am::main(root, &args),
     };
     let rs_files = take(written);
+    let rs_stdout = rs.stdout.replace(REVIEWER_KINDS_RUST, REVIEWER_KINDS_JS);
     assert_eq!(
-        rs.stdout, js.stdout,
+        rs_stdout, js.stdout,
         "[{label}] stdout differs; js stderr: {}",
         js.stderr
     );
@@ -1279,6 +1286,45 @@ async fn load_profile_regex_error_wording_is_a_declared_difference() {
         rs.stdout, js.stdout,
         "if these agree, drop the declared difference"
     );
+}
+
+/// Declared difference: the reviewer kind `python`. The port loads a profile
+/// of that kind and assembles its methodology; the script refuses both.
+#[tokio::test]
+async fn reviewer_kind_python_is_a_declared_difference() {
+    let fx = fixture("lp-python", vec![]);
+    let mut p = base_profile();
+    p["reviewer"] = json!("python");
+    p.as_object_mut().unwrap().remove("projectRules");
+    let path = fx.dir.join("p.json");
+    std::fs::write(&path, text_of(&p)).unwrap();
+    let args: Vec<String> = ["--profile", path.to_str().unwrap(), "--repo", REPO]
+        .map(String::from)
+        .to_vec();
+    let js = node(&script(LOAD_PROFILE), &args, &fx.dir, &fx, None, &[]);
+    let rs = lp::main(&rs_tools(&fx), &rs_env(&fx, None, &fx.dir), &args).await;
+    assert!(
+        js.stdout
+            .contains("reviewer must be one of backend, frontend, e2e, got \\\"python\\\""),
+        "{}",
+        js.stdout
+    );
+    assert!(rs.stdout.starts_with("{\"ok\":true"), "{}", rs.stdout);
+    assert_ne!(rs.stdout, js.stdout);
+
+    let out = fx.dir.join("methodology.md");
+    let args: Vec<String> = ["--kind", "python", "--out", out.to_str().unwrap()]
+        .map(String::from)
+        .to_vec();
+    let js = node(&script(ASSEMBLE), &args, &fx.dir, &fx, None, &[]);
+    let rs = am::main(&root().to_string_lossy(), &args);
+    assert!(
+        js.stdout
+            .contains("--kind must be one of backend, frontend, e2e, got \\\"python\\\""),
+        "{}",
+        js.stdout
+    );
+    assert!(rs.stdout.starts_with("{\"ok\":true"), "{}", rs.stdout);
 }
 
 // ---------------------------------------------------------------------------

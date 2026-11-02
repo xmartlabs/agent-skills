@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "project": "your-project",
+  "repo": "your-org/your-service",
+  "reviewer": "python",
+  "baseBranch": "main",
+  "deployBranches": [],
+  "foci": {
+    "correctness": "correctness and logic (control flow, None and Optional handling, mutable defaults, naive vs aware datetimes, float vs Decimal money, async pitfalls, error paths, edge cases)",
+    "dataContract": "data contracts (pydantic models, dataclasses, serializers and response shapes, type hints and the repo's type checker, alignment with the clients and tasks that call this code)",
+    "security": "security and authorization (permission checks, input validation, SQL built by string formatting, pickle or yaml.load, eval, subprocess with shell=True, path traversal, SSRF, secrets in code)",
+    "performance": "performance (ORM N+1 queries, per-row work in pandas or loops, unbounded memory, blocking calls in async code, unbatched external calls)",
+    "errorHandling": "error handling and observability (swallowed exceptions, exception types, logging, missing handlers on tasks and workers)",
+    "migration": "data integrity and migration safety (Django or Alembic migrations, rollback, backfill, nullability, destructive DDL, data loss on migrate)"
+  },
+  "highRiskSurface": "schema and migrations, auth and permissions, payments, deserialization, mass delete/update",
+  "projectRules": ".claude/review-rules.md",
+  "conventionFiles": ["CLAUDE.md", ".claude/rules/*.md"],
+  "crossRepoAnchors": [],
+  "riskPaths": [
+    { "focus": "migration", "pattern": "migrations?/|alembic|schema" },
+    { "focus": "security", "pattern": "auth|permission|token|secret|credential" },
+    { "focus": "dataContract", "pattern": "invoice|payment|billing|money" }
+  ]
+}

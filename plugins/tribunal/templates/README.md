@@ -15,6 +15,7 @@ that live in that repo, not in the plugin:
 | [`review-profile.backend.json`](review-profile.backend.json) | `.claude/review-profile.json` in a backend repo |
 | [`review-profile.frontend.json`](review-profile.frontend.json) | `.claude/review-profile.json` in a frontend repo |
 | [`review-profile.e2e.json`](review-profile.e2e.json) | `.claude/review-profile.json` in a browser end-to-end test suite |
+| [`review-profile.python.json`](review-profile.python.json) | `.claude/review-profile.json` in a Python repo (the Rust engine only) |
 | [`review-rules.md`](review-rules.md) | `.claude/review-rules.md` |
 | [`review-harness.json`](review-harness.json) | `~/.claude/review-harness.json`, on your machine only |
 | [`check.sh`](check.sh) | nothing, run it where it is (needs `node` and `python3`) |
@@ -22,9 +23,11 @@ that live in that repo, not in the plugin:
 
 ## Steps
 
-1. **Pick the reviewer kind.** `backend`, `frontend` or `e2e`. The reviewer
+1. **Pick the reviewer kind.** `backend`, `frontend`, `e2e` or `python`. The reviewer
    personas carry stack knowledge for Node, Express and Prisma (`backend`),
-   React (`frontend`) and Playwright test suites (`e2e`). A repo on another
+   React (`frontend`), Playwright test suites (`e2e`) and Python (`python`,
+   framework-neutral: Django, FastAPI, Flask and SQLAlchemy are examples, not
+   assumptions). A repo on another
    stack gets a working review, but its reviewers know nothing about that
    stack's traps until you write them into the rules file (step 3).
 2. **Copy the profile and edit it.** Every field:
@@ -34,7 +37,7 @@ that live in that repo, not in the plugin:
    | `schemaVersion` | Always `1` |
    | `project` | A short name, used in run records |
    | `repo` | `owner/name` of the repo being reviewed |
-   | `reviewer` | `backend`, `frontend` or `e2e` |
+   | `reviewer` | `backend`, `frontend`, `e2e` or `python` |
    | `baseBranch` | The branch PRs merge into |
    | `deployBranches` | Branches whose PRs are deployments (staging, production). Tribunal refuses those. `[]` if there are none |
    | `foci` | One sentence per lens. Required: `correctness`, `dataContract`, `security`, `performance`, `errorHandling`. Optional: `migration`. Keep the sentences different from each other, and do not add other keys |
@@ -90,7 +93,12 @@ matches the app.
 
 ## What a profile cannot do yet
 
-Another reviewer kind (a Python service, a mobile app) needs a new persona and a
+Another reviewer kind (a Go service, a mobile app) needs a new persona and a
 methodology template in tribunal, not a profile. The profile loader refuses
-any `reviewer` other than `backend`, `frontend` and `e2e`, so this fails loudly
-instead of borrowing another stack's reviewer.
+any `reviewer` other than `backend`, `frontend`, `e2e` and `python`, so this
+fails loudly instead of borrowing another stack's reviewer.
+
+The `python` kind is read by the Rust engine only. The Workflow fallback
+refuses `reviewer: "python"`, and `templates/check.sh`, which runs the
+Workflow's loader, refuses a Python profile too. Skip step 4 for it and rely
+on the `--preflight` run of step 7, which uses the Rust loader.

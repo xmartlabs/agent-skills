@@ -5,7 +5,7 @@ Back to the [Tribunal README](../README.md).
 ## Which repo it reviews
 
 A review runs against one repo, and that repo needs a project profile: a small
-JSON file with the reviewer kind (`backend` or `frontend`), the lens foci, the
+JSON file with the reviewer kind (`backend`, `frontend`, `e2e` or `python`), the lens foci, the
 high-risk surface, the base and deploy branches, and the sibling repos a code
 anchor may point into. Tribunal reads it from `.claude/review-profile.json` in
 the reviewed repo, at the PR's base branch, so a PR cannot change the rules it
@@ -32,7 +32,7 @@ removed: the loader still accepts it and nothing reads it.
 
 `projectRules` names the repo's own review rules, usually
 `.claude/review-rules.md`, read at the same ref as the profile. The plugin's
-methodology (`methodology/templates/backend.md`, `frontend.md` and `e2e.md`) has named
+methodology (`methodology/templates/backend.md`, `frontend.md`, `e2e.md` and `python.md`) has named
 slots with generic text, and a `tribunal/<slot>` block in that file replaces the
 slot's text for this repo. `skills/review-pr/scripts/assemble-methodology.mjs`
 builds the file a review reads, and every row records the rules' sha256. Without
@@ -182,7 +182,8 @@ That file belongs to the machine and never ships with the plugin:
 
 To add a repo, start from the profile in [`templates/`](../templates/README.md),
 change `repo` and whatever differs, check it with `templates/check.sh`, and commit
-it to that repo as `.claude/review-profile.json`. One limit: the reviewer personas still carry the stack knowledge they
+it to that repo as `.claude/review-profile.json`. One limit: the reviewer personas carry the stack knowledge they
 were written for (Node, Express and Prisma for `backend`, React for
-`frontend`). A repo on another stack can have a profile, but its reviewers do
-not know that stack yet.
+`frontend`, Playwright for `e2e`, Python for `python`). A repo on another stack
+can have a profile, but its reviewers do not know that stack yet. The `python`
+kind runs on the Rust engine only: the Workflow fallback refuses it.

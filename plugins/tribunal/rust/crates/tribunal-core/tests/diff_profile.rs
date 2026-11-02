@@ -173,9 +173,17 @@ fn normalize_message(s: &str) -> String {
     out
 }
 
+/// Declared difference: the port also admits the reviewer kind `python`, so
+/// the `validateProfile` message that lists the kinds names it and the
+/// script's does not. This writes the script's list on both sides. Witness:
+/// `declared_reviewer_kind_python`.
+fn normalize_kinds(s: &str) -> String {
+    s.replace("backend, frontend, e2e, python", "backend, frontend, e2e")
+}
+
 fn normalize(v: &Value) -> Value {
     match v {
-        Value::String(s) => Value::String(normalize_message(s)),
+        Value::String(s) => Value::String(normalize_kinds(&normalize_message(s))),
         Value::Array(a) => Value::Array(a.iter().map(normalize).collect()),
         Value::Object(m) => {
             Value::Object(m.iter().map(|(k, v)| (k.clone(), normalize(v))).collect())
@@ -1573,8 +1581,10 @@ fn lens_routing_matches_js() {
     compare("lensAgentFor", &calls, rust, js);
 
     let calls = vec![json!({"fn": "constants", "args": []})];
+    // `python` is declared in `declared_reviewer_kind_python`.
     let agents: Map<String, Value> = REVIEWER_AGENTS
         .iter()
+        .filter(|(k, _)| *k != "python")
         .map(|(k, a)| (k.to_string(), json!(a)))
         .collect();
     let rust = vec![Ok(json!({"AGENT_NS": AGENT_NS, "REVIEWER_AGENTS": agents}))];
@@ -2483,6 +2493,53 @@ fn profile_coercions_match_js() {
         .collect();
     let js = oracle_raw("PROFILE-LOOKUP", &exports, &[], &calls);
     compare("validateProfile (JSON text)", &calls, rust, js);
+}
+
+/// Declared: the reviewer kind `python`. The port admits it and routes it to
+/// `tribunal:py-code-review-expert`; the Workflow refuses the profile, and
+/// `lensAgentFor` has no agent for it.
+#[test]
+fn declared_reviewer_kind_python() {
+    let mut profile = json!({
+        "schemaVersion": 1,
+        "project": "Acme",
+        "repo": "acme/api",
+        "reviewer": "python",
+        "baseBranch": "development",
+        "deployBranches": [],
+        "foci": {
+            "correctness": "c", "dataContract": "d", "security": "s",
+            "performance": "p", "errorHandling": "e"
+        },
+        "highRiskSurface": "auth",
+        "crossRepoAnchors": []
+    });
+    let calls = [
+        json!({"fn": "validateProfile", "args": [profile.clone(), "acme/api"]}),
+        json!({"fn": "lensAgentFor", "args": [{"reviewer": "python"}]}),
+    ];
+    let validate = oracle_raw("PROFILE-LOOKUP", &["validateProfile"], &[], &calls[..1]);
+    let route = oracle_raw(
+        "LENS-ROUTING",
+        &["lensAgentFor"],
+        &["PROFILE-LOOKUP"],
+        &calls[1..],
+    );
+
+    let js_err = validate[0].as_ref().unwrap_err();
+    assert!(
+        js_err.contains("reviewer must be one of backend, frontend, e2e, got \"python\""),
+        "{js_err}"
+    );
+    assert!(route[0].as_ref().unwrap_err().contains("no reviewer agent"));
+
+    assert!(validate_profile(&profile, &json!("acme/api")).is_ok());
+    assert_eq!(
+        lens_agent_for(&json!({"reviewer": "python"})),
+        Ok("tribunal:py-code-review-expert")
+    );
+    profile["reviewer"] = json!("backend");
+    assert!(validate_profile(&profile, &json!("acme/api")).is_ok());
 }
 
 /// Declared: a reviewer kind that names an `Object.prototype` member finds an
