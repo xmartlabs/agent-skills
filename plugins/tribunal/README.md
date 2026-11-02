@@ -238,9 +238,10 @@ downloads the binary for your machine from the release pinned
 in [`rust/release.json`](rust/release.json), with your `gh` login, and refuses
 it unless its sha256 matches the pin. Later runs reuse it from
 `~/.claude/tribunal-data/bin/`. Builds exist for macOS (Apple silicon and
-Intel), Linux x64 and Windows x64. On Windows it needs `claude.exe` from the
-native installer: a Claude Code installed through npm is a `claude.cmd`, which
-the binary cannot start. With no build for your machine, or when the download
+Intel), Linux x64 and Windows x64. On Windows, Claude Code from the native
+installer or from npm both work: npm's `claude.cmd` is read for the
+`claude.exe` it starts, which the binary then runs directly. With no build for
+your machine, or when the download
 fails, the review says why and runs the Workflow instead.
 
 ## Use

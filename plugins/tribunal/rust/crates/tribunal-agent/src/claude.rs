@@ -51,6 +51,8 @@ pub enum Isolation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaudeAgent {
     pub bin: PathBuf,
+    /// Arguments before the CLI's own: the script when `bin` is node.
+    pub lead: Vec<PathBuf>,
     pub credentials: Credentials,
     pub isolation: Isolation,
     /// A directory each dispatch's event stream is saved to, as
@@ -63,6 +65,7 @@ impl ClaudeAgent {
     pub fn new(bin: impl Into<PathBuf>) -> Self {
         Self {
             bin: bin.into(),
+            lead: Vec::new(),
             credentials: Credentials::Session,
             isolation: Isolation::Isolated,
             transcripts: None,
@@ -82,6 +85,21 @@ impl ClaudeAgent {
             agent.credentials = Credentials::ApiKey(key);
         }
         agent
+    }
+
+    /// On Windows, points `bin` at what an npm or pnpm `claude.cmd` starts,
+    /// since that launcher cannot carry the CLI's arguments (see
+    /// [`crate::launch`]). Elsewhere it changes nothing. An error says why
+    /// no dispatch could start, before any work is done.
+    pub fn resolve_launcher(&mut self) -> Result<(), String> {
+        #[cfg(windows)]
+        {
+            let path = std::env::var_os("PATH");
+            let found = crate::launch::resolve(&self.bin, path.as_deref())?;
+            self.bin = found.program;
+            self.lead = found.lead;
+        }
+        Ok(())
     }
 
     /// The command line, without the binary. `--agent` is never used: on
@@ -164,7 +182,8 @@ impl Agent for ClaudeAgent {
             ));
         }
         let mut cmd = Command::new(&self.bin);
-        cmd.args(self.args(req))
+        cmd.args(&self.lead)
+            .args(self.args(req))
             .env_clear()
             .envs(self.env(std::env::vars_os()))
             .current_dir(&req.cwd)
@@ -229,11 +248,11 @@ impl Agent for ClaudeAgent {
     }
 }
 
-/// Rust looks a bare name up in PATH as `<name>.exe` only, and refuses most
-/// arguments for a `.cmd`, so the npm install's `claude.cmd` cannot run here.
+/// `resolve_launcher` already swapped an npm `claude.cmd` for its target, so
+/// a spawn that still fails found neither on PATH.
 #[cfg(windows)]
-const SPAWN_HINT: &str =
-    " (tribunal needs claude.exe from the native installer, or TRIBUNAL_CLAUDE_BIN pointing at it)";
+const SPAWN_HINT: &str = " (tribunal needs claude.exe, or the claude.cmd an npm install puts on \
+     PATH, or TRIBUNAL_CLAUDE_BIN pointing at claude.exe)";
 #[cfg(not(windows))]
 const SPAWN_HINT: &str = "";
 

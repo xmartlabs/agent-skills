@@ -167,6 +167,17 @@ fn plugin_root() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.."))
 }
 
+/// The agent every subcommand dispatches with. When the `claude` it would
+/// start cannot run, the reason is printed and the command ends here.
+fn claude_agent() -> Result<ClaudeAgent, ExitCode> {
+    let mut agent = ClaudeAgent::from_env(|k| std::env::var(k).ok());
+    agent.resolve_launcher().map_err(|e| {
+        eprintln!("tribunal: {e}");
+        ExitCode::FAILURE
+    })?;
+    Ok(agent)
+}
+
 /// Prints one line to stderr when each dispatch starts and one when it ends,
 /// so a run can be followed while it is in flight.
 struct Progress<A> {
@@ -412,7 +423,10 @@ async fn post_main(argv: &[String]) -> ExitCode {
     };
     let rt = runtime();
     let agent = Progress {
-        inner: ClaudeAgent::from_env(|k| std::env::var(k).ok()),
+        inner: match claude_agent() {
+            Ok(a) => a,
+            Err(code) => return code,
+        },
         started: std::time::Instant::now(),
     };
     let mut logs = Vec::new();
@@ -481,7 +495,10 @@ async fn selfcheck_main(argv: &[String]) -> ExitCode {
     }
     let rt = runtime();
     let agent = Progress {
-        inner: ClaudeAgent::from_env(|k| std::env::var(k).ok()),
+        inner: match claude_agent() {
+            Ok(a) => a,
+            Err(code) => return code,
+        },
         started: std::time::Instant::now(),
     };
     let mut logs = Vec::new();
@@ -664,7 +681,10 @@ async fn main() -> ExitCode {
         }
     };
     let rt = runtime();
-    let mut agent = ClaudeAgent::from_env(|k| std::env::var(k).ok());
+    let mut agent = match claude_agent() {
+        Ok(a) => a,
+        Err(code) => return code,
+    };
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
