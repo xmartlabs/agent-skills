@@ -562,8 +562,17 @@ Pipeline differences from the workflow, on purpose:
   after the report, where the workflow does it inside the persist step.
 
 `tribunal-agent` runs each child isolated by default
-(`--setting-sources project --strict-mcp-config`): the operator's global
-CLAUDE.md, plugins, skills and MCP servers stay out of a lens. On claude 2.1.308
+(`--setting-sources "" --strict-mcp-config`): the operator's global
+CLAUDE.md, plugins, skills and MCP servers stay out of a lens, and so does the
+reviewed repository's `.claude/`. A child's working directory is the checkout of
+the pull request, so its project settings are the PR's own: until 0.1.8 a lens
+loaded them, and a hook, an `env` entry or an MCP server added by the PR ran on
+the reviewer's machine. The post step's compose child needs the operator's
+skills (homosapiens), so it loads `--setting-sources user`, which still leaves
+the PR's project and local settings out. Checked on claude 2.1.316 with a
+planted hook, `env` entry, `.mcp.json` server and `CLAUDE.md`: none of them
+loads either way. The repository's conventions reach a lens through
+`conventionFiles`, as before. On claude 2.1.308
 a one-file task loaded 4,570 input tokens isolated and 188,430 inheriting
 everything. Workflow subagents inherit, so this is a behavior change, and the
 A/B below (n=2, one PR) has not measured what it does to recall. Two CLI facts
