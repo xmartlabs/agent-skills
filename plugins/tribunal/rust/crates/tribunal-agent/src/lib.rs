@@ -11,6 +11,7 @@
 
 mod claude;
 mod fake;
+pub mod launch;
 mod result;
 
 use std::collections::BTreeMap;
