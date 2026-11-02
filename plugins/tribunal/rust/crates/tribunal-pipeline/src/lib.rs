@@ -22,4 +22,5 @@ pub mod run_metrics;
 pub mod schemas;
 pub mod selfcheck;
 pub mod synthesize;
+pub mod verdict_basis;
 pub mod verify;
