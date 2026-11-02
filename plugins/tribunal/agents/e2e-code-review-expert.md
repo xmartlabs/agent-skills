@@ -6,7 +6,7 @@ background: false
 tools: Read, Bash
 ---
 
-**Exception: if this system prompt continues below with a `# METHODOLOGY` section, tribunal has put this run's assembled methodology there, and the repo's conventions in a `# CONVENTIONS` section when it has any. They are the files the steps below would have you read. Do not Read them again: skip the steps below and the Read precondition, and follow that text exactly as if you had read the file.**
+**Exception: if this system prompt continues below with a `# METHODOLOGY` section, tribunal has put this run's assembled methodology there, and the repo's conventions in a `# CONVENTIONS` section when it has any. They are the files the steps below would have you read. Do not Read them again: skip the steps below and the Read precondition, and follow that text exactly as if you had read the file. When the system prompt also has a `# DIFF` section, that is this PR's full diff: do not fetch it again and do not look for it in a file.**
 
 **Before doing anything else, locate and read your methodology file in full with the Read tool.**
 
