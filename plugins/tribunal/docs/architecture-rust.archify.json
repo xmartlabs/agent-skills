@@ -96,7 +96,7 @@
       "type": "external",
       "label": "Repo profile",
       "sublabel": "DETERMINISTIC · Rust + gh, at the base ref",
-      "tag": "rules and conventions",
+      "tag": "rules, conventions, documentation bundles",
       "pos": [
         60,
         300
@@ -186,7 +186,7 @@
       "type": "backend",
       "label": "lens plan",
       "sublabel": "DETERMINISTIC · Rust",
-      "tag": "split by churn, riskPaths force foci",
+      "tag": "by churn; each forced focus gets a lens",
       "pos": [
         380,
         560
@@ -215,7 +215,7 @@
       "id": "lens1",
       "type": "frontend",
       "label": "lens 1",
-      "sublabel": "MODEL · sonnet, code-review-expert",
+      "sublabel": "MODEL · sonnet, backend/frontend/e2e/python",
       "tag": "own files, callers, facts",
       "pos": [
         60,
@@ -231,7 +231,7 @@
       "type": "frontend",
       "label": "lens N",
       "sublabel": "MODEL · sonnet, in parallel",
-      "tag": "N set by churn, in parallel",
+      "tag": "N in parallel, after a cache warm-up",
       "pos": [
         380,
         820
@@ -320,7 +320,7 @@
       "id": "tsc",
       "type": "backend",
       "label": "grounded typecheck",
-      "sublabel": "DETERMINISTIC · Rust runs tsc (npm/npx)",
+      "sublabel": "DETERMINISTIC · Rust runs tsc, mypy or pyright",
       "pos": [
         380,
         1326
@@ -329,7 +329,7 @@
         280,
         64
       ],
-      "tag": "tsc hit confirms, clean tsc kills"
+      "tag": "a hit confirms; only a clean tsc kills"
     },
     {
       "id": "sweep",
@@ -350,8 +350,8 @@
       "id": "critic",
       "type": "frontend",
       "label": "completeness-critic",
-      "sublabel": "MODEL · sonnet, gaps become findings",
-      "tag": "what did no lens read?",
+      "sublabel": "MODEL · sonnet, asked for 20 tool calls at most",
+      "tag": "audits unnamed files, lens gaps, siblings",
       "pos": [
         380,
         1450
@@ -426,7 +426,7 @@
       "type": "backend",
       "label": "tallyVotes",
       "sublabel": "DETERMINISTIC · Rust",
-      "tag": "weighted refute fraction, kill at 0.45",
+      "tag": "weighted refute fraction, kill at 0.45, a lower severity needs two votes",
       "pos": [
         380,
         1740
@@ -456,7 +456,7 @@
       "type": "backend",
       "label": "verdictFor",
       "sublabel": "DETERMINISTIC · Rust, fixed rules",
-      "tag": "APPROVE, COMMENT or REQUEST CHANGES",
+      "tag": "APPROVE, COMMENT or REQUEST CHANGES; an unread risk path blocks APPROVE",
       "pos": [
         380,
         1910
@@ -524,7 +524,7 @@
         280,
         64
       ],
-      "tag": "plus the completed marker"
+      "tag": "per-lens cost, stage seconds, completed marker"
     },
     {
       "id": "post",
@@ -555,6 +555,36 @@
         64
       ],
       "tag": "on the PR"
+    },
+    {
+      "id": "override",
+      "type": "backend",
+      "label": "tribunal override",
+      "sublabel": "DETERMINISTIC · Rust, run by you",
+      "tag": "your call on one finding, with a reason",
+      "pos": [
+        380,
+        2420
+      ],
+      "size": [
+        280,
+        76
+      ]
+    },
+    {
+      "id": "cost",
+      "type": "backend",
+      "label": "tribunal cost",
+      "sublabel": "DETERMINISTIC · Rust, reads the rows",
+      "tag": "where the money went, by agent kind and lens",
+      "pos": [
+        60,
+        2420
+      ],
+      "size": [
+        280,
+        76
+      ]
     }
   ],
   "boundaries": [
@@ -584,7 +614,7 @@
     },
     {
       "kind": "region",
-      "label": "Review",
+      "label": "Review, one shared system prompt",
       "wraps": [
         "lens1",
         "lensn",
@@ -627,6 +657,14 @@
         "row",
         "post",
         "github"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "After the run",
+      "wraps": [
+        "override",
+        "cost"
       ]
     }
   ],
@@ -833,6 +871,19 @@
       "id": "post-github",
       "from": "post",
       "to": "github"
+    },
+    {
+      "id": "override-row",
+      "from": "override",
+      "to": "row",
+      "label": "direction or severity",
+      "variant": "dashed"
+    },
+    {
+      "id": "row-cost",
+      "from": "row",
+      "to": "cost",
+      "label": "read"
     }
   ]
 }

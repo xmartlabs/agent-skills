@@ -97,7 +97,10 @@ To report a vulnerability, see [SECURITY.md](../../SECURITY.md).
    fail. Nothing is judged at this step; the facts tell the lenses where to look.
 2. **Lenses**: independent reviewers run in parallel over a partition of the
    changed files, so coverage is total and no two lenses read the same code.
-   Each gets the callers list and the syntax facts.
+   Each gets the callers list and the syntax facts. On the Rust engine each
+   also says what it did not reach and why, and a `riskPaths` file that every
+   lens holding it left unread for lack of budget keeps the verdict from
+   APPROVE.
 3. **Gaps**: a completeness critic asks what no lens read. A gap it traces in
    the code becomes a finding and goes through the same checks and panel as a
    lens finding. The Rust engine hands the critic the changed files no finding
@@ -277,7 +280,7 @@ A review runs against one repo, and that repo needs a profile, `.claude/review-p
 | **React and TypeScript frontend** | **Tested.** Same. |
 | **Playwright and TypeScript end-to-end test suite** (`reviewer: "e2e"`) | **Tested on one suite.** Its reviewer checks the tests themselves: whether a test can fail for the bug it names, waits and locators, route mocks, secrets in traces, writes to real environments and retries. |
 | Another JavaScript or TypeScript stack (Nest, Fastify, Next.js, plain JavaScript, a different ORM) | Should work, **not measured**. Every step runs. The default text still talks about Prisma, Zod and BullMQ, or React, so put your stack's own traps in `review-rules.md`. |
-| **Python** (`reviewer: "python"`; Django, FastAPI, Flask, SQLAlchemy, scripts and workers) | **Not measured: no run was tried on a Python repo.** Its reviewer knows the usual Python traps (mutable defaults, naive datetimes, blocking calls in async code, unsafe deserialization, ORM N+1, migrations) but nothing about your codebase, so put that in `review-rules.md`. The Workflow fallback refuses this kind; only the Rust engine runs it. Three steps do nothing (below). |
+| **Python** (`reviewer: "python"`; Django, FastAPI, Flask, SQLAlchemy, scripts and workers) | **Not measured: only five smoke runs on small PRs, with no known defects to score them against.** Its reviewer knows the usual Python traps (mutable defaults, naive datetimes, blocking calls in async code, unsafe deserialization, ORM N+1, migrations) but nothing about your codebase, so put that in `review-rules.md`. The Workflow fallback refuses this kind; only the Rust engine runs it, and only from the next tribunal-rust binary: the one pinned today predates it. Three steps do nothing (below). |
 | Java, Go, mobile, anything else | Runs if you register the repo as `backend`, `frontend` or `e2e`, but **no run was tried** on such a repo, three steps do nothing (below), and no reviewer is written for your language. Replace the intro and traps in your rules file. |
 
 Three steps read the code itself rather than the diff, and they only

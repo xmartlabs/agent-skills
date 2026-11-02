@@ -78,7 +78,7 @@
       "type": "backend",
       "label": "Prepare",
       "sublabel": "DETERMINISTIC · Rust, git, gh + one haiku call",
-      "tag": "profile, diff, worktree, callers; haiku reads the thread",
+      "tag": "profile, conventions, diff, worktree, callers; haiku reads the thread",
       "pos": [
         380,
         300
@@ -93,7 +93,7 @@
       "type": "frontend",
       "label": "Lenses",
       "sublabel": "MODEL · sonnet, N in parallel",
-      "tag": "each reads its files and returns findings",
+      "tag": "backend, frontend, e2e or python reviewer, one shared prompt",
       "pos": [
         380,
         430
@@ -107,8 +107,8 @@
       "id": "checks",
       "type": "backend",
       "label": "Mechanical checks",
-      "sublabel": "DETERMINISTIC · Rust, tsc + one haiku call",
-      "tag": "in the diff? quote there? tsc? haiku merges repeats",
+      "sublabel": "DETERMINISTIC · Rust, type check + one haiku call",
+      "tag": "in the diff? quote there? tsc, mypy or pyright? haiku merges repeats",
       "pos": [
         380,
         560
@@ -123,7 +123,7 @@
       "type": "frontend",
       "label": "Completeness critic",
       "sublabel": "MODEL · sonnet",
-      "tag": "what did no lens read?",
+      "tag": "audits unnamed files, lens gaps and siblings of the change",
       "pos": [
         380,
         690
@@ -168,7 +168,7 @@
       "type": "backend",
       "label": "Tally and verdict",
       "sublabel": "DETERMINISTIC · Rust",
-      "tag": "weighted vote, fixed verdict rules",
+      "tag": "weighted vote, fixed verdict rules, no APPROVE past an unread risk path",
       "pos": [
         380,
         950
@@ -286,7 +286,7 @@
       "type": "database",
       "label": "metrics row",
       "sublabel": "metrics.jsonl, run JSON, report",
-      "tag": "cost summed from every call",
+      "tag": "cost from every call and per lens, seconds per stage",
       "pos": [
         760,
         1210

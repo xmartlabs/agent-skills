@@ -6,7 +6,9 @@ Back to the [Tribunal README](../README.md).
 
 Every run appends one row to `~/.claude/tribunal-data/metrics.jsonl`: the
 findings, every refuter's vote, the verdict, the cost, the agent count, and a
-hash of the harness code that produced it. Reviews are the product; this file is
+hash of the harness code that produced it. On the Rust engine the row also holds
+the price of each lens and agent kind, the seconds each stage took, and which
+type checker grounded the review. Reviews are the product; this file is
 what makes the product checkable.
 
 Without it the harness would be unfalsifiable: it would emit confident reviews
@@ -33,6 +35,10 @@ and no one could say whether they were any good. With it:
   `harnessVersion`, so "is this better than before" is answerable rather than
   guessed.
 - **Cost is measured, not estimated.** The figures above come from these rows.
+
+`tribunal cost` prints where the money went, from these rows. `tribunal override`
+records your own call on one finding of a run (a panel error, or a real finding
+at a lower severity), with the reason. Both need the Rust binary.
 
 Two consequences for you:
 
