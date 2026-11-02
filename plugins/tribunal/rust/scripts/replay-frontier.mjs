@@ -3,7 +3,7 @@
 //
 // A client's data does not ship in the plugin: profiles live in each repo, and
 // recorded runs, fixtures, corpus, specs and the release log live in the
-// documentation repo's review-harness-data/ (eval/paths.mjs). `mustNotExist`
+// documentation repo's review-harness-data/ (gate-paths.mjs). `mustNotExist`
 // names the paths that used to hold them, so none comes back. Inside the plugin,
 // client names and client domain terms are a ratchet: a file may keep at most
 // the count recorded in `allowed`, a file not listed may not mention the client
@@ -15,14 +15,14 @@
 // coupling, such as a rule written for one codebase's shape, has no token to
 // find; that half is tracked in the coupling inventory, not here.
 //
-// Usage: node eval/replay-frontier.mjs [--tighten]   (--tighten prints the new
+// Usage: node rust/scripts/replay-frontier.mjs [--tighten]   (--tighten prints the new
 // allowlist when counts went down)
 
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
-import { HARNESS_DATA, PLUGIN_ROOT } from "./paths.mjs";
+import { HARNESS_DATA, PLUGIN_ROOT } from "./gate-paths.mjs";
 
-const SPEC = JSON.parse(readFileSync(join(PLUGIN_ROOT, "skills/review-pr/eval/frontier.json"), "utf8"));
+const SPEC = JSON.parse(readFileSync(join(PLUGIN_ROOT, "rust/scripts/frontier.json"), "utf8"));
 // The client terms are not in this repository: listing them here would name the
 // client. They live in the test-data directory as frontier-tokens.json (a JSON
 // array of regular expressions), or at TRIBUNAL_FRONTIER_TOKENS. Without the
@@ -43,7 +43,7 @@ const check = (name, cond, detail) => {
 };
 
 // The spec file holds the token patterns themselves, so it is not scanned.
-const SELF = "skills/review-pr/eval/frontier.json";
+const SELF = "rust/scripts/frontier.json";
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
     const abs = join(dir, name);

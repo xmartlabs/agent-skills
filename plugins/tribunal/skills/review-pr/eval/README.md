@@ -27,6 +27,8 @@ after any harness change:
 ```
 node eval/check-mirror.mjs               # the Workflow vs the copies lib/ and scripts/ keep
 for f in eval/replay-*.mjs; do node "$f" || echo "FAILED: $f"; done
+node ../../rust/scripts/replay-rust-engine.mjs   # the launcher; with replay-frontier, run by the release gate
+node ../../rust/scripts/replay-frontier.mjs      # client-name ratchet; the release gate is rust/scripts/release.mjs
 node eval/analyze-agent-cost.mjs      # where the money goes — reads runs already on disk, 0 tokens
 node eval/refine-attribution.mjs      # the round-0 tally the row throws away
 node eval/refuter-package.mjs         # would a pre-assembled package have covered what refuters read?

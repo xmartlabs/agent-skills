@@ -442,6 +442,7 @@ fn rust_panel(c: &Value, rt: &tokio::runtime::Runtime) -> Value {
         diff_block: "DIFF BLOCK",
         section_index: (!idx.is_null()).then_some(&idx),
         diff_path: Some("/tmp/x.patch"),
+        critic_gap: None,
         blast_radius: None,
         file_count: c["fileCount"].as_f64().unwrap(),
         flags: PanelFlags {

@@ -1,0 +1,27 @@
+Completeness critic for PR #{{prNumber}} in repo {{repo}} — do NOT re-review. Audit the gaps the lenses left, and only those.
+
+The diff is already on disk at {{diffPath}}. Read it there. A checkout PINNED to {{head}} is your working directory: read every other source file in it, never through `gh`, `git show` of another ref, or any other tree. Do not fetch the diff again. Use at most 20 tool calls in total; stop reading when you reach that, and name what you left unchecked.
+
+IF YOU CONTRADICT A FINDING BELOW, QUOTE THE CODE THAT REFUTES IT — word for word, copied from the file, naming the file and line. A contradiction without a quote is not reportable: write "could not verify" instead.
+
+Changed files: {{files}}
+
+Findings the lenses raised (not adjudicated yet; a refutation panel judges them after you):
+{{raised}}
+
+Your primary task is computed, not asked of you.
+
+Files no lens raised a finding on (zero coverage), worked out by comparing the changed files with the findings above:
+{{uncovered}}
+
+What the lenses reported they did not reach:
+{{notReached}}
+
+Code outside this PR that shares a callee with the changed lines, or writes a model they write, found by grep at the pinned head (a heuristic list: it can miss a sibling and include a harmless one):
+{{siblings}}
+
+Audit the first two lists first, in that order. Read each file's part of the diff and the code around it, and report a defect only if you trace it. Then go through the sibling list: for each entry, ask whether the defect this PR introduces or fixes also applies there, because the PR did not touch it. Spend what is left of your calls on a risk dimension no lens covered. If the lists are empty, say so in one sentence.
+
+Return two things.
+- summary: 3-5 sentences, or one sentence if nothing is missing. Any claim about what the code does carries its quote; anything you could not check is named as unchecked rather than asserted either way.
+- findings: one entry per DEFECT you found that the list above does not already name, in the same shape a lens returns. Only a defect you traced in the code, with evidence quoted word for word and every line the claim depends on in verifiedBy; severity by the methodology's rubric. File it at a file this PR changes: for a break in an unchanged caller, anchor it at the changed declaration and put the caller's line in verifiedBy, because a finding filed on a file outside this PR is dropped before review. Something you could not check is not a finding: leave it in the summary. An empty array is the normal answer.

@@ -30,7 +30,9 @@ use crate::context::{
 };
 use crate::decisions::is_retest_target;
 use crate::live::{LiveIo, PanelAgents};
-use crate::panel::{panel_phase, PanelEnv, PanelFlags, PanelOutcome, OUTPUT_CEILING_DEFAULT};
+use crate::panel::{
+    panel_phase, CriticGap, PanelEnv, PanelFlags, PanelOutcome, OUTPUT_CEILING_DEFAULT,
+};
 use crate::prompts::{
     lens_dispatch_prompt, lens_system_prompt, DiffExposure, LensPromptInput, LensReference,
     SHARED_REFERENCE_NOTICE,
@@ -143,6 +145,9 @@ impl Default for DispatchPolicy {
 
 #[derive(Debug)]
 pub struct ReviewOutcome {
+    /// Wall-clock seconds of the context and lenses stages.
+    pub context_seconds: f64,
+    pub lenses_seconds: f64,
     pub prepared: Prepared,
     /// The bot-vetting pass's answer, when it ran.
     pub bot_vetting: Option<Value>,
@@ -209,6 +214,7 @@ pub async fn run_review<A: Agent>(
     policy: &DispatchPolicy,
     logs: &mut Vec<String>,
 ) -> Result<RunOutcome, String> {
+    let context_started = std::time::Instant::now();
     let prepared = prepare(rt, args).await?;
     logs.extend(prepared.logs.iter().cloned());
     let rc = match context_phase(agent, rt, args, &prepared, logs).await? {
@@ -216,6 +222,8 @@ pub async fn run_review<A: Agent>(
         ContextOutcome::Preflight { summary } => return Ok(RunOutcome::Preflight { summary }),
         ContextOutcome::Ready(rc) => rc,
     };
+    let context_seconds = context_started.elapsed().as_secs_f64();
+    let lenses_started = std::time::Instant::now();
     let profile = &prepared.profile;
     let lens_agent = lens_agent_for(profile)?.to_owned();
     let mut definition = agent_def::load(&rt.plugin_root, &lens_agent)?;
@@ -338,6 +346,8 @@ pub async fn run_review<A: Agent>(
         );
     }
     Ok(RunOutcome::Reviewed(Box::new(ReviewOutcome {
+        context_seconds,
+        lenses_seconds: lenses_started.elapsed().as_secs_f64(),
         prepared,
         bot_vetting,
         context: rc,
@@ -376,6 +386,10 @@ async fn dispatch_one<A: Agent>(
 
 #[derive(Debug)]
 pub struct VerifyOutcome {
+    /// Wall-clock seconds of the dedup stage and of the panel stage, which
+    /// excludes the completeness critic (`panel.critic_seconds`).
+    pub dedup_seconds: f64,
+    pub panel_seconds: f64,
     pub dedup: Dedup,
     pub typecheck: Option<TypecheckRun>,
     pub grounded: Grounded,
@@ -419,6 +433,7 @@ pub async fn verify_phase<A: Agent>(
 ) -> Result<VerifyOutcome, String> {
     let all = &review.candidates.all_candidates;
     let mut dispatches = Vec::new();
+    let dedup_started = std::time::Instant::now();
     let dedup = if all.len() >= 2 {
         let scribe = agent_def::load(&rt.plugin_root, "tribunal-scribe")?;
         let res = dispatch_one(
@@ -441,6 +456,8 @@ pub async fn verify_phase<A: Agent>(
             ..Dedup::default()
         }
     };
+    let dedup_seconds = dedup_started.elapsed().as_secs_f64();
+    let panel_started = std::time::Instant::now();
     let rc = &review.context;
     let pr_files = &rc.plan.files;
     let eligible = dedup.panel_candidates.iter().any(|c| {
@@ -603,6 +620,9 @@ pub async fn verify_phase<A: Agent>(
     };
     let mut exposure = DiffExposure::default();
     let diff_block = rc.delivery.refuter_diff_block(&mut exposure)?;
+    let not_reached = &review.candidates.lens_not_reached;
+    let uncovered = uncovered_files(pr_files, all);
+    let siblings = critic_siblings(rt, rc, pinned).await;
     let claims = &rc.decisions.retest_claims;
     let retest = |f: &Value| is_retest_target(claims, f);
     let spent = || io.spent();
@@ -622,6 +642,11 @@ pub async fn verify_phase<A: Agent>(
         diff_block: &diff_block,
         section_index: rc.section_index.as_ref(),
         diff_path: rc.delivery.diff_path.as_deref(),
+        critic_gap: Some(CriticGap {
+            not_reached,
+            uncovered: &uncovered,
+            siblings: &siblings,
+        }),
         blast_radius: rc.blast_radius.as_ref(),
         file_count: rc.plan.file_count,
         flags,
@@ -642,6 +667,7 @@ pub async fn verify_phase<A: Agent>(
         logs,
     )
     .await?;
+    let panel_seconds = (panel_started.elapsed().as_secs_f64() - panel.critic_seconds).max(0.0);
     dispatches.extend(io.dispatches.into_inner().expect("lock"));
     let verdicts = partition_results(
         &panel.verified,
@@ -650,6 +676,8 @@ pub async fn verify_phase<A: Agent>(
         logs,
     );
     Ok(VerifyOutcome {
+        dedup_seconds,
+        panel_seconds,
         dedup,
         typecheck,
         grounded,
@@ -668,6 +696,7 @@ pub async fn verify_phase<A: Agent>(
 
 #[derive(Debug)]
 pub struct SynthesisOutcome {
+    pub synthesize_seconds: f64,
     pub prior: PriorCheck,
     pub prior_re_examined: Vec<Value>,
     pub surviving: Vec<Value>,
@@ -680,6 +709,48 @@ pub struct SynthesisOutcome {
     /// budget, which keep the verdict from APPROVE.
     pub unread_risk_files: Vec<String>,
     pub dispatches: Vec<(String, DispatchResult)>,
+}
+
+/// The changed files no candidate names, worked out here so the critic is
+/// handed the set difference instead of asked to compute it.
+fn uncovered_files(files: &[String], candidates: &[Value]) -> Vec<String> {
+    let named: Vec<String> = candidates
+        .iter()
+        .map(|c| to_js_string(js::get(c, "file")))
+        .filter(|f| !f.is_empty())
+        .collect();
+    files
+        .iter()
+        .filter(|f| {
+            !named
+                .iter()
+                .any(|n| *f == n || f.ends_with(n.as_str()) || n.ends_with(f.as_str()))
+        })
+        .cloned()
+        .collect()
+}
+
+/// The critic's sibling list: only when the critic will run and a pinned
+/// checkout and the diff are on disk.
+async fn critic_siblings(rt: &Runtime, rc: &ReviewContext, pinned: Option<&str>) -> Vec<String> {
+    let (Some(dir), Some(diff_path)) = (pinned, rc.delivery.diff_path.as_deref()) else {
+        return Vec::new();
+    };
+    if rc.plan.file_count <= 2.0 {
+        return Vec::new();
+    }
+    let Ok(diff) = std::fs::read_to_string(diff_path) else {
+        return Vec::new();
+    };
+    let symbols = tribunal_context::siblings::changed_symbols(&diff);
+    let found = tribunal_context::siblings::find(
+        &rt.tools,
+        std::path::Path::new(dir),
+        &symbols,
+        &symbols.files,
+    )
+    .await;
+    tribunal_context::siblings::render(&found)
 }
 
 fn cross_repo_flags(profile: &Value) -> Vec<String> {
@@ -713,6 +784,7 @@ pub async fn synthesize_phase<A: Agent>(
     verify: &VerifyOutcome,
     logs: &mut Vec<String>,
 ) -> Result<SynthesisOutcome, String> {
+    let synthesize_started = std::time::Instant::now();
     let rc = &review.context;
     let plan = &rc.plan;
     let profile = &review.prepared.profile;
@@ -919,6 +991,7 @@ pub async fn synthesize_phase<A: Agent>(
         &coverage_banner(&review.candidates.lens_gaps, &unread_risk),
     );
     Ok(SynthesisOutcome {
+        synthesize_seconds: synthesize_started.elapsed().as_secs_f64(),
         prior,
         prior_re_examined: re_examined,
         surviving,
@@ -1075,6 +1148,19 @@ pub async fn run_full<A: Agent>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn uncovered_files_are_the_changed_files_no_candidate_names() {
+        let files = ["src/a.ts", "src/b.ts", "src/c.ts"].map(String::from);
+        let candidates = [
+            json!({"file": "src/a.ts"}),
+            json!({"file": "b.ts"}),
+            json!({"file": ""}),
+            json!({"title": "no file at all"}),
+        ];
+        assert_eq!(uncovered_files(&files, &candidates), vec!["src/c.ts"]);
+        assert_eq!(uncovered_files(&files, &[]), files.to_vec());
+    }
 
     #[test]
     fn an_unread_risk_file_turns_approve_into_comment_only() {

@@ -23,6 +23,7 @@ const STRENGTHEN: &str = include_str!("panel/strengthen.txt");
 const DEFENSE: &str = include_str!("panel/defense.txt");
 const JUDGE: &str = include_str!("panel/judge.txt");
 const CRITIC: &str = include_str!("panel/critic.txt");
+const CRITIC_GAP: &str = include_str!("panel/critic-gap.txt");
 const TIEBREAK: &str = include_str!("panel/tiebreak.txt");
 const EXTERNAL: &str = include_str!("panel/external.txt");
 const SWEEP: &str = include_str!("panel/sweep.txt");
@@ -319,6 +320,73 @@ pub fn critic_prompt(
     )
 }
 
+/// The gap-audit critic's prompt: the diff and the pinned checkout are already
+/// on disk, and the two lists it audits are computed by the caller.
+#[must_use]
+pub fn critic_gap_prompt(
+    base: &CriticBase,
+    diff_path: &str,
+    uncovered: &[String],
+    not_reached: &[String],
+    siblings: &[String],
+) -> String {
+    let list = |v: &[String]| {
+        if v.is_empty() {
+            "(none)".to_owned()
+        } else {
+            v.iter()
+                .map(|x| format!("- {x}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+    };
+    let raised = raised_list(base.panel_input);
+    render(
+        CRITIC_GAP,
+        &[
+            ("prNumber", &s(Some(base.pr_number))),
+            ("repo", base.repo),
+            ("head", &s(base.head)),
+            ("diffPath", diff_path),
+            ("files", &base.files.join(", ")),
+            ("raised", if raised.is_empty() { "(none)" } else { &raised }),
+            ("uncovered", &list(uncovered)),
+            ("notReached", &list(not_reached)),
+            ("siblings", &list(siblings)),
+        ],
+    )
+}
+
+/// The inputs both critic prompts share.
+pub struct CriticBase<'a> {
+    pub pr_number: &'a Value,
+    pub repo: &'a str,
+    pub head: Option<&'a Value>,
+    pub files: &'a [String],
+    pub panel_input: &'a [Value],
+}
+
+fn raised_list(panel_input: &[Value]) -> String {
+    panel_input
+        .iter()
+        .map(|f| {
+            let line = get(f, "line");
+            let at = if js::truthy(line) {
+                format!(":{}", s(line))
+            } else {
+                String::new()
+            };
+            format!(
+                "- {} ({}{at}, {})",
+                s(get(f, "title")),
+                s(get(f, "file")),
+                s(get(f, "severity"))
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// The panel-ceiling tie-break prompt. `group` is the tied findings'
 /// summaries.
 #[must_use]
@@ -401,4 +469,48 @@ pub fn sweep_prompt(diff_path: Option<&str>, files: &[String], cwd: &str) -> Str
         }
     };
     render(SWEEP, &[("diffLine", &line), ("cwd", cwd)])
+}
+
+#[cfg(test)]
+mod gap_prompt_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn render_gap(uncovered: &[String], not_reached: &[String]) -> String {
+        critic_gap_prompt(
+            &CriticBase {
+                pr_number: &json!(7),
+                repo: "acme/web-app",
+                head: Some(&json!("abc123")),
+                files: &["src/a.ts".to_owned(), "src/b.ts".to_owned()],
+                panel_input: &[
+                    json!({"title": "T", "file": "src/a.ts", "line": 3, "severity": "important"}),
+                ],
+            },
+            "/tmp/pr-7.patch",
+            uncovered,
+            not_reached,
+            &["src/c.ts:4 [shared-callee x] `x(1)`".to_owned()],
+        )
+    }
+
+    #[test]
+    fn the_gap_prompt_carries_both_computed_lists_and_the_diff_path() {
+        let p = render_gap(&["src/b.ts".to_owned()], &["db layer".to_owned()]);
+        assert!(p.contains("/tmp/pr-7.patch"));
+        assert!(p.contains("- src/b.ts"));
+        assert!(p.contains("- db layer"));
+        assert!(p.contains("- src/c.ts:4 [shared-callee x]"));
+        assert!(p.contains("- T (src/a.ts:3, important)"));
+        assert!(!p.contains("{{"));
+    }
+
+    #[test]
+    fn the_gap_prompt_never_sends_the_critic_to_gh() {
+        let p = render_gap(&[], &[]);
+        assert!(!p.contains("gh pr"));
+        assert!(!p.contains("gh api"));
+        assert!(p.contains("Use at most 20 tool calls"));
+        assert_eq!(p.matches("(none)").count(), 2);
+    }
 }
