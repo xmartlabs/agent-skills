@@ -84,6 +84,19 @@ fn composite_raw(
     deps: &[&str],
     calls: &[Value],
 ) -> Vec<Result<Value, String>> {
+    let results = recorded_composite(COMPOSITE, region, exports, deps, calls, || {
+        run_composite(region, exports, deps, calls)
+    });
+    results
+        .into_iter()
+        .map(|r| match r.get("ok") {
+            Some(v) => Ok(v.clone()),
+            None => Err(r["err"].as_str().unwrap_or_default().to_owned()),
+        })
+        .collect()
+}
+
+fn run_composite(region: &str, exports: &[&str], deps: &[&str], calls: &[Value]) -> Vec<Value> {
     let oracle_dir = oracle_path().parent().unwrap().to_path_buf();
     let plugin = oracle_dir.join("../..");
     let extract: PathBuf = plugin.join("skills/review-pr/eval/extract-pure-region.mjs");
@@ -115,12 +128,6 @@ fn composite_raw(
     let results: Vec<Value> = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(results.len(), calls.len());
     results
-        .into_iter()
-        .map(|r| match r.get("ok") {
-            Some(v) => Ok(v.clone()),
-            None => Err(r["err"].as_str().unwrap_or_default().to_owned()),
-        })
-        .collect()
 }
 
 /// A result as one comparable value, so an error on one side and a value on
