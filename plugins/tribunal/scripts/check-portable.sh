@@ -28,7 +28,7 @@ fail=0; ran=0; skipped=0
 export CLAUDE_PLUGIN_ROOT="$PLUGIN"
 export PATH="$PLUGIN/bin:$PATH"
 cd "$PLUGIN/skills/review-pr" || exit 2
-for f in eval/replay-*.mjs; do
+for f in eval/replay-*.mjs ../../rust/scripts/replay-*.mjs; do
   name=$(basename "$f")
   if node "$f" >"$SB/out.txt" 2>&1; then
     ran=$((ran + 1))
