@@ -110,7 +110,29 @@ mod tests {
         let def = load(&plugin_root(), "code-review-expert").unwrap();
         assert_eq!(def.tools, ["Read", "Bash"]);
         assert_eq!(def.model.as_deref(), Some("claude-sonnet-5-5"));
-        assert!(def.body.starts_with("**Before doing anything else"));
+        assert!(def.body.contains("**Before doing anything else"));
+    }
+
+    /// The headings `lens_system_prompt` writes are the ones each lens
+    /// definition names in its exception, and the exception comes first.
+    #[test]
+    fn every_lens_definition_knows_the_shared_system_prompt() {
+        let shared = crate::prompts::lens_system_prompt("B", "m", Some("c"));
+        for name in [
+            "code-review-expert",
+            "fe-code-review-expert",
+            "e2e-code-review-expert",
+        ] {
+            let def = load(&plugin_root(), name).unwrap();
+            assert!(def.body.starts_with("**Exception: if this system prompt continues below with a `# METHODOLOGY` section"), "{name}");
+            for heading in ["# METHODOLOGY", "# CONVENTIONS"] {
+                assert!(shared.contains(heading), "{heading}");
+                assert!(
+                    def.body.contains(&format!("`{heading}`")),
+                    "{name} {heading}"
+                );
+            }
+        }
     }
 
     #[test]

@@ -157,16 +157,48 @@ pub struct LensPromptInput<'a> {
     pub files: Option<&'a [String]>,
 }
 
-/// The whole prompt a lens is dispatched with: the methodology line, the
-/// conventions line, then `lensPrompt`.
+/// Where a lens finds the methodology and the repo's conventions.
+pub enum LensReference<'a> {
+    /// Both are files the lens reads itself: the methodology line, the
+    /// conventions line under it, then `lensPrompt`.
+    Paths {
+        methodology_line: &'a str,
+        conventions: &'a ConventionsChannel,
+    },
+    /// Both are already in the lens's system prompt (`lens_system_prompt`),
+    /// which every lens of a run shares, so the model cache is written once.
+    Shared,
+}
+
+/// The line a lens carries instead of the two file lines when the reference
+/// text is part of its system prompt.
+pub const SHARED_REFERENCE_NOTICE: &str = "REFERENCE: the review methodology, and the repo's conventions when it has any, are part of your system prompt. Do not read the methodology or conventions files.";
+
+/// The system prompt every lens of a run shares: the agent's own text, then
+/// the methodology, then the conventions when the repo has them. It must be
+/// the same bytes for each lens, because the model cache is keyed on it.
+#[must_use]
+pub fn lens_system_prompt(
+    agent_body: &str,
+    methodology: &str,
+    conventions: Option<&str>,
+) -> String {
+    let mut out = format!("{agent_body}\n\n# METHODOLOGY\n\n{methodology}\n");
+    if let Some(c) = conventions {
+        out.push_str(&format!("\n# CONVENTIONS\n\n{c}\n"));
+    }
+    out
+}
+
+/// The whole prompt a lens is dispatched with: its reference lines, then
+/// `lensPrompt`.
 ///
 /// # Errors
 /// Where the JavaScript would throw building it.
 pub fn lens_dispatch_prompt(
     input: &LensPromptInput,
     delivery: &DiffDelivery,
-    conventions: &ConventionsChannel,
-    methodology_line: &str,
+    reference: &LensReference,
     exposure: &mut DiffExposure,
 ) -> Result<String, String> {
     let mut p = json!({
@@ -184,7 +216,14 @@ pub fn lens_dispatch_prompt(
     if let Some(h) = input.high_risk_surface {
         p["highRiskSurface"] = h.clone();
     }
-    Ok(conventions.reviewer_prompt(methodology_line, &lens_prompt(&p)?))
+    let body = lens_prompt(&p)?;
+    Ok(match reference {
+        LensReference::Paths {
+            methodology_line,
+            conventions,
+        } => conventions.reviewer_prompt(methodology_line, &body),
+        LensReference::Shared => format!("{SHARED_REFERENCE_NOTICE}\n\n{body}"),
+    })
 }
 
 #[cfg(test)]
@@ -222,5 +261,17 @@ mod tests {
         );
         let args = json!({"conventionsPath": conventions, "conventionsSha256": "a".repeat(64)});
         conventions_channel(&args, &json!({"conventionFiles": ["CLAUDE.md"]})).unwrap();
+    }
+
+    #[test]
+    fn the_shared_system_prompt_is_the_body_then_the_reference_text() {
+        assert_eq!(
+            lens_system_prompt("BODY", "M", Some("C")),
+            "BODY\n\n# METHODOLOGY\n\nM\n\n# CONVENTIONS\n\nC\n"
+        );
+        assert_eq!(
+            lens_system_prompt("BODY", "M", None),
+            "BODY\n\n# METHODOLOGY\n\nM\n"
+        );
     }
 }

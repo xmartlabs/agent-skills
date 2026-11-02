@@ -268,6 +268,7 @@ pub fn kind_of(label: &str) -> Option<&'static str> {
         "judge" => "adjudicator",
         "dedup-candidates" => "dedup",
         "bot-vetting" => "bot-vetting",
+        "cache-warmup" => "warmup",
         "completeness-critic" => "critic",
         "synthesize" => "synthesize",
         "panel-ceiling-tiebreak" | "verify-prior" => "mechanical",
@@ -549,6 +550,7 @@ pub fn persist_phase(
         .iter()
         .enumerate()
         .map(|(i, d)| (if i < lenses { "lens" } else { "bot-vetting" }, d))
+        .chain(review.warmup.iter().map(|d| ("cache-warmup", d)))
         .chain(verify.dispatches.iter().map(|(l, d)| (l.as_str(), d)))
         .chain(synthesis.dispatches.iter().map(|(l, d)| (l.as_str(), d)))
         .collect();
@@ -797,5 +799,11 @@ mod tests {
         let rows = lens_cost(&foci, &[], 1.0, true, &profile(), &lenses);
         assert_eq!(rows[1]["overBudget"], json!(false));
         assert_eq!(rows[1]["lens"], json!("unknown"));
+    }
+
+    #[test]
+    fn the_cache_warm_up_has_its_own_cost_kind() {
+        assert_eq!(kind_of("cache-warmup"), Some("warmup"));
+        assert_eq!(kind_of("lens:2"), Some("lens"));
     }
 }
