@@ -17,6 +17,7 @@ use tribunal_context::{resolve_evidence_line, resolve_verified_anchors};
 use tribunal_core::evidence::line_correction::apply_line_correction;
 use tribunal_core::js;
 use tribunal_core::lens::coverage_gaps::{coverage_banner, unread_risk_files};
+use tribunal_core::lens::diff_usable::diff_is_usable;
 use tribunal_core::lens::js_ext::{to_js_string, utf16_prefix_lossy};
 use tribunal_core::profile::lens_foci::foci_label_for;
 use tribunal_core::profile::lens_routing::lens_agent_for;
@@ -34,8 +35,8 @@ use crate::panel::{
     panel_phase, CriticGap, PanelEnv, PanelFlags, PanelOutcome, OUTPUT_CEILING_DEFAULT,
 };
 use crate::prompts::{
-    lens_dispatch_prompt, lens_system_prompt, DiffExposure, LensPromptInput, LensReference,
-    SHARED_REFERENCE_NOTICE,
+    lens_dispatch_prompt, lens_system_prompt, DiffDelivery, DiffExposure, LensPromptInput,
+    LensReference, SHARED_REFERENCE_NOTICE,
 };
 use crate::review::{
     answer_of, bot_task, bot_vetting_prompt, check_lenses_returned, collect_candidates,
@@ -202,6 +203,38 @@ fn shared_reference(
     Some((methodology, conventions))
 }
 
+/// The largest diff the lenses' shared system prompt carries, in bytes. A
+/// bigger one stays on disk for each lens to page through, because a system
+/// prompt cannot be read in parts and the model's context has a limit.
+const SHARED_DIFF_MAX_BYTES: usize = 80_000;
+
+/// The PR diff as text, for the lenses' shared system prompt. `None`, with a
+/// log line, when the diff is not on disk, cannot be read, is not a usable
+/// diff or is over [`SHARED_DIFF_MAX_BYTES`]: the lenses then read it by path.
+fn shared_diff(delivery: &DiffDelivery, logs: &mut Vec<String>) -> Option<String> {
+    let path = delivery.diff_path.as_deref()?;
+    let Ok(text) = std::fs::read_to_string(path) else {
+        logs.push("Lenses read the diff by path: its file could not be read for the shared system prompt.".into());
+        return None;
+    };
+    if text.len() > SHARED_DIFF_MAX_BYTES {
+        logs.push(format!(
+            "Lenses read the diff by path: it is {} bytes, over the {SHARED_DIFF_MAX_BYTES} the shared system prompt takes.",
+            text.len()
+        ));
+        return None;
+    }
+    if !diff_is_usable(Some(&text), None, None) {
+        logs.push("Lenses read the diff by path: the file is not a usable diff.".into());
+        return None;
+    }
+    logs.push(format!(
+        "The lenses carry the diff in their shared system prompt ({} bytes).",
+        text.len()
+    ));
+    Some(text)
+}
+
 /// The run up to the end of the Review phase. `logs` receives every line the
 /// workflow would `log`, in order.
 ///
@@ -232,8 +265,16 @@ pub async fn run_review<A: Agent>(
         prepared.conventions.file_path(),
         logs,
     );
+    let diff = shared
+        .as_ref()
+        .and_then(|_| shared_diff(&rc.delivery, logs));
     if let Some((methodology, conventions)) = &shared {
-        definition.body = lens_system_prompt(&definition.body, methodology, conventions.as_deref());
+        definition.body = lens_system_prompt(
+            &definition.body,
+            methodology,
+            conventions.as_deref(),
+            diff.as_deref(),
+        );
     }
     let label_map = foci_label_for(profile)?;
     let foci: Vec<Value> = rc.plan.lens_plan.iter().map(|s| s.focus.clone()).collect();
@@ -244,7 +285,11 @@ pub async fn run_review<A: Agent>(
     let high_risk = js::get(profile, "highRiskSurface");
     let mut tasks = Vec::new();
     let reference = if shared.is_some() {
-        LensReference::Shared
+        if diff.is_some() {
+            LensReference::SharedWithDiff
+        } else {
+            LensReference::Shared
+        }
     } else {
         LensReference::Paths {
             methodology_line: &rc.methodology_line,
@@ -1232,5 +1277,80 @@ mod shared_reference_tests {
         assert_eq!(shared_reference(&m, Some(&gone), &mut logs), None);
         assert_eq!(logs.len(), 3);
         assert!(logs[2].contains("conventions"));
+    }
+}
+
+#[cfg(test)]
+mod shared_diff_tests {
+    use super::{shared_diff, SHARED_DIFF_MAX_BYTES};
+    use crate::prompts::DiffDelivery;
+    use serde_json::json;
+
+    // `diff_is_usable` takes nothing under 200 characters for a real diff.
+    const DIFF: &str = "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1,6 +1,8 @@\n line one of the file\n line two of the file\n+const added = compute(input);\n+const other = compute(output);\n line three of the file\n line four of the file\n line five of the file\n line six of the file\n";
+
+    fn delivery(path: Option<String>) -> DiffDelivery {
+        DiffDelivery {
+            diff_path: path,
+            diff_bytes: None,
+            head_pin: json!({}),
+            head_sha: None,
+        }
+    }
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "tribunal-shared-diff-{name}-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_usable_diff_that_fits_is_read_whole() {
+        assert!(DIFF.len() >= 200);
+        let dir = scratch("ok");
+        let path = dir.join("pr.diff");
+        std::fs::write(&path, DIFF).unwrap();
+        let mut logs = Vec::new();
+        let d = delivery(Some(path.to_string_lossy().into_owned()));
+        assert_eq!(shared_diff(&d, &mut logs).as_deref(), Some(DIFF));
+        assert_eq!(logs.len(), 1);
+        assert!(logs[0].contains("shared system prompt"));
+    }
+
+    #[test]
+    fn a_diff_over_the_cap_stays_on_disk() {
+        let dir = scratch("big");
+        let path = dir.join("pr.diff");
+        let big = format!("{DIFF}{}", "+x\n".repeat(SHARED_DIFF_MAX_BYTES));
+        std::fs::write(&path, &big).unwrap();
+        let mut logs = Vec::new();
+        let d = delivery(Some(path.to_string_lossy().into_owned()));
+        assert_eq!(shared_diff(&d, &mut logs), None);
+        assert!(logs[0].contains("over the 80000"));
+    }
+
+    #[test]
+    fn a_missing_unreadable_or_unusable_diff_stays_on_disk() {
+        let dir = scratch("bad");
+        let banner = dir.join("banner.diff");
+        std::fs::write(
+            &banner,
+            "Output too large (81KB). Full output saved to: /x\n",
+        )
+        .unwrap();
+        let gone = dir.join("gone.diff");
+        let mut logs = Vec::new();
+        assert_eq!(shared_diff(&delivery(None), &mut logs), None);
+        assert!(logs.is_empty());
+        let d = delivery(Some(gone.to_string_lossy().into_owned()));
+        assert_eq!(shared_diff(&d, &mut logs), None);
+        let d = delivery(Some(banner.to_string_lossy().into_owned()));
+        assert_eq!(shared_diff(&d, &mut logs), None);
+        assert_eq!(logs.len(), 2);
+        assert!(logs[0].contains("could not be read"));
+        assert!(logs[1].contains("not a usable diff"));
     }
 }
