@@ -287,7 +287,7 @@ understand JavaScript and TypeScript (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`,
 |---|---|---|
 | Callers list | The unchanged code that calls what the PR changed, so lenses check the callers too | Empty |
 | Syntax facts | Patterns worth a look, such as a `catch` that returns a value callers read as an answer | Empty |
-| Type check | `tsc` confirms or refutes a compile-level claim without spending a panel | Skipped. Also skipped in a JavaScript repo with no `tsconfig` |
+| Type check | `tsc` confirms or refutes a compile-level claim without spending a panel | Skipped, except for Python: the repo's own mypy (or pyright, when that is its checker) confirms a finding but never refutes one, and is skipped when none is configured or installed. Also skipped in a JavaScript repo with no `tsconfig` |
 
 The lenses, the refutation panel and the report work on any language. What you
 lose elsewhere is the context those three steps add, so expect more findings
