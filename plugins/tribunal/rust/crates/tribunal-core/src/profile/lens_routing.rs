@@ -9,10 +9,11 @@ use crate::js;
 pub const AGENT_NS: &str = "tribunal:";
 
 /// `REVIEWER_AGENTS`, in its declaration order.
-pub const REVIEWER_AGENTS: [(&str, &str); 3] = [
+pub const REVIEWER_AGENTS: [(&str, &str); 4] = [
     ("backend", "tribunal:code-review-expert"),
     ("frontend", "tribunal:fe-code-review-expert"),
     ("e2e", "tribunal:e2e-code-review-expert"),
+    ("python", "tribunal:py-code-review-expert"),
 ];
 
 /// Ports `lensAgentFor`. The kind is used as a property key, so it goes
@@ -59,6 +60,10 @@ mod tests {
         assert_eq!(
             lens_agent_for(&json!({"reviewer": "e2e"})),
             Ok("tribunal:e2e-code-review-expert")
+        );
+        assert_eq!(
+            lens_agent_for(&json!({"reviewer": "python"})),
+            Ok("tribunal:py-code-review-expert")
         );
     }
 

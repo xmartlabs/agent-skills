@@ -14,7 +14,7 @@ use super::js_ext::{self, JsRegex};
 use crate::js;
 
 pub const PROFILE_SCHEMA_VERSION: f64 = 1.0;
-pub const PROFILE_REVIEWER_KINDS: [&str; 3] = ["backend", "frontend", "e2e"];
+pub const PROFILE_REVIEWER_KINDS: [&str; 4] = ["backend", "frontend", "e2e", "python"];
 pub const PROFILE_REQUIRED_FOCI: [&str; 5] = [
     "correctness",
     "dataContract",
@@ -412,12 +412,26 @@ mod tests {
     }
 
     #[test]
+    fn every_reviewer_kind_is_admitted_and_a_near_miss_is_not() {
+        for kind in ["backend", "frontend", "e2e", "python"] {
+            let mut p = profile();
+            p["reviewer"] = json!(kind);
+            assert!(validate_profile(&p, &Value::Null).is_ok(), "{kind}");
+        }
+        for kind in ["Python", "python ", "py", "python3"] {
+            let mut p = profile();
+            p["reviewer"] = json!(kind);
+            assert!(validate_profile(&p, &Value::Null).is_err(), "{kind}");
+        }
+    }
+
+    #[test]
     fn every_error_is_reported_at_once() {
         let mut p = profile();
         p["reviewer"] = json!("x");
         p["highRiskSurface"] = json!(" ");
         let err = validate_profile(&p, &Value::Null).unwrap_err();
-        assert!(err.contains("reviewer must be one of backend, frontend, e2e, got \"x\""));
+        assert!(err.contains("reviewer must be one of backend, frontend, e2e, python, got \"x\""));
         assert!(err.contains("highRiskSurface must be a non-empty sentence"));
     }
 

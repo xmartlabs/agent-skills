@@ -782,6 +782,9 @@
       {"ok":[]},
       {"ok":[]}
     ]},
+    "1f299cb9b92af452f168d3c1e38c8bb6ad0e576ac08acdf5ccb9fd0bc8d26064": {"region": "PROFILE-LOOKUP", "results": [
+      {"err":"tribunal profile for \"acme/api\" is invalid:\n  - reviewer must be one of backend, frontend, e2e, got \"python\""}
+    ]},
     "216977c96fe159ae78356547e26b67da8b4e99a7ecc91fb3b014732788e06156": {"region": "LENS-FOCI", "results": [
       {"ok":[{"a":1},{"a":1}]},
       {"ok":[{"a":1},{"a":1}]},
@@ -7483,6 +7486,9 @@
       {"ok":[{"focus":"security","hits":[false,false,true,false,false,true,false,false,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,false,false,false,false,true,true,true,true,true,true,true,false,false,true,true,false,false,false,false,false,true,true,true,true,true,true,true]}]},
       {"ok":[{"focus":"security","hits":[false,false,true,false,false,true,false,false,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,false,false,false,false,true,true,true,true,true,true,true,false,false,true,true,false,false,false,false,false,true,true,true,true,true,true,true]}]},
       {"ok":[{"focus":"security","hits":[true,true,false,true,true,false,true,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,true,true,true,false,false,false,false,false,false,false,true,true,true,false,true,true,true,true,true,true,false,false,false,false,true,false]}]}
+    ]},
+    "907910f937a87f41282daea50c63666c2db019514f9348a1437d27c471bcc26f": {"region": "LENS-ROUTING", "results": [
+      {"err":"no reviewer agent for kind \"python\""}
     ]},
     "9986d42f0fc346ccb14895bdc450e01b8d1642377d4d38ee44d33460ddac77d9": {"region": "PROFILE-LOOKUP", "results": [
       {"err":"Invalid regular expression: /(/i: Unterminated group"},
