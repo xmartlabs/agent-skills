@@ -23,4 +23,4 @@ minutes and a maximum of 35. **The expensive runs have no reliable timing at
 all**: they predate the mechanism that records it, so treat the duration of a
 large run as unknown rather than extrapolating from the small ones.
 
-Use `--preflight` when you want the plan without the bill.
+Use `--preflight` when you want the plan without the bill. On the Rust engine, `tribunal cost` shows where the money of past runs went, by agent kind and lens, for one repo or all of them.

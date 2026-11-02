@@ -901,8 +901,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="170" y="238" class="t-external" font-size="7" text-anchor="middle">same review, JS harness</text>
         </g>
 
-        <g id="node-prepare" data-node-id="prepare" data-node-label="Prepare" tabindex="0" role="button" aria-label="Focus Prepare, DETERMINISTIC · Rust, git, gh + one haiku call, The review" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · Rust, git, gh + one haiku call" data-node-tag="profile, diff, worktree, callers; haiku reads the thread" data-node-context="The review">
-          <title>Prepare · DETERMINISTIC · Rust, git, gh + one haiku call · The review · profile, diff, worktree, callers; haiku reads the thread</title>
+        <g id="node-prepare" data-node-id="prepare" data-node-label="Prepare" tabindex="0" role="button" aria-label="Focus Prepare, DETERMINISTIC · Rust, git, gh + one haiku call, The review" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · Rust, git, gh + one haiku call" data-node-tag="profile, conventions, diff, worktree, callers; haiku reads the thread" data-node-context="The review">
+          <title>Prepare · DETERMINISTIC · Rust, git, gh + one haiku call · The review · profile, conventions, diff, worktree, callers; haiku reads the thread</title>
           <rect x="380" y="300" width="300" height="76" rx="8" class="c-mask"/>
           <rect x="380" y="300" width="300" height="76" rx="8" class="c-backend" data-animate="node" style="--step: 3; --flow-node-name: archify-relay-node-5;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(386 306) scale(0.6875)">
@@ -910,11 +910,11 @@ rect.c-bg-rect { fill: var(--bg); }
           </g>
           <text data-node-label="" x="530" y="336" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Prepare</text>
         <text x="530" y="352" class="t-muted" font-size="9" text-anchor="middle">DETERMINISTIC · Rust, git, gh + one haiku call</text>
-        <text x="530" y="368" class="t-backend" font-size="7" text-anchor="middle">profile, diff, worktree, callers; haiku reads the thread</text>
+        <text x="530" y="368" class="t-backend" font-size="7" text-anchor="middle">profile, conventions, diff, worktree, callers; haiku reads the thread</text>
         </g>
 
-        <g id="node-lenses" data-node-id="lenses" data-node-label="Lenses" tabindex="0" role="button" aria-label="Focus Lenses, MODEL · sonnet, N in parallel, The review" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet, N in parallel" data-node-tag="each reads its files and returns findings" data-node-context="The review">
-          <title>Lenses · MODEL · sonnet, N in parallel · The review · each reads its files and returns findings</title>
+        <g id="node-lenses" data-node-id="lenses" data-node-label="Lenses" tabindex="0" role="button" aria-label="Focus Lenses, MODEL · sonnet, N in parallel, The review" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet, N in parallel" data-node-tag="backend, frontend, e2e or python reviewer, one shared prompt" data-node-context="The review">
+          <title>Lenses · MODEL · sonnet, N in parallel · The review · backend, frontend, e2e or python reviewer, one shared prompt</title>
           <rect x="380" y="430" width="300" height="76" rx="8" class="c-mask"/>
           <rect x="380" y="430" width="300" height="76" rx="8" class="c-frontend" data-animate="node" style="--step: 4; --flow-node-name: archify-relay-node-8;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(386 436) scale(0.6875)">
@@ -925,23 +925,23 @@ rect.c-bg-rect { fill: var(--bg); }
           </g>
           <text data-node-label="" x="530" y="466" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Lenses</text>
         <text x="530" y="482" class="t-muted" font-size="9" text-anchor="middle">MODEL · sonnet, N in parallel</text>
-        <text x="530" y="498" class="t-frontend" font-size="7" text-anchor="middle">each reads its files and returns findings</text>
+        <text x="530" y="498" class="t-frontend" font-size="7" text-anchor="middle">backend, frontend, e2e or python reviewer, one shared prompt</text>
         </g>
 
-        <g id="node-checks" data-node-id="checks" data-node-label="Mechanical checks" tabindex="0" role="button" aria-label="Focus Mechanical checks, DETERMINISTIC · Rust, tsc + one haiku call, The review" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · Rust, tsc + one haiku call" data-node-tag="in the diff? quote there? tsc? haiku merges repeats" data-node-context="The review">
-          <title>Mechanical checks · DETERMINISTIC · Rust, tsc + one haiku call · The review · in the diff? quote there? tsc? haiku merges repeats</title>
+        <g id="node-checks" data-node-id="checks" data-node-label="Mechanical checks" tabindex="0" role="button" aria-label="Focus Mechanical checks, DETERMINISTIC · Rust, type check + one haiku call, The review" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · Rust, type check + one haiku call" data-node-tag="in the diff? quote there? tsc, mypy or pyright? haiku merges repeats" data-node-context="The review">
+          <title>Mechanical checks · DETERMINISTIC · Rust, type check + one haiku call · The review · in the diff? quote there? tsc, mypy or pyright? haiku merges repeats</title>
           <rect x="380" y="560" width="300" height="76" rx="8" class="c-mask"/>
           <rect x="380" y="560" width="300" height="76" rx="8" class="c-backend" data-animate="node" style="--step: 5; --flow-node-name: archify-relay-node-11;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(386 566) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" x="530" y="596" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Mechanical checks</text>
-        <text x="530" y="612" class="t-muted" font-size="9" text-anchor="middle">DETERMINISTIC · Rust, tsc + one haiku call</text>
-        <text x="530" y="628" class="t-backend" font-size="7" text-anchor="middle">in the diff? quote there? tsc? haiku merges repeats</text>
+        <text x="530" y="612" class="t-muted" font-size="9" text-anchor="middle">DETERMINISTIC · Rust, type check + one haiku call</text>
+        <text x="530" y="628" class="t-backend" font-size="7" text-anchor="middle">in the diff? quote there? tsc, mypy or pyright? haiku merges repeats</text>
         </g>
 
-        <g id="node-critic" data-node-id="critic" data-node-label="Completeness critic" tabindex="0" role="button" aria-label="Focus Completeness critic, MODEL · sonnet, The review" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet" data-node-tag="what did no lens read?" data-node-context="The review">
-          <title>Completeness critic · MODEL · sonnet · The review · what did no lens read?</title>
+        <g id="node-critic" data-node-id="critic" data-node-label="Completeness critic" tabindex="0" role="button" aria-label="Focus Completeness critic, MODEL · sonnet, The review" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet" data-node-tag="audits unnamed files, lens gaps and siblings of the change" data-node-context="The review">
+          <title>Completeness critic · MODEL · sonnet · The review · audits unnamed files, lens gaps and siblings of the change</title>
           <rect x="380" y="690" width="300" height="76" rx="8" class="c-mask"/>
           <rect x="380" y="690" width="300" height="76" rx="8" class="c-frontend" data-animate="node" style="--step: 6; --flow-node-name: archify-relay-node-14;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(386 696) scale(0.6875)">
@@ -952,7 +952,7 @@ rect.c-bg-rect { fill: var(--bg); }
           </g>
           <text data-node-label="" x="530" y="726" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Completeness critic</text>
         <text x="530" y="742" class="t-muted" font-size="9" text-anchor="middle">MODEL · sonnet</text>
-        <text x="530" y="758" class="t-frontend" font-size="7" text-anchor="middle">what did no lens read?</text>
+        <text x="530" y="758" class="t-frontend" font-size="7" text-anchor="middle">audits unnamed files, lens gaps and siblings of the change</text>
         </g>
 
         <g id="node-panel" data-node-id="panel" data-node-label="Refuter panel" tabindex="0" role="button" aria-label="Focus Refuter panel, MODEL · sonnet refuters, The review" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet refuters" data-node-tag="each tries to kill one finding" data-node-context="The review">
@@ -982,8 +982,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="170" y="888" class="t-cloud" font-size="7" text-anchor="middle">a second model family</text>
         </g>
 
-        <g id="node-decide" data-node-id="decide" data-node-label="Tally and verdict" tabindex="0" role="button" aria-label="Focus Tally and verdict, DETERMINISTIC · Rust, The review" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · Rust" data-node-tag="weighted vote, fixed verdict rules" data-node-context="The review">
-          <title>Tally and verdict · DETERMINISTIC · Rust · The review · weighted vote, fixed verdict rules</title>
+        <g id="node-decide" data-node-id="decide" data-node-label="Tally and verdict" tabindex="0" role="button" aria-label="Focus Tally and verdict, DETERMINISTIC · Rust, The review" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · Rust" data-node-tag="weighted vote, fixed verdict rules, no APPROVE past an unread risk path" data-node-context="The review">
+          <title>Tally and verdict · DETERMINISTIC · Rust · The review · weighted vote, fixed verdict rules, no APPROVE past an unread risk path</title>
           <rect x="380" y="950" width="300" height="76" rx="8" class="c-mask"/>
           <rect x="380" y="950" width="300" height="76" rx="8" class="c-backend" data-animate="node" style="--step: 9; --flow-node-name: archify-relay-node-6;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(386 956) scale(0.6875)">
@@ -991,7 +991,7 @@ rect.c-bg-rect { fill: var(--bg); }
           </g>
           <text data-node-label="" x="530" y="986" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Tally and verdict</text>
         <text x="530" y="1002" class="t-muted" font-size="9" text-anchor="middle">DETERMINISTIC · Rust</text>
-        <text x="530" y="1018" class="t-backend" font-size="7" text-anchor="middle">weighted vote, fixed verdict rules</text>
+        <text x="530" y="1018" class="t-backend" font-size="6.8" text-anchor="middle">weighted vote, fixed verdict rules, no APPROVE past an unread risk path</text>
         </g>
 
         <g id="node-report" data-node-id="report" data-node-label="Write the report" tabindex="0" role="button" aria-label="Focus Write the report, MODEL · sonnet, The review" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet" data-node-tag="around a verdict it cannot change" data-node-context="The review">
@@ -1086,8 +1086,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="890" y="866" class="t-muted" font-size="9" text-anchor="middle">the vote is read from the file</text>
         </g>
 
-        <g id="node-m-row" data-node-id="m-row" data-node-label="metrics row" tabindex="0" role="button" aria-label="Focus metrics row, metrics.jsonl, run JSON, report, Measured along the way" aria-pressed="false" data-node-kind="database" data-node-sublabel="metrics.jsonl, run JSON, report" data-node-tag="cost summed from every call" data-node-context="Measured along the way">
-          <title>metrics row · metrics.jsonl, run JSON, report · Measured along the way · cost summed from every call</title>
+        <g id="node-m-row" data-node-id="m-row" data-node-label="metrics row" tabindex="0" role="button" aria-label="Focus metrics row, metrics.jsonl, run JSON, report, Measured along the way" aria-pressed="false" data-node-kind="database" data-node-sublabel="metrics.jsonl, run JSON, report" data-node-tag="cost from every call and per lens, seconds per stage" data-node-context="Measured along the way">
+          <title>metrics row · metrics.jsonl, run JSON, report · Measured along the way · cost from every call and per lens, seconds per stage</title>
           <rect x="760" y="1210" width="260" height="76" rx="8" class="c-mask"/>
           <rect x="760" y="1210" width="260" height="76" rx="8" class="c-database" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-16;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(766 1216) scale(0.6875)">
@@ -1096,7 +1096,7 @@ rect.c-bg-rect { fill: var(--bg); }
           </g>
           <text data-node-label="" x="890" y="1246" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">metrics row</text>
         <text x="890" y="1262" class="t-muted" font-size="9" text-anchor="middle">metrics.jsonl, run JSON, report</text>
-        <text x="890" y="1278" class="t-database" font-size="7" text-anchor="middle">cost summed from every call</text>
+        <text x="890" y="1278" class="t-database" font-size="7" text-anchor="middle">cost from every call and per lens, seconds per stage</text>
         </g>
 
         <g id="node-m-posted" data-node-id="m-posted" data-node-label="row updated" tabindex="0" role="button" aria-label="Focus row updated, posted and verdict, Measured along the way" aria-pressed="false" data-node-kind="database" data-node-sublabel="posted and verdict" data-node-context="Measured along the way">

@@ -42,7 +42,8 @@ changes what tribunal does.
 | Label | Agent definition | Notes |
 |---|---|---|
 | `lens` | `code-review-expert` / `fe-code-review-expert` / `e2e-code-review-expert` / `py-code-review-expert` | cwd = head worktree; Read + Bash |
-| `completeness-critic` | reviewer agent | |
+| `completeness-critic` | reviewer agent | Rust: audits the changed files no finding names, what the lenses did not reach and the siblings of the change, from the diff on disk and the pinned checkout; asked to use at most 20 tool calls |
+| `cache-warmup` | reviewer agent | Rust: one small request before the lenses, so they read their shared system prompt (methodology and conventions) from the model cache; skipped with fewer than two lenses |
 | `refute`, `refute-batch` | `tribunal-refuter` | single and batched |
 | `defense`, `judge` | refuter/scribe | debate round |
 | `refine` (2 sites) | `tribunal-strengthener` | |
@@ -234,8 +235,8 @@ Each has a witness input asserted in its group's test file.
   case-folding workaround uses).
 - regress refuses 256 nested groups; V8 accepts them.
 - `lensAgentFor` with a kind named after an `Object.prototype` member errors
-  instead of returning the inherited member. `validateProfile` admits only
-  `backend` and `frontend`, so it cannot reach it.
+  instead of returning the inherited member. `validateProfile` admits only the
+  known kinds (`backend`, `frontend`, `e2e`, `python`), so it cannot reach it.
 - Lone UTF-16 surrogates cannot be held in a Rust `String`; JSON carrying one
   is rejected at parse time. For the same reason, an unparsed diff header that
   section-diff cuts at 120 units inside a surrogate pair ends in U+FFFD in the
