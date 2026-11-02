@@ -49,8 +49,8 @@
     {
       "id": "launcher",
       "type": "backend",
-      "label": "rust-engine.mjs",
-      "sublabel": "DETERMINISTIC · node script",
+      "label": "tribunal-engine",
+      "sublabel": "DETERMINISTIC · bash script",
       "tag": "finds the binary for this machine",
       "pos": [
         380,

@@ -32,7 +32,7 @@ node ../../rust/scripts/replay-frontier.mjs      # client-name ratchet; the rele
 node eval/analyze-agent-cost.mjs      # where the money goes — reads runs already on disk, 0 tokens
 node eval/refine-attribution.mjs      # the round-0 tally the row throws away
 node eval/refuter-package.mjs         # would a pre-assembled package have covered what refuters read?
-node eval/lost-runs.mjs               # runs that died before writing their metrics row
+tribunal-engine run -- lost-runs      # runs that died before writing their metrics row
 node eval/cost-band.mjs               # is a run's cost normal for its PR (needs agentCost patched)
 node eval/incremental-opportunity.mjs # what re-running a PR actually costs, and whether it is sizeable
 node eval/refresh-ledger-snapshot.mjs # dry run: would this machine's ledger extend the frozen one? --write copies it

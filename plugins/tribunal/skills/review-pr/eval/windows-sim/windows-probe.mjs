@@ -109,7 +109,7 @@ export function judgeRelayFile(finalText, probe, pathRule) {
 // The PR is the operator's (`--engine-pr owner/repo#n`): the plugin names no
 // client repository, and the profile has to list conventionFiles for the
 // conventions step to run at all.
-export const ENGINE = resolve(dirname(toPath(import.meta.url)), "..", "..", "scripts", "rust-engine.mjs");
+export const ENGINE = resolve(dirname(toPath(import.meta.url)), "..", "..", "..", "..", "bin", "tribunal-engine");
 export function engineArgs(target, out, engine = ENGINE) {
   const m = /^([\w.-]+\/[\w.-]+)#(\d+)$/.exec(String(target || ""));
   if (!m) return null;
@@ -121,7 +121,7 @@ export function judgeEngine({ status, stderr, outText, timedOut }) {
   const base = { id: "engine-rust", exit: status ?? null };
   if (timedOut) return { ...base, ok: false, note: "timed out after 600 s with no result" };
   const lines = String(stderr || "").split("\n").map((l) => l.trim()).filter(Boolean);
-  const last = [...lines].reverse().find((l) => /^(tribunal|rust-engine):/.test(l)) || lines.at(-1) || "";
+  const last = [...lines].reverse().find((l) => /^(tribunal|tribunal-engine):/.test(l)) || lines.at(-1) || "";
   if (status === 3) return { ...base, ok: false, note: `the launcher could not start the binary: ${last}`.slice(0, 300) };
   if (status !== 0) return { ...base, ok: false, note: last.slice(0, 300) };
   let got = null;
@@ -260,7 +260,7 @@ function runRelayFileCase({ claude, model, settings }) {
 function runEngineCase(target) {
   const dir = mkdtempSync(join(tmpdir(), "windows-probe-engine-"));
   const out = join(dir, "preflight.json");
-  const r = spawnSync(process.execPath, engineArgs(target, out), { encoding: "utf8", input: "", timeout: 600000, maxBuffer: 64 * 1024 * 1024 });
+  const r = spawnSync("bash", engineArgs(target, out), { encoding: "utf8", input: "", timeout: 600000, maxBuffer: 64 * 1024 * 1024 });
   let outText = "";
   try {
     outText = readFileSync(out, "utf8");

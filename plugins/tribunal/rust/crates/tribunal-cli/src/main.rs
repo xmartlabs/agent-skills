@@ -25,6 +25,8 @@ const DEFAULT_MODEL: &str = "claude-sonnet-5-5";
 fn usage() -> ExitCode {
     eprintln!("usage: tribunal --version");
     eprintln!("usage: tribunal cost [--repo <owner/name>] [--since <iso date>] [--json]");
+    eprintln!("usage: tribunal lost-runs [--recent <days>]");
+    eprintln!("usage: tribunal harness-version [--short|--manifest]");
     eprintln!("usage: tribunal override --ts <row ts> --title <finding title prefix> (--direction reinstated|rejected|withdrawn | --severity nit|important) --reason <how it was checked> [--by <login>] [--verified-at <sha>] [--dry-run]");
     eprintln!("usage: tribunal selfcheck [--apply] [--no-battery] [--model <id>] [--effort <level>] [--out <file>]");
     eprintln!("usage: tribunal post --from <run.json> [--verdict approve|request-changes|comment] [--delta|--edit-existing] [--over-own-review] [--over-standing-review] [--model <id>] [--effort <level>]");
@@ -567,6 +569,80 @@ fn cost_main(argv: &[String]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// `tribunal lost-runs`: the runs that started and never wrote their metrics
+/// row, from `inflight-runs.jsonl`. `--recent <days>` prints one warning line
+/// when the persist step looks broken, and nothing otherwise.
+fn lost_runs_main(argv: &[String]) -> ExitCode {
+    let mut recent = None;
+    let mut it = argv.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            // `Number(v) > 0 ? Number(v) : 7`, as the script read it.
+            "--recent" => {
+                let days = it
+                    .next()
+                    .and_then(|v| v.trim().parse::<f64>().ok())
+                    .filter(|d| *d > 0.0);
+                recent = Some(days.unwrap_or(7.0));
+            }
+            other => {
+                eprintln!("tribunal: unknown argument {other}");
+                return usage();
+            }
+        }
+    }
+    let path = runtime().data_dir.join("inflight-runs.jsonl");
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if recent.is_none() {
+                println!("no {}: nothing to check", path.display());
+            }
+            return ExitCode::SUCCESS;
+        }
+        Err(e) => {
+            eprintln!("tribunal: cannot read {}: {e}", path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    let lines: Vec<&str> = text.split('\n').collect();
+    let now_ms = tribunal_context::inflight::now_epoch() as f64 * 1000.0;
+    use tribunal_context::lost_runs::{recent_warning, render};
+    match recent {
+        Some(days) => {
+            if let Some(w) = recent_warning(&lines, now_ms, days) {
+                println!("{w}");
+            }
+        }
+        None => print!("{}", render(&lines, now_ms)),
+    }
+    ExitCode::SUCCESS
+}
+
+/// `tribunal harness-version`: the content hash of the plugin's behavioural
+/// surface that every metrics row records.
+fn harness_version_main(argv: &[String]) -> ExitCode {
+    if let Some(other) = argv
+        .iter()
+        .find(|a| !matches!(a.as_str(), "--short" | "--manifest"))
+    {
+        eprintln!("tribunal: unknown argument {other}");
+        return usage();
+    }
+    let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+    let root = plugin_root();
+    match tribunal_context::harness_version::run(&args, &root.to_string_lossy()) {
+        Ok(out) => {
+            print!("{out}");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("tribunal: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 /// `tribunal override`: writes a person's verdict on one finding into its
 /// ledger row, under the ledger lock a run takes to append.
 fn override_main(argv: &[String]) -> ExitCode {
@@ -663,6 +739,8 @@ async fn main() -> ExitCode {
         Some("selfcheck") => return selfcheck_main(&argv[1..]).await,
         Some("cost") => return cost_main(&argv[1..]),
         Some("override") => return override_main(&argv[1..]),
+        Some("lost-runs") => return lost_runs_main(&argv[1..]),
+        Some("harness-version") => return harness_version_main(&argv[1..]),
         Some("--version" | "version") => {
             println!(
                 "tribunal {} ({})",

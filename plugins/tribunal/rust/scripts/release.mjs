@@ -45,7 +45,6 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { harnessVersion } from "../../skills/review-pr/scripts/harness-version.mjs";
-import { resolveBinary } from "../../skills/review-pr/scripts/rust-engine.mjs";
 import { HARNESS_DATA, RELEASES_PATH } from "./gate-paths.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -227,7 +226,8 @@ function pinCheck() {
     const env = { ...process.env, TRIBUNAL_DATA_DIR: scratch };
     delete env.TRIBUNAL_BIN;
     delete env.TRIBUNAL_RUST_MANIFEST;
-    const r = resolveBinary({ env });
+    // The launcher users run, so the gate also proves it reads this pin.
+    const r = JSON.parse(execFileSync("bash", [join(CLAUDE, "bin", "tribunal-engine"), "resolve"], { env, encoding: "utf8" }));
     if (!r.ok) return fail(`the pinned binary does not resolve: ${r.error}`);
     const printed = execFileSync(r.bin, ["--version"], { encoding: "utf8" }).trim();
     const want = tag.replace(/^tribunal-rust-v/, "");
@@ -252,6 +252,7 @@ const battery = (() => {
   const files = [
     ...walk(join(RUST, "crates")).filter((f) => /[/\\]tests[/\\]/.test(f)),
     ...RUST_PATH_REPLAYS.map((f) => join(HERE, f)),
+    join(CLAUDE, "bin", "tribunal-engine"),
     join(HERE, "gate-paths.mjs"),
     join(HERE, "frontier.json"),
     fileURLToPath(import.meta.url),

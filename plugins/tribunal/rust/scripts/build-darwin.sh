@@ -15,7 +15,7 @@ cd "$rust_dir"
 # tribunal-v<version>-<target>: the job refuses a tag that is not the CLI
 # version, so this is the name the tag gives the Linux and Windows archives.
 # rust/scripts/pin-release.mjs and the launcher
-# (skills/review-pr/scripts/rust-engine.mjs) read this shape.
+# (bin/tribunal-engine) read this shape.
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/tribunal-cli/Cargo.toml | head -1)
 stage=$(mktemp -d)
 for target in aarch64-apple-darwin x86_64-apple-darwin; do

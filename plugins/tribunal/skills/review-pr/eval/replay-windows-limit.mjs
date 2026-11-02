@@ -81,14 +81,14 @@ check("the probe's filler is not a run of one character and is the same every ti
   const args = engineArgs("acme/web-app#12", "/o/p.json", "/e.mjs");
   check("the engine case runs a no-post preflight of the PR it was given", JSON.stringify(args) === JSON.stringify(["/e.mjs", "run", "--", "review", "--pr", "12", "--repo", "acme/web-app", "--preflight", "--no-post", "--out", "/o/p.json"]), JSON.stringify(args));
   check("a target that is not owner/repo#n is refused", engineArgs("web-app#12", "x") === null && engineArgs("acme/web-app", "x") === null && engineArgs("acme/web-app#12; id", "x") === null);
-  check("the launcher the engine case calls is the plugin's own", existsSync(ENGINE) && ENGINE.endsWith(join("scripts", "rust-engine.mjs")), ENGINE);
+  check("the launcher the engine case calls is the plugin's own", existsSync(ENGINE) && ENGINE.endsWith(join("bin", "tribunal-engine")), ENGINE);
   const preflight = JSON.stringify({ preflight: true, summary: { lensCount: 2 } });
   const ok = judgeEngine({ status: 0, stderr: "wrote x\n", outText: preflight });
   check("a preflight that wrote its summary passes", ok.ok && ok.lensCount === 2, JSON.stringify(ok));
   const died = "tribunal: load-conventions: could not write --out /tmp/tribunal-conventions-C:\\Users\\dev\\AppData\\Local\\Temp/tribunal-methodology-acme-web-app-12.md: ENAMETOOLONG";
   const failed = judgeEngine({ status: 1, stderr: `a log line\n${died}\n`, outText: preflight });
   check("a binary that failed fails with its own error line, whatever an earlier --out holds", !failed.ok && failed.exit === 1 && failed.note.endsWith("ENAMETOOLONG"), JSON.stringify(failed));
-  const launcher = judgeEngine({ status: 3, stderr: "rust-engine: no release is pinned for win32-arm64\n", outText: "" });
+  const launcher = judgeEngine({ status: 3, stderr: "tribunal-engine: no release is pinned in release.json\n", outText: "" });
   check("exit 3 says the launcher could not start the binary", !launcher.ok && /launcher could not start/.test(launcher.note) && /no release is pinned/.test(launcher.note), JSON.stringify(launcher));
   const skipped = judgeEngine({ status: 0, stderr: "", outText: JSON.stringify({ skipped: true, reason: "deployment PR" }) });
   check("a skipped run fails, since it stopped before the preflight's end", !skipped.ok && /deployment PR/.test(skipped.note), JSON.stringify(skipped));

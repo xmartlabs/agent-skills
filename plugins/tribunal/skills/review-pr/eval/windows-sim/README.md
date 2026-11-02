@@ -28,7 +28,7 @@ makes about nine short `claude -p` calls on sonnet, and one more that runs a
 two-step Workflow (a haiku mechanic and a file load) for the `relay-file` case.
 `--only relay-file` runs that case alone. It passed on macOS on 2026-10-21.
 
-`--engine-pr owner/repo#n` adds the `engine-rust` case: `rust-engine.mjs run --
+`--engine-pr owner/repo#n` adds the `engine-rust` case: `tribunal-engine run --
 review --preflight --no-post` on that PR, which runs load-profile,
 assemble-methodology, load-conventions, fetch-pr and the incremental probe and
 stops before any lens. Pick an open feature PR in a repo whose profile lists

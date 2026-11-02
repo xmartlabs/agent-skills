@@ -499,7 +499,7 @@ Pipeline differences from the workflow, on purpose:
 - The `inflight-runs.jsonl` start marker is written once `headRefOid`
   resolves (none on a preflight), and the completed one by the persist step.
   A run that dies between the two, and is then reviewed again by the Workflow
-  fallback at the same head, reads as one lost run in `eval/lost-runs.mjs`.
+  fallback at the same head, reads as one lost run in `tribunal lost-runs`.
 - `scopedDiffBody`'s sectioned branch is not ported, because
   `SCOPE_CLAUDE_RECIPIENTS` is false; a test fails if the workflow flips it.
 - Thread decisions cut at 4,000 UTF-16 units drop a surrogate pair the cut
@@ -714,10 +714,16 @@ A release:
 4. Commit `release.json` with the plugin version that should use the binary.
 
 `/tribunal:review-pr`, whose default engine is this binary, reads `release.json` through
-`skills/review-pr/scripts/rust-engine.mjs`, which downloads the archive for
-the machine once, refuses it unless its sha256 matches, and caches it under
-`<tribunal-data>/bin/`. `TRIBUNAL_BIN` points it at a local build instead.
-`rust/scripts/replay-rust-engine.mjs` covers it offline.
+`bin/tribunal-engine`, which downloads the archive for the machine once with
+`gh release download`, refuses it unless its sha256 matches, and caches it
+under `<tribunal-data>/bin/`. `TRIBUNAL_BIN` points it at a local build instead.
+It is a bash script, so a review needs no node: Claude Code puts the plugin's
+`bin/` on the Bash tool's PATH, and on Windows that tool runs Git Bash, whose
+`tar` cannot open the Windows `.zip`, so the launcher unpacks it with
+`System32\tar.exe`. On a machine with no build (Linux arm64, for one) it names
+the machine and the builds the release has. `rust/scripts/replay-rust-engine.mjs`
+covers it offline, and the `windows` CI job downloads the pinned release with
+it.
 
 ## Live A/B against the installed plugin (2026-10-23)
 

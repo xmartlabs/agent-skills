@@ -1,6 +1,6 @@
 //! `inflight-runs.jsonl`: the `started` line the Context phase's bookkeeping
 //! appends and the `completed` line the persist step appends, byte for byte
-//! as the workflow's heredocs write them, so `eval/lost-runs.mjs` pairs them.
+//! as the workflow's heredocs write them, so `lost_runs` pairs them.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};

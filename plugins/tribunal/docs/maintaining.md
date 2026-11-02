@@ -39,7 +39,7 @@ picks up each edit.
 terminates its own background tasks after 600 seconds, which kills a review
 mid-flight and leaves a `started` marker with no `completed`: a lost run, and a
 wasted one. If you must run headless, set `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`
-first. `node eval/lost-runs.mjs` is what tells you afterward that this happened;
+first. `tribunal-engine run -- lost-runs` is what tells you afterward that this happened;
 a killed run is otherwise silent.
 
 `eval/README.md` describes the validation ladder: what each tier of checking can
@@ -80,8 +80,8 @@ compile in with `include_str!`. The pinned archive is then downloaded into an em
 directory, checked against its sha256, and has to print the tag's version. A Rust
 change merged without a release turns the gate red with the list of files, so cut a
 binary first (`rust/README.md`, "A release"). Last come the two replays of
-JavaScript the Rust path still runs: `rust/scripts/replay-rust-engine.mjs` (the
-launcher) and `rust/scripts/replay-frontier.mjs` (the client-name ratchet). The
+scripts the Rust path still runs: `rust/scripts/replay-rust-engine.mjs` (the
+launcher, `bin/tribunal-engine`) and `rust/scripts/replay-frontier.mjs` (the client-name ratchet). The
 gate itself, `rust/scripts/release.mjs`, lives next to them, outside the Workflow's
 files. The Workflow's own replays are not in the gate. Run them by hand, as above,
 when a change touches the Workflow or its scripts. The corpus score

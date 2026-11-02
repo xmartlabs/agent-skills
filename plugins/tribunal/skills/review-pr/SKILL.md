@@ -64,8 +64,8 @@ a Tier-1 pass into evidence it does not carry.
 | `/tribunal:review-pr --queue-status` | Show how many PRs are pending/done/error — reviews nothing. |
 | `/tribunal:review-pr --metrics` | Aggregate scorecard from `metrics.jsonl`. Reviews nothing. See `references/metrics-schema.md`. |
 | `/tribunal:review-pr --audit` | Estimate finding FP/FN proxies from merged-PR outcomes. Reviews nothing. Same reference. |
-| `/tribunal:review-pr --cost` | Where the money of past reviews went, from `metrics.jsonl`: dollars per repo and per run, by agent kind, and per lens focus with how many lenses were forced or over budget and the cost per finding that reached the report. Reviews nothing. Run `node "$(tribunal-root)"/skills/review-pr/scripts/rust-engine.mjs run -- cost [--repo <owner/name>] [--since <iso date>] [--json]` and show its output. Only rows the Rust engine wrote since 2026-10-30 carry dollars; older rows count as runs without a price. |
-| `/tribunal:review-pr --selfcheck` | Audit the LAST run from its own metrics row, diagnose each violation from the artifacts on disk, refute the diagnosis adversarially, and propose a patch gated on the offline battery. Reviews nothing. Run with `run_in_background: true`: `node "$(tribunal-root)"/skills/review-pr/scripts/rust-engine.mjs run -- selfcheck --out "${TMPDIR:-/tmp}/tribunal-selfcheck.json"` (add `--apply` only when the user asked for the patch to be applied, `--no-battery` when this machine has no `cargo`), then show the user the JSON it wrote and the log lines it printed. A Rust row's diagnosis reads the Rust source and its battery is `cargo test`. When the launcher cannot start the binary, fall back to `Workflow({ name: 'tribunal:harness-selfcheck' })`, by name, same rule as the review workflow. It closes the loop the row already opens: every run writes its own `selfAudit`, and until something reads it a recorded violation is a violation nobody saw. That is not hypothetical — on 2026-09-08 PR #2083's run recorded `fidelity-critic-flagged` and it surfaced only because a person went looking. |
+| `/tribunal:review-pr --cost` | Where the money of past reviews went, from `metrics.jsonl`: dollars per repo and per run, by agent kind, and per lens focus with how many lenses were forced or over budget and the cost per finding that reached the report. Reviews nothing. Run `tribunal-engine run -- cost [--repo <owner/name>] [--since <iso date>] [--json]` and show its output. Only rows the Rust engine wrote since 2026-10-30 carry dollars; older rows count as runs without a price. |
+| `/tribunal:review-pr --selfcheck` | Audit the LAST run from its own metrics row, diagnose each violation from the artifacts on disk, refute the diagnosis adversarially, and propose a patch gated on the offline battery. Reviews nothing. Run with `run_in_background: true`: `tribunal-engine run -- selfcheck --out "${TMPDIR:-/tmp}/tribunal-selfcheck.json"` (add `--apply` only when the user asked for the patch to be applied, `--no-battery` when this machine has no `cargo`), then show the user the JSON it wrote and the log lines it printed. A Rust row's diagnosis reads the Rust source and its battery is `cargo test`. When the launcher cannot start the binary, fall back to `Workflow({ name: 'tribunal:harness-selfcheck' })`, by name, same rule as the review workflow. It closes the loop the row already opens: every run writes its own `selfAudit`, and until something reads it a recorded violation is a violation nobody saw. That is not hypothetical — on 2026-09-08 PR #2083's run recorded `fidelity-critic-flagged` and it surfaced only because a person went looking. |
 | `/tribunal:review-pr --review-health` | Is the harness still earning its cost? Routing-rule compliance, in-context-vs-Workflow vote-reconciliation mismatch rate, corpus-labelling progress, Known-open hygiene. Reviews nothing. Same reference — recommended weekly via `/schedule`. |
 
 | Flag | Effect |
@@ -98,8 +98,11 @@ Everything below is the mechanics behind these commands — not needed just to *
 **Check the trail of earlier runs (one command, silent when clean).** A run that started and never wrote its metrics row is the only symptom of a persist step that fails on every run, and on Windows it went unnoticed for four days. If this prints a WARNING, show it to the user before reviewing, and do not treat the review as measured until they have looked.
 
 ```bash
-node "$(tribunal-root)"/skills/review-pr/eval/lost-runs.mjs --recent 7
+tribunal-engine run -- lost-runs --recent 7
 ```
+
+A `tribunal-engine:` line instead means this machine has no binary to run it;
+go on, the Rust engine's first step below reports the same reason.
 
 ### The Rust engine (the default)
 
@@ -115,7 +118,7 @@ assemble-methodology or load-conventions, no Workflow call.
 1. Find the binary for this machine:
 
    ```bash
-   node "$(tribunal-root)"/skills/review-pr/scripts/rust-engine.mjs resolve
+   tribunal-engine resolve
    ```
 
    It prints `{ok, bin, source, tag, target}`. The first run on a machine
@@ -130,7 +133,7 @@ assemble-methodology or load-conventions, no Workflow call.
    Step 4 makes the posting decision:
 
    ```bash
-   node "$(tribunal-root)"/skills/review-pr/scripts/rust-engine.mjs run -- review --pr <n> --no-post --out "${TMPDIR:-/tmp}/tribunal-run-<n>.json" [flags]
+   tribunal-engine run -- review --pr <n> --no-post --out "${TMPDIR:-/tmp}/tribunal-run-<n>.json" [flags]
    ```
 
    Pass on, spelled the same, each of these that was given: `--repo`,
@@ -141,7 +144,7 @@ assemble-methodology or load-conventions, no Workflow call.
    and wait for the completion notice; do not poll. Any non-zero exit means
    there is no review to read: 3 when the launcher could not start the binary,
    anything else when the binary started and failed. Tell the user the last
-   `tribunal:` or `rust-engine:` line of its output, do not read the `--out`
+   `tribunal:` or `tribunal-engine:` line of its output, do not read the `--out`
    file (one left by an earlier run on the same PR may be there), and run the
    Workflow instead.
 
@@ -161,7 +164,7 @@ assemble-methodology or load-conventions, no Workflow call.
    suggestion on `--post`):
 
    ```bash
-   node "$(tribunal-root)"/skills/review-pr/scripts/rust-engine.mjs run -- post --from "${TMPDIR:-/tmp}/tribunal-run-<n>.json" --verdict <approve|request-changes|comment>
+   tribunal-engine run -- post --from "${TMPDIR:-/tmp}/tribunal-run-<n>.json" --verdict <approve|request-changes|comment>
    ```
 
    It prints `Posted <verdict>: <url>`, or `NOT POSTED: <why>` with a non-zero
@@ -445,7 +448,7 @@ gh api graphql -f query="mutation { minimizeComment(input: {subjectId: \"$OLD_ID
 - **`posted: false` is a real window, not a formality — a re-review started inside it will not see the row as a baseline.** The incremental-baseline probe (`context-bookkeeping`'s `PRIOR` lookup) requires `posted: true` (unless `--since` names the sha directly), and posting can lag `persist-metrics` by however long the orchestrator takes to run the "Composing the GitHub-facing post" checklist above — minutes, not seconds, on PR #1947 (2026-07-31): the row landed `posted: false` at 15:26:13Z, the comment posted at 15:32:23Z, and a second review of the same PR started in that window reported "no baseline" — correctly, given the data it saw at that moment. **Before concluding a run was lost from a "no baseline" or "no prior review" report, read `~/.claude/tribunal-data/metrics.jsonl` directly for that `pr` and check `posted`** — a `false` row that's actually just pending the post is a different situation than a genuinely missing row, and only the latter is a lost run. If a review posted recently isn't picked up, `--since <sha>` (naming that headSha directly) sidesteps the `posted` gate entirely and is the correct fix — not a full review.
 - **`persist-metrics` is still the LAST step — a mid-run session cutoff (a usage-limit interruption, not a script crash) before the workflow reaches it leaves zero row, same as before the move.** This is what actually lost a `--batch-panels` ablation run on 2026-07-23. Two markers now bracket every run in `~/.claude/tribunal-data/inflight-runs.jsonl`, a file separate from `metrics.jsonl` (`--metrics`/`--audit`/`eval/score.mjs` need no changes to keep reading): `context-bookkeeping` (Context phase, right after `headRefOid` resolves — the same dispatch that runs the incremental-scope probe) appends `{"event":"started", pr, headSha, batchPanelsRequested, ts}`; the persist step itself appends `{"event":"completed", pr, headSha, batchPanels, ts}` right after `persist-result.txt` confirms `ok`. A `started` entry with no matching `completed` is a lost run — check with:
   ```bash
-  node ${CLAUDE_PLUGIN_ROOT}/skills/review-pr/eval/lost-runs.mjs
+  tribunal-engine run -- lost-runs
   ```
   **Do not use a set-membership check here, which is what this replaced.** Keying `started` in a dict and `completed` in a set by `(pr, headSha)` loses runs in exactly the case that matters: PR #1935 has ten rows at ONE headSha, so one completion marks the key done forever and every later dead run at that commit reports nothing, while the dict has already discarded all but the last start. It printed **0 lost runs** on data holding **3**.
 
