@@ -410,7 +410,7 @@ pub async fn verify_phase<A: Agent>(
         js::truthy(js::get(c, "mechanicalClaim"))
             || js::get(c, "file")
                 .and_then(Value::as_str)
-                .is_some_and(|f| f.ends_with(".ts") || f.ends_with(".tsx"))
+                .is_some_and(|f| f.ends_with(".ts") || f.ends_with(".tsx") || f.ends_with(".py"))
     });
     let head = js::get(&rc.pr_context, "headRefOid");
     let pin_ok = js::truthy(js::get(&rc.head_pin, "ok"));

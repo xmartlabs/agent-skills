@@ -33,6 +33,7 @@ pub mod post_footer;
 pub mod post_review;
 pub mod proc;
 pub mod py_json;
+pub mod python_typecheck;
 pub mod reconcile_votes;
 pub mod resolve_baseline;
 pub mod resolve_evidence_line;

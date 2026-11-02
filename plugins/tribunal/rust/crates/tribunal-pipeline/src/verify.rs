@@ -6,9 +6,11 @@
 use std::collections::HashSet;
 
 use serde_json::{json, Map, Value};
+use tribunal_context::python_typecheck;
 use tribunal_core::evidence::tsc_oracle::{
     adjudicate_finding, classify_typecheck_text, filter_diagnostics_to_pr,
     group_diagnostics_by_file, parse_tsc_diagnostics, resolve_diag_file, DiagsByFile,
+    TscDiagnostic,
 };
 use tribunal_core::js;
 use tribunal_core::lens::js_ext::to_js_string;
@@ -267,9 +269,13 @@ pub struct Grounded {
     pub available: bool,
     pub diags_by_file: DiagsByFile,
     pub covered: Vec<String>,
+    /// A diagnostic may confirm a finding but silence never refutes one: mypy
+    /// skips unannotated code, so a clean file says nothing about it.
+    pub confirm_only: bool,
 }
 
 const SOURCE_EXT: [&str; 6] = [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"];
+const PYTHON_EXT: [&str; 2] = [".py", ".pyi"];
 
 /// Ports `applyTypecheckResult` over the typecheck's text.
 ///
@@ -280,7 +286,10 @@ pub fn apply_typecheck_result(
     pr_files: &[String],
     logs: &mut Vec<String>,
 ) -> Result<Grounded, String> {
-    let mut g = Grounded::default();
+    if python_typecheck::is_python_text(text) {
+        return apply_python_result(text, pr_files, logs);
+    }
+    let g = Grounded::default();
     let kind = classify_typecheck_text(Some(text));
     if kind == "no-tsconfig" {
         logs.push("Grounded check: no TS typecheck in repo, skipped".into());
@@ -307,6 +316,17 @@ pub fn apply_typecheck_result(
         );
         return Ok(g);
     }
+    ground_on_coverage(text, &all, &SOURCE_EXT, pr_files, logs)
+}
+
+fn ground_on_coverage(
+    text: &str,
+    all: &[TscDiagnostic],
+    exts: &[&str],
+    pr_files: &[String],
+    logs: &mut Vec<String>,
+) -> Result<Grounded, String> {
+    let mut g = Grounded::default();
     const MARK: &str = "---COVERED---";
     let marker = text.find(MARK);
     let mut covered: Vec<String> = Vec::new();
@@ -315,7 +335,7 @@ pub fn apply_typecheck_result(
             let s = js::trim(s);
             if !s.is_empty()
                 && !s.starts_with('/')
-                && SOURCE_EXT.iter().any(|e| s.ends_with(e))
+                && exts.iter().any(|e| s.ends_with(e))
                 && !covered.iter().any(|c| c == s)
             {
                 covered.push(s.to_owned());
@@ -326,9 +346,7 @@ pub fn apply_typecheck_result(
         text[at + MARK.len()..]
             .split('\n')
             .map(js::trim)
-            .filter(|s| {
-                !s.is_empty() && !s.starts_with('/') && SOURCE_EXT.iter().any(|e| s.ends_with(e))
-            })
+            .filter(|s| !s.is_empty() && !s.starts_with('/') && exts.iter().any(|e| s.ends_with(e)))
             .count()
     });
     let pr_covered = pr_files.iter().filter(|f| covered.contains(f)).count();
@@ -340,7 +358,7 @@ pub fn apply_typecheck_result(
     let program_size = sized.unwrap_or(covered_count as f64);
     g.covered = covered;
     let grouped =
-        || group_diagnostics_by_file(Some(&filter_diagnostics_to_pr(Some(&all), Some(pr_files))));
+        || group_diagnostics_by_file(Some(&filter_diagnostics_to_pr(Some(all), Some(pr_files))));
     if program_size == 0.0 {
         g.diags_by_file = grouped()?;
         g.available = true;
@@ -364,6 +382,31 @@ pub fn apply_typecheck_result(
     Ok(g)
 }
 
+fn apply_python_result(
+    text: &str,
+    pr_files: &[String],
+    logs: &mut Vec<String>,
+) -> Result<Grounded, String> {
+    if text
+        .lines()
+        .any(|l| l.trim() == python_typecheck::NO_CONFIG)
+    {
+        logs.push("Grounded check: no Python typecheck config in repo, skipped".into());
+        return Ok(Grounded::default());
+    }
+    if !text.lines().any(|l| l.starts_with("PY_CHECKER ")) {
+        logs.push(
+            "Grounded check unavailable (Python checker degraded); findings fall through to panel"
+                .into(),
+        );
+        return Ok(Grounded::default());
+    }
+    let all = python_typecheck::parse_diagnostics(text);
+    let mut g = ground_on_coverage(text, &all, &PYTHON_EXT, pr_files, logs)?;
+    g.confirm_only = true;
+    Ok(g)
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct GroundedGate {
     pub confirmed: Vec<Value>,
@@ -384,7 +427,11 @@ pub fn grounded_gate(
     let mut gate = GroundedGate::default();
     let mut remaining = Vec::new();
     if grounded.available {
-        let covered: HashSet<String> = grounded.covered.iter().cloned().collect();
+        let covered: HashSet<String> = if grounded.confirm_only {
+            HashSet::new()
+        } else {
+            grounded.covered.iter().cloned().collect()
+        };
         for finding in candidates {
             let mut probe = finding.clone();
             if let Some(Value::String(f)) = js::get(finding, "file") {

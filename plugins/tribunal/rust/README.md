@@ -523,6 +523,28 @@ Pipeline differences from the workflow, on purpose:
 - The grounded typecheck runs natively (`tribunal_context::grounded_typecheck`)
   and reuses the pinned checkout when there is one, as the fused availability
   probe does; the workflow's standalone dispatch makes its own worktree.
+- A PR with Python files gets the same grounding from the repo's own checker
+  (`tribunal_context::python_typecheck`): mypy when the repo configures it
+  (`[tool.mypy]`, `mypy.ini`, `.mypy.ini`, `[mypy]` in `setup.cfg`), else
+  pyright when only `pyrightconfig.json` or `[tool.pyright]` is configured and
+  `pyright` is already installed. It looks for `.venv/bin/mypy` or
+  `venv/bin/mypy` in the checkout first, then `PATH`; it installs nothing and
+  uses no network. The checker runs at the head over the PR's `.py` and `.pyi`
+  files, with its cache turned off, for at most 300 seconds. TypeScript keeps
+  every PR that touches a `.ts` or `.tsx` file in a repo with a
+  `tsconfig.json`, and every PR with no Python file; a mixed PR in such a repo
+  gets the TypeScript check only. The text starts with `PY_CHECKER <tool>`,
+  then up to 500 `path:line:col: error: message  [code]` lines for the PR's
+  files (or `NO_DIAGNOSTICS`), then `---COVERED--- N` and the files checked.
+  Diagnostics whose code is `import`, `import-not-found` or `import-untyped`
+  are dropped: they say the checker's environment lacks a dependency. Markers
+  that stand alone: `PY_NO_CONFIG` (no checker configured, nothing run),
+  `DEGRADED_PY_NOT_INSTALLED`, `DEGRADED_PY_TIMEOUT` and
+  `DEGRADED_PY_CHECKER_FAILED` (exit code other than 0 or 1). A degraded run
+  leaves the findings to the panel, as the TypeScript markers do. Unlike the
+  TypeScript check, a clean Python file never refutes a mechanical finding:
+  mypy skips unannotated code by default, so silence proves nothing. A
+  diagnostic within a few lines of a finding still confirms it.
 - The verifiedBy anchors are resolved by `resolve_verified_anchors::run` in
   process; a resolver error reads as the workflow's `relay-not-verified`.
 - The wrong-ref audit greps the pinned checkout natively (no symlink below
