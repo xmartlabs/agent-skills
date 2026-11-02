@@ -269,10 +269,9 @@ jobs:
   # RELEASE_RUNNER variable names, else RUNNER: a runner that never builds pull
   # requests keeps their code away from the release and its write token.
   #
-  # The Linux and Windows release binaries, built on the Linux runner in the
-  # containers of rust/docker/Dockerfile: a static musl binary, and the msvc
-  # one cross-built with cargo-xwin after its clippy and unit tests pass
-  # under Wine.
+  # The Linux release binary, built on the Linux runner in the container of
+  # rust/docker/Dockerfile: a static musl binary. The Windows and macOS ones
+  # build on GitHub's own runners, below.
   # While the repository is private, GitHub-hosted runners bill the
   # organization's Actions minutes, macOS at ten times the Linux rate, and a
   # release builds four binaries from scratch. A tag pushed then builds
@@ -293,7 +292,6 @@ jobs:
       matrix:
         include:
           - { target: x86_64-unknown-linux-musl, stage: linux-bin, bin: tribunal, archive: tar.gz }
-          - { target: x86_64-pc-windows-msvc, stage: windows-msvc-bin, bin: tribunal.exe, archive: zip }
     runs-on: ${{ vars.RELEASE_RUNNER || vars.RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: read
@@ -346,8 +344,7 @@ jobs:
           asset="$name.${{ matrix.archive }}"
           sha256sum "$asset" > "$asset.sha256"
           echo "ASSET=$asset" >> "$GITHUB_ENV"
-      # The musl binary starts here before it ships; the Windows one already
-      # started under Wine in its container.
+      # The musl binary starts here before it ships.
       - if: matrix.archive == 'tar.gz'
         run: '"$RUNNER_TEMP/bin/${{ matrix.bin }}" --version'
       # A signed statement that this workflow, at this commit, built the
@@ -407,8 +404,81 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # The Windows archive, built and tested on a real Windows runner with the
+  # steps of the `windows` job, which GitHub provides free for a public
+  # repository. A manual run builds the archive without attesting it, to try
+  # the build before a tag; `release` needs `build`, which a manual run skips,
+  # so nothing is published.
+  build-windows:
+    if: >-
+      (startsWith(github.ref, 'refs/tags/tribunal-rust-v') && !github.event.repository.private) ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: windows-2025
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      TARGET: x86_64-pc-windows-msvc
+    steps:
+      # The binary embeds files the runner's git would check out with CRLF.
+      - name: git config
+        working-directory: .
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: tag matches the version and main
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          want="tribunal-rust-v$(sed -n 's/^version = "\(.*\)"/\1/p' crates/tribunal-cli/Cargo.toml | head -1)"
+          if [ "$GITHUB_REF_NAME" != "$want" ]; then
+            echo "the tag $GITHUB_REF_NAME is not the CLI version $want"; exit 1
+          fi
+          git fetch --no-tags -q origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD || { echo "the tag's commit is not on main"; exit 1; }
+      - name: toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add "$TARGET"
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+      - run: cargo clippy --target "$TARGET" --workspace --lib --bins --locked -- -D warnings
+      - run: cargo test --target "$TARGET" --workspace --lib --bins --locked
+      - run: cargo build --release --locked --target "$TARGET" -p tribunal-cli
+      # rust/.cargo/config.toml puts target/ at the repository root.
+      - run: '"../../../target/$TARGET/release/tribunal.exe" --version'
+      - name: package
+        run: |
+          # tribunal-v<version>-<target>, the shape rust/scripts/pin-release.mjs
+          # and the launcher (skills/review-pr/scripts/rust-engine.mjs) read.
+          ver=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/tribunal-cli/Cargo.toml | head -1)
+          name="tribunal-v$ver-$TARGET"
+          mkdir -p "$RUNNER_TEMP/$name"
+          cp "../../../target/$TARGET/release/tribunal.exe" "$RUNNER_TEMP/$name/"
+          cd "$RUNNER_TEMP"
+          python -m zipfile -c "$name.zip" "$name"
+          sha256sum "$name.zip" > "$name.zip.sha256"
+          echo "ASSET=$name.zip" >> "$GITHUB_ENV"
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: ${{ runner.temp }}/${{ env.ASSET }}
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: x86_64-pc-windows-msvc
+          path: |
+            ${{ runner.temp }}/${{ env.ASSET }}
+            ${{ runner.temp }}/${{ env.ASSET }}.sha256
+          if-no-files-found: error
+          retention-days: 1
+
   release:
-    needs: [build, build-darwin]
+    needs: [build, build-darwin, build-windows]
     runs-on: ${{ vars.RELEASE_RUNNER || vars.RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: write
