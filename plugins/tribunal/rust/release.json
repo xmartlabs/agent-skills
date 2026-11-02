@@ -1,22 +1,22 @@
 {
-  "tag": "tribunal-rust-v0.1.4",
+  "tag": "tribunal-rust-v0.1.6",
   "repo": "xmartlabs/agent-skills",
   "assets": {
     "aarch64-apple-darwin": {
-      "name": "tribunal-v0.1.4-aarch64-apple-darwin.tar.gz",
-      "sha256": "759ec0e484aed1e1705e100696eebe251ed445336075027015e23ba9d14b7982"
+      "name": "tribunal-v0.1.6-aarch64-apple-darwin.tar.gz",
+      "sha256": "90a7b793ac582be02a855991a5746dad363bbe3cf918b0604733912221e85358"
     },
     "x86_64-apple-darwin": {
-      "name": "tribunal-v0.1.4-x86_64-apple-darwin.tar.gz",
-      "sha256": "7af55949fbeb596f67bd79b583e7a473b7437c6d58c0c4cf868858301fb1adba"
+      "name": "tribunal-v0.1.6-x86_64-apple-darwin.tar.gz",
+      "sha256": "42e2474f2ec696b072e9c038761be42f89e390af7ac181bc14116d9281ddf09a"
     },
     "x86_64-pc-windows-msvc": {
-      "name": "tribunal-v0.1.4-x86_64-pc-windows-msvc.zip",
-      "sha256": "a51248c58d1b1d6403eeacc03044bd995df6fdf4f24ac0ee596d1626dcb6785a"
+      "name": "tribunal-v0.1.6-x86_64-pc-windows-msvc.zip",
+      "sha256": "f5023a2339580e8686efb6c524e7161b956330732006d5b639871b348f12cf3f"
     },
     "x86_64-unknown-linux-musl": {
-      "name": "tribunal-v0.1.4-x86_64-unknown-linux-musl.tar.gz",
-      "sha256": "28ade206be11368de2754c1f4b7f9dd7c00e65e915e3878c6419b72270be4757"
+      "name": "tribunal-v0.1.6-x86_64-unknown-linux-musl.tar.gz",
+      "sha256": "6ec652513438efdc922cd66bf0301302684562031ac93f31ebac8aa6e5e239e1"
     }
   }
 }
