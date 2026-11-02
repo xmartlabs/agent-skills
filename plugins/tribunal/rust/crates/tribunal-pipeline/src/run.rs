@@ -543,6 +543,7 @@ pub async fn verify_phase<A: Agent>(
         no_gemini: args.gemini == Some(false),
         force_batch: args.batch_panels == Some(true),
         no_batch: args.batch_panels == Some(false),
+        lone_refuter: true,
     };
     let any_candidate = !dedup.panel_candidates.is_empty();
     let probe = if any_candidate {

@@ -44,7 +44,7 @@ changes what tribunal does.
 | `lens` | `code-review-expert` / `fe-code-review-expert` / `e2e-code-review-expert` / `py-code-review-expert` | cwd = head worktree; Read + Bash |
 | `completeness-critic` | reviewer agent | Rust: audits the changed files no finding names, what the lenses did not reach and the siblings of the change, from the diff on disk and the pinned checkout; asked to use at most 20 tool calls |
 | `cache-warmup` | reviewer agent | Rust: one small request before the lenses, so they read their shared system prompt (methodology, conventions and, up to 80,000 bytes, the PR diff) from the model cache; skipped with fewer than two lenses |
-| `refute`, `refute-batch` | `tribunal-refuter` | single and batched |
+| `refute`, `refute-batch` | `tribunal-refuter` | single and batched. Rust: a finding with no external head starts with one Claude vote and gets a second only when the first is a `REFUTED`, is under-confident or is missing; the Workflow asks for two up front |
 | `defense`, `judge` | refuter/scribe | debate round |
 | `refine` (2 sites) | `tribunal-strengthener` | |
 | `verify-prior` | `finding-verifier` | incremental re-review |
