@@ -3,7 +3,7 @@
 //! both; it posts nothing.
 //!
 //!   tribunal review --pr <n> [--repo <owner/name>] [--head-sha <sha>]
-//!     [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>]
+//!     [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>]
 //!     [--context <text>] [--bot-comments] [--model <id>] [--preflight]
 //!     [--max-panels <n>] [--max-agents <n>] [--concurrency <n>]
 //!     [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]
@@ -18,7 +18,7 @@ use tribunal_context::fetch_pr_context::default_tmpdir;
 use tribunal_context::operator::OperatorEnv;
 use tribunal_pipeline::context::{RunArgs, Runtime};
 use tribunal_pipeline::post::PostMode;
-use tribunal_pipeline::run::{run_full, DispatchPolicy, FullOutcome};
+use tribunal_pipeline::run::{run_full, DispatchPolicy, FullOutcome, MAX_LENS_SAMPLES};
 
 const DEFAULT_MODEL: &str = "claude-sonnet-5-5";
 
@@ -30,7 +30,7 @@ fn usage() -> ExitCode {
     eprintln!("usage: tribunal override --ts <row ts> --title <finding title prefix> (--direction reinstated|rejected|withdrawn | --severity nit|important) --reason <how it was checked> [--by <login>] [--verified-at <sha>] [--dry-run]");
     eprintln!("usage: tribunal selfcheck [--apply] [--no-battery] [--model <id>] [--effort <level>] [--out <file>]");
     eprintln!("usage: tribunal post --from <run.json> [--verdict approve|request-changes|comment] [--delta|--edit-existing] [--over-own-review] [--over-standing-review] [--model <id>] [--effort <level>]");
-    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--context <text>] [--bot-comments] [--model <id>] [--preflight] [--max-panels <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
+    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>] [--context <text>] [--bot-comments] [--model <id>] [--preflight] [--max-panels <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
     ExitCode::from(2)
 }
 
@@ -68,6 +68,15 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
                     .parse()
                     .map_err(|_| "--lenses takes a number")?;
                 args.lenses = Some(json!(n));
+            }
+            "--lens-samples" => {
+                let n: u32 = value(&mut it, a)?
+                    .parse()
+                    .map_err(|_| "--lens-samples takes a whole number from 1 to 4")?;
+                if !(1..=MAX_LENS_SAMPLES).contains(&n) {
+                    return Err("--lens-samples takes a whole number from 1 to 4".into());
+                }
+                args.lens_samples = Some(n);
             }
             "--context" => args.context = Some(value(&mut it, a)?),
             "--model" => args.review_model = value(&mut it, a)?,
@@ -827,6 +836,24 @@ mod tests {
         assert!(!is_utc_instant("2026-10-14T18:02:11.Z"));
         assert!(!is_utc_instant("2026-10-14 18:02:11Z"));
         assert!(!is_utc_instant("2026-10-14T18:02:11+00:00"));
+    }
+
+    #[test]
+    fn lens_samples_takes_a_whole_number_from_one_to_four() {
+        let parse_with = |v: &str| {
+            let a: Vec<String> = ["--pr", "12", "--lens-samples", v]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            parse(&a)
+        };
+        assert_eq!(parse_with("3").unwrap().args.lens_samples, Some(3));
+        assert_eq!(parse_with("1").unwrap().args.lens_samples, Some(1));
+        for bad in ["0", "5", "-1", "2.5", "many"] {
+            assert!(parse_with(bad).is_err(), "{bad} must be refused");
+        }
+        let none: Vec<String> = ["--pr", "12"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(parse(&none).unwrap().args.lens_samples, None);
     }
 
     #[test]

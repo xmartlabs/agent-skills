@@ -52,6 +52,9 @@ pub struct RunArgs {
     pub codex: Option<bool>,
     pub gemini: Option<bool>,
     pub batch_panels: Option<bool>,
+    /// `--lens-samples`: how many independent dispatches each planned lens
+    /// gets. `None` is one, which is what the Workflow does.
+    pub lens_samples: Option<u32>,
     /// `--post`: post the review when the duplicate-review gate is clear.
     pub post: bool,
     /// `--profile` / `--rules`: a profile and review rules read from disk
