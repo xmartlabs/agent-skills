@@ -333,6 +333,66 @@ pub fn answer_of(result: &DispatchResult) -> Option<Value> {
     result.structured().map(js_key_order)
 }
 
+/// What the warm-up request asks for. It only has to be a valid, tiny turn.
+pub const WARMUP_PROMPT: &str = "Cache warm-up. Return an empty findings list and stop.";
+
+/// How long the warm-up may take before the lenses go ahead without it.
+const WARMUP_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// The request a lens makes, minus its label and prompt. The model cache is
+/// keyed on everything that comes before the user message (tools, schema,
+/// system prompt, model), so a warm-up only warms a lens when it is built here.
+fn lens_request(
+    setup: &ReviewerSetup,
+    label: String,
+    prompt: String,
+    schema: Value,
+) -> DispatchRequest {
+    let mut req = DispatchRequest::new(label, prompt, setup.cwd.clone());
+    req.system_prompt = Some(setup.agent.body.clone());
+    req.model = Some(setup.model.clone());
+    req.effort = setup.effort.clone();
+    req.tools = setup.agent.tools.clone();
+    req.schema = Some(schema);
+    req.timeout = setup.timeout;
+    req
+}
+
+/// Writes the lenses' shared system prompt into the model cache with one small
+/// request, so the lenses started after it read it instead of each creating it.
+pub async fn warm_cache<A: Agent>(agent: &A, setup: &ReviewerSetup) -> DispatchResult {
+    let mut req = lens_request(
+        setup,
+        "cache-warmup".into(),
+        WARMUP_PROMPT.into(),
+        schemas::findings(),
+    );
+    req.timeout = WARMUP_TIMEOUT;
+    agent.run(&req).await
+}
+
+/// `dispatch_all`, after a `warm_cache` when `warm` is set and at least two
+/// lenses will share the prompt. A warm-up that fails or times out costs
+/// nothing but the cache saving: the lenses run either way. The warm-up's own
+/// result comes back separately so the lens results keep their task order.
+pub async fn dispatch_lenses<A: Agent>(
+    agent: &A,
+    setup: &ReviewerSetup,
+    tasks: &[ReviewerTask],
+    warm: bool,
+) -> (Vec<DispatchResult>, Option<DispatchResult>) {
+    let lenses = tasks
+        .iter()
+        .filter(|t| t.label.starts_with("lens:"))
+        .count();
+    let warmup = if warm && lenses >= 2 {
+        Some(warm_cache(agent, setup).await)
+    } else {
+        None
+    };
+    (dispatch_all(agent, setup, tasks).await, warmup)
+}
+
 /// Runs every task, at most `setup.concurrency` at a time, and returns the
 /// results in task order.
 pub async fn dispatch_all<A: Agent>(
@@ -343,13 +403,7 @@ pub async fn dispatch_all<A: Agent>(
     let gate = Arc::new(Semaphore::new(setup.concurrency.max(1)));
     let runs = tasks.iter().map(|t| {
         let gate = Arc::clone(&gate);
-        let mut req = DispatchRequest::new(t.label.clone(), t.prompt.clone(), setup.cwd.clone());
-        req.system_prompt = Some(setup.agent.body.clone());
-        req.model = Some(setup.model.clone());
-        req.effort = setup.effort.clone();
-        req.tools = setup.agent.tools.clone();
-        req.schema = Some(t.schema.clone());
-        req.timeout = setup.timeout;
+        let req = lens_request(setup, t.label.clone(), t.prompt.clone(), t.schema.clone());
         async move {
             let _permit = gate
                 .acquire_owned()
