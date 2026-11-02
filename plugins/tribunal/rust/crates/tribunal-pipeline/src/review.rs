@@ -255,12 +255,7 @@ pub fn collect_candidates(
                 put(&mut d, "title", js::get(c, "title"));
                 put(&mut d, "file", js::get(c, "file"));
                 put(&mut d, "severity", js::get(c, "severity"));
-                d.insert(
-                    "reason".into(),
-                    json!(
-                        "out-of-diff (file not in this PR, and nothing ties it to a changed file)"
-                    ),
-                );
+                d.insert("reason".into(), json!(OUT_OF_DIFF));
                 dropped_pre_panel.push(Value::Object(d));
             }
         }
@@ -440,4 +435,99 @@ async fn futures_join_all<F: std::future::Future>(futs: impl Iterator<Item = F>)
     out.into_iter()
         .map(|o| o.expect("every future completed"))
         .collect()
+}
+
+const OUT_OF_DIFF: &str =
+    "out-of-diff (file not in this PR, and nothing ties it to a changed file)";
+
+/// In an incremental run the gate's file list holds only what changed since
+/// the baseline, so a finding on a PR file that did not change is dropped as
+/// out-of-diff and the reason says the file is not in the PR. Rewrites that
+/// reason to say what happened: the file is in the PR, unchanged since the
+/// review at `prior_sha`, and so not re-reviewed.
+pub fn relabel_unchanged_drops(
+    dropped: &mut [Value],
+    scoped: &[String],
+    all_pr_files: &[String],
+    prior_sha: Option<&str>,
+) {
+    let same =
+        |a: &str, b: &str| a == b || a.ends_with(&format!("/{b}")) || b.ends_with(&format!("/{a}"));
+    let since = prior_sha.filter(|s| !s.is_empty()).map_or_else(
+        || "the earlier review".to_owned(),
+        |s| format!("the review at {}", s.chars().take(8).collect::<String>()),
+    );
+    for d in dropped {
+        let Some(obj) = d.as_object_mut() else {
+            continue;
+        };
+        let Some(prefix) = obj
+            .get("reason")
+            .and_then(Value::as_str)
+            .and_then(|r| r.strip_suffix(OUT_OF_DIFF))
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        let file = obj.get("file").and_then(Value::as_str).unwrap_or("");
+        if file.is_empty()
+            || scoped.iter().any(|f| same(f, file))
+            || !all_pr_files.iter().any(|f| same(f, file))
+        {
+            continue;
+        }
+        obj.insert(
+            "reason".into(),
+            json!(format!(
+                "{prefix}out of scope (in this PR, unchanged since {since}, so this incremental run did not re-review it)"
+            )),
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn drop(file: &str, reason: &str) -> Value {
+        json!({"title": "t", "file": file, "severity": "nit", "reason": reason})
+    }
+
+    #[test]
+    fn a_pr_file_unchanged_since_the_baseline_is_not_called_out_of_the_pr() {
+        let critic = format!("completeness-critic gap {OUT_OF_DIFF}");
+        let mut d = vec![
+            drop("src/services/v2/bulkInvoice.ts", OUT_OF_DIFF),
+            drop("src/services/v2/bulkInvoice.ts", &critic),
+            drop("src/other.ts", OUT_OF_DIFF),
+            drop("src/changed.ts", OUT_OF_DIFF),
+            drop("src/services/v2/bulkInvoice.ts", "pre-decided"),
+        ];
+        let scoped = vec!["src/changed.ts".to_owned()];
+        let all = vec![
+            "src/changed.ts".to_owned(),
+            "src/services/v2/bulkInvoice.ts".to_owned(),
+        ];
+        relabel_unchanged_drops(&mut d, &scoped, &all, Some("e8b4a9e1c0ffee"));
+        let unchanged = "out of scope (in this PR, unchanged since the review at e8b4a9e1, so this incremental run did not re-review it)";
+        assert_eq!(d[0]["reason"], unchanged);
+        assert_eq!(
+            d[1]["reason"],
+            format!("completeness-critic gap {unchanged}")
+        );
+        // Not in the PR at all: the original reason is right.
+        assert_eq!(d[2]["reason"], OUT_OF_DIFF);
+        // In scope: the gate dropped it for another reason; leave it.
+        assert_eq!(d[3]["reason"], OUT_OF_DIFF);
+        assert_eq!(d[4]["reason"], "pre-decided");
+    }
+
+    #[test]
+    fn a_full_run_keeps_every_reason() {
+        let mut d = vec![drop("src/a.ts", OUT_OF_DIFF), drop("lib/b.ts", OUT_OF_DIFF)];
+        let files = vec!["src/a.ts".to_owned()];
+        relabel_unchanged_drops(&mut d, &files, &files, None);
+        assert_eq!(d[0]["reason"], OUT_OF_DIFF);
+        assert_eq!(d[1]["reason"], OUT_OF_DIFF);
+    }
 }

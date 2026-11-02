@@ -41,7 +41,8 @@ use crate::prompts::{
 };
 use crate::review::{
     answer_of, bot_task, bot_vetting_prompt, check_lenses_returned, collect_candidates,
-    dispatch_all, dispatch_lenses, lens_labels, lens_task, Candidates, ReviewerSetup, ReviewerTask,
+    dispatch_all, dispatch_lenses, lens_labels, lens_task, relabel_unchanged_drops, Candidates,
+    ReviewerSetup, ReviewerTask,
 };
 use crate::schemas;
 use crate::synthesize::{
@@ -727,7 +728,7 @@ pub async fn verify_phase<A: Agent>(
         spent: &spent,
         spent_before: output_of(&before),
     };
-    let panel = panel_phase(
+    let mut panel = panel_phase(
         &io,
         &env,
         gate.panel_input.clone(),
@@ -735,6 +736,16 @@ pub async fn verify_phase<A: Agent>(
         logs,
     )
     .await?;
+    relabel_unchanged_drops(
+        &mut panel.dropped_pre_panel,
+        &rc.plan.files,
+        &rc.plan.all_pr_files,
+        rc.plan
+            .prior_review
+            .as_ref()
+            .and_then(|p| js::get(p, "sha"))
+            .and_then(Value::as_str),
+    );
     let panel_seconds = (panel_started.elapsed().as_secs_f64() - panel.critic_seconds).max(0.0);
     dispatches.extend(io.dispatches.into_inner().expect("lock"));
     let verdicts = partition_results(

@@ -77,14 +77,15 @@ const SESSION_VARS: &[&str] = &[
 /// What else a child loads besides the request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Isolation {
-    /// Only the working directory's project settings and no MCP server: the
-    /// operator's global CLAUDE.md, plugins, skills and servers stay out.
-    /// Measured on 2.1.308, a one-file task loaded 4,570 input tokens this way
-    /// against 188,430 inheriting everything.
+    /// No settings file and no MCP server: the operator's global CLAUDE.md,
+    /// plugins, skills and servers stay out, and so does everything the
+    /// reviewed repository's `.claude/` carries. Measured on 2.1.308, a
+    /// one-file task loaded 4,570 input tokens this way against 188,430
+    /// inheriting everything.
     #[default]
     Isolated,
-    /// Everything the operator's own sessions load, as a Workflow subagent
-    /// does. Kept to compare the two.
+    /// The operator's own settings, plugins, skills and servers, as a
+    /// Workflow subagent has them. Kept to compare the two.
     Inherit,
 }
 
@@ -184,12 +185,18 @@ impl ClaudeAgent {
         if let Some(schema) = &req.schema {
             a.extend(["--json-schema".to_owned(), schema.to_string()]);
         }
+        // A child's working directory is the checkout of the pull request
+        // under review, so its project and local settings are the PR's own:
+        // their hooks, `env` and MCP servers would run on the reviewer's
+        // machine. No child loads them, inheriting or not.
         if self.isolation == Isolation::Isolated && !req.inherit_settings {
             a.extend([
                 "--setting-sources".to_owned(),
-                "project".to_owned(),
+                String::new(),
                 "--strict-mcp-config".to_owned(),
             ]);
+        } else {
+            a.extend(["--setting-sources".to_owned(), "user".to_owned()]);
         }
         a
     }
@@ -442,7 +449,7 @@ mod tests {
         assert!(has(["--tools", "Read,Bash"]));
         assert!(has(["--allowedTools", "Read,Bash"]));
         assert!(has(["--json-schema", r#"{"type":"object"}"#]));
-        assert!(has(["--setting-sources", "project"]));
+        assert!(has(["--setting-sources", ""]));
         assert!(a.contains(&"--strict-mcp-config".to_owned()));
         assert!(!a.iter().any(|x| x == "--agent" || x == "--bare"));
     }
@@ -495,11 +502,14 @@ mod tests {
     }
 
     #[test]
-    fn inherit_loads_the_operator_settings() {
+    fn inherit_loads_the_operator_settings_and_not_the_repository() {
         let mut agent = ClaudeAgent::new("claude");
         agent.isolation = Isolation::Inherit;
         let a = agent.args(&req());
-        assert!(!a.contains(&"--setting-sources".to_owned()));
+        assert!(a
+            .windows(2)
+            .any(|w| w[0] == "--setting-sources" && w[1] == "user"));
+        assert!(!a.contains(&"--strict-mcp-config".to_owned()));
     }
 
     #[test]
@@ -508,9 +518,14 @@ mod tests {
         let mut r = req();
         r.inherit_settings = true;
         let a = agent.args(&r);
-        assert!(!a.contains(&"--setting-sources".to_owned()));
+        assert!(a
+            .windows(2)
+            .any(|w| w[0] == "--setting-sources" && w[1] == "user"));
         assert!(!a.contains(&"--strict-mcp-config".to_owned()));
-        assert!(agent.args(&req()).contains(&"--setting-sources".to_owned()));
+        let isolated = agent.args(&req());
+        assert!(isolated
+            .windows(2)
+            .any(|w| w[0] == "--setting-sources" && w[1].is_empty()));
     }
 
     #[test]
