@@ -422,6 +422,7 @@ fn rust_gate(c: &Value) -> Value {
         available: c["groundedAvailable"].as_bool().unwrap(),
         diags_by_file: diags_by_file(&c["diagsByFile"]),
         covered: files_of(&c["covered"]),
+        ..Grounded::default()
     };
     let mut logs = Vec::new();
     let g = grounded_gate(

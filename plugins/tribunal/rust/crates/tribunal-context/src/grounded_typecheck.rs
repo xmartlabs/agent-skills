@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use crate::exec::{run as exec, Tools};
 use crate::head_worktree::{grep_i, in_cwd, input_lines, mktemp_then_rmdir, rm_rf, words};
+use crate::python_typecheck;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypecheckRun {
@@ -114,7 +115,17 @@ pub async fn run(
         _ => String::new(),
     };
     let repo_dir = PathBuf::from(&top);
-    if !is_file(&PathBuf::from(format!("{top}/tsconfig.json"))) {
+    let has_tsconfig = is_file(&PathBuf::from(format!("{top}/tsconfig.json")));
+    let python = python_typecheck::wants_python(has_tsconfig, pr_files);
+    let checker = if python {
+        match python_typecheck::detect(&repo_dir) {
+            Some(c) => Some(c),
+            None => return done(vec![python_typecheck::NO_CONFIG.into()], None),
+        }
+    } else {
+        None
+    };
+    if !python && !has_tsconfig {
         return done(vec!["NO_TSCONFIG".into()], None);
     }
     let wt = match pinned.filter(|p| !p.is_empty()) {
@@ -149,6 +160,19 @@ pub async fn run(
         }
     };
     let wt_dir = in_cwd(Some(cwd), &wt);
+    if let Some(checker) = checker {
+        let out = python_typecheck::check(
+            tools,
+            checker,
+            &repo_dir,
+            &wt_dir,
+            pr_files,
+            python_typecheck::RUN_TIMEOUT,
+        )
+        .await;
+        lines.extend(out);
+        return done(lines, created);
+    }
     if schema_drift(&repo_dir, &wt_dir) {
         lines.push("DEGRADED_SCHEMA_DRIFT".into());
         return done(lines, created);

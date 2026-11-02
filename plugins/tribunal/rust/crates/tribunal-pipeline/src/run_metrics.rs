@@ -11,6 +11,7 @@ use tribunal_agent::{DispatchResult, Exit};
 use tribunal_context::inflight;
 use tribunal_context::ledger::LedgerEnv;
 use tribunal_context::persist_run::{self, PersistRun};
+use tribunal_context::python_typecheck;
 use tribunal_context::review_record;
 use tribunal_core::js;
 use tribunal_core::lens::coverage_gaps::kind_counts;
@@ -527,6 +528,27 @@ fn stage_seconds_row(seconds: [f64; 6]) -> Value {
     )
 }
 
+/// What the grounded typecheck was: the checker that ran (`tsc`, `mypy`,
+/// `pyright`), the marker that says why none did, or null when the review had
+/// no typecheck to run.
+fn grounded_checker(text: Option<&str>) -> Value {
+    let Some(text) = text else {
+        return Value::Null;
+    };
+    for line in text.lines().map(str::trim) {
+        if let Some(tool) = line.strip_prefix("PY_CHECKER ") {
+            return json!(tool);
+        }
+        if line == "NO_TSCONFIG"
+            || line == python_typecheck::NO_CONFIG
+            || line.starts_with("DEGRADED_")
+        {
+            return json!(line);
+        }
+    }
+    json!("tsc")
+}
+
 /// The end of the Synthesize phase: build the row, write the payload files,
 /// run `persist-run`, fold what it prints back into the row, and check the
 /// row landed.
@@ -566,6 +588,8 @@ pub fn persist_phase(
         &review.dispatches[..lenses.min(review.dispatches.len())],
     );
     metrics["stageSeconds"] = stage_seconds(review, verify, synthesis);
+    metrics["groundedChecker"] =
+        grounded_checker(verify.typecheck.as_ref().map(|t| t.text.as_str()));
     metrics["engine"] = json!("rust");
     metrics["engineVersion"] = json!(ENGINE_VERSION);
     metrics["pluginVersion"] =
@@ -744,6 +768,38 @@ mod tests {
             "foci": {"correctness": "c", "security": "s", "migration": "m"},
             "riskPaths": [{"focus": "migration", "pattern": "^tests/signup"}],
         })
+    }
+
+    #[test]
+    fn grounded_checker_names_the_tool_or_the_reason_none_ran() {
+        let name = |t: Option<&str>| grounded_checker(t);
+        assert_eq!(name(None), Value::Null);
+        assert_eq!(
+            name(Some(
+                "PY_CHECKER mypy\nNO_DIAGNOSTICS\n---COVERED--- 1\na.py"
+            )),
+            json!("mypy")
+        );
+        assert_eq!(
+            name(Some("PY_CHECKER pyright\nNO_DIAGNOSTICS")),
+            json!("pyright")
+        );
+        assert_eq!(name(Some("PY_NO_CONFIG")), json!("PY_NO_CONFIG"));
+        assert_eq!(
+            name(Some("DEGRADED_PY_NOT_INSTALLED")),
+            json!("DEGRADED_PY_NOT_INSTALLED")
+        );
+        assert_eq!(name(Some("NO_TSCONFIG")), json!("NO_TSCONFIG"));
+        assert_eq!(
+            name(Some("CREATED_WORKTREE /w\nDEGRADED_SCHEMA_DRIFT")),
+            json!("DEGRADED_SCHEMA_DRIFT")
+        );
+        assert_eq!(
+            name(Some(
+                "CREATED_WORKTREE /w\nsrc/a.ts(1,1): error TS2322: x\n---COVERED--- 1\nsrc/a.ts"
+            )),
+            json!("tsc")
+        );
     }
 
     #[test]
