@@ -568,6 +568,7 @@ pub async fn verify_phase<A: Agent>(
     let diff_block = rc.delivery.refuter_diff_block(&mut exposure)?;
     let not_reached = &review.candidates.lens_not_reached;
     let uncovered = uncovered_files(pr_files, all);
+    let siblings = critic_siblings(rt, rc, pinned).await;
     let claims = &rc.decisions.retest_claims;
     let retest = |f: &Value| is_retest_target(claims, f);
     let spent = || io.spent();
@@ -590,6 +591,7 @@ pub async fn verify_phase<A: Agent>(
         critic_gap: Some(CriticGap {
             not_reached,
             uncovered: &uncovered,
+            siblings: &siblings,
         }),
         blast_radius: rc.blast_radius.as_ref(),
         file_count: rc.plan.file_count,
@@ -672,6 +674,29 @@ fn uncovered_files(files: &[String], candidates: &[Value]) -> Vec<String> {
         })
         .cloned()
         .collect()
+}
+
+/// The critic's sibling list: only when the critic will run and a pinned
+/// checkout and the diff are on disk.
+async fn critic_siblings(rt: &Runtime, rc: &ReviewContext, pinned: Option<&str>) -> Vec<String> {
+    let (Some(dir), Some(diff_path)) = (pinned, rc.delivery.diff_path.as_deref()) else {
+        return Vec::new();
+    };
+    if rc.plan.file_count <= 2.0 {
+        return Vec::new();
+    }
+    let Ok(diff) = std::fs::read_to_string(diff_path) else {
+        return Vec::new();
+    };
+    let symbols = tribunal_context::siblings::changed_symbols(&diff);
+    let found = tribunal_context::siblings::find(
+        &rt.tools,
+        std::path::Path::new(dir),
+        &symbols,
+        &symbols.files,
+    )
+    .await;
+    tribunal_context::siblings::render(&found)
 }
 
 fn cross_repo_flags(profile: &Value) -> Vec<String> {
