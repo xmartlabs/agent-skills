@@ -91,8 +91,6 @@ pub enum Isolation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaudeAgent {
     pub bin: PathBuf,
-    /// Arguments before the CLI's own: the script when `bin` is node.
-    pub lead: Vec<PathBuf>,
     pub credentials: Credentials,
     pub isolation: Isolation,
     /// A directory each dispatch's event stream is saved to, as
@@ -105,7 +103,6 @@ impl ClaudeAgent {
     pub fn new(bin: impl Into<PathBuf>) -> Self {
         Self {
             bin: bin.into(),
-            lead: Vec::new(),
             credentials: Credentials::Session,
             isolation: Isolation::Isolated,
             transcripts: None,
@@ -135,9 +132,7 @@ impl ClaudeAgent {
         #[cfg(windows)]
         {
             let path = std::env::var_os("PATH");
-            let found = crate::launch::resolve(&self.bin, path.as_deref())?;
-            self.bin = found.program;
-            self.lead = found.lead;
+            self.bin = crate::launch::resolve(&self.bin, path.as_deref())?;
         }
         Ok(())
     }
@@ -253,8 +248,7 @@ impl Agent for ClaudeAgent {
             None => None,
         };
         let mut cmd = Command::new(&self.bin);
-        cmd.args(&self.lead)
-            .args(self.args_with_prompt_file(req, prompt_file.as_ref().map(|f| f.0.as_path())))
+        cmd.args(self.args_with_prompt_file(req, prompt_file.as_ref().map(|f| f.0.as_path())))
             .env_clear()
             .envs(self.env(std::env::vars_os()))
             .current_dir(&req.cwd)

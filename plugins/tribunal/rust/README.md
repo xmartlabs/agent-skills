@@ -586,11 +586,14 @@ most of these arguments for a `.cmd` (the system prompt has newlines, the
 schema has quotes), so Claude Code installed with npm or pnpm, a `claude.cmd`
 launcher, cannot be started as `claude`. `tribunal-agent/src/launch.rs` reads
 the launcher for the file it starts, the `bin/claude.exe` the npm package's
-postinstall puts there (or `cli.js` under node, on older releases), and runs
-that directly. A `claude.exe` anywhere on `PATH` wins over a launcher. When
-the launcher cannot be read, or still points at the package's placeholder
-because its postinstall did not run, `review`, `post` and `selfcheck` stop
-before any work and say why.
+postinstall puts there, and runs that directly. A `claude.exe` anywhere on
+`PATH` wins over a launcher. When the launcher cannot be read, points at
+something other than a `claude.exe` (a `cli.js` from a release before the
+package shipped the native binary), or still points at the package's
+placeholder because its postinstall did not run, `review`, `post` and
+`selfcheck` stop before any work and say why. The `windows` job installs the
+latest Claude Code with npm on every run, so a change to how the package
+installs shows up there first.
 
 The context tests run each script and its port against the same recordings.
 The script finds `crates/tribunal-context/tests/shim/gh`, a node script, first
