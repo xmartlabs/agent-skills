@@ -579,6 +579,17 @@ no subscription, for example), set `TRIBUNAL_ANTHROPIC_API_KEY`; the binary
 passes it to every child as `ANTHROPIC_API_KEY`. `TRIBUNAL_CLAUDE_BIN` names
 the `claude` binary to run.
 
+On Windows, Rust finds a bare name in `PATH` as `<name>.exe` only and refuses
+most of these arguments for a `.cmd` (the system prompt has newlines, the
+schema has quotes), so Claude Code installed with npm or pnpm, a `claude.cmd`
+launcher, cannot be started as `claude`. `tribunal-agent/src/launch.rs` reads
+the launcher for the file it starts, the `bin/claude.exe` the npm package's
+postinstall puts there (or `cli.js` under node, on older releases), and runs
+that directly. A `claude.exe` anywhere on `PATH` wins over a launcher. When
+the launcher cannot be read, or still points at the package's placeholder
+because its postinstall did not run, `review`, `post` and `selfcheck` stop
+before any work and say why.
+
 The context tests run each script and its port against the same recordings.
 The script finds `crates/tribunal-context/tests/shim/gh`, a node script, first
 on `PATH`. The port is passed `tribunal-test-gh` as `Tools.gh`: a binary of
@@ -626,7 +637,8 @@ show that killing a process tree or finding a `.cmd` behaves as on Windows.
 The `windows` job in `.github/workflows/tribunal-rust.yml`, on every pull
 request that touches this directory, runs on GitHub's `windows-2025` runner:
 the release's target, `x86_64-pc-windows-msvc`, with clippy, the unit tests,
-the release build and `--version`, on a real Windows machine, so the Wine limit
+a Claude Code installed with npm that `launch.rs` has to start, the release
+build and `--version`, on a real Windows machine, so the Wine limit
 does not apply to it. `docker/check.sh` stays for a local check from macOS or
 Linux, and the release still cross-builds the Windows binary in the
 `windows-msvc-bin` stage.
