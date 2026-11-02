@@ -19,6 +19,12 @@ pub struct ConventionsChannel {
 }
 
 impl ConventionsChannel {
+    /// The file the line points at, when the repo has conventions.
+    #[must_use]
+    pub fn file_path(&self) -> Option<&str> {
+        self.line.strip_prefix("CONVENTIONS FILE: ")
+    }
+
     /// `withConventions`: the conventions line, a blank line, the prompt.
     pub fn with_conventions(&self, prompt: &str) -> String {
         if self.line.is_empty() {
@@ -177,6 +183,15 @@ mod tests {
     use serde_json::json;
 
     const SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    #[test]
+    fn the_file_path_is_the_one_the_line_names() {
+        let none = conventions_channel(&json!({}), &json!({})).unwrap();
+        assert_eq!(none.file_path(), None);
+        let args = json!({"conventionsPath": "/tmp/c.md", "conventionsSha256": SHA});
+        let some = conventions_channel(&args, &json!({})).unwrap();
+        assert_eq!(some.file_path(), Some("/tmp/c.md"));
+    }
 
     #[test]
     fn no_conventions_changes_no_prompt() {

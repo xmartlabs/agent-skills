@@ -18,7 +18,7 @@ use tribunal_core::lens::lens_prompt::{NOT_REACHED_PARAGRAPH, WORKFLOW_NOT_REACH
 use tribunal_core::profile::conventions_channel::conventions_channel;
 use tribunal_pipeline::prompts::{
     lens_dispatch_prompt, methodology_line, methodology_path, DiffDelivery, DiffExposure,
-    LensPromptInput, SCOPE_CLAUDE_RECIPIENTS,
+    LensPromptInput, LensReference, SCOPE_CLAUDE_RECIPIENTS, SHARED_REFERENCE_NOTICE,
 };
 
 const PROMPT_SPAN: Span = Span {
@@ -90,6 +90,12 @@ fn case() -> impl Strategy<Value = Value> {
 }
 
 fn rust_prompt(c: &Value) -> Value {
+    rust_prompt_with(c, false)
+}
+
+/// `shared` hands the lens its reference text in the system prompt, so its own
+/// prompt carries a notice where the Workflow's carries the two file lines.
+fn rust_prompt_with(c: &Value, shared: bool) -> Value {
     let pr = &c["prContext"];
     let delivery = DiffDelivery {
         diff_path: c["diffPath"]
@@ -103,6 +109,7 @@ fn rust_prompt(c: &Value) -> Value {
     let files: Option<Vec<String>> = serde_json::from_value(c["__files"].clone()).unwrap();
     let conventions = conventions_channel(&c["__args"], &c["__profile"]).unwrap();
     let mut exposure = DiffExposure::default();
+    let methodology = methodology_line(c["__methodologyPath"].as_str().unwrap());
     let prompt = lens_dispatch_prompt(
         &LensPromptInput {
             pr_number: &c["__pr"],
@@ -115,8 +122,14 @@ fn rust_prompt(c: &Value) -> Value {
             files: files.as_deref(),
         },
         &delivery,
-        &conventions,
-        &methodology_line(c["__methodologyPath"].as_str().unwrap()),
+        &if shared {
+            LensReference::Shared
+        } else {
+            LensReference::Paths {
+                methodology_line: &methodology,
+                conventions: &conventions,
+            }
+        },
         &mut exposure,
     )
     .unwrap();
@@ -150,6 +163,32 @@ fn lens_dispatch_prompt_matches_the_workflow() {
         })
         .collect();
     assert_same("lens dispatch prompt", &cases, &rust, &js);
+}
+
+/// New behaviour, tested on its own: a lens whose methodology and conventions
+/// are in its system prompt differs from the Workflow's prompt only in the lines
+/// that name those two files.
+#[test]
+fn shared_reference_replaces_only_the_two_file_lines() {
+    for c in sample(case()) {
+        let paths = rust_prompt_with(&c, false);
+        let shared = rust_prompt_with(&c, true);
+        let conventions = conventions_channel(&c["__args"], &c["__profile"]).unwrap();
+        let header = conventions.reviewer_prompt(
+            &methodology_line(c["__methodologyPath"].as_str().unwrap()),
+            "",
+        );
+        let (p, s) = (
+            paths["prompt"].as_str().unwrap(),
+            shared["prompt"].as_str().unwrap(),
+        );
+        let rest = p
+            .strip_prefix(header.as_str())
+            .expect("the Workflow's header leads");
+        let notice = format!("{SHARED_REFERENCE_NOTICE}\n\n");
+        assert_eq!(s.strip_prefix(notice.as_str()), Some(rest));
+        assert_eq!(paths["counts"], shared["counts"]);
+    }
 }
 
 #[test]
