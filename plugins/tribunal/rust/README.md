@@ -568,7 +568,9 @@ a one-file task loaded 4,570 input tokens isolated and 188,430 inheriting
 everything. Workflow subagents inherit, so this is a behavior change, and the
 A/B below (n=2, one PR) has not measured what it does to recall. Two CLI facts
 the design depends on, both checked on 2.1.308: `--agent` drops
-`--json-schema`, so an agent definition goes in as `--system-prompt`; and
+`--json-schema`, so an agent definition goes in as `--system-prompt`, or as
+`--system-prompt-file` once it is over 12,000 bytes, because a command line is
+capped at 32,767 characters on Windows and one argument at 128 KiB on Linux; and
 `--max-turns` is not a flag.
 
 Each child runs on the operator's subscription login by default, and an
