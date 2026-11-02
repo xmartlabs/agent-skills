@@ -122,6 +122,7 @@ mod tests {
             "code-review-expert",
             "fe-code-review-expert",
             "e2e-code-review-expert",
+            "py-code-review-expert",
         ] {
             let def = load(&plugin_root(), name).unwrap();
             assert!(def.body.starts_with("**Exception: if this system prompt continues below with a `# METHODOLOGY` section"), "{name}");

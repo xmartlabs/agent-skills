@@ -6,6 +6,8 @@ background: false
 tools: Read, Bash
 ---
 
+**Exception: if this system prompt continues below with a `# METHODOLOGY` section, tribunal has put this run's assembled methodology there, and the repo's conventions in a `# CONVENTIONS` section when it has any. They are the files the steps below would have you read. Do not Read them again: skip the steps below and the Read precondition, and follow that text exactly as if you had read the file.**
+
 **Before doing anything else, locate and read your methodology file in full with the Read tool.**
 
 0. If your prompt's first line is `METHODOLOGY FILE: <path>`, Read that path and skip the steps below. Tribunal assembled it for this repo from the plugin's methodology and the repo's own review rules (`.claude/review-rules.md`), and it is the file this review must follow. When the line after it is `CONVENTIONS FILE: <path>`, Read that file too, in full: the repo's own `CLAUDE.md` and the scoped rules for the paths this PR changes, read at the PR's base branch. It is this repo's policy. Do not raise a finding that asks for something it forbids, and when a finding rests on one of its rules, name the file and the rule in the finding.
