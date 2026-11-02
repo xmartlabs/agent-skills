@@ -34,6 +34,7 @@ use crate::live::{LiveIo, PanelAgents};
 use crate::panel::{
     panel_phase, CriticGap, PanelEnv, PanelFlags, PanelOutcome, OUTPUT_CEILING_DEFAULT,
 };
+use crate::plan::LensSlot;
 use crate::prompts::{
     lens_dispatch_prompt, lens_system_prompt, DiffDelivery, DiffExposure, LensPromptInput,
     LensReference, SHARED_REFERENCE_NOTICE,
@@ -235,6 +236,18 @@ fn shared_diff(delivery: &DiffDelivery, logs: &mut Vec<String>) -> Option<String
     Some(text)
 }
 
+/// The most independent samples one lens may get from `--lens-samples`.
+pub const MAX_LENS_SAMPLES: u32 = 4;
+
+/// Each planned lens repeated `samples` times, one full round of the plan
+/// after another, so the first sample of every focus starts before any second
+/// one does. One sample returns the plan unchanged.
+#[must_use]
+pub fn sampled_lens_plan(slots: &[LensSlot], samples: u32) -> Vec<LensSlot> {
+    let rounds = samples.clamp(1, MAX_LENS_SAMPLES) as usize;
+    (0..rounds).flat_map(|_| slots.iter().cloned()).collect()
+}
+
 /// The run up to the end of the Review phase. `logs` receives every line the
 /// workflow would `log`, in order.
 ///
@@ -250,13 +263,22 @@ pub async fn run_review<A: Agent>(
     let context_started = std::time::Instant::now();
     let prepared = prepare(rt, args).await?;
     logs.extend(prepared.logs.iter().cloned());
-    let rc = match context_phase(agent, rt, args, &prepared, logs).await? {
+    let mut rc = match context_phase(agent, rt, args, &prepared, logs).await? {
         ContextOutcome::Skipped { reason } => return Ok(RunOutcome::Skipped { reason }),
         ContextOutcome::Preflight { summary } => return Ok(RunOutcome::Preflight { summary }),
         ContextOutcome::Ready(rc) => rc,
     };
     let context_seconds = context_started.elapsed().as_secs_f64();
     let lenses_started = std::time::Instant::now();
+    let samples = args.lens_samples.unwrap_or(1).clamp(1, MAX_LENS_SAMPLES);
+    if samples > 1 {
+        let planned = rc.plan.lens_plan.len();
+        rc.plan.lens_plan = sampled_lens_plan(&rc.plan.lens_plan, samples);
+        logs.push(format!(
+            "Lens samples: {samples} independent dispatches of each of the {planned} planned lenses ({} in all); the pre-panel dedup merges the claims they share.",
+            rc.plan.lens_plan.len()
+        ));
+    }
     let profile = &prepared.profile;
     let lens_agent = lens_agent_for(profile)?.to_owned();
     let mut definition = agent_def::load(&rt.plugin_root, &lens_agent)?;
