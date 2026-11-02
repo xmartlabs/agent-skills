@@ -100,7 +100,9 @@ To report a vulnerability, see [SECURITY.md](../../SECURITY.md).
    Each gets the callers list and the syntax facts.
 3. **Gaps**: a completeness critic asks what no lens read. A gap it traces in
    the code becomes a finding and goes through the same checks and panel as a
-   lens finding.
+   lens finding. The Rust engine hands the critic the changed files no finding
+   names and what the lenses reported they did not reach, works those lists out
+   in code, and gives it the diff already on disk and about 20 tool calls.
 4. **Panel**: each critical or behavior-changing candidate faces refuters that
    try to disprove it, including **Codex** as a second model family. Verdicts come
    from a weighted vote: a finding dies when it's *refuted*, not when a reviewer
