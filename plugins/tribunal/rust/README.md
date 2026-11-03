@@ -642,12 +642,10 @@ characters.
 The `windows` job in `.github/workflows/tribunal-rust.yml`, on every pull
 request that touches this directory, runs on GitHub's `windows-2025` runner:
 the release's target, `x86_64-pc-windows-msvc`, with clippy, the unit tests,
-a Claude Code installed with npm that `launch.rs` has to start, the release
+the subcommand tests (`tribunal-cli/tests/subcommands.rs`), a Claude Code installed with npm that `launch.rs` has to start, the release
 build and `--version`, on a real Windows machine. The `linux-release-build`
 job runs `rust/scripts/build-linux.sh` on GitHub's `ubuntu-24.04`, the Linux
-release build exactly as a tag runs it. `docker/check.sh` builds the Linux
-and Windows binaries in containers for a local check from macOS; no job uses
-it.
+release build exactly as a tag runs it.
 
 The full suite runs in the `linux` job, on the runner the `RUNNER` repository
 variable names (a self-hosted one costs no Actions minutes), else on GitHub's

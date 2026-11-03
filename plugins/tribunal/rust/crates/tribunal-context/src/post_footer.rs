@@ -167,9 +167,11 @@ pub fn own_plugin_version(root: &str) -> Option<Value> {
         .cloned()
 }
 
-/// Ports `engineLabel`: `v<major> (skill)` for a Workflow row, `v<major>
-/// (rust <build>)` for a Rust one; the row's `pluginVersion` wins over the
-/// script's own.
+/// Ports `engineLabel`: `v<version> (skill)` for a Workflow row,
+/// `v<version> (rust <build>)` for a Rust one; the row's `pluginVersion` wins
+/// over the script's own. A `N.0.0` version prints as `vN`, as every footer
+/// did before versions were semver; any other prints whole (declared
+/// difference: the script printed the major only).
 #[must_use]
 pub fn engine_label(row: &Value, fallback: Option<&Value>) -> String {
     let version = js::get(row, "pluginVersion")
@@ -177,7 +179,12 @@ pub fn engine_label(row: &Value, fallback: Option<&Value>) -> String {
         .or(fallback);
     let major = match version {
         Some(Value::String(v)) if !v.is_empty() => {
-            Some(format!("v{}", v.split('.').next().unwrap_or_default()))
+            let mut parts = v.splitn(2, '.');
+            let head = parts.next().unwrap_or_default();
+            match parts.next() {
+                Some("0.0") | None => Some(format!("v{head}")),
+                Some(_) => Some(format!("v{v}")),
+            }
         }
         _ => None,
     };

@@ -179,9 +179,16 @@ fn operator_effort() -> Option<String> {
 }
 
 fn plugin_root() -> PathBuf {
-    std::env::var_os("TRIBUNAL_PLUGIN_ROOT")
+    let root = std::env::var_os("TRIBUNAL_PLUGIN_ROOT")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.."))
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.."));
+    // The plugin's paths are joined and normalized on `/` only, so a Windows
+    // root written with `\` and `..` would collapse wrongly; Windows takes `/`.
+    if cfg!(windows) {
+        PathBuf::from(root.to_string_lossy().replace('\\', "/"))
+    } else {
+        root
+    }
 }
 
 /// The agent every subcommand dispatches with. When the `claude` it would
