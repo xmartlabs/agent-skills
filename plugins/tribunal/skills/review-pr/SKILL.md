@@ -58,6 +58,7 @@ Behaviour lives in the Rust crates, the agent definitions under `agents/` and th
 | `--model <id>` | The Claude model the run's agents use (default `claude-sonnet-5-5`): lenses, refuters, prior-finding verifiers and the report. |
 | `--effort <level>` | Reasoning effort for every non-mechanical dispatch. Default: `effortLevel` in `~/.claude/settings.json`, since a `claude -p` child does not read that file by itself. |
 | `--concurrency <n>` | How many Claude dispatches run at once, within each stage (default 8). |
+| `--prior-verify <n>` | How many findings from an earlier review get a `verify-prior` dispatch in an incremental re-review (default **6**). Findings past the limit are reported as unverified, never as fixed, and a blocking one stays blocking. Raise it when the run logs `Prior-finding verification capped at 6 of N`. Each dispatch cost $0.06 to $0.16 in the runs measured. |
 | `--max-agents <n>` | Ceiling on the agents a run dispatches (default 150). The panel count is cut to fit it before `--max-panels` applies, and the run logs the projection. |
 | `--max-output-tokens <n>` | Output-token ceiling for the run (default 1,200,000). Once it is crossed the cost breaker declines every further escalation, refine and debate, findings keep the adjudication they already have, and the report says the run is degraded. |
 
@@ -102,7 +103,7 @@ go on, the first step below reports the same reason.
    Pass on, spelled the same, each of these that was given: `--repo`,
    `--profile`, `--rules`, `--head-sha`, `--thread-before`, `--full`, `--since`, `--lenses`, `--lens-samples`,
    `--context` (for `--context @<file>`, the file's text), `--bot-comments`,
-   `--preflight`, `--max-panels`, `--codex`/`--no-codex`,
+   `--preflight`, `--max-panels`, `--prior-verify`, `--codex`/`--no-codex`,
    `--gemini`/`--no-gemini`, `--batch-panels`/`--no-batch-panels`, `--model`,
    `--effort`, `--concurrency`, `--max-agents`, `--max-output-tokens`. Then stop
    and wait for the completion notice; do not poll. Any non-zero exit means
