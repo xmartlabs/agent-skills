@@ -1120,10 +1120,14 @@ fn lens_prompt_matches_js() {
         .map(|p| {
             as_result(lens_prompt::lens_prompt(p).map(|text| {
                 assert_eq!(text.matches(lens_prompt::NOT_REACHED_PARAGRAPH).count(), 1);
-                Value::String(text.replace(
-                    lens_prompt::NOT_REACHED_PARAGRAPH,
-                    lens_prompt::WORKFLOW_NOT_REACHED_PARAGRAPH,
-                ))
+                assert_eq!(text.matches(lens_prompt::ANCHOR_FILE_PARAGRAPH).count(), 1);
+                Value::String(
+                    text.replace(&format!("\n{}", lens_prompt::ANCHOR_FILE_PARAGRAPH), "")
+                        .replace(
+                            lens_prompt::NOT_REACHED_PARAGRAPH,
+                            lens_prompt::WORKFLOW_NOT_REACHED_PARAGRAPH,
+                        ),
+                )
             }))
         })
         .collect();

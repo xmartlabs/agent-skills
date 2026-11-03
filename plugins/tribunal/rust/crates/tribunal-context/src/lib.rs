@@ -38,6 +38,7 @@ pub mod proc;
 pub mod py_json;
 pub mod python_typecheck;
 pub mod reconcile_votes;
+pub mod repo_locator;
 pub mod resolve_baseline;
 pub mod resolve_evidence_line;
 pub mod resolve_verified_anchors;

@@ -2,7 +2,8 @@
 //! model reads it, and the shared prefix above "YOUR PASS" is what the lenses'
 //! prompt cache keys on. It matches the Workflow's byte for byte except for
 //! the `notReached` paragraph, which asks for each gap's kind
-//! ([`NOT_REACHED_PARAGRAPH`]).
+//! ([`NOT_REACHED_PARAGRAPH`]), and a closing paragraph on how an anchor names
+//! a file of another repo ([`ANCHOR_FILE_PARAGRAPH`]).
 
 use serde_json::Value;
 
@@ -17,13 +18,20 @@ pub const WORKFLOW_NOT_REACHED_PARAGRAPH: &str = "If you stop with something sti
 /// What a lens is asked to file in `notReached`.
 pub const NOT_REACHED_PARAGRAPH: &str = "List in `notReached` everything you meant to check and did not, one entry per surface. `surface` says what it is, `file` the repo path it lives in (null when there is none), and `kind` why it was left: `budget` when you meant to read that code and ran out of room, `out-of-focus` when it is outside your focus or your file list, `needs-execution` when only running something can settle it (tests, a build, a migration, a live service, a secret), and `outside-pr` when it lives in another repo or in code this PR does not reach. That array is how the run reports its own blind spots. A `budget` gap on a risk path keeps the review from approving, and leaving the array empty when you did run out of room is worse than the gap itself.";
 
+/// How `verifiedBy.file` is written. The resolver reads a file of another repo
+/// as `<repo-name>/<path>` and anything else as a path in the reviewed repo,
+/// and the findings schema says nothing of it, so a lens that wrote
+/// `src/a.ts (BE staging)` had its anchor reported as code that does not exist.
+pub const ANCHOR_FILE_PARAGRAPH: &str = "In `verifiedBy`, `file` is a path from the root of the repo under review. For code in another repo that the profile lists as a cross-repo anchor, write `<repo-name>/<path>`, where `<repo-name>` is what follows the slash in `owner/name` (for example `acme-api/src/routes/index.ts`), and put nothing after the path: no ref and no note in brackets. A path written any other way is looked up in the reviewed repo and reported as missing.";
+
 /// `LENS_BUDGET_INSTRUCTION`. It starts with a newline.
 pub fn lens_budget_instruction() -> String {
     format!(
         r##"
 Budget: about {LENS_TOOL_CALL_BUDGET} tool calls for this pass. This is a ceiling to aim under, not a target to reach and not a reason to stop early — a lens that gives up after a handful of reads has reviewed nothing, and that is a worse failure than being slow.
 Past that budget, wrap up with what you have rather than continuing to dig. On this codebase, lens findings measurably stop increasing after roughly 30-40 tool calls while cost keeps climbing: passes that ran past 80 calls cost three times as much and found slightly fewer real defects than passes that finished inside 50. Continuing is not thoroughness at that point, it is re-reading.
-{NOT_REACHED_PARAGRAPH}"##
+{NOT_REACHED_PARAGRAPH}
+{ANCHOR_FILE_PARAGRAPH}"##
     )
 }
 
