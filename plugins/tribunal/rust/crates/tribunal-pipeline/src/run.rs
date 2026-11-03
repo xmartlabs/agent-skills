@@ -121,6 +121,33 @@ pub fn apply_evidence(
     s
 }
 
+/// The evidence resolver over the candidates, before the Verify phase: it
+/// locates each finding's quote in the diff and corrects a patch line number
+/// to the file line. Nothing to do without candidates or a diff on disk.
+pub fn resolve_evidence(
+    candidates: &mut [Value],
+    diff_path: Option<&str>,
+    logs: &mut Vec<String>,
+) -> EvidenceStats {
+    let Some(diff_path) = diff_path.filter(|_| !candidates.is_empty()) else {
+        return EvidenceStats::default();
+    };
+    let wire: Vec<Value> = candidates
+        .iter()
+        .enumerate()
+        .map(|(i, c)| json!({"id": i, "file": js::get(c, "file"), "line": js::get(c, "line"), "evidence": js::get(c, "evidence")}))
+        .collect();
+    let parsed = resolve_evidence_line::run(
+        std::path::Path::new(diff_path),
+        &Value::from(wire).to_string(),
+    );
+    let (parsed, reason) = match parsed {
+        Ok(p) => (Some(p), None),
+        Err(e) => (None, Some(e)),
+    };
+    apply_evidence(candidates, parsed.as_ref(), reason.as_deref(), logs)
+}
+
 /// How the run's reviewers are dispatched, beyond what the profile decides.
 #[derive(Debug, Clone)]
 pub struct DispatchPolicy {
@@ -389,32 +416,11 @@ pub async fn run_review<A: Agent>(
         check_lenses_returned(&plan_files, &answers, &labels)?;
     logs.extend(unreturned_log);
 
-    let mut evidence = EvidenceStats::default();
-    if let (false, Some(diff_path)) = (
-        candidates.all_candidates.is_empty(),
+    let evidence = resolve_evidence(
+        &mut candidates.all_candidates,
         rc.delivery.diff_path.as_deref(),
-    ) {
-        let wire: Vec<Value> = candidates
-            .all_candidates
-            .iter()
-            .enumerate()
-            .map(|(i, c)| json!({"id": i, "file": js::get(c, "file"), "line": js::get(c, "line"), "evidence": js::get(c, "evidence")}))
-            .collect();
-        let parsed = resolve_evidence_line::run(
-            std::path::Path::new(diff_path),
-            &Value::from(wire).to_string(),
-        );
-        let (parsed, reason) = match parsed {
-            Ok(p) => (Some(p), None),
-            Err(e) => (None, Some(e)),
-        };
-        evidence = apply_evidence(
-            &mut candidates.all_candidates,
-            parsed.as_ref(),
-            reason.as_deref(),
-            logs,
-        );
-    }
+        logs,
+    );
     Ok(RunOutcome::Reviewed(Box::new(ReviewOutcome {
         context_seconds,
         lenses_seconds: lenses_started.elapsed().as_secs_f64(),
@@ -504,7 +510,9 @@ pub async fn verify_phase<A: Agent>(
     let all = &review.candidates.all_candidates;
     let mut dispatches = Vec::new();
     let dedup_started = std::time::Instant::now();
-    let dedup = if all.len() >= 2 {
+    // `tribunal panel` judges each given claim on its own: a merge would
+    // fold two labelled claims into one verdict.
+    let dedup = if all.len() >= 2 && !args.panel_only {
         let scribe = agent_def::load(&rt.plugin_root, "tribunal-scribe")?;
         let res = dispatch_one(
             agent,
@@ -530,12 +538,15 @@ pub async fn verify_phase<A: Agent>(
     let panel_started = std::time::Instant::now();
     let rc = &review.context;
     let pr_files = &rc.plan.files;
-    let eligible = dedup.panel_candidates.iter().any(|c| {
-        js::truthy(js::get(c, "mechanicalClaim"))
-            || js::get(c, "file")
-                .and_then(Value::as_str)
-                .is_some_and(|f| f.ends_with(".ts") || f.ends_with(".tsx") || f.ends_with(".py"))
-    });
+    // The grounded gate settles a finding without a panel, so `tribunal
+    // panel` does not run it.
+    let eligible = !args.panel_only
+        && dedup.panel_candidates.iter().any(|c| {
+            js::truthy(js::get(c, "mechanicalClaim"))
+                || js::get(c, "file").and_then(Value::as_str).is_some_and(|f| {
+                    f.ends_with(".ts") || f.ends_with(".tsx") || f.ends_with(".py")
+                })
+        });
     let head = js::get(&rc.pr_context, "headRefOid");
     let pin_ok = js::truthy(js::get(&rc.head_pin, "ok"));
     let pinned = js::get(&rc.head_pin, "path")
@@ -693,9 +704,15 @@ pub async fn verify_phase<A: Agent>(
     let diff_block = rc.delivery.refuter_diff_block(&mut exposure)?;
     let not_reached = &review.candidates.lens_not_reached;
     let uncovered = uncovered_files(pr_files, all);
-    let siblings = critic_siblings(rt, rc, pinned).await;
+    let siblings = if args.panel_only {
+        Vec::new()
+    } else {
+        critic_siblings(rt, rc, pinned).await
+    };
     let claims = &rc.decisions.retest_claims;
-    let retest = |f: &Value| is_retest_target(claims, f);
+    // In `tribunal panel` every given finding is a retest target, so a nit
+    // opens a panel and every finding ranks the same for the budget.
+    let retest = |f: &Value| args.panel_only || is_retest_target(claims, f);
     let spent = || io.spent();
     let before: Vec<&DispatchResult> = review
         .dispatches
@@ -720,6 +737,7 @@ pub async fn verify_phase<A: Agent>(
         }),
         blast_radius: rc.blast_radius.as_ref(),
         file_count: rc.plan.file_count,
+        critic: !args.panel_only,
         flags,
         codex_installed,
         gemini_installed,
@@ -1142,7 +1160,7 @@ pub enum FullOutcome {
 
 /// Removes the trees the run made: the pinned checkout and the typecheck's
 /// own worktree. Best effort, as the workflow's teardown.
-async fn teardown(rt: &Runtime, review: &ReviewOutcome, verify: Option<&VerifyOutcome>) {
+pub(crate) async fn teardown(rt: &Runtime, review: &ReviewOutcome, verify: Option<&VerifyOutcome>) {
     let pin = &review.context.head_pin;
     if js::truthy(js::get(pin, "ok")) {
         if let Some(path) = js::get(pin, "path").and_then(Value::as_str) {
