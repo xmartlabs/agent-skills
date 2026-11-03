@@ -659,7 +659,7 @@ scripted agent.
 
 ```bash
 cd plugins/tribunal/rust
-cargo test                       # unit + differential (four tests compare against node itself)
+cargo test                       # unit + differential, no node needed
 TRIBUNAL_TS_FROM=<repo> cargo test -- --include-ignored   # <repo>/node_modules has typescript
 ```
 
@@ -687,9 +687,8 @@ The full suite runs in the `linux` job, on the runner the `RUNNER` repository
 variable names (a self-hosted one costs no Actions minutes), else on GitHub's
 `ubuntu-24.04`. A pull request from a fork always runs on GitHub's runners:
 the repository is public, and only a branch of this repository, a manual run
-or a release tag reaches the self-hosted ones. The runner needs node 24
-(for the four tests that compare number conversions, `JSON.stringify` and
-`node:path` against node itself; the stand-in `gh` is a compiled binary),
+or a release tag reaches the self-hosted ones. The runner needs no node (the
+stand-in `gh` is a compiled binary, and node's answers are goldens), but
 bash, git, python3 (two of the scripts the tests run call it), a C linker,
 and the
 `en_US.UTF-8` locale, which the differential tests set; the job checks for
@@ -703,7 +702,10 @@ SHA-256, so a script or generator edited without regenerating fails the test
 with the command that regenerates it. A recorded script that no longer exists
 is retired: its golden is final and the comparison still runs. Regenerate one
 test binary at a time, over the whole binary so that every case is recorded:
-`TRIBUNAL_REGEN_GOLDENS=1 cargo test -p <crate> --test <name>`. The
+`TRIBUNAL_REGEN_GOLDENS=1 cargo test -p <crate> --test <name>`. Node's own
+answers (`tribunal-core`'s `js_builtins.json`, chunk SHA-256s plus a verbatim
+sample, and `tribunal-context`'s `node-path.json`) regenerate the same way,
+with node on PATH: `--test js_builtins` and `--test js_engine`. The
 classifier goldens of `diff_classify_heads.rs` were recorded on a Mac,
 because the scripts depended on macOS's userland: GNU `cut -c` counts bytes
 and splits a character, mawk folds case byte by byte, and glibc collates

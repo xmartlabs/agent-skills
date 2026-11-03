@@ -1,11 +1,21 @@
 //! The embedded JavaScript engine: its `node:path` against Node's own, its
 //! stand-in `node:*` modules against what the embedded scripts import, and
 //! how a stand-in reports a member it does not have.
+//!
+//! Node's `path.posix` answers are read from `tests/goldens/node-path.json`,
+//! with the node version and a SHA-256 of the driver they were recorded with.
+//! Regenerate, with node on PATH:
+//! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test js_engine`.
+
+mod posting;
 
 use std::process::Command;
 
+use posting::{fixed, sha};
 use serde_json::{json, Value};
 use tribunal_context::js_engine::{JsEngine, Setup, Stack, NODE_MODULES, UNSUPPORTED};
+
+const REGENERATE: &str = "regenerate with node on PATH: `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test js_engine`";
 
 /// An engine whose entry answers `[fn, ...args]` with `node:path.posix`.
 async fn path_engine() -> JsEngine {
@@ -88,20 +98,40 @@ async fn node_path_matches_node() {
         cases.push(Value::Array(call));
     }
     let script = "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{const p=require('node:path');process.stdout.write(JSON.stringify(JSON.parse(s).map(([f,...a])=>{try{return {ok:p.posix[f](...a)}}catch(e){return {err:String(e.message)}}})))})";
-    let mut child = Command::new("node")
-        .args(["-e", script])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .expect("node must be on PATH");
-    std::io::Write::write_all(
-        child.stdin.as_mut().unwrap(),
-        serde_json::to_string(&cases).unwrap().as_bytes(),
-    )
-    .unwrap();
-    drop(child.stdin.take());
-    let out = child.wait_with_output().unwrap();
-    let node: Vec<Value> = serde_json::from_slice(&out.stdout).unwrap();
+    let node = fixed(
+        "node-path.json",
+        "node_path_matches_node",
+        REGENERATE,
+        &cases,
+        || {
+            let out = Command::new("node").arg("--version").output().unwrap();
+            let version = String::from_utf8(out.stdout).unwrap();
+            json!({"node": version.trim(), "driver": sha(script)})
+        },
+        |w| {
+            if w["driver"] == sha(script) {
+                Vec::new()
+            } else {
+                vec!["the node driver".to_owned()]
+            }
+        },
+        || {
+            let mut child = Command::new("node")
+                .args(["-e", script])
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .expect("node must be on PATH");
+            std::io::Write::write_all(
+                child.stdin.as_mut().unwrap(),
+                serde_json::to_string(&cases).unwrap().as_bytes(),
+            )
+            .unwrap();
+            drop(child.stdin.take());
+            let out = child.wait_with_output().unwrap();
+            serde_json::from_slice(&out.stdout).unwrap()
+        },
+    );
     let engine = path_engine().await;
     let mut bad = Vec::new();
     for (c, n) in cases.iter().zip(&node) {
