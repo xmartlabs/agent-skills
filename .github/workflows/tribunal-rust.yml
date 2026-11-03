@@ -11,8 +11,10 @@
 # access. A pull request from a fork runs on GitHub's hosted runners, which are
 # free for public repositories, so code nobody reviewed never reaches a company
 # machine. Unset variables fall back to the hosted runners too. The differential tests compare the port with what the
-# JavaScript and bash it replaced printed, recorded under tests/goldens/; a few
-# tests still use node for their stand-in gh. The `macos` job runs the whole suite
+# JavaScript and bash it replaced printed, recorded under tests/goldens/; the
+# stand-in gh is a compiled test binary. Four tests still compare against node
+# itself: number conversions and JSON.stringify in tribunal-core's
+# js_builtins, and node:path in tribunal-context's js_engine. The `macos` job runs the whole suite
 # on the platform most of the team runs, on every pull request, as `linux`
 # and `windows` do. The release's macOS archives are built on GitHub's
 # macos-15 runner. A `tribunal-rust-v*` tag builds the four release binaries
@@ -89,8 +91,10 @@ jobs:
           : > "$RUNNER_TEMP/gitconfig"
           echo "GIT_CONFIG_GLOBAL=$RUNNER_TEMP/gitconfig" >> "$GITHUB_ENV"
           echo "GIT_CONFIG_NOSYSTEM=1" >> "$GITHUB_ENV"
-      # Node 23 and later compile regexp modifiers such as (?-i:...), which the
-      # profile checks are measured against.
+      # Four tests compare against node itself rather than a golden: the
+      # number conversions and JSON.stringify (tribunal-core's js_builtins)
+      # and node:path (tribunal-context's js_engine). Nothing else in the
+      # suite starts node.
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 24

@@ -85,18 +85,21 @@ pub fn sweep_dead(base: &Path, prefix: &str) {
 
 /// A directory holding only a `node` symlink, so `PATH` need not include
 /// wherever else `node` lives (Homebrew's bin also holds the real `gh`).
-pub fn node_bin() -> PathBuf {
-    static BIN: OnceLock<PathBuf> = OnceLock::new();
+/// `None` when there is no `node`, which only a regeneration needs.
+pub fn node_bin() -> Option<PathBuf> {
+    static BIN: OnceLock<Option<PathBuf>> = OnceLock::new();
     BIN.get_or_init(|| {
         let out = Command::new("sh")
             .args(["-c", "command -v node"])
             .output()
             .expect("sh");
         let node = String::from_utf8(out.stdout).unwrap().trim().to_owned();
-        assert!(!node.is_empty(), "node must be on PATH");
+        if node.is_empty() {
+            return None;
+        }
         let dir = scratch("node-bin");
         std::os::unix::fs::symlink(&node, dir.join("node")).unwrap();
-        dir
+        Some(dir)
     })
     .clone()
 }
@@ -107,7 +110,9 @@ pub fn safe_path(fake_dir: Option<&Path>) -> String {
     if let Some(d) = fake_dir {
         parts.push(d.to_string_lossy().into_owned());
     }
-    parts.push(node_bin().to_string_lossy().into_owned());
+    if let Some(n) = node_bin() {
+        parts.push(n.to_string_lossy().into_owned());
+    }
     parts.push("/usr/bin".into());
     parts.push("/bin".into());
     parts.join(":")
@@ -122,7 +127,8 @@ pub struct Run {
 
 /// Runs `node <script> <args>` in `cwd` with only `env` (plus `PATH`).
 pub fn node(script: &Path, args: &[String], cwd: &Path, env: &[(&str, String)], path: &str) -> Run {
-    let out = Command::new(node_bin().join("node"))
+    let node = node_bin().expect("node must be on PATH to run a script");
+    let out = Command::new(node.join("node"))
         .arg(script)
         .args(args)
         .current_dir(cwd)

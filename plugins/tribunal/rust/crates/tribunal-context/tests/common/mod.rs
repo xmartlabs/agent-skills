@@ -2,12 +2,14 @@
 //! the JavaScript script finds on `PATH` and the Rust port receives in
 //! `Tools`, and a runner for the script under test.
 //!
-//! These tests need `node` on PATH. Without it they fail; they do not skip.
+//! The recorded `gh` is the compiled `tribunal-test-gh`. Only a regeneration,
+//! which runs a script, needs `node` on PATH.
 #![allow(dead_code)]
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 use serde_json::{json, Value};
 use tribunal_context::exec::Tools;
@@ -17,8 +19,29 @@ pub fn plugin_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
 }
 
+/// The compiled stand-in `gh`, `src/bin/tribunal-test-gh.rs`.
+pub fn test_gh() -> PathBuf {
+    PathBuf::from(env!("CARGO_BIN_EXE_tribunal-test-gh"))
+}
+
+/// `dir/gh`, a link to [`test_gh`], for whatever looks `gh` up on `PATH`.
+pub fn link_gh(dir: &Path) -> PathBuf {
+    std::fs::create_dir_all(dir).unwrap();
+    let gh = dir.join("gh");
+    let _ = std::fs::remove_file(&gh);
+    std::os::unix::fs::symlink(test_gh(), &gh).unwrap();
+    gh
+}
+
+/// A directory holding only `gh`, the recorded one, to put first on `PATH`.
 pub fn shim_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/shim")
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir = scratch("gh-shim");
+        link_gh(&dir);
+        dir
+    })
+    .clone()
 }
 
 /// A scratch directory unique to this test process and `name`.
@@ -67,9 +90,7 @@ pub fn recordings(dir: &Path, calls: Vec<Value>) -> PathBuf {
     path
 }
 
-/// The `Tools` a Rust port runs with: the recorded `gh`, the real `git`. The
-/// `gh` is the compiled shim, which answers as `tests/shim/gh` does without
-/// starting node for each call; `shim.rs` checks the two agree.
+/// The `Tools` a Rust port runs with: the recorded `gh`, the real `git`.
 pub fn tools(recordings: &Path) -> Tools {
     Tools {
         gh: env!("CARGO_BIN_EXE_tribunal-test-gh").to_owned(),
