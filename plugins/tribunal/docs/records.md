@@ -36,9 +36,11 @@ and no one could say whether they were any good. With it:
   guessed.
 - **Cost is measured, not estimated.** The figures above come from these rows.
 
-`tribunal cost` prints where the money went, from these rows. `tribunal override`
+`tribunal cost` prints where the money went, from these rows, `tribunal metrics`
+the refutation panel's scorecard, and `tribunal audit` what happened to posted
+findings after the review. `tribunal override`
 records your own call on one finding of a run (a panel error, or a real finding
-at a lower severity), with the reason. Both need the Rust binary.
+at a lower severity), with the reason. All four need the Rust binary.
 
 Two consequences for you:
 

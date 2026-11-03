@@ -1,5 +1,6 @@
 //! The read-only subcommands the skill runs through `bin/tribunal-engine`
-//! before and around a review (`lost-runs`, `harness-version`), and the two
+//! before and around a review (`lost-runs`, `harness-version`), the
+//! measurement modes over the ledger (`metrics`, `audit`), and the two
 //! loaders templates/check.sh runs on a profile.
 
 use std::path::PathBuf;
@@ -198,4 +199,94 @@ fn assemble_methodology_fills_the_template_slots() {
     let o = tribunal(&["assemble-methodology", "--kind", "backend"], &dir);
     assert_eq!(json_line(&o)["ok"], false);
     assert_eq!(o.status.code(), Some(1));
+}
+
+fn stderr(o: &Output) -> String {
+    String::from_utf8_lossy(&o.stderr).into_owned()
+}
+
+fn ledger_row(engine: Option<&str>, schema: Option<u64>, rerun: serde_json::Value) -> String {
+    let mut r = serde_json::json!({
+        "ts": "2026-10-30T10:00:00Z", "repo": "o/r", "pr": 1, "headSha": "a",
+        "candidates": 2, "paneled": 1, "rerunOf": rerun,
+        "findings": [{"title": "t", "file": "a.ts", "posted": false, "panelRan": true,
+            "survived": false, "refuteFraction": 0.9, "threshold": 0.45,
+            "votes": [{"source": "claude", "verdict": "REFUTED", "killReason": "not-triggered"}]}],
+    });
+    if let Some(e) = engine {
+        r["engine"] = serde_json::json!(e);
+    }
+    if let Some(v) = schema {
+        r["schemaVersion"] = serde_json::json!(v);
+    }
+    r.to_string()
+}
+
+#[test]
+fn metrics_reads_the_ledger_in_the_data_dir() {
+    let dir = scratch("metrics");
+    let lines = [
+        ledger_row(Some("rust"), Some(3), serde_json::Value::Null),
+        ledger_row(None, Some(3), serde_json::Value::Null),
+        ledger_row(Some("rust"), Some(3), serde_json::json!(1)),
+        ledger_row(None, None, serde_json::Value::Null),
+        "not json".to_owned(),
+    ];
+    std::fs::write(dir.join("metrics.jsonl"), lines.join("\n") + "\n").unwrap();
+    let o = tribunal(&["metrics"], &dir);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.starts_with(
+        "tribunal metrics: 2 rows aggregated, 1 legacy skipped, 1 re-runs excluded (of 4 rows read, plus 1 unreadable lines)\n"
+    ), "{out}");
+    assert!(out.contains("\nrust, schemaVersion 3: 1 rows"), "{out}");
+    assert!(out.contains("\nworkflow, schemaVersion 3: 1 rows"), "{out}");
+    assert!(out.contains("not-triggered 1 of 1 (100.0%)"), "{out}");
+
+    let j = json_line(&tribunal(&["metrics", "--json", "--repo", "o/r"], &dir));
+    assert_eq!(j["rows"]["aggregated"], 2);
+    assert_eq!(j["groups"][0]["killRate"]["rate"], 1.0);
+    let none = json_line(&tribunal(
+        &["metrics", "--json", "--since", "2026-11-01"],
+        &dir,
+    ));
+    assert_eq!(none["rows"]["filteredOut"], 4);
+}
+
+#[test]
+fn audit_with_nothing_posted_needs_no_gh() {
+    let dir = scratch("audit");
+    std::fs::write(
+        dir.join("metrics.jsonl"),
+        ledger_row(Some("rust"), Some(3), serde_json::Value::Null) + "\n",
+    )
+    .unwrap();
+    let o = tribunal(&["audit", "--limit", "5"], &dir);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.contains("These are proxies, not ground truth"), "{out}");
+    assert!(out.contains("0 queried (--limit 5)"), "{out}");
+    let j = json_line(&tribunal(&["audit", "--json"], &dir));
+    assert_eq!(j["prs"]["limit"], 20);
+}
+
+#[test]
+fn an_unreadable_ledger_fails_with_a_tribunal_line() {
+    let dir = scratch("no-ledger");
+    for sub in ["metrics", "audit"] {
+        let o = tribunal(&[sub], &dir);
+        assert_eq!(o.status.code(), Some(1), "{sub}");
+        assert!(
+            stderr(&o).starts_with("tribunal: cannot read "),
+            "{sub}: {}",
+            stderr(&o)
+        );
+    }
+    for args in [
+        &["metrics", "--limit", "3"][..],
+        &["audit", "--limit", "0"][..],
+        &["audit", "--repo"][..],
+    ] {
+        assert_eq!(tribunal(args, &dir).status.code(), Some(2), "{args:?}");
+    }
 }

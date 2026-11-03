@@ -25,6 +25,10 @@ const DEFAULT_MODEL: &str = "claude-sonnet-5-5";
 fn usage() -> ExitCode {
     eprintln!("usage: tribunal --version");
     eprintln!("usage: tribunal cost [--repo <owner/name>] [--since <iso date>] [--json]");
+    eprintln!("usage: tribunal metrics [--repo <owner/name>] [--since <iso date>] [--json]");
+    eprintln!(
+        "usage: tribunal audit [--repo <owner/name>] [--since <iso date>] [--limit <n>] [--json]"
+    );
     eprintln!("usage: tribunal lost-runs [--recent <days>]");
     eprintln!("usage: tribunal harness-version [--short|--manifest]");
     eprintln!("usage: tribunal load-profile [--repo <owner/name>] [--pr <n> | --ref <branch> | --profile <path>] [--rules <path>] [--save <file>] [--save-rules <file>]");
@@ -587,6 +591,103 @@ fn cost_main(argv: &[String]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// The flags `metrics` and `audit` share, plus `--limit` when `limit` is given.
+fn parse_ledger_flags(
+    argv: &[String],
+    mut limit: Option<&mut usize>,
+) -> Result<(tribunal_context::metrics_report::RowFilter, bool), String> {
+    let mut filter = tribunal_context::metrics_report::RowFilter::default();
+    let mut as_json = false;
+    let mut it = argv.iter();
+    while let Some(a) = it.next() {
+        let mut value = || {
+            it.next()
+                .filter(|v| !v.starts_with("--"))
+                .cloned()
+                .ok_or_else(|| format!("{a} needs a value"))
+        };
+        match a.as_str() {
+            "--repo" => filter.repo = Some(value()?),
+            "--since" => filter.since = Some(value()?),
+            "--json" => as_json = true,
+            "--limit" if limit.is_some() => {
+                let n: usize = value()?
+                    .parse()
+                    .ok()
+                    .filter(|n| *n > 0)
+                    .ok_or("--limit takes a whole number of 1 or more")?;
+                if let Some(l) = limit.as_deref_mut() {
+                    *l = n;
+                }
+            }
+            other => return Err(format!("unknown argument {other}")),
+        }
+    }
+    Ok((filter, as_json))
+}
+
+/// The rows of `metrics.jsonl` and how many lines did not parse.
+fn read_ledger() -> Result<(Vec<Value>, usize), ExitCode> {
+    let path = runtime().data_dir.join("metrics.jsonl");
+    match std::fs::read_to_string(&path) {
+        Ok(t) => Ok(tribunal_context::metrics_report::parse_ledger(&t)),
+        Err(e) => {
+            eprintln!("tribunal: cannot read {}: {e}", path.display());
+            Err(ExitCode::FAILURE)
+        }
+    }
+}
+
+/// `tribunal metrics`: the refutation panel's scorecard from `metrics.jsonl`.
+/// Reads only; dispatches nothing.
+fn metrics_main(argv: &[String]) -> ExitCode {
+    let (filter, as_json) = match parse_ledger_flags(argv, None) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("tribunal: {e}");
+            return usage();
+        }
+    };
+    let (rows, unreadable) = match read_ledger() {
+        Ok(r) => r,
+        Err(code) => return code,
+    };
+    use tribunal_context::metrics_report::{metrics_report, render};
+    let report = metrics_report(&rows, unreadable, &filter);
+    if as_json {
+        println!("{report}");
+    } else {
+        print!("{}", render(&report));
+    }
+    ExitCode::SUCCESS
+}
+
+/// `tribunal audit`: what happened to posted findings after the review, from
+/// `metrics.jsonl` and `gh`. Reads only; posts and writes nothing.
+async fn audit_main(argv: &[String]) -> ExitCode {
+    use tribunal_context::outcome_audit::{audit, render, AuditArgs, DEFAULT_LIMIT};
+    let mut limit = DEFAULT_LIMIT;
+    let (filter, as_json) = match parse_ledger_flags(argv, Some(&mut limit)) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("tribunal: {e}");
+            return usage();
+        }
+    };
+    let (rows, unreadable) = match read_ledger() {
+        Ok(r) => r,
+        Err(code) => return code,
+    };
+    let rt = runtime();
+    let report = audit(&rt.tools, &rows, unreadable, &AuditArgs { filter, limit }).await;
+    if as_json {
+        println!("{report}");
+    } else {
+        print!("{}", render(&report));
+    }
+    ExitCode::SUCCESS
+}
+
 /// `tribunal lost-runs`: the runs that started and never wrote their metrics
 /// row, from `inflight-runs.jsonl`. `--recent <days>` prints one warning line
 /// when the persist step looks broken, and nothing otherwise.
@@ -778,6 +879,8 @@ async fn main() -> ExitCode {
         Some("post") => return post_main(&argv[1..]).await,
         Some("selfcheck") => return selfcheck_main(&argv[1..]).await,
         Some("cost") => return cost_main(&argv[1..]),
+        Some("metrics") => return metrics_main(&argv[1..]),
+        Some("audit") => return audit_main(&argv[1..]).await,
         Some("override") => return override_main(&argv[1..]),
         Some("lost-runs") => return lost_runs_main(&argv[1..]),
         Some("harness-version") => return harness_version_main(&argv[1..]),

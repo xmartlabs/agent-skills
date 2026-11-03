@@ -15,7 +15,7 @@ The review runs in the tribunal binary, a Rust program under the plugin's `rust/
 
 | File | Read when |
 |---|---|
-| `references/metrics-schema.md` | `--metrics` or `--audit`, or reading a metrics row: the record's fields and the two measurement modes |
+| `references/metrics-schema.md` | Reading a metrics row, or explaining what `--metrics` and `--audit` count: the record's fields and the definitions behind the two measurement modes |
 | `references/queue.md` | Any `--queue*` flag: the backlog state file and the per-tick procedure |
 
 ## Changing this harness
@@ -30,8 +30,8 @@ Behaviour lives in the Rust crates, the agent definitions under `agents/` and th
 | `/tribunal:review-pr --queue <list \| gh search query>` | Start/extend a backlog and review the first pending PR. See `references/queue.md`. |
 | `/tribunal:review-pr --queue` | Resume the backlog: review the next pending PR. |
 | `/tribunal:review-pr --queue-status` | Show how many PRs are pending/done/error. Reviews nothing. |
-| `/tribunal:review-pr --metrics` | Aggregate scorecard from `metrics.jsonl`. Reviews nothing. See `references/metrics-schema.md`. |
-| `/tribunal:review-pr --audit` | Estimate finding FP/FN proxies from merged-PR outcomes. Reviews nothing. Same reference. |
+| `/tribunal:review-pr --metrics` | The refutation panel's scorecard from `metrics.jsonl`: kill rate, candidates that reached a panel, debate fire and flip rates, cross-model disagreement per external family, panel degradation and its causes, kills by `killReason`, and where `refuteFraction` falls around the threshold. Legacy rows and re-runs are dropped and counted, and each engine and `schemaVersion` is reported on its own. Reviews nothing. Run `tribunal-engine run -- metrics [--repo <owner/name>] [--since <iso date>] [--json]` and show its output. The definitions are in `references/metrics-schema.md`. |
+| `/tribunal:review-pr --audit` | What happened to posted findings after the review, from `metrics.jsonl` and `gh`: fixed, merged untouched or dismissed, per mechanism (blocking or not, external voter or Claude only, with or without a debate), plus killed findings whose file changed later. These are proxies, and the output says so. Reviews nothing and posts nothing. Run `tribunal-engine run -- audit [--repo <owner/name>] [--since <iso date>] [--limit <n>] [--json]` and show its output. It queries the 20 PRs with the most recent reviews unless `--limit` says otherwise, and names the ones it skipped. |
 | `/tribunal:review-pr --cost` | Where the money of past reviews went, from `metrics.jsonl`: dollars per repo and per run, by agent kind, and per lens focus with how many lenses were forced or over budget and the cost per finding that reached the report. Reviews nothing. Run `tribunal-engine run -- cost [--repo <owner/name>] [--since <iso date>] [--json]` and show its output. Only rows written since 2026-10-30 carry dollars; older rows count as runs without a price. |
 | `/tribunal:review-pr --selfcheck` | Audit the LAST run from its own metrics row, diagnose each violation from the artifacts on disk, refute the diagnosis adversarially, and propose a patch gated on the test suite. Reviews nothing. Run with `run_in_background: true`: `tribunal-engine run -- selfcheck --out "${TMPDIR:-/tmp}/tribunal-selfcheck.json"` (add `--apply` only when the user asked for the patch to be applied, `--no-battery` when this machine has no `cargo`), then show the user the JSON it wrote and the log lines it printed. Every run writes its own `selfAudit`, and until something reads it a recorded violation is a violation nobody saw: on 2026-09-08 PR #2083's run recorded `fidelity-critic-flagged` and it surfaced only because a person went looking. |
 
@@ -60,7 +60,7 @@ Everything below is the mechanics behind these commands, not needed just to *use
 
 ## Dispatch decision
 
-**First, route read-only modes:** if `--metrics` or `--audit` was passed, read `references/metrics-schema.md` and follow its measurement modes. They review nothing, fetch no PR, and stop after printing. If a `--queue*` flag was passed, read `references/queue.md` for the backlog procedure (each tick still runs the flow below on one PR). Everything below is for an actual review.
+**First, route read-only modes:** if `--metrics`, `--audit` or `--cost` was passed, run the `tribunal-engine run --` command its row above names and show its output. They review nothing and stop after printing; only `--audit` calls `gh`, and only to read. If a `--queue*` flag was passed, read `references/queue.md` for the backlog procedure (each tick still runs the flow below on one PR). Everything below is for an actual review.
 
 **Check the trail of earlier runs (one command, silent when clean).** A run that started and never wrote its metrics row is the only symptom of a persist step that fails on every run, and on Windows it went unnoticed for four days. If this prints a WARNING, show it to the user before reviewing, and do not treat the review as measured until they have looked.
 
