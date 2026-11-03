@@ -229,8 +229,16 @@ fn world(name: &str) -> World {
     let tmp = root.join("tmp");
     std::fs::create_dir_all(&data).unwrap();
     std::fs::create_dir_all(&tmp).unwrap();
+    // As tribunal-cli's plugin_root(): the plugin's paths are normalized on `/`
+    // only, so a Windows root with `\` and `..` would collapse wrongly.
+    let plugin_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let plugin_root = if cfg!(windows) {
+        PathBuf::from(plugin_root.to_string_lossy().replace('\\', "/"))
+    } else {
+        plugin_root
+    };
     let rt = Runtime {
-        plugin_root: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.."),
+        plugin_root,
         tmpdir: tmp.to_string_lossy().into_owned(),
         tools: Tools {
             gh: test_gh().to_string_lossy().into_owned(),
