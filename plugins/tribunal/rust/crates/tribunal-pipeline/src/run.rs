@@ -278,6 +278,12 @@ pub fn sampled_lens_plan(slots: &[LensSlot], samples: u32) -> Vec<LensSlot> {
     (0..rounds).flat_map(|_| slots.iter().cloned()).collect()
 }
 
+/// How many samples each lens gets on this run: `--lens-samples`, or one.
+#[must_use]
+pub fn effective_lens_samples(args: &RunArgs) -> u32 {
+    args.lens_samples.unwrap_or(1).clamp(1, MAX_LENS_SAMPLES)
+}
+
 /// The run up to the end of the Review phase. `logs` receives every line the
 /// workflow would `log`, in order.
 ///
@@ -300,7 +306,7 @@ pub async fn run_review<A: Agent>(
     };
     let context_seconds = context_started.elapsed().as_secs_f64();
     let lenses_started = std::time::Instant::now();
-    let samples = args.lens_samples.unwrap_or(1).clamp(1, MAX_LENS_SAMPLES);
+    let samples = effective_lens_samples(args);
     if samples > 1 {
         let planned = rc.plan.lens_plan.len();
         rc.plan.lens_plan = sampled_lens_plan(&rc.plan.lens_plan, samples);

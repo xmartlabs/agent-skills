@@ -3,8 +3,10 @@
 //! compares against.
 
 use serde_json::json;
+use tribunal_pipeline::context::RunArgs;
+use tribunal_pipeline::metrics::{metrics_row, MetricsScope};
 use tribunal_pipeline::plan::LensSlot;
-use tribunal_pipeline::run::{sampled_lens_plan, MAX_LENS_SAMPLES};
+use tribunal_pipeline::run::{effective_lens_samples, sampled_lens_plan, MAX_LENS_SAMPLES};
 
 fn slot(focus: &str, files: Option<&[&str]>) -> LensSlot {
     LensSlot {
@@ -66,4 +68,28 @@ fn samples_are_capped() {
 #[test]
 fn an_empty_plan_stays_empty() {
     assert!(sampled_lens_plan(&[], 4).is_empty());
+}
+
+fn row_for(lens_samples: Option<u32>) -> serde_json::Value {
+    let args = RunArgs {
+        lens_samples,
+        ..RunArgs::default()
+    };
+    let scope = MetricsScope {
+        lens_samples: effective_lens_samples(&args),
+        ..MetricsScope::default()
+    };
+    metrics_row(&scope).unwrap()
+}
+
+#[test]
+fn the_row_records_the_lens_samples_of_the_run() {
+    assert_eq!(row_for(None)["lensSamples"], json!(1));
+    assert_eq!(row_for(Some(1))["lensSamples"], json!(1));
+    assert_eq!(row_for(Some(3))["lensSamples"], json!(3));
+    assert_eq!(row_for(Some(9))["lensSamples"], json!(MAX_LENS_SAMPLES));
+    let row = row_for(None);
+    let keys: Vec<&String> = row.as_object().unwrap().keys().collect();
+    let at = keys.iter().position(|k| *k == "lensCountOverride").unwrap();
+    assert_eq!(keys[at + 1], "lensSamples");
 }

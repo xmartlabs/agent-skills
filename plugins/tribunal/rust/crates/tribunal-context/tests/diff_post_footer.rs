@@ -275,6 +275,83 @@ fn engine_label_prints_a_semver_version_whole() {
     );
 }
 
+fn lens_samples_segment(k: usize) -> String {
+    if k == 1 {
+        "1 lens sample".to_owned()
+    } else {
+        format!("{k} lens samples")
+    }
+}
+
+/// A generated row (always a JSON object) with `lensSamples` added first.
+fn with_lens_samples(row: &str, k: usize) -> String {
+    match row.strip_prefix('{') {
+        Some("}") => format!("{{\"lensSamples\":{k}}}"),
+        Some(rest) => format!("{{\"lensSamples\":{k},{rest}"),
+        None => panic!("a generated row is not an object: {row}"),
+    }
+}
+
+/// The footer of a workflow run, read off a row with the given extra fields.
+fn workflow_footer(name: &str, extra: &str) -> String {
+    let dir = scratch(name);
+    std::fs::write(
+        dir.join("metrics.jsonl"),
+        format!("{{\"pr\":12,\"headSha\":\"abc\",\"harnessVersion\":\"tribunal-v115\",\"reviewMode\":\"full\",\"ts\":\"2026-11-03T10:00:00Z\"{extra}}}\n"),
+    )
+    .unwrap();
+    let env = LedgerEnv {
+        home: dir.to_string_lossy().into_owned(),
+        cwd: dir.to_string_lossy().into_owned(),
+        data_dir: Some(dir.to_string_lossy().into_owned()),
+        project_dir: None,
+        lock_wait: tribunal_context::ledger::WAIT,
+    };
+    let argv: Vec<String> = [
+        "--mode",
+        "workflow",
+        "--pr",
+        "12",
+        "--head-sha",
+        "abc",
+        "--agent-count",
+        "7",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    let out = post_footer::run(&argv, &env, SystemTime::now(), &dir.to_string_lossy());
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let _ = std::fs::remove_dir_all(&dir);
+    out.stdout
+}
+
+#[test]
+fn the_footer_reads_lens_samples_off_the_row() {
+    let line = |name: &str, extra: &str| workflow_footer(name, extra);
+    assert_eq!(
+        line("samples-1", ",\"lensSamples\":1"),
+        "<sub>tribunal (skill) · tribunal-v115 · full review · 1 lens sample · 7 agents · 2026-11-03T10:00:00Z</sub>\n"
+    );
+    assert_eq!(
+        line("samples-3", ",\"lensSamples\":3"),
+        "<sub>tribunal (skill) · tribunal-v115 · full review · 3 lens samples · 7 agents · 2026-11-03T10:00:00Z</sub>\n"
+    );
+    assert_eq!(
+        line("samples-none", ""),
+        "<sub>tribunal (skill) · tribunal-v115 · full review · 7 agents · 2026-11-03T10:00:00Z</sub>\n"
+    );
+    for (i, odd) in ["null", "0", "\"3\"", "2.5"].into_iter().enumerate() {
+        assert!(
+            !line(
+                &format!("samples-odd-{i}"),
+                &format!(",\"lensSamples\":{odd}")
+            )
+            .contains("lens sample"),
+            "{odd}"
+        );
+    }
+}
+
 fn now_segment() -> Regex {
     Regex::new(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)</sub>\n$").unwrap()
 }
@@ -461,7 +538,62 @@ fn build_post_footer_matches_js_on_generated_rows_and_flags() {
         for k in kinds(&js, c) {
             *seen.lock().unwrap().entry(k).or_default() += 1;
         }
-        (diff_cli(&js, &rs).map(|d| format!("{c:?}\n{d}")), kept)
+        if let Some(d) = diff_cli(&js, &rs) {
+            return (Some(format!("{c:?}\n{d}")), kept);
+        }
+        // Declared difference: a row that carries `lensSamples` adds a lens
+        // samples segment after the review mode, a field the script never
+        // read. No generated row carries it, so the case runs again with it
+        // added to every row: a workflow footer must print the segment, and
+        // without it must still be the script's line. Witness:
+        // `the_footer_reads_lens_samples_off_the_row`.
+        let samples = i % 4 + 1;
+        let with = dir.join("with-lens-samples");
+        std::fs::create_dir_all(&with).unwrap();
+        if !c.rows.is_empty() {
+            let rows: Vec<String> = c
+                .rows
+                .iter()
+                .map(|r| with_lens_samples(r, samples))
+                .collect();
+            std::fs::write(with.join("metrics.jsonl"), rows.join("\n") + "\n").unwrap();
+        }
+        let env_with = LedgerEnv {
+            data_dir: Some(with.to_string_lossy().into_owned()),
+            ..env
+        };
+        let mut rw = post_footer::run(&c.argv, &env_with, now, &port_root);
+        let marked = format!(" review · {} · ", lens_samples_segment(samples));
+        let printed = rw.stdout.contains(&marked);
+        let expected = js.code == 0 && c.argv.get(1).map(String::as_str) == Some("workflow");
+        if printed != expected {
+            return (
+                Some(format!(
+                    "{c:?}\nwith lensSamples {samples}, segment printed: {printed}, expected: {expected}\n{}",
+                    rw.stdout
+                )),
+                kept,
+            );
+        }
+        if printed {
+            let k = if samples == 1 {
+                "one-lens-sample"
+            } else {
+                "lens-samples"
+            };
+            *seen.lock().unwrap().entry(k).or_default() += 1;
+        }
+        rw.stdout = without_clock(&rw.stdout.replacen(&marked, " review · ", 1), clocked);
+        rw.stdout = semver_label()
+            .replace(&rw.stdout, "tribunal v$1 ")
+            .into_owned();
+        rw.stderr = rw
+            .stderr
+            .replace(&*with.to_string_lossy(), &data.to_string_lossy());
+        (
+            diff_cli(&js, &rw).map(|d| format!("{c:?}\nwith lensSamples {samples}\n{d}")),
+            kept,
+        )
     });
     let (diffs, kept): (Vec<Option<String>>, Vec<Value>) = runs.into_iter().unzip();
     if replay.is_none() {
@@ -497,6 +629,8 @@ fn build_post_footer_matches_js_on_generated_rows_and_flags() {
         "skill",
         "row version",
         "no version",
+        "one-lens-sample",
+        "lens-samples",
     ] {
         assert!(
             seen.get(k).copied().unwrap_or(0) >= 3,

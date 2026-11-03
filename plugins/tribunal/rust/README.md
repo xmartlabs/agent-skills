@@ -379,6 +379,12 @@ Each has a witness input asserted in its group's test file.
   segment names them (`tribunal v105 (rust rust-<hash>)`); a Workflow row
   printed `tribunal v105 (skill)`. Both footers came from the same
   `build-post-footer` logic.
+- A native row also carries `lensSamples`, the samples each lens got
+  (`--lens-samples`, else 1), which the Workflow never wrote. The footer
+  prints it after the review mode (`full review · 1 lens sample`,
+  `full review · 3 lens samples`) when the row has it, and nothing on an older
+  row. Both are declared differences: `diff_metrics.rs` and
+  `diff_post_footer.rs` take them out before comparing with their goldens.
 - The native row's `relays` is always empty (nothing travels through a relay
   agent) and its `platform` is null, so the row falls back to the PR
   context's platform, as the workflow did when no platform argument was

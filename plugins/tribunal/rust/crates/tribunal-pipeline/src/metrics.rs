@@ -62,6 +62,8 @@ pub struct MetricsScope {
     pub review_results: Value,
     pub lens_findings: Value,
     pub lenses_override: Value,
+    #[serde(default = "one_lens_sample")]
+    pub lens_samples: u32,
     pub file_partition_mode: Value,
     pub per_group_churn: Value,
     pub use_codex_head: bool,
@@ -127,6 +129,10 @@ pub struct MetricsScope {
     pub refines_skipped_for_budget: Value,
     pub external_slots: f64,
     pub artifact_dir: String,
+}
+
+fn one_lens_sample() -> u32 {
+    1
 }
 
 fn n(x: f64) -> Value {
@@ -704,6 +710,7 @@ pub fn metrics_row(s: &MetricsScope) -> Result<Value, String> {
         serde_json::to_value(lens_yield).map_err(|e| e.to_string())?,
     );
     put("lensCountOverride", s.lenses_override.clone());
+    put("lensSamples", json!(s.lens_samples));
     put("filePartitionMode", s.file_partition_mode.clone());
     put("perGroupChurn", s.per_group_churn.clone());
     put("codexEnabled", json!(s.use_codex_head));
