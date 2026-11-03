@@ -53,6 +53,7 @@ use crate::synthesize::{
     missing_identifiers, prior_check, prior_re_examined, ref_evidence, ref_evidence_targets,
     side_payloads, surviving_for_synthesis, synthesis_prompt, verdict, verified_anchors,
     verify_prior_prompt, with_banners, PriorCheck, Relay, Report, SynthesisInput, Verdict,
+    PRIOR_VERIFY_CEILING,
 };
 use crate::verdict_basis::{verdict_basis, with_verdict_basis};
 use crate::verify::{
@@ -158,6 +159,8 @@ pub struct DispatchPolicy {
     /// `--max-panels` and `--max-agents` after the workflow's defaulting.
     pub max_panels: f64,
     pub max_agents: f64,
+    /// `--prior-verify`: how many prior findings get a verification dispatch.
+    pub prior_verify: usize,
     /// See [`ReviewerSetup::effort`].
     pub effort: Option<String>,
     /// The cost breaker's output-token ceiling.
@@ -171,6 +174,7 @@ impl Default for DispatchPolicy {
             concurrency: 8,
             max_panels: MAX_PANELS_DEFAULT,
             max_agents: MAX_AGENTS_DEFAULT,
+            prior_verify: PRIOR_VERIFY_CEILING,
             effort: None,
             output_ceiling: OUTPUT_CEILING_DEFAULT,
         }
@@ -975,6 +979,7 @@ pub async fn synthesize_phase<A: Agent>(
         plan.prior_review.as_ref(),
         &current,
         &plan.import_adjacency,
+        policy.prior_verify,
         logs,
     )?;
     let mut verified = Vec::new();
