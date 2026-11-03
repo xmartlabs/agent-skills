@@ -96,6 +96,7 @@ fn run(votes: Vec<Option<Value>>, lone_refuter: bool) -> (usize, Value) {
         critic_gap: None,
         blast_radius: None,
         file_count: 1.0,
+        critic: true,
         flags: PanelFlags {
             lone_refuter,
             ..PanelFlags::default()
