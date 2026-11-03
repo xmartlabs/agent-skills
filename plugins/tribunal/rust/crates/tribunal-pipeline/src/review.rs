@@ -497,16 +497,16 @@ mod tests {
     fn a_pr_file_unchanged_since_the_baseline_is_not_called_out_of_the_pr() {
         let critic = format!("completeness-critic gap {OUT_OF_DIFF}");
         let mut d = vec![
-            drop("src/services/v2/bulkInvoice.ts", OUT_OF_DIFF),
-            drop("src/services/v2/bulkInvoice.ts", &critic),
+            drop("src/billing/statement.ts", OUT_OF_DIFF),
+            drop("src/billing/statement.ts", &critic),
             drop("src/other.ts", OUT_OF_DIFF),
             drop("src/changed.ts", OUT_OF_DIFF),
-            drop("src/services/v2/bulkInvoice.ts", "pre-decided"),
+            drop("src/billing/statement.ts", "pre-decided"),
         ];
         let scoped = vec!["src/changed.ts".to_owned()];
         let all = vec![
             "src/changed.ts".to_owned(),
-            "src/services/v2/bulkInvoice.ts".to_owned(),
+            "src/billing/statement.ts".to_owned(),
         ];
         relabel_unchanged_drops(&mut d, &scoped, &all, Some("e8b4a9e1c0ffee"));
         let unchanged = "out of scope (in this PR, unchanged since the review at e8b4a9e1, so this incremental run did not re-review it)";
