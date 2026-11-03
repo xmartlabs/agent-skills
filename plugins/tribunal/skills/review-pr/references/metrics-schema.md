@@ -1,7 +1,7 @@
 # Metrics — canonical record schema and measurement modes
 
-Read this file when: reading a metrics row, or running `/tribunal:review-pr --metrics` /
-`--audit`. Nothing here is needed during the review itself.
+Read this file when: reading a metrics row, or explaining what `tribunal metrics` /
+`tribunal audit` count. Nothing here is needed during the review itself.
 
 > **Since v115 only the Rust binary writes rows**, with `engine: "rust"`. The
 > Workflow wrote rows until v114 (no `engine` field) and the in-context path until
@@ -213,37 +213,121 @@ orchestrator's job. Its post step only *updates* that row when it posts.
 Append-only: never rewrite the file by hand. `tribunal override` is the one
 other writer, and it takes the same lock.
 
-## Measurement modes — evaluate whether the mechanisms earn their cost
+## Measurement modes: whether the mechanisms earn their cost
 
-Two read-only sub-modes that **review nothing** — they turn the accumulated
+Two read-only modes that **review nothing**: they turn the accumulated
 `metrics.jsonl` into evidence for tuning `T_KILL`/`DELTA`, keeping or dropping
-the Codex slot, and keeping or dropping the debate. Both stop after printing.
+the Codex slot, and keeping or dropping the debate. Each is a subcommand of
+the binary, so the numbers come out the same on every run and cost no tokens:
 
-**`/tribunal:review-pr --metrics`** — aggregate scorecard over the whole log:
+- `/tribunal:review-pr --metrics` runs `tribunal-engine run -- metrics [--repo <owner/name>] [--since <iso date>] [--json]`.
+- `/tribunal:review-pr --audit` runs `tribunal-engine run -- audit [--repo <owner/name>] [--since <iso date>] [--limit <n>] [--json]`.
 
-- refutation kill rate (findings killed / findings paneled);
-- % of candidates that reached a panel (vs dropped by the early gate);
-- **debate fire rate** and **flip rate** (of debates fired, how many changed the verdict);
-- cross-model disagreement rate — external vote vs Claude majority, reported **per external family** (Codex-vs-Claude and, on high-risk findings, Gemini-vs-Claude and Codex-vs-Gemini) so each family's contribution is visible separately. Compute it over findings where `hadExternalVoter` is true — a panel whose external head timed out never produced a cross-model comparison, and counting it as agreement would understate disagreement;
-- **panel degradation rate** — findings with a non-empty `failedSlots`, and findings marked `unverified` (no head voted at all). A rising rate means the decorrelation the design pays for is not actually being delivered, and it invalidates the disagreement rate above before it invalidates anything else;
-- **panel degradation by cause** — break `failedSlotsDetail` down by `reason` (`crashed` / `timeout` / `error` / `quota` / `auth` / `refused` / `unparseable`). A rate dominated by `unparseable` means the verdict classifier has drifted from what the heads actually emit; check that before believing any other number in this report. A degradation rate dominated by `timeout` says the retry-once-then-sticky-route logic is undersized (worth revisiting the retry/health-flag design); dominated by `error` points at a broken credential, not a design gap;
-- **refutation rate by `killReason`** — once there's enough corpus volume, break the refutation kill rate down by category (`out-of-scope` / `pre-existing` / `not-triggered` / `incorrect-premise` / `style-not-bug` / `other`) instead of reading only the aggregate. This is what would eventually justify a per-category `T_KILL` instead of one global threshold — not implemented yet, this is the data collection step;
-- `refuteFraction` distribution around `T_KILL` (are decisions clustered at the threshold?).
+Show the output as printed. The rest of this section defines what each
+figure counts.
 
-**Before any of the above: split the log by `schemaVersion` and drop rows with a non-null `rerunOf`.** Report both counts (`N rows aggregated, M legacy skipped, K re-runs excluded`). Averaging a v2 row against a legacy row, or counting one commit four times, produces a confident number that means nothing — which is the failure this instrumentation exists to prevent.
+**Row selection, both modes.** Before anything is counted, rows with no
+`schemaVersion` (the legacy log) and rows with a non-null `rerunOf` are left
+out, and the first line says how many (`N rows aggregated, M legacy skipped, K
+re-runs excluded`). A row with no `rerunOf` key at all counts as a first run,
+and a note says how many there were. Averaging a v2 row against a legacy row,
+or counting one commit four times, produces a confident number that means
+nothing, which is the failure this instrumentation exists to prevent. The
+remaining rows are grouped by engine (`rust` for `engine: "rust"`,
+`in-context` for `mode: "in-context"`, `workflow` for the rest) and by
+`schemaVersion`, and each group is reported on its own. Two groups are never
+averaged together. `--repo` and `--since` (compared with `ts` as text) narrow
+the rows first.
 
-Read the file with `jq` and print the summary; do not dispatch any review agents.
+**Missing fields.** Each figure is computed over the items that carry its
+field. When the field is missing on more than half of them, the group prints a
+note saying how many carry it, and when none do, the figure reads "not
+recorded" instead of 0.
 
-**`/tribunal:review-pr --audit`** — ground-truth proxies from later PR state (closes the loop):
+**`--metrics`**, per group:
 
-For each logged PR, look at what happened *after* the review:
+- **Refutation kill rate:** paneled findings (`panelRan: true`) with
+  `survived: false`, over paneled findings.
+- **Candidates reaching a panel:** the sum of the row-level `paneled` over the
+  sum of `candidates`, over the rows that carry both.
+- **Debate fire rate and flip rate:** paneled findings whose `debate.fired` is
+  true, over paneled findings with a `debate` object; flips are the fired
+  debates with `outcome: "flipped"`, over the fired ones. The other outcomes
+  are listed, including the in-context `preempted-by-fact` (never fired).
+- **Cross-model disagreement per external family:** computed only over
+  paneled findings with `hadExternalVoter: true`. A panel whose external head
+  timed out never produced a comparison, and counting it as agreement would
+  understate disagreement. Each side's verdict is the majority of that
+  family's votes in `votes` (`REFUTED` against `NOT_REFUTED`); a tie or no vote
+  makes the pair not comparable, and the output counts those apart. Pairs:
+  Codex against the Claude majority, Gemini against the Claude majority, and
+  Codex against Gemini. The row-level `crossModelDisagreement` booleans are not
+  used: they say only whether any finding of the run disagreed.
+- **Panel degradation:** paneled findings with a non-empty `failedSlots`, and
+  paneled findings with `unverified: true` (no head voted). A rising rate
+  means the decorrelation the design pays for is not being delivered, and it
+  invalidates the disagreement rate above before anything else.
+- **Panel degradation by cause:** every `failedSlotsDetail` entry of a paneled
+  finding, counted by `reason` and, within it, by `source`. The reasons are
+  printed as found (`crashed`, `timeout`, `error`, `quota`, `auth`, `refused`,
+  `unparseable`, and on newer rows `confined` and `harness`). A rate dominated
+  by `unparseable` means the verdict classifier has drifted from what the
+  heads emit; check that before believing any other number. One dominated by
+  `timeout` says the retry-once-then-sticky-route logic is undersized; one
+  dominated by `error` points at a broken credential, not a design gap.
+- **Kills by `killReason`:** each killed finding is put under the
+  `killReason` most of its `REFUTED` votes gave (`mixed` on a tie,
+  `uncategorized` when none gave one), as a share of paneled findings, so the
+  shares add up to the kill rate. The `REFUTED` votes of paneled findings are
+  also counted by `killReason`. This is the data a per-category `T_KILL` would
+  need; nothing computes a per-category threshold yet.
+- **`refuteFraction` around the threshold:** for each paneled finding with
+  both `refuteFraction` and `threshold`, the difference between them, in bins
+  (below -0.25, -0.25 to -0.10, -0.10 to -0.05, -0.05 to 0, 0 to 0.05, 0.05 to
+  0.10, 0.10 to 0.25, 0.25 and above), and how many fall within 0.05 of the
+  threshold. A null `refuteFraction` (an unverified finding) is counted apart.
 
-- PR merged / closed? (`gh pr view <n> --json state,mergedAt`)
-- A posted-blocking finding **fixed in commits after the review** touching that file/line → **true-positive proxy**;
-- Review **dismissed**, or PR merged without touching the finding → **false-positive proxy**.
-- Cross `debate.outcome` against fix-outcome: **do debate *flips* correlate with findings that were later fixed?** That is the metric that decides whether the debate stays or gets turned off.
+**`--audit`** looks at what happened after the review, for each logged PR
+with posted findings (`findings[].posted: true`). It keeps a re-run row that
+posted findings, since what it posted is what the author saw, and says how
+many it kept. Rows with no `repo`, `pr` or `headSha` cannot be joined with a
+PR and are skipped and counted. The PRs with the most recent reviews are
+queried first, up to `--limit` (default 20), and the rest are named as not
+queried. Per PR it calls `gh` twice or so:
 
-Emit a short report of FP/FN proxies per mechanism (with vs without debate, correlated vs decorrelated panel). These are *proxies* (the commit-touch heuristic isn't ground truth) — say so; don't overclaim.
+- `gh pr view <n> --repo <repo> --json state,mergedAt,headRefOid,reviews`;
+- `gh api repos/<repo>/compare/<reviewed headSha>...<headRefOid>` once per
+  reviewed head, which lists every file changed after that review with its
+  hunks. No call is made when the reviewed head is still the PR's head.
+
+Each posted finding gets one outcome. A finding repeated across re-reviews of
+one PR (same `file` and `title`) is counted once, at its first review.
+
+- **fixed** (true-positive proxy): a commit after the review touched the
+  finding's file, or renamed it. The output also says how many of those had
+  their `line` inside a changed hunk.
+- **dismissed** (false-positive proxy): the file was not touched and a review
+  at the reviewed commit was dismissed.
+- **merged untouched** (false-positive proxy): the PR merged without touching
+  the file.
+- **open untouched** and **closed unmerged**: no verdict yet, or none to have.
+- **unknown**: `gh` failed, the finding names no file, more files changed
+  than the compare API lists (300), or the branch was rewritten after the
+  review (compare status `diverged`), since a rebase makes every file of the
+  PR look changed.
+
+The outcomes are reported per engine and per mechanism: all posted, blocking
+or not, not paneled, paneled with an external voter or with Claude only, and
+paneled with no debate, a debate fired, flipped or held. The figure to read
+is fixed over decided (fixed, dismissed and merged untouched). Whether debate
+flips line up with findings that were later fixed is what decides whether the
+debate stays. A false-negative proxy comes with it: killed findings
+(`panelRan: true`, `survived: false`) in the same reviews whose file changed
+after the review.
+
+These are *proxies*: a commit that touches a file is not proof the finding
+was fixed, and a merge that leaves it alone is not proof it was wrong. The
+output says so; do not overclaim when relaying it.
 
 Neither mode posts anything or writes to `metrics.jsonl`.
 

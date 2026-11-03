@@ -324,7 +324,22 @@ fn typecheck_text_reads_as_the_workflow_reads_it() {
         },
         &params,
     );
-    let rust: Vec<Value> = cases.iter().map(rust_typecheck).collect();
+    // Declared difference: the Workflow logged "Grounded typecheck ran but
+    // coverage is unknown" when tsc listed no program files, which also
+    // describes a tsc that never started. Witness: the branch test below,
+    // which reaches the new line on every empty program.
+    let rust: Vec<Value> = cases
+        .iter()
+        .map(rust_typecheck)
+        .map(|mut v| {
+            for l in v["logs"].as_array_mut().unwrap() {
+                if l.as_str() == Some(tribunal_pipeline::verify::NO_PROGRAM_LOG) {
+                    *l = json!("Grounded typecheck ran but coverage is unknown — confirm-only, no pre-panel refutations");
+                }
+            }
+            v
+        })
+        .collect();
     assert_same("applyTypecheckResult", &cases, &rust, &js);
 }
 
@@ -344,7 +359,7 @@ fn the_generated_typecheck_cases_reach_every_branch() {
         "different Prisma schema",
         "degraded/unrecognized",
         "node_modules resolution broken",
-        "coverage is unknown",
+        "listed no program files",
         "covers 0 of",
         "with diagnostics",
     ] {

@@ -225,10 +225,9 @@ jobs:
         working-directory: .
 
   # The release's Windows target, x86_64-pc-windows-msvc, built and tested on
-  # a real Windows machine: clippy, the unit tests, the release build and the
-  # binary starting. Unlike the Wine check in rust/docker/Dockerfile, it shows
-  # process-tree cleanup and PATHEXT resolution (finding a `.cmd`) as users get
-  # them. GitHub's Windows runners are free for a public repository. A merge to
+  # a real Windows machine: clippy, the unit tests, the subcommand tests, the
+  # release build and the binary starting. It shows process-tree cleanup and
+  # PATHEXT resolution (finding a `.cmd`) as users get them. GitHub's Windows runners are free for a public repository. A merge to
   # main runs it too, to keep its cargo cache warm, as the linux job does.
   windows:
     if: github.event_name != 'push' || github.ref == 'refs/heads/main'
@@ -258,6 +257,9 @@ jobs:
           workspaces: plugins/tribunal/rust
       - run: cargo clippy --target "$TARGET" --workspace --lib --bins --locked -- -D warnings
       - run: cargo test --target "$TARGET" --workspace --lib --bins --locked
+      # The subcommands users run outside a review, such as the loaders
+      # templates/check.sh calls, end to end through the binary.
+      - run: cargo test --target "$TARGET" -p tribunal-cli --test subcommands --locked
       # Claude Code installed with npm is a claude.cmd launcher the binary
       # reads to find the claude.exe it starts (tribunal-agent's launch.rs).
       # The latest release on purpose: a change to how the package installs
