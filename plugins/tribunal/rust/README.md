@@ -699,8 +699,9 @@ runner lacks them, each checked against its published sha256.
 
 A release:
 
-1. Bump `version` in `crates/tribunal-cli/Cargo.toml`, merge, and push the tag
-   `tribunal-rust-v<version>`. The workflow refuses a tag that names another
+1. Set `version` in `crates/tribunal-cli/Cargo.toml` to the version of the
+   freeze that will ship the binary (`docs/maintaining.md`, "Versions"),
+   merge, and push the tag `tribunal-rust-v<version>`. The workflow refuses a tag that names another
    version, builds the four archives and attaches each with its `.sha256`.
    Every archive is built on a GitHub runner: Linux by
    `rust/scripts/build-linux.sh` on `ubuntu-24.04`, the two macOS ones by
@@ -713,7 +714,9 @@ A release:
    job refuses a tag whose commit is not on `main`.
 3. `node rust/scripts/pin-release.mjs tribunal-rust-v<version> --write`
    rewrites `release.json` from those `.sha256` files.
-4. Commit `release.json` with the plugin version that should use the binary.
+4. Freeze `tribunal/v<version>`, the same version, with `release.sh`: it
+   commits `release.json` and refuses a new pin whose version is not the
+   freeze's.
 
 `/tribunal:review-pr`, whose engine is this binary, reads `release.json` through
 `bin/tribunal-engine`, which downloads the archive for the machine once with

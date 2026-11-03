@@ -64,16 +64,27 @@ A release is one command, run by a maintainer from `plugins/tribunal` on a
 branch (it refuses to run on `main`), because the full gate needs the private
 test data and node.
 
-`./release.sh <N>` does the whole sequence, and `--dry-run` shows the plan and
+**Versions.** One semver number names the plugin, its tag and the binary it
+pins. A fix, docs or a template change is a patch (`115.0.1`); a feature, or a
+new binary that breaks nothing, is a minor (`115.1.0`); a removed flag or a
+profile that stops loading is a major (`116.0.0`). A freeze that ships a new
+binary pins the one tagged with its own version (`tribunal-rust-v115.1.0` in
+`tribunal/v115.1.0`); a freeze without one keeps the previous pin. Versions
+only go up, because `/plugin update` keys off `plugin.json`. `release.sh`
+refuses a version that is not higher than the current one, and a new pin
+whose version is not the freeze's. Freezes up to 115 took the next integer as
+`N.0.0`, and their binaries had a `0.x` numbering of their own.
+
+`./release.sh <version>` does the whole sequence, and `--dry-run` shows the plan and
 runs the gate without writing anything. It opens `$EDITOR` for the row's notes
 before anything is written, then prompts before the commit and again before the
 push.
 
 ```bash
-./release.sh 31 --dry-run              # plan + gate only, no notes asked
-./release.sh 31                        # freeze as tribunal/v31, version 31.0.0
-./release.sh 31 --notes-file <path>    # non-interactive: take the notes from a file
-./release.sh 31 --portable             # no test-data directory on this machine
+./release.sh 115.1.0 --dry-run              # plan + gate only, no notes asked
+./release.sh 115.1.0                        # freeze as tribunal/v115.1.0
+./release.sh 115.1.0 --notes-file <path>    # non-interactive: take the notes from a file
+./release.sh 115.1.0 --portable             # no test-data directory on this machine
 ```
 
 **What the gate checks.** The gate, `rust/scripts/release.mjs`, runs six checks.
@@ -117,23 +128,23 @@ The order it enforces, and why each step sits where it does:
 #    if the gate is red, if --notes-file is missing, or if that file
 #    is empty. --tag is passed in because the tag does not exist until step 4,
 #    so release.mjs cannot derive it without naming the PREVIOUS release.
-node rust/scripts/release.mjs --record --tag tribunal/v31 --notes-file <path>   # from plugins/tribunal
+node rust/scripts/release.mjs --record --tag tribunal/v115.1.0 --notes-file <path>   # from plugins/tribunal
 
 # 2. Bump `version` in .claude-plugin/plugin.json to match the tag. This is the
 #    cache key /plugin update keys off. Leave it and users are told they
 #    are "already at the latest version" and never receive the freeze.
 
 # 3. Commit, from plugins/tribunal: only this plugin's files
-git add -- . && git commit -m "chore(tribunal): freeze tribunal/v31"
+git add -- . && git commit -m "chore(tribunal): freeze tribunal/v115.1.0"
 
 # 4. Tag
-git tag -a tribunal/v31 -m "..."
+git tag -a tribunal/v115.1.0 -m "..."
 
 # 5. Push: TWO commands. `git push` does not carry tags unless
 #    push.followTags is set, and it is not set in this repo. A tag left behind
 #    looks published locally and is unreachable to everyone else.
 git push -u origin <branch>
-git push origin tribunal/v31
+git push origin tribunal/v115.1.0
 ```
 
 **Keep merge commits enabled for this repo.** A squash merge replaces the branch's

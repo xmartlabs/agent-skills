@@ -10,7 +10,9 @@ identical runs.
 here. Rows 99 to 110 were frozen there: their tags, commits and `#N` pull request
 numbers belong to that repository and do not exist in this one, and they are kept
 as a changelog only. This repository starts at a snapshot of tribunal 110, and its
-first freeze is 111. Rows before 99 are not included.
+first freeze is 111. Rows before 99 are not included. From 115 on, a freeze is a semver version
+(`tribunal/v115.1.0`) and pins the binary tagged with the same version when it
+ships a new one; `docs/maintaining.md`, "Versions", has the rule.
 
 **The Gate cell says which gate ran.**
 

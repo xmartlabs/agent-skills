@@ -31,11 +31,12 @@ goldens.
 - **An optional profile field is documented in `docs/project-profile.md`,**
   not added to the `templates/` profiles, which people copy as they are.
 - **A Rust change reaches users only with a new binary:** a
-  `tribunal-rust-v*` tag, its pin in `rust/release.json` and a `tribunal/vN`
-  freeze. Merged Rust changes wait for the next binary release, which ships
+  `tribunal-rust-v<version>` tag, its pin in `rust/release.json` and a
+  `tribunal/v<version>` freeze of the same version (`docs/maintaining.md`,
+  "Versions"). Merged Rust changes wait for the next binary release, which ships
   them together; cut one right after a merge only when users are blocked
   without it. A change to the methodology templates or other plugin files
-  needs only a `tribunal/vN` freeze, since the binary reads them from the
+  needs only a patch freeze, since the binary reads them from the
   plugin root. While a merged Rust change waits, the release gate refuses
   every freeze (`docs/maintaining.md`, "What the gate checks"), so a
   template change that must ship before then needs that binary release first.
