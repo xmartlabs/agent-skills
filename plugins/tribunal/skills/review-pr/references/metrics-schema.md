@@ -234,10 +234,21 @@ and a note says how many there were. Averaging a v2 row against a legacy row,
 or counting one commit four times, produces a confident number that means
 nothing, which is the failure this instrumentation exists to prevent. The
 remaining rows are grouped by engine (`rust` for `engine: "rust"`,
-`in-context` for `mode: "in-context"`, `workflow` for the rest) and by
-`schemaVersion`, and each group is reported on its own. Two groups are never
-averaged together. `--repo` and `--since` (compared with `ts` as text) narrow
-the rows first.
+`in-context` for `mode: "in-context"`, `workflow` for the rest), by harness
+era and by `schemaVersion`, and each group is reported on its own. Two groups
+are never averaged together. `--repo` and `--since` (compared with `ts` as
+text) narrow the rows first.
+
+**Harness era.** Since v91 a `REFUTED` vote has to quote the code that
+contradicts the finding, and kill rates fell by an order of magnitude, so a
+kill rate means something only within one era. A row is `v91+` or `pre-v91`
+by its `pluginVersion` when it has one (only Rust rows do). Otherwise its
+votes decide: a vote with a `contradiction` or `quoteFound` key makes it
+`v91+`, and votes without either make it `pre-v91`. A row with neither falls
+back to its `ts`, against the earliest row in the ledger that is `v91+` by
+its own fields; a note says how many rows were placed that way, and with no
+such row they count as `pre-v91`. On the maintainers' ledger the votes and
+the dates agree on every row.
 
 **Missing fields.** Each figure is computed over the items that carry its
 field. When the field is missing on more than half of them, the group prints a
