@@ -5,7 +5,7 @@
 //!   tribunal review --pr <n> [--repo <owner/name>] [--head-sha <sha>]
 //!     [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>]
 //!     [--context <text>] [--bot-comments] [--model <id>] [--preflight]
-//!     [--max-panels <n>] [--max-agents <n>] [--concurrency <n>]
+//!     [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>]
 //!     [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]
 //!
 //!   tribunal panel --pr <n> --repo <owner/name> --head-sha <sha> --findings <file.json>
@@ -43,7 +43,7 @@ fn usage() -> ExitCode {
     eprintln!("usage: tribunal override --ts <row ts> --title <finding title prefix> (--direction reinstated|rejected|withdrawn | --severity nit|important) --reason <how it was checked> [--by <login>] [--verified-at <sha>] [--dry-run]");
     eprintln!("usage: tribunal selfcheck [--apply] [--no-battery] [--model <id>] [--effort <level>] [--out <file>]");
     eprintln!("usage: tribunal post --from <run.json> [--verdict approve|request-changes|comment] [--delta|--edit-existing] [--over-own-review] [--over-standing-review] [--model <id>] [--effort <level>]");
-    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>] [--context <text>] [--bot-comments] [--model <id>] [--preflight] [--max-panels <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
+    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>] [--context <text>] [--bot-comments] [--model <id>] [--preflight] [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
     eprintln!("usage: tribunal panel --pr <n> --repo <owner/name> --head-sha <sha> --findings <file.json> [--thread-before <iso>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--model <id>] [--effort <level>] [--out <file>]");
     ExitCode::from(2)
 }
@@ -249,6 +249,15 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
                         policy.max_agents = n.floor();
                     }
                 }
+            }
+            "--prior-verify" => {
+                let n: usize = value(&mut it, a)?
+                    .parse()
+                    .map_err(|_| "--prior-verify takes a whole number")?;
+                if n == 0 {
+                    return Err("--prior-verify takes a whole number of at least 1".into());
+                }
+                policy.prior_verify = n;
             }
             "--post" => args.post = true,
             "--no-post" => args.post = false,

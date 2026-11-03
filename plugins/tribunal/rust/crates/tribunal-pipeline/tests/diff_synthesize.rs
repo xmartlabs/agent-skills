@@ -22,7 +22,7 @@ use tribunal_pipeline::synthesize::{
     anchored_payload, baseline_description, finish_report, graded, missing_identifiers,
     prior_check, prior_re_examined, ref_evidence, ref_evidence_targets, side_payloads,
     surviving_for_synthesis, synthesis_prompt, verdict, verified_anchors, verify_prior_prompt,
-    Relay, SynthesisInput,
+    Relay, SynthesisInput, PRIOR_VERIFY_CEILING,
 };
 use tribunal_pipeline::verify::no_panel_result;
 
@@ -226,6 +226,7 @@ fn rust_prior(c: &Value) -> Value {
         Some(&c["priorReview"]),
         c["current"].as_array().unwrap(),
         &c["importAdjacency"],
+        PRIOR_VERIFY_CEILING,
         &mut logs,
     )
     .unwrap();
