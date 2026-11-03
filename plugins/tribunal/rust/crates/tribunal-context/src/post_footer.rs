@@ -210,6 +210,9 @@ pub struct FooterFields {
     pub engine: Option<String>,
     pub harness_version: Option<Value>,
     pub review_mode: Option<Value>,
+    /// The row's `lensSamples`; `None` on a row written before the field, and
+    /// in `--mode in-context`, which reads no row. Not in the script.
+    pub lens_samples: Option<u64>,
     pub codex_model_used: Option<Value>,
     pub agent_count: f64,
     pub input_tokens: Option<f64>,
@@ -261,6 +264,11 @@ pub fn build_footer_line(f: &FooterFields) -> Result<String, String> {
         to_js_string(f.harness_version.as_ref()),
         format!("{mode} review"),
     ];
+    match f.lens_samples {
+        Some(1) => segments.push("1 lens sample".into()),
+        Some(k) => segments.push(format!("{k} lens samples")),
+        None => {}
+    }
     if let Some(codex) = format_codex_model(f.codex_model_used.as_ref()).filter(|c| !c.is_empty()) {
         segments.push(format!("codex {codex}"));
     }
@@ -351,6 +359,9 @@ fn workflow_fields(
         engine: Some(engine_label(&row, own_version)),
         harness_version: js::get(&row, "harnessVersion").cloned(),
         review_mode: js::get(&row, "reviewMode").cloned(),
+        lens_samples: finite(js::get(&row, "lensSamples"))
+            .filter(|k| *k >= 1.0 && k.fract() == 0.0 && *k <= f64::from(u32::MAX))
+            .map(|k| k as u64),
         codex_model_used: js::get(&row, "codexModelUsed")
             .filter(|v| !v.is_null())
             .cloned(),
@@ -421,6 +432,7 @@ fn in_context_fields(
         )),
         harness_version: args.get("harness-version").map(Arg::value),
         review_mode: args.get("review-mode").map(Arg::value),
+        lens_samples: None,
         codex_model_used: codex,
         agent_count: args["agent-count"].number(),
         input_tokens: None,
@@ -481,6 +493,45 @@ mod tests {
         assert_eq!(format_token_count(999.0), "999");
         assert_eq!(format_wall_clock(90.0), "2m");
         assert_eq!(format_wall_clock(59.5), "59.5s");
+    }
+
+    fn fields(lens_samples: Option<u64>) -> FooterFields {
+        FooterFields {
+            engine: Some("v115.1.0 (rust rust-abc)".into()),
+            harness_version: Some(Value::String("tribunal-v115".into())),
+            review_mode: Some(Value::String("full".into())),
+            lens_samples,
+            codex_model_used: Some(Value::String("gpt-5".into())),
+            agent_count: 12.0,
+            input_tokens: Some(1_500.0),
+            output_tokens: Some(20.0),
+            wall_clock_seconds: Some(90.0),
+            timestamp: Value::String("2026-11-03T10:00:00Z".into()),
+        }
+    }
+
+    #[test]
+    fn the_footer_prints_one_lens_sample_in_the_singular() {
+        assert_eq!(
+            build_footer_line(&fields(Some(1))).unwrap(),
+            "<sub>tribunal v115.1.0 (rust rust-abc) · tribunal-v115 · full review · 1 lens sample · codex gpt-5 · 12 agents · 1.5K in / ≥20 out tokens · 2m wall · 2026-11-03T10:00:00Z</sub>"
+        );
+    }
+
+    #[test]
+    fn the_footer_prints_several_lens_samples_in_the_plural() {
+        assert_eq!(
+            build_footer_line(&fields(Some(3))).unwrap(),
+            "<sub>tribunal v115.1.0 (rust rust-abc) · tribunal-v115 · full review · 3 lens samples · codex gpt-5 · 12 agents · 1.5K in / ≥20 out tokens · 2m wall · 2026-11-03T10:00:00Z</sub>"
+        );
+    }
+
+    #[test]
+    fn a_row_without_lens_samples_prints_no_segment() {
+        assert_eq!(
+            build_footer_line(&fields(None)).unwrap(),
+            "<sub>tribunal v115.1.0 (rust rust-abc) · tribunal-v115 · full review · codex gpt-5 · 12 agents · 1.5K in / ≥20 out tokens · 2m wall · 2026-11-03T10:00:00Z</sub>"
+        );
     }
 
     #[test]

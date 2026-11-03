@@ -105,7 +105,7 @@ case "$*" in
   *"reviews/5 -X PUT"*) exit 0 ;;
 esac
 case "$1 $2" in
-  "pr review") exit 0 ;;
+  "pr review") prev=; for a in "$@"; do [ "$prev" = --body-file ] && cp "$a" '{posted}'; prev=$a; done; exit 0 ;;
   "pr view") echo "https://github.com/o/r/pull/77" ;;
   "api user") echo dev ;;
   "api repos/o/r/pulls/77/reviews") echo '[{{"id": 5, "body": "posted", "user": {{"login": "dev"}}, "submitted_at": "2026-10-20T10:00:00Z"}}]' ;;
@@ -114,7 +114,8 @@ case "$1 $2" in
 esac
 "#,
             log = root.join("gh.log").display(),
-            head = root.join("head").display()
+            head = root.join("head").display(),
+            posted = root.join("posted-body.md").display()
         ),
     );
     // The run write_executable made is not the code under test's.
@@ -226,6 +227,46 @@ async fn a_clear_gate_posts_with_footer_and_patches_the_row() {
         json!([])
     );
     assert_eq!(*agent.labels.lock().unwrap(), ["compose-post"]);
+}
+
+/// The footer reads `lensSamples` off the row; an older row has none.
+#[tokio::test]
+async fn the_posted_footer_names_the_lens_samples_of_the_row() {
+    for (name, samples, segment) in [
+        (
+            "samples-3",
+            Some(3),
+            Some("full review · 3 lens samples · 12 agents"),
+        ),
+        (
+            "samples-1",
+            Some(1),
+            Some("full review · 1 lens sample · 12 agents"),
+        ),
+        ("samples-none", None, None),
+    ] {
+        let mut r = row("clear");
+        if let Some(k) = samples {
+            r["lensSamples"] = json!(k);
+        }
+        let w = world(name, &r);
+        let agent = Scribe {
+            compose: GOOD_BODY.into(),
+            patched: None,
+            labels: Mutex::default(),
+        };
+        let (out, _) = post(&w, &agent, &r).await;
+        assert!(matches!(out, PostOutcome::Posted { .. }), "{out:?}");
+        let body = std::fs::read_to_string(w.root.join("posted-body.md")).unwrap();
+        let footer = body.lines().last().unwrap();
+        match segment {
+            Some(s) => assert!(footer.contains(s), "{footer}"),
+            None => assert!(
+                footer.contains("full review · 12 agents") && !footer.contains("lens sample"),
+                "{footer}"
+            ),
+        }
+    }
 }
 
 #[tokio::test]

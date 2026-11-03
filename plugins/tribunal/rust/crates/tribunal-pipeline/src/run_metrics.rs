@@ -26,7 +26,9 @@ use crate::persist::{
     row_is_this_run, self_audit, wall_clock_fields,
 };
 use crate::review::answer_of;
-use crate::run::{DispatchPolicy, ReviewOutcome, SynthesisOutcome, VerifyOutcome};
+use crate::run::{
+    effective_lens_samples, DispatchPolicy, ReviewOutcome, SynthesisOutcome, VerifyOutcome,
+};
 
 fn output_tokens<'a>(results: impl IntoIterator<Item = &'a DispatchResult>) -> f64 {
     results
@@ -163,6 +165,7 @@ pub fn metrics_scope(
         ),
         lens_findings: Value::Array(review.candidates.lens_findings.clone()),
         lenses_override: plan.lenses_override.map_or(Value::Null, |n| json!(n)),
+        lens_samples: effective_lens_samples(args),
         file_partition_mode: json!(plan.file_partition_mode),
         per_group_churn: json!(plan.per_group_churn),
         use_codex_head: panel.use_codex,

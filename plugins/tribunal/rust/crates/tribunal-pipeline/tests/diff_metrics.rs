@@ -287,11 +287,17 @@ fn the_metrics_row_is_the_workflows() {
             })
             .collect::<Vec<_>>(),
     );
+    // Declared difference: the row carries `lensSamples`, which the workflow
+    // never wrote. A state without it is one sample. Witness:
+    // `the_row_records_the_lens_samples_of_the_run` in `lens_samples.rs`.
     let rust: Vec<Value> = cases
         .iter()
         .map(|c| {
             let s: MetricsScope = serde_json::from_value(c.clone()).unwrap();
-            metrics_row(&s).unwrap()
+            let mut row = metrics_row(&s).unwrap();
+            let samples = row.as_object_mut().unwrap().shift_remove("lensSamples");
+            assert_eq!(samples, Some(json!(1)), "lensSamples on {c}");
+            row
         })
         .collect();
     if let Some(dir) = std::env::var_os("TRIBUNAL_DUMP") {
