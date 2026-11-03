@@ -221,8 +221,8 @@ jobs:
 
   # The release's Windows target, x86_64-pc-windows-msvc, built and tested on
   # a real Windows machine: clippy, the unit tests, the subcommand tests, the
-  # release build and the binary starting. It shows process-tree cleanup and
-  # PATHEXT resolution (finding a `.cmd`) as users get them. GitHub's Windows runners are free for a public repository. A merge to
+  # panel test, the release build and the binary starting. It shows
+  # process-tree cleanup and PATHEXT resolution (finding a `.cmd`) as users get them. GitHub's Windows runners are free for a public repository. A merge to
   # main runs it too, to keep its cargo cache warm, as the linux job does.
   windows:
     if: github.event_name != 'push' || github.ref == 'refs/heads/main'
@@ -255,6 +255,11 @@ jobs:
       # The subcommands users run outside a review, such as the loaders
       # templates/check.sh calls, end to end through the binary.
       - run: cargo test --target "$TARGET" -p tribunal-cli --test subcommands --locked
+      # `tribunal panel` end to end over a local repo and the compiled stand-in
+      # `gh`. The test finds tribunal-test-gh next to its deps/ directory, and
+      # only tribunal-context's own tests make Cargo build it.
+      - run: cargo build --target "$TARGET" -p tribunal-context --bin tribunal-test-gh --locked
+      - run: cargo test --target "$TARGET" -p tribunal-pipeline --test panel_only --locked
       # Claude Code installed with npm is a claude.cmd launcher the binary
       # reads to find the claude.exe it starts (tribunal-agent's launch.rs).
       # The latest release on purpose: a change to how the package installs

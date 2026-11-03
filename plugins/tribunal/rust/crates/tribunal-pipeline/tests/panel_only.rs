@@ -1,10 +1,10 @@
 //! `tribunal panel` end to end: the review's preparation and Context phase
 //! over a local git repo and a scripted `gh`, then the panel over the given
 //! findings with a scripted agent. Everything is synthetic and local: the
-//! repo is made here, `gh` is a shell script that answers only the calls the
-//! run should make, and no model or network is reached.
-#![cfg(unix)]
+//! repo is made here, `gh` is the compiled `tribunal-test-gh` answering only
+//! the calls the run should make, and no model or network is reached.
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -64,19 +64,26 @@ fn write(path: &Path, text: &str) {
     std::fs::write(path, text).unwrap();
 }
 
-fn write_executable(path: &Path, text: &str) {
-    std::fs::write(path, text).unwrap();
-    std::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    for _ in 0..200 {
-        match Command::new(path).output() {
-            Ok(_) => return,
-            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
-                std::thread::sleep(std::time::Duration::from_millis(5));
-            }
-            Err(e) => panic!("{}: {e}", path.display()),
-        }
-    }
-    panic!("{} stayed busy for a second", path.display());
+/// `tribunal-test-gh`, a binary of `tribunal-context`, which Cargo builds
+/// next to this test's `deps/` directory but names to its own tests only.
+fn test_gh() -> PathBuf {
+    let exe = std::env::current_exe().unwrap();
+    let gh = exe
+        .parent()
+        .and_then(Path::parent)
+        .unwrap()
+        .join(format!("tribunal-test-gh{}", std::env::consts::EXE_SUFFIX));
+    assert!(
+        gh.is_file(),
+        "{} is missing: run `cargo build -p tribunal-context --bin tribunal-test-gh` \
+         (with the same --target, if any), or `cargo test --workspace`",
+        gh.display()
+    );
+    gh
+}
+
+fn call(args: &[&str], stdout: &str) -> Value {
+    json!({"args": args, "stdout": stdout, "stderr": "", "code": 0})
 }
 
 /// A repo with a base and a head commit touching three files, and a `gh`
@@ -117,30 +124,21 @@ fn world(name: &str) -> World {
     let diff = format!("{}\n", git(&repo, &["diff", &base, &head]));
 
     let fx = root.join("fx");
-    write(&fx.join("diff.patch"), &diff);
-    write(
-        &fx.join("view.json"),
-        &json!({
-            "title": "Guard the widget limit", "body": "", "author": {"login": "alice"},
-            "baseRefName": "main", "baseRefOid": base, "headRefName": "feat/limit",
-            "headRefOid": head, "additions": 4, "deletions": 1, "reviews": [],
-            "files": [
-                {"path": "src/counter.ts", "additions": 1, "deletions": 0},
-                {"path": "src/index.ts", "additions": 1, "deletions": 0},
-                {"path": "src/limit.ts", "additions": 2, "deletions": 1},
-            ],
-        })
-        .to_string(),
-    );
-    write(
-        &fx.join("compare.json"),
-        &json!({"files": [
-            {"filename": "src/counter.ts", "additions": 1, "deletions": 0},
-            {"filename": "src/index.ts", "additions": 1, "deletions": 0},
-            {"filename": "src/limit.ts", "additions": 2, "deletions": 1},
-        ]})
-        .to_string(),
-    );
+    let view = json!({
+        "title": "Guard the widget limit", "body": "", "author": {"login": "alice"},
+        "baseRefName": "main", "baseRefOid": base, "headRefName": "feat/limit",
+        "headRefOid": head, "additions": 4, "deletions": 1, "reviews": [],
+        "files": [
+            {"path": "src/counter.ts", "additions": 1, "deletions": 0},
+            {"path": "src/index.ts", "additions": 1, "deletions": 0},
+            {"path": "src/limit.ts", "additions": 2, "deletions": 1},
+        ],
+    });
+    let compare_json = json!({"files": [
+        {"filename": "src/counter.ts", "additions": 1, "deletions": 0},
+        {"filename": "src/index.ts", "additions": 1, "deletions": 0},
+        {"filename": "src/limit.ts", "additions": 2, "deletions": 1},
+    ]});
     write(
         &fx.join("profile.json"),
         &json!({
@@ -160,41 +158,98 @@ fn world(name: &str) -> World {
         .to_string(),
     );
     let compare = format!("repos/{REPO}/compare/{base}...{head}");
-    let gh = root.join("gh");
-    write_executable(
-        &gh,
-        &format!(
-            r#"#!/bin/sh
-printf '%s\n' "$*" >> '{log}'
-case "$*" in
-  "pr view {PR} --repo {REPO} --json baseRefName --jq .baseRefName") echo main ;;
-  "pr view {PR} --repo {REPO} --json title,"*) cat '{fx}/view.json' ;;
-  "api {compare} -H Accept: application/vnd.github.v3.diff") cat '{fx}/diff.patch' ;;
-  "api {compare}") cat '{fx}/compare.json' ;;
-  "api --paginate --slurp repos/{REPO}/pulls/{PR}/comments") echo '[[]]' ;;
-  "api --paginate --slurp repos/{REPO}/issues/{PR}/comments") echo '[[]]' ;;
-  "api user --jq .login") echo dev ;;
-  "api -H Accept: application/vnd.github.raw repos/{REPO}/contents/"*)
-    p="${{4#repos/{REPO}/contents/}}"
-    git -C '{repo}' show "${{p#*\?ref=}}:${{p%%\?ref=*}}" ;;
-  *) echo "UNEXPECTED $*" >> '{log}'; echo "unexpected gh $*" >&2; exit 9 ;;
-esac
-"#,
-            log = root.join("gh.log").display(),
-            fx = fx.display(),
-            repo = repo.display(),
-        ),
+    let view_fields =
+        "title,body,author,baseRefName,baseRefOid,headRefName,headRefOid,files,additions,deletions,reviews";
+    // The one file the vote quote check reads, at the pinned head.
+    let limit_at_head = format!(
+        "{}\n",
+        git(&repo, &["show", &format!("{head}:src/limit.ts")])
     );
-    let _ = std::fs::remove_file(root.join("gh.log"));
+    let calls = vec![
+        call(
+            &[
+                "pr",
+                "view",
+                PR,
+                "--repo",
+                REPO,
+                "--json",
+                "baseRefName",
+                "--jq",
+                ".baseRefName",
+            ],
+            "main\n",
+        ),
+        call(
+            &["pr", "view", PR, "--repo", REPO, "--json", view_fields],
+            &view.to_string(),
+        ),
+        call(
+            &[
+                "api",
+                &compare,
+                "-H",
+                "Accept: application/vnd.github.v3.diff",
+            ],
+            &diff,
+        ),
+        call(&["api", &compare], &compare_json.to_string()),
+        call(
+            &[
+                "api",
+                "--paginate",
+                "--slurp",
+                &format!("repos/{REPO}/pulls/{PR}/comments"),
+            ],
+            "[[]]\n",
+        ),
+        call(
+            &[
+                "api",
+                "--paginate",
+                "--slurp",
+                &format!("repos/{REPO}/issues/{PR}/comments"),
+            ],
+            "[[]]\n",
+        ),
+        call(&["api", "user", "--jq", ".login"], "dev\n"),
+        call(
+            &[
+                "api",
+                "-H",
+                "Accept: application/vnd.github.raw",
+                &format!("repos/{REPO}/contents/src/limit.ts?ref={head}"),
+            ],
+            &limit_at_head,
+        ),
+    ];
+    let recordings = root.join("gh-recordings.json");
+    std::fs::write(&recordings, json!({ "calls": calls }).to_string()).unwrap();
     let data = root.join("data");
     let tmp = root.join("tmp");
     std::fs::create_dir_all(&data).unwrap();
     std::fs::create_dir_all(&tmp).unwrap();
+    // As tribunal-cli's plugin_root(): the plugin's paths are normalized on `/`
+    // only, so a Windows root with `\` and `..` would collapse wrongly.
+    let plugin_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let plugin_root = if cfg!(windows) {
+        PathBuf::from(plugin_root.to_string_lossy().replace('\\', "/"))
+    } else {
+        plugin_root
+    };
     let rt = Runtime {
-        plugin_root: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.."),
+        plugin_root,
         tmpdir: tmp.to_string_lossy().into_owned(),
         tools: Tools {
-            gh: gh.to_string_lossy().into_owned(),
+            gh: test_gh().to_string_lossy().into_owned(),
+            env: vec![
+                (OsString::from("TRIBUNAL_TEST_GH"), OsString::new()),
+                (OsString::from("GH_RECORDINGS"), recordings.into_os_string()),
+                (
+                    OsString::from("GH_CALL_LOG"),
+                    root.join("gh.log").into_os_string(),
+                ),
+            ],
             ..Tools::default()
         },
         operator: OperatorEnv {
@@ -400,8 +455,24 @@ async fn every_given_finding_is_paneled_and_judged_by_its_votes() {
         out["voteQuoteCheck"]
     );
     assert_eq!(out["voteQuoteCheck"]["notFound"], 0);
+    // Every `gh` call the run made was recorded; an unrecorded one exits 99.
+    let recorded: Value =
+        serde_json::from_str(&std::fs::read_to_string(w.root.join("gh-recordings.json")).unwrap())
+            .unwrap();
+    let recorded: Vec<&Value> = recorded["calls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| &c["args"])
+        .collect();
     let gh_log = std::fs::read_to_string(w.root.join("gh.log")).unwrap();
-    assert!(!gh_log.contains("UNEXPECTED"), "{gh_log}");
+    for line in gh_log.lines() {
+        let args: Value = serde_json::from_str(line).unwrap();
+        assert!(
+            recorded.contains(&&args),
+            "unrecorded gh call {line}\n{gh_log}"
+        );
+    }
 }
 
 /// The same findings through the review's own gates would not all reach a

@@ -652,8 +652,11 @@ a file): `pr`, `repo`, `headSha`, `summary` (`given`, `paneled`, `killed`,
 and `killReason` from the first counted `REFUTED` vote of a killed finding),
 the panel's budget and degradation fields, `agentCost` and `logs`. It writes no
 metrics row and no inflight marker, synthesizes nothing and never posts.
-`tests/panel_only.rs` runs it end to end over a local repo, a shell `gh` and a
-scripted agent.
+`tests/panel_only.rs` runs it end to end over a local repo, `tribunal-test-gh`
+answering from recordings, and a scripted agent. It finds that binary next to
+its own `deps/` directory, so running it alone needs `cargo build -p
+tribunal-context --bin tribunal-test-gh` first; `cargo test --workspace`
+builds it.
 
 ## Running the tests
 
@@ -678,7 +681,8 @@ characters.
 The `windows` job in `.github/workflows/tribunal-rust.yml`, on every pull
 request that touches this directory, runs on GitHub's `windows-2025` runner:
 the release's target, `x86_64-pc-windows-msvc`, with clippy, the unit tests,
-the subcommand tests (`tribunal-cli/tests/subcommands.rs`), a Claude Code installed with npm that `launch.rs` has to start, the release
+the subcommand tests (`tribunal-cli/tests/subcommands.rs`), the panel test
+(`tribunal-pipeline/tests/panel_only.rs`), a Claude Code installed with npm that `launch.rs` has to start, the release
 build and `--version`, on a real Windows machine. The `linux-release-build`
 job runs `rust/scripts/build-linux.sh` on GitHub's `ubuntu-24.04`, the Linux
 release build exactly as a tag runs it.
