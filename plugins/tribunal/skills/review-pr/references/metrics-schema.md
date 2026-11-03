@@ -1,23 +1,22 @@
 # Metrics — canonical record schema and measurement modes
 
-Read this file when: persisting the measurement record at the end of Step 4, or
-running `/tribunal:review-pr --metrics` / `--audit`. Nothing here is needed during the
-review itself.
+Read this file when: reading a metrics row, or running `/tribunal:review-pr --metrics` /
+`--audit`. Nothing here is needed during the review itself.
 
-> **Since v101 only the Workflow and the Rust binary write rows.** The binary's
-> rows carry `engine: "rust"`, and it is the default engine; a reader comparing
-> engines filters on that field, since both rows say `mode: "workflow"`. The
-> in-context path was removed in v101. Everything below that describes "in-context rows" or "both paths" is kept
-> for reading the rows that path wrote before v101 (`reviewMode` and the null
-> fields it documents tell them apart); no new row has that shape.
+> **Since v115 only the Rust binary writes rows**, with `engine: "rust"`. The
+> Workflow wrote rows until v114 (no `engine` field) and the in-context path until
+> v101. Everything below that describes Workflow rows, "in-context rows" or "both
+> paths", and the scripts and `lib/` files it names, is kept for reading the rows
+> those paths wrote; the scripts were removed from the plugin in v115. A reader
+> comparing engines filters on `engine`, since Workflow and Rust rows both say
+> `mode: "workflow"`.
 
-> **Single source of truth.** This file IS the spec for the metrics record.
-> `${CLAUDE_PLUGIN_ROOT}/workflows/tribunal.js` builds the same shape (its comment points
-> here); the in-context path builds it from this file. Both paths append to one
-> log — `metrics.jsonl` in `${TRIBUNAL_DATA_DIR:-~/.claude/tribunal-data}` — and the log is only
-> aggregatable if they agree. They diverged once (the skill said "build the
-> same shape" without saying what the shape was), and every `jq` over the mixed
-> log silently read `null` on half the rows.
+> **Single source of truth.** This file IS the spec for the metrics record, and
+> the binary writes rows of this shape to `metrics.jsonl` in
+> `${TRIBUNAL_DATA_DIR:-~/.claude/tribunal-data}`. The log is only aggregatable
+> if every writer agrees: the Workflow and the in-context path once diverged
+> (the skill said "build the same shape" without saying what the shape was),
+> and every `jq` over the mixed log silently read `null` on half the rows.
 
 ## The canonical record — emit exactly this shape
 
@@ -208,25 +207,11 @@ signal than it was before the latch existed. Report the two separately.
 
 ## Appending the record
 
-**Workflow mode writes its own row** (`persist-metrics`, last step of the
-Synthesize phase) so a run cannot end without leaving evidence — that is exactly
-what happened to PR #1911 when this was the orchestrator's job. Step 4 only
-*updates* that row if it posts.
-
-In-context mode still appends:
-
-```bash
-TS=$(date -u +%FT%TZ)
-# metrics is one JSON object per review; write it as a single compact line (jsonl)
-jq -c --arg ts "$TS" '.ts=$ts' <<'EOF' >> "${TRIBUNAL_DATA_DIR:-$HOME/.claude/tribunal-data}/metrics.jsonl"
-<the metrics JSON, ts will be overwritten by jq>
-EOF
-```
-
-Append-only; never rewrite the file except for the Step 4 `posted` update on a
-row this same run wrote. This is what makes the measurement modes below work —
-without it, there's no data to evaluate whether decorrelation / weighting / the
-debate are earning their cost.
+The binary writes its own row before it returns, so a run cannot end without
+leaving evidence; that is what happened to PR #1911 when this was the
+orchestrator's job. Its post step only *updates* that row when it posts.
+Append-only: never rewrite the file by hand. `tribunal override` is the one
+other writer, and it takes the same lock.
 
 ## Measurement modes — evaluate whether the mechanisms earn their cost
 
@@ -241,7 +226,7 @@ the Codex slot, and keeping or dropping the debate. Both stop after printing.
 - **debate fire rate** and **flip rate** (of debates fired, how many changed the verdict);
 - cross-model disagreement rate — external vote vs Claude majority, reported **per external family** (Codex-vs-Claude and, on high-risk findings, Gemini-vs-Claude and Codex-vs-Gemini) so each family's contribution is visible separately. Compute it over findings where `hadExternalVoter` is true — a panel whose external head timed out never produced a cross-model comparison, and counting it as agreement would understate disagreement;
 - **panel degradation rate** — findings with a non-empty `failedSlots`, and findings marked `unverified` (no head voted at all). A rising rate means the decorrelation the design pays for is not actually being delivered, and it invalidates the disagreement rate above before it invalidates anything else;
-- **panel degradation by cause** — break `failedSlotsDetail` down by `reason` (`crashed` / `timeout` / `error` / `quota` / `auth` / `refused` / `unparseable`). A rate dominated by `unparseable` means the verdict classifier has drifted from what the heads actually emit — run `node eval/replay-verdicts.mjs` before believing any other number in this report. A degradation rate dominated by `timeout` says the retry-once-then-sticky-route logic is undersized (worth revisiting the retry/health-flag design); dominated by `error` points at a broken credential, not a design gap;
+- **panel degradation by cause** — break `failedSlotsDetail` down by `reason` (`crashed` / `timeout` / `error` / `quota` / `auth` / `refused` / `unparseable`). A rate dominated by `unparseable` means the verdict classifier has drifted from what the heads actually emit; check that before believing any other number in this report. A degradation rate dominated by `timeout` says the retry-once-then-sticky-route logic is undersized (worth revisiting the retry/health-flag design); dominated by `error` points at a broken credential, not a design gap;
 - **refutation rate by `killReason`** — once there's enough corpus volume, break the refutation kill rate down by category (`out-of-scope` / `pre-existing` / `not-triggered` / `incorrect-premise` / `style-not-bug` / `other`) instead of reading only the aggregate. This is what would eventually justify a per-category `T_KILL` instead of one global threshold — not implemented yet, this is the data collection step;
 - `refuteFraction` distribution around `T_KILL` (are decisions clustered at the threshold?).
 
@@ -260,21 +245,7 @@ For each logged PR, look at what happened *after* the review:
 
 Emit a short report of FP/FN proxies per mechanism (with vs without debate, correlated vs decorrelated panel). These are *proxies* (the commit-touch heuristic isn't ground truth) — say so; don't overclaim.
 
-**`/tribunal:review-pr --review-health`** — is the harness still earning what it costs? Added 2026-07-29, after the harness's own eval battery grew from 20 to 33 checks across 26 freezes while the corpus's labelled/unknown split never moved once — proof that having the instruments (`--metrics`, `--audit`, `eval/score.mjs`) is not the same as anyone running them and deciding. This mode reads, compares, and recommends; it never edits the harness itself.
-
-Four signals, every run:
-
-1. **Is the routing rule actually being followed?** Filter `metrics.jsonl` for rows since the small-PR routing change (`SKILL.md` → Dispatch decision): high-risk PRs at ≤ 6 product files must show `mode: "in-context"`. Compare their `claudeOutputTokens.total` against pre-change Workflow rows on equivalent PRs — expect roughly 3× less. If recent small high-risk rows still show `mode: "workflow"`, the rule isn't being applied; say so plainly, don't average it away.
-2. **Is in-context's panel as trustworthy as the Workflow's?** Compare the `voteReconciliation.mismatches` rate between `mode: "in-context"` and `mode: "workflow"` rows. This is the one measurement that can show the small-PR routing change degraded panel integrity — the guarantee it exists to watch is instructed-in-prose vs enforced-in-code (see `SKILL.md` → "Why risk still overrides size"). A materially higher in-context mismatch rate is the signal that reopens the routing threshold — with data this time, not argument.
-3. **Is the corpus still stuck?** Run `eval/score.mjs`; report the `unknown` count and whether it moved since the last check. A harness that never gets its findings judged is unfalsifiable — no change to it can be shown to help. 22 unresolved as of 2026-07-29.
-4. **Is "Known open" still honest?** Skim `RELEASES.md`'s Known-open list for items already resolved elsewhere in the file, or old enough to need a second look.
-5. **Are debates being preempted?** Count in-context rows whose findings carry `debate.outcome: "preempted-by-fact"` (field rule above; procedure in `in-context-review.md` → "Auto-gated debate"). Each one is a borderline finding that never faced the defense/adjudicator pair because the orchestrator settled a factual contradiction by reading. Report the count and check every entry carries its `evidence` quote — one without a quote is a judgment call wearing instrumentation's clothes. A rising count is either the case for a first-class fact-arbitration gate (build it from this data) or drift back toward ungated inline verdicts (stop it); the count is what distinguishes those, which is why the value exists. Baseline: 1 as of 2026-08-14 (PR #1994).
-6. **Is the in-context path following its own dispatch plan?** Over in-context rows carrying `lensPlan` (field rule above), compare `lensCount` vs `lensPlan.lensCount` and `completenessCritic` vs `lensPlan.critic`. Any mismatch with `lensPlanDeviation: null` is an UNDECLARED deviation — the exact failure the plan script exists to prevent; name the row. Declared deviations are legitimate but counted: a rising declared-deviation rate means the plan rules have drifted from what reviews actually need, and the fix is re-tuning `in-context-plan.mjs` (with its replay) rather than eroding the contract one exception at a time. Rows without `lensPlan` predate 2026-08-14 and are skipped, with the skip count reported.
-7. **Is the clean-verdict sweep earning its cost?** Over rows carrying `cleanSweep` (both modes, post-2026-08-14): report the sweep **hit rate** — rows where `candidatesRaised > 0`, i.e. a second model family found what every lens missed on a "clean" run. Each hit is simultaneously a defect rescued from a green-lit merge AND a measured lens miss, so a non-trivial hit rate argues for more lens budget on small PRs, not just for the sweep. Also report: `unparseable` count (the sweep's own health — rising means the FINDING-format prompt has drifted from what Codex emits), and `skippedReason` breakdown (a run skipped for `codex-unhealthy` is a clean verdict that went unchecked — say so). Zero hits over a large sample is the case for demoting the sweep to opt-in; that decision comes from this signal, not from any single run.
-
-Report only what moved since the last run; a clean report is one line, not silence disguised as thoroughness. Recommend explicitly when a signal crosses a threshold (e.g. "in-context mismatch rate is now above the Workflow's — worth auditing the last N in-context panels by hand") — this mode's whole purpose is to be the thing that decides, not another instrument nobody reads.
-
-None of the three modes above posts anything or writes to `metrics.jsonl`.
+Neither mode posts anything or writes to `metrics.jsonl`.
 
 ## Legacy rows — the pre-2026-07-21 log is not directly aggregatable
 
@@ -387,7 +358,7 @@ anchors on values already named on both sides, not on schema completeness.
 | `engine`, `engineVersion`, `pluginVersion` | Which engine ran the review. Written only by the Rust binary (`plugins/tribunal/rust`): `engine: "rust"`, `engineVersion: "rust-<12 hex>"` (a hash of the workspace's sources, taken at build time) and `pluginVersion` (the `version` in the plugin's `plugin.json`). The Workflow writes none of the three, so a row without `engine` was written by the skill. `build-post-footer.mjs` prints them as the footer's first segment: `tribunal v105 (skill)` for a Workflow row, using its own `plugin.json` version, and `tribunal v105 (rust rust-<hash>)` for a Rust one. |
 | `agentsActual` | **Not set by the script — `peer-review.js` always writes `null` here, on purpose.** The script cannot see its own total dispatch count from inside its own execution; a script-derived guess would defeat the point of comparing against a real number. The `Workflow` tool's own return carries a top-level `agentCount` (sibling to `report`/`metrics`) once the run finishes — the orchestrator captures it immediately on return (SKILL.md, right after validating the return shape, before the post/no-post decision) and patches it into the persisted row unconditionally, whether or not the review is posted. A row with `agentsActual: null` on disk means that capture didn't complete (an aborted run, an older skill version, or a session cutoff between capture and patch — cross-check `~/.claude/tribunal-data/agent-counts.jsonl`, an independent side-log of every captured `agentCount`), not that the run made zero agents. |
 | `artifactDir` | The `mktemp -d` artifact directory for this run (`peer-review-votes-<pr>-<random>`) — where Codex/Gemini CLI artifacts, vote-reconciliation/self-audit intermediates and `report.md` live, useful for post-hoc debugging a specific row. Named for external votes because that is what first went in it; since v64 a review with no external slots creates one anyway, holding `report.md` alone, so a `fidelity-critic-flagged` violation can be read against the text it judged. |
-| `selfAudit` | `{passed, checked, violations[], notes[]}` from `${CLAUDE_PLUGIN_ROOT}/lib/audit-run.mjs`, run against this row's own `findings`/`voteReconciliation`/etc. right before the row is appended. **A non-empty `violations` is a defect in the HARNESS or in this run's own row, never a finding about the PR** — same rule `voteReconciliation.mismatches` follows. Each violation names the invariant it failed (`no-external-voter`, `orphan-artifacts`, `reconciliation-incomplete`, `blocking-without-adjudication`, `stale-artifacts`, `cost-model-drift`, `merged-locations-dropped`, `kill-reason-not-cited`, `merged-from-annotation-dropped`, `grounded-diagnostic-not-cited`, `gate-demoted-called-unexamined`) and every one names the real run it was written to catch — see the script's own header. Stamped by `lib/persist-run.sh`'s PYAUDIT step in Workflow mode; run by the orchestrator in in-context mode (SKILL.md, "Run the self-audit before you append the row"), which is why every row before that instruction existed carries no `selfAudit` at all rather than a passing one — an absent key there means "never checked", not "checked and clean", and must not be read as the latter. `passed: null` with a single `audit-unreadable` violation means the script itself could not be run (missing, non-zero exit, unparseable output) — recorded as a failed check, never as silence. **`notes[]` is a second channel that records without failing**, added 2026-09-09: `passed` is a function of `violations` alone, so a check whose signal is real but whose accuracy is not yet established stays visible on the row and to `--metrics`/`--review-health` without costing a correct run its audit. Its only current occupant is `fidelity-critic-flagged`, moved there because over the 127 rows stored at that date the critic's vote-reasoning rule had raised five findings and all five were false positives caused by the critic's own payload lacking the field the report cited (PRs #1518, #1532, #2049, #1538, #2083). Zero true positives. It moves back to `violations` once the rule catches real drift once. A row written before that date carries no `notes` key at all; absent means the channel did not exist, not that it was empty. |
+| `selfAudit` | `{passed, checked, violations[], notes[]}` from `${CLAUDE_PLUGIN_ROOT}/lib/audit-run.mjs`, run against this row's own `findings`/`voteReconciliation`/etc. right before the row is appended. **A non-empty `violations` is a defect in the HARNESS or in this run's own row, never a finding about the PR** — same rule `voteReconciliation.mismatches` follows. Each violation names the invariant it failed (`no-external-voter`, `orphan-artifacts`, `reconciliation-incomplete`, `blocking-without-adjudication`, `stale-artifacts`, `cost-model-drift`, `merged-locations-dropped`, `kill-reason-not-cited`, `merged-from-annotation-dropped`, `grounded-diagnostic-not-cited`, `gate-demoted-called-unexamined`) and every one names the real run it was written to catch — see the script's own header. Stamped by `lib/persist-run.sh`'s PYAUDIT step in Workflow mode; run by the orchestrator in in-context mode (SKILL.md, "Run the self-audit before you append the row"), which is why every row before that instruction existed carries no `selfAudit` at all rather than a passing one — an absent key there means "never checked", not "checked and clean", and must not be read as the latter. `passed: null` with a single `audit-unreadable` violation means the script itself could not be run (missing, non-zero exit, unparseable output) — recorded as a failed check, never as silence. **`notes[]` is a second channel that records without failing**, added 2026-09-09: `passed` is a function of `violations` alone, so a check whose signal is real but whose accuracy is not yet established stays visible on the row and to `--metrics` without costing a correct run its audit. Its only current occupant is `fidelity-critic-flagged`, moved there because over the 127 rows stored at that date the critic's vote-reasoning rule had raised five findings and all five were false positives caused by the critic's own payload lacking the field the report cited (PRs #1518, #1532, #2049, #1538, #2083). Zero true positives. It moves back to `violations` once the rule catches real drift once. A row written before that date carries no `notes` key at all; absent means the channel did not exist, not that it was empty. |
 
 ## Fields added 2026-08-18 (report fidelity — does the printed report say what the data already knows)
 

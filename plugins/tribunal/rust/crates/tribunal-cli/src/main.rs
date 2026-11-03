@@ -27,6 +27,8 @@ fn usage() -> ExitCode {
     eprintln!("usage: tribunal cost [--repo <owner/name>] [--since <iso date>] [--json]");
     eprintln!("usage: tribunal lost-runs [--recent <days>]");
     eprintln!("usage: tribunal harness-version [--short|--manifest]");
+    eprintln!("usage: tribunal load-profile [--repo <owner/name>] [--pr <n> | --ref <branch> | --profile <path>] [--rules <path>] [--save <file>] [--save-rules <file>]");
+    eprintln!("usage: tribunal assemble-methodology --kind <reviewer> --out <file> [--rules <path> [--rules-sha256 <hex>]]");
     eprintln!("usage: tribunal override --ts <row ts> --title <finding title prefix> (--direction reinstated|rejected|withdrawn | --severity nit|important) --reason <how it was checked> [--by <login>] [--verified-at <sha>] [--dry-run]");
     eprintln!("usage: tribunal selfcheck [--apply] [--no-battery] [--model <id>] [--effort <level>] [--out <file>]");
     eprintln!("usage: tribunal post --from <run.json> [--verdict approve|request-changes|comment] [--delta|--edit-existing] [--over-own-review] [--over-standing-review] [--model <id>] [--effort <level>]");
@@ -652,6 +654,28 @@ fn harness_version_main(argv: &[String]) -> ExitCode {
     }
 }
 
+fn emit(out: tribunal_context::operator::CliOutput) -> ExitCode {
+    print!("{}", out.stdout);
+    eprint!("{}", out.stderr);
+    ExitCode::from(u8::try_from(out.code).unwrap_or(1))
+}
+
+/// `tribunal load-profile`: resolves and validates a review profile and its
+/// rules file, as a review loads them, and prints the result as one JSON line.
+async fn load_profile_main(argv: &[String]) -> ExitCode {
+    let rt = runtime();
+    emit(tribunal_context::load_profile::main(&rt.tools, &rt.operator, argv).await)
+}
+
+/// `tribunal assemble-methodology`: fills a methodology template's slots from
+/// a rules file and writes the result to `--out`.
+fn assemble_methodology_main(argv: &[String]) -> ExitCode {
+    emit(tribunal_context::assemble_methodology::main(
+        &plugin_root().to_string_lossy(),
+        argv,
+    ))
+}
+
 /// `tribunal override`: writes a person's verdict on one finding into its
 /// ledger row, under the ledger lock a run takes to append.
 fn override_main(argv: &[String]) -> ExitCode {
@@ -750,6 +774,8 @@ async fn main() -> ExitCode {
         Some("override") => return override_main(&argv[1..]),
         Some("lost-runs") => return lost_runs_main(&argv[1..]),
         Some("harness-version") => return harness_version_main(&argv[1..]),
+        Some("load-profile") => return load_profile_main(&argv[1..]).await,
+        Some("assemble-methodology") => return assemble_methodology_main(&argv[1..]),
         Some("--version" | "version") => {
             println!(
                 "tribunal {} ({})",

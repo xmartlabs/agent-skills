@@ -10,11 +10,9 @@
 # repository, for a manual run and for a release tag, all of which need write
 # access. A pull request from a fork runs on GitHub's hosted runners, which are
 # free for public repositories, so code nobody reviewed never reaches a company
-# machine. Unset variables fall back to the hosted runners too. The differential tests compare the port against the
-# JavaScript and bash it replaces, run on the same machine, except the
-# classifier comparisons in diff_classify_heads.rs: their oracle is macOS's
-# BSD userland, so they read what the scripts printed there from
-# tests/goldens/ and run on Linux too. The `macos` job runs the whole suite
+# machine. Unset variables fall back to the hosted runners too. The differential tests compare the port with what the
+# JavaScript and bash it replaced printed, recorded under tests/goldens/; a few
+# tests still use node for their stand-in gh. The `macos` job runs the whole suite
 # on the platform most of the team runs, on every pull request, as `linux`
 # and `windows` do. The release's macOS archives are built on GitHub's
 # macos-15 runner. A `tribunal-rust-v*` tag builds the four release binaries
@@ -32,7 +30,9 @@ on:
     paths:
       - "plugins/tribunal/rust/**"
       - "!plugins/tribunal/rust/**/*.md"
-      - "plugins/tribunal/lib/**"
+      - "plugins/tribunal/agents/**"
+      - "plugins/tribunal/methodology/**"
+      - "plugins/tribunal/templates/**"
       - "plugins/tribunal/bin/**"
       - ".github/workflows/tribunal-rust.yml"
   # A merge to main runs the linux job once more, so main holds a warm cargo
@@ -44,7 +44,9 @@ on:
     paths:
       - "plugins/tribunal/rust/**"
       - "!plugins/tribunal/rust/**/*.md"
-      - "plugins/tribunal/lib/**"
+      - "plugins/tribunal/agents/**"
+      - "plugins/tribunal/methodology/**"
+      - "plugins/tribunal/templates/**"
       - "plugins/tribunal/bin/**"
       - ".github/workflows/tribunal-rust.yml"
     tags: ["tribunal-rust-v*"]
@@ -231,7 +233,7 @@ jobs:
     env:
       TARGET: x86_64-pc-windows-msvc
     steps:
-      # The unit tests read agents/ and lib/, which no .gitattributes pins to
+      # The unit tests read agents/ and methodology/, which no .gitattributes pins to
       # LF, and the runner's git checks text out with CRLF by default.
       - name: git config
         working-directory: .

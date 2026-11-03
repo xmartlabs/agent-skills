@@ -1,6 +1,7 @@
 # tribunal in Rust
 
-Ported from the Workflow at tribunal v105.
+Ported from the Workflow at tribunal v105. The Workflow and the scripts it
+ran were removed in v115; this binary is the only engine.
 Goal: same review behavior, run by a Rust binary. Judgement stays with the
 model through `claude -p` on the operator's subscription login (no `--bare`).
 Everything deterministic becomes Rust code.
@@ -23,7 +24,10 @@ changes what tribunal does.
 4. **Documented data formats.** Findings, votes and the metrics row are JSON
    with a published schema.
 
-## Size of what moves
+## Size of what moved
+
+Counted at v105, before the port. The first three rows and `eval/` were
+removed in v115.
 
 | Part | Files | Lines | Fate |
 |---|---|---|---|
@@ -44,7 +48,7 @@ changes what tribunal does.
 | `lens` | `code-review-expert` / `fe-code-review-expert` / `e2e-code-review-expert` / `py-code-review-expert` | cwd = head worktree; Read + Bash |
 | `completeness-critic` | reviewer agent | Rust: audits the changed files no finding names, what the lenses did not reach and the siblings of the change, from the diff on disk and the pinned checkout; asked to use at most 20 tool calls |
 | `cache-warmup` | reviewer agent | Rust: one small request before the lenses, so they read their shared system prompt (methodology, conventions and, up to 80,000 bytes, the PR diff) from the model cache; skipped with fewer than two lenses |
-| `refute`, `refute-batch` | `tribunal-refuter` | single and batched. Rust: a finding with no external head starts with one Claude vote and gets a second only when the first is a `REFUTED`, is under-confident or is missing; the Workflow asks for two up front |
+| `refute`, `refute-batch` | `tribunal-refuter` | single and batched. Rust: a finding with no external head starts with one Claude vote and gets a second only when the first is a `REFUTED`, is under-confident or is missing; the Workflow asked for two up front |
 | `defense`, `judge` | refuter/scribe | debate round |
 | `refine` (2 sites) | `tribunal-strengthener` | |
 | `verify-prior` | `finding-verifier` | incremental re-review |
@@ -59,12 +63,12 @@ result JSON (`modelUsage`), replacing transcript parsing.
 
 ### External heads: a direct subprocess, no relay agent
 
-`heads:codex:*`, `heads:codex:sweep`, gemini (`lib/gemini-exec.sh`). The
-binary runs `codex exec` / gemini itself and reads the artifact files.
+`heads:codex:*`, `heads:codex:sweep`, gemini (formerly `lib/gemini-exec.sh`).
+The binary runs `codex exec` / gemini itself and reads the artifact files.
 `ARTIFACT-TRUTH` and `ARTIFACT-KEY` stay: votes are still derived from the
 artifact, not from what a process prints.
 
-### Mechanical: becomes Rust code (14 kinds today run as haiku agents)
+### Mechanical: became Rust code (14 kinds the Workflow ran as haiku agents)
 
 `fetch-pr`, `context-bookkeeping` (2), `setup-head-worktree`, `section-diff`,
 `blast-radius`, `check-external-heads`, `grounded-typecheck`, `read`
@@ -90,26 +94,20 @@ HIGH-RISK-SURFACE is nested inside LENS-FOCI.
 
 ## Tests
 
-- 11 replays only exercise relay plumbing (`replay-verified-relay`,
-  `replay-relay-file`, `replay-classifier-relay`,
-  `replay-reconciliation-relay`, `replay-evidence-resolver-relay`,
-  `replay-fused-availability-parse`, `replay-bash-command-size`,
-  `replay-windows-limit`, plus the relay parts of `replay-fetch-pr-context`,
-  `replay-blast-radius`, `replay-typecheck-coverage`). They go with the relays.
-- Replays of decision regions become Rust tests over the same JSON fixtures
-  in `review-harness-data/tribunal/fixtures`.
-- `check-mirror.mjs`, `extract-pure-region.mjs` and `replay-region-coverage`
-  retire once nothing is sliced out of a file.
-- Corpus scoring, `harness-ab`, `--metrics`, `--audit`, `--review-health`
-  read `metrics.jsonl`. They keep working if the binary writes the same row
-  schema.
+The Workflow's replays under `skills/review-pr/eval/` were removed in v115.
+The replays of decision regions became Rust tests over the same JSON fixtures
+in `review-harness-data/tribunal/fixtures`. The 11 that only exercised relay
+plumbing, and the tooling that sliced regions out of the Workflow, went with
+the relays. The binary writes the Workflow's `metrics.jsonl` row schema, so
+`--metrics` and `--audit` read its rows.
 
 ## Differential testing during the port
 
-Each region gets a small JS shim: read JSON from stdin, call the region via
-`loadRegion`, print JSON. A Rust test feeds both sides the same inputs
-(fixtures plus generated cases) and fails on any difference. Declared
-differences need a witness input.
+Each region got a small JS shim: read JSON from stdin, call the region via
+`loadRegion`, print JSON. A Rust test fed both sides the same inputs
+(fixtures plus generated cases) and failed on any difference. Since v115 the
+JavaScript side is the golden it recorded (see "Building and releasing").
+Declared differences need a witness input.
 
 This applies to code ported from the Workflow and its scripts. Code written
 after the port has no JavaScript twin and is tested in Rust alone, without
@@ -138,8 +136,9 @@ shell-fragment builders in PROFILE-LOOKUP (`deployBranchCasePattern`,
 Not ported, relay plumbing: VERIFIED-RELAY, RELAY-FILE, PAYLOAD-CHECKSUM,
 CLASSIFIER-RELAY, RECONCILIATION-RELAY.
 
-Scripts ported into `tribunal-context`, one module each. A port returns the
-object the script prints or relays; the `--relay` line itself is not ported.
+Scripts ported into `tribunal-context`, one module each. The scripts outside
+`rust/` were removed in v115; their goldens remain. A port returns the object
+the script printed or relayed; the `--relay` line itself is not ported.
 
 | Script | Module | Differential test |
 |---|---|---|
@@ -169,7 +168,7 @@ object the script prints or relays; the `--relay` line itself is not ported.
 | `skills/review-pr/scripts/persist-review-record.mjs` | `review_record` | `diff_review_record.rs` (`metrics.jsonl`, both backstops and the lock compared; `parseTranscript`/`classifyAgent` also directly) |
 | `lib/persist-run.sh` | `persist_run` (+ `py_json`) | `diff_persist_run.rs` (the printed line, `metrics.jsonl`, `inflight-runs.jsonl` and the vote directory's files, clock fields normalised) |
 
-`persist_run` runs the steps the script hands to `node` in process
+`persist_run` runs the steps the script handed to `node` in process
 (`reconcile_votes`, `audit_run`, `harness_version`) and keeps the semantics
 of its Python heredocs through `py_json`: `json.dumps` with its default
 arguments (`", "` spacing, `ensure_ascii`, `repr` floats), truthiness, `==`
@@ -180,22 +179,21 @@ RECONCILIATION-RELAY, the self-audit and wall-clock reads, `rowIsThisRun`) is
 `tribunal-pipeline::persist`, checked against the workflow's own code in
 `diff_persist.rs`.
 
-The posting ports never reach GitHub in a test: the scripts run with a
-cleared environment whose `PATH` holds only a fake `gh`, a `node` symlink,
-`/usr/bin` and `/bin`, and the ports get the fake by absolute path. Ledger
+The posting ports never reach GitHub in a test: the scripts were recorded
+with a cleared environment whose `PATH` held only a fake `gh`, a `node`
+symlink, `/usr/bin` and `/bin`, and the ports get the fake by absolute path. Ledger
 paths come from `ledger::LedgerEnv` (home, cwd, `TRIBUNAL_DATA_DIR`,
 `TRIBUNAL_PROJECT_DIR`), so the tests write only to temp directories.
-`post_review` reuses DRAFT-COMMENTS-STRIP from `tribunal-core` (the same
-code as `strip-draft-comments.mjs`), and `review_record` the two fidelity
+`post_review` reuses DRAFT-COMMENTS-STRIP from `tribunal-core` (the code
+`strip-draft-comments.mjs` ran), and `review_record` the two fidelity
 regions. `review_record` reproduces the script's JavaScript arithmetic on
 transcript usage: a string count turns `+=` into concatenation, and a model
 named after an `Object.prototype` member gets the entry V8 gives it,
 including what an earlier `__proto__` model wrote onto `Object.prototype`.
 
 `check_report_fidelity` reuses MERGED-LOCATIONS-CHECK, REPORT-FIDELITY-CHECKS
-and DRAFT-COMMENTS-STRIP from `tribunal-core::report`, which the script slices
-out of `workflows/tribunal.js` (the same code as `workflow-src/`, comments
-aside). Those ports do not throw; the module reproduces the script's uncaught
+and DRAFT-COMMENTS-STRIP from `tribunal-core::report`, which the script sliced
+out of the Workflow. Those ports do not throw; the module reproduces the script's uncaught
 TypeErrors in evaluation order before calling them.
 
 The three shell ports reproduce BSD grep, sed and awk as they run under
@@ -204,12 +202,12 @@ the Unicode space set in grep and sed but ASCII plus U+00A0 in awk, a bracket
 under `-i` also admits U+0130, U+0131, U+017F and U+212A, and `cut -c` counts
 characters. GNU tools or another locale can classify the same file
 differently. `classify_artifacts` prints its line the way the script's
-`json.dumps` does (`", "` spacing, `\uXXXX` escapes, `repr` floats). The test
-runs `bash` and `python3` from PATH with `LC_ALL=en_US.UTF-8` and a stub
-`tribunal-root` naming this checkout.
+`json.dumps` does (`", "` spacing, `\uXXXX` escapes, `repr` floats). The
+goldens were recorded running `bash` and `python3` from PATH with
+`LC_ALL=en_US.UTF-8` and a stub `tribunal-root` naming this checkout.
 
 `section_diff` reuses DIFF-USABLE and DIFF-SECTIONING from `tribunal-core`,
-as the script slices them out of the workflow. Both tests generate their
+as the script sliced them out of the workflow. Both tests generate their
 patches in `tests/patchgen` and also run on the last 25 commits of this
 repository (`git show -M`).
 
@@ -286,14 +284,14 @@ Each has a witness input asserted in its group's test file.
   `classifier-failed`; `reconcile` takes the classifier as an argument, which
   is how the test reaches that branch. The classifier's own declared
   differences (bytes that are not UTF-8, NUL) carry over.
-- check-report-fidelity exits 1 (`could not load the shared checks`) when
-  `workflows/tribunal.js` lacks one of its three regions; the port carries
-  them and runs.
+- check-report-fidelity exited 1 (`could not load the shared checks`) when
+  the Workflow lacked one of its three regions; the port carries them and
+  runs.
 - classify-artifacts' entries come in byte order of their file names; bash
   sorts the script's glob by the locale's collation, so under en_US.UTF-8
   `a_c` comes before `a-c`. The entries themselves are the same, and the
   workflow reads them as a map.
-- classify-artifacts prints `{}` when `tribunal-root` names a tree without
+- classify-artifacts printed `{}` when `tribunal-root` named a tree without
   `classify-verdict.sh`; the port carries its classifier and scans.
 - A head output holding bytes that are not UTF-8, or NUL: BSD sed stops at
   the first line with an invalid sequence and bash drops NUL from every
@@ -311,9 +309,9 @@ Each has a witness input asserted in its group's test file.
   unreadable report) exit 1 with a one-line message instead of Node's stack.
   The `maxBuffer` check counts the decoded stdout and stderr together, as
   resolve-verified-anchors does.
-- persist-review-record carries the fidelity checks, so a `workflows/tribunal.js`
-  without their regions does not produce the script's `could not load the
-  report-fidelity checks` warning.
+- persist-review-record carries the fidelity checks, so it has no equivalent
+  of the script's `could not load the report-fidelity checks` warning for a
+  Workflow without their regions.
 - persist-review-record: once a `__proto__` model has written a string onto
   one of the totals fields of `Object.prototype` (`inputTokens`,
   `outputTokens`, `cacheRead`, `cacheCreation`, `freshInput`), a later model
@@ -339,12 +337,12 @@ Each has a witness input asserted in its group's test file.
   accepts others (and then `int()` crashes).
 - A native run fills `agentCost` when it writes the row, from each
   `claude -p` result's `modelUsage`, `num_turns` and tool calls. The
-  workflow leaves it null for `persist-review-record` to patch from
+  workflow left it null for `persist-review-record` to patch from
   transcripts. The native `agentCost` has `outputExact: true` (the CLI's
   output counts are exact; transcripts carry a placeholder), `runId: null`,
   and `toolTurns`/`toolUsesPerTurn` null, which the CLI does not report.
-- Step 4 (posting) is SKILL.md prose the orchestrating session follows; the
-  binary runs it as `tribunal-pipeline::post` and only with `--post`. It
+- Step 4 (posting) was SKILL.md prose the Workflow's orchestrating session
+  followed; the binary runs it as `tribunal-pipeline::post` and only with `--post`. It
   never asks: a duplicate-review gate other than `clear` holds the post, as
   SKILL.md says an unattended run does. The composing checklist (continuity,
   author refutations, the template, mentions, the homosapiens pass) is one
@@ -369,21 +367,21 @@ Each has a witness input asserted in its group's test file.
   keeps its state; the row records that state's verdict). Hiding an older
   review (`minimizeComment`) stays manual. `tests/post_phase.rs` runs every
   mode against a recording fake `gh`.
-- `agentsActual` reaches the row the way it does in the workflow: null
+- `agentsActual` reaches the row the way it did in the workflow: null
   while the self-audit runs, then patched by `review_record --agent-count`,
   which also appends the `agent-counts.jsonl` backstop. Filling it before the
   audit made `cost-model-drift` fire on every native run (projected 24, actual
-  7 on #1935), because the projection counts the workflow's mechanical agents;
-  in the workflow the invariant never sees a count at audit time.
+  7 on #1935), because the projection counted the workflow's mechanical
+  agents; in the workflow the invariant never saw a count at audit time.
 - A native row carries `engine: "rust"`, `engineVersion` (`rust-` and a hash
   of the workspace's sources, from `tribunal-pipeline/build.rs`) and
   `pluginVersion`, which the Workflow's rows do not. The footer's first
   segment names them (`tribunal v105 (rust rust-<hash>)`); a Workflow row
-  prints `tribunal v105 (skill)`. Both footers come from the same
-  `build-post-footer` logic, changed in this branch on both sides.
+  printed `tribunal v105 (skill)`. Both footers came from the same
+  `build-post-footer` logic.
 - The native row's `relays` is always empty (nothing travels through a relay
   agent) and its `platform` is null, so the row falls back to the PR
-  context's platform, as the workflow does when no platform argument is
+  context's platform, as the workflow did when no platform argument was
   passed.
 - Blast radius parses with oxc where the script uses the reviewed repo's
   `typescript` parser, and `attention.parser` names oxc. A JS or TS file oxc
@@ -463,22 +461,20 @@ Each has a witness input asserted in its group's test file.
 | `tribunal-pipeline` | The workflow's glue between regions, run natively: SKILL.md's loading steps and the Context phase (`context.rs`, including the thread harvest on haiku and the incremental probe), the lens plan (`plan.rs`), the decisions block, prior reviews and RETEST claims (`decisions.rs`), the exact lens prompt (`prompts.rs`), the published schemas (`schemas.rs`, files in `rust/schemas/`), agent definitions read from `agents/*.md` (`agent_def.rs`), the Review phase through the evidence resolver (`review.rs`), the Verify phase's dedup, grounded typecheck gate, panel plan and results split (`verify.rs`), and the Synthesize phase from the prior-finding re-checks to the report as posted (`synthesize.rs`, prompt texts cut from the workflow's template literals into `src/synthesis/`); the refutation panel with the clean-verdict sweep, the completeness critic, the panel-ceiling tie-break, escalation, refine and debate (`panel.rs`, prompts in `panel_prompts.rs` cut from the workflow into `src/panel/`), its live I/O (`live.rs`); `run.rs` drives the phases. |
 | `tribunal-cli` | The `tribunal` binary. `tribunal review --pr <n> ...` runs a review from the context to the metrics row, writes the run as JSON, the report as Markdown and every dispatch's event stream as a transcript, and prints one stderr line when each dispatch starts and ends (duration, turns, tool calls, output tokens, cost). It posts only with `--post`. `--profile <path>` and `--rules <path>` read a profile and review rules from disk instead of the repo's base branch, to try them before they land; the repo's convention files are then read at the PR's base branch, where the profile will live (SKILL.md passes the null `profileRef` through). |
 
-Glue outside the marked regions is tested with `oracle/span-oracle.mjs`,
-which evaluates the source between two anchor strings of
-`workflow-src/tribunal.js` with its free variables passed in as parameters.
-An anchor that moves or stops being unique fails the test loudly. Each
-`tribunal-pipeline/tests/diff_*.rs` compares one glue port this way, and each
-was shown to fail with a fault injected on the Rust side; the plan test also
-on the JavaScript side.
+Glue outside the marked regions was tested with `oracle/span-oracle.mjs`,
+which evaluated the source between two anchor strings of the Workflow with
+its free variables passed in as parameters. Each
+`tribunal-pipeline/tests/diff_*.rs` compares one glue port with what that span
+returned, now replayed from its golden, and each was shown to fail with a
+fault injected on the Rust side; the plan test also on the JavaScript side.
 
-Both engines treat a lens that comes back empty the same way. A lens
-whose dispatch returns nothing (a crash, a timeout or a session usage limit) is
+A lens whose dispatch returns nothing (a crash, a timeout or a session usage limit) is
 no longer read as a lens that found nothing, which a run on 2026-10-21 showed
 when it hit the session limit, got nothing from both lenses and went on toward
 a clean synthesis. When every planned lens comes back empty, the run stops with
 the error "No lens returned a result ... so nothing was reviewed and there is
-no verdict to give." (`review::check_lenses_returned` in Rust, right after the
-pre-panel gate log line in `workflow-src/tribunal.js`). When only some come
+no verdict to give." (`review::check_lenses_returned`, ported from the same
+check in the Workflow). When only some come
 back empty, the verdict cannot be APPROVE: it is held at COMMENT, as an
 unconfirmed clean sweep holds it, and the report carries a banner naming each
 empty lens and the files it was given. The degraded-run banners (no pinned
@@ -491,17 +487,16 @@ updated `the_verdict_matches_the_workflow` and
 `the_posted_report_matches_the_workflow` (`tests/diff_synthesize.rs`) cover
 these.
 
-Pipeline differences from the workflow, on purpose:
+Pipeline differences from the Workflow it replaced, on purpose:
 
 - The thread harvest gets the PR's human text inline in its prompt instead of
   running `cat` on `raw.json`, so the child needs no tool. The instructions
   are the workflow's own text (`src/harvest-rules.txt`, pinned by a test).
 - The `inflight-runs.jsonl` start marker is written once `headRefOid`
   resolves (none on a preflight), and the completed one by the persist step.
-  A run that dies between the two, and is then reviewed again by the Workflow
-  fallback at the same head, reads as one lost run in `tribunal lost-runs`.
+  A run that dies between the two reads as a lost run in `tribunal lost-runs`.
 - `scopedDiffBody`'s sectioned branch is not ported, because
-  `SCOPE_CLAUDE_RECIPIENTS` is false; a test fails if the workflow flips it.
+  `SCOPE_CLAUDE_RECIPIENTS` was false in the workflow.
 - Thread decisions cut at 4,000 UTF-16 units drop a surrogate pair the cut
   splits, where JavaScript keeps the lone high half.
 - Every schema'd answer goes through `js_key_order` once, at the parse
@@ -553,13 +548,13 @@ Pipeline differences from the workflow, on purpose:
   `file: v.file`, which reads a field results do not have, so a suspect's
   file is absent and the banner prints `undefined`, as the workflow's does.
 - Every non-mechanical dispatch gets the operator's effort: `--effort`, else
-  `effortLevel` from `~/.claude/settings.json`. A Workflow subagent inherits
+  `effortLevel` from `~/.claude/settings.json`. A Workflow subagent inherited
   its session's effort, and an isolated `claude -p` child does not read that
   file. Measured on #1935 pinned: without it the two lenses made 4 and 5 tool
   calls and one found nothing; with `high`, 9 and 17, and both found the
   known blocker.
 - Run teardown removes the pinned checkout and the typecheck's own worktree
-  after the report, where the workflow does it inside the persist step.
+  after the report, where the workflow did it inside the persist step.
 
 `tribunal-agent` runs each child isolated by default
 (`--setting-sources "" --strict-mcp-config`): the operator's global
@@ -574,7 +569,7 @@ planted hook, `env` entry, `.mcp.json` server and `CLAUDE.md`: none of them
 loads either way. The repository's conventions reach a lens through
 `conventionFiles`, as before. On claude 2.1.308
 a one-file task loaded 4,570 input tokens isolated and 188,430 inheriting
-everything. Workflow subagents inherit, so this is a behavior change, and the
+everything. Workflow subagents inherited, so this is a behavior change, and the
 A/B below (n=2, one PR) has not measured what it does to recall. Two CLI facts
 the design depends on, both checked on 2.1.308: `--agent` drops
 `--json-schema`, so an agent definition goes in as `--system-prompt`, or as
@@ -604,37 +599,37 @@ placeholder because its postinstall did not run, `review`, `post` and
 latest Claude Code with npm on every run, so a change to how the package
 installs shows up there first.
 
-The context tests run each script and its port against the same recordings.
-The script finds `crates/tribunal-context/tests/shim/gh`, a node script, first
-on `PATH`. The port is passed `tribunal-test-gh` as `Tools.gh`: a binary of
+The context goldens were recorded running each script against the same `gh`
+recordings as its port, with `crates/tribunal-context/tests/shim/gh`, a node
+script, first on `PATH`. The port is passed `tribunal-test-gh` as `Tools.gh`: a binary of
 `tribunal-context` (`src/bin/tribunal-test-gh.rs`) that answers the same way
 without starting node for each call, and hands to the node shim whatever it
 cannot reproduce exactly. `tests/shim.rs` checks the two byte for byte. A call
 nobody recorded exits 99.
 
-`tribunal selfcheck` is `workflows/harness-selfcheck.js` as a subcommand
-(`tribunal-pipeline::selfcheck`). The audit is `audit_run` over the last
-metrics row, in process. Each violation gets a diagnosis dispatch that must
-quote what it read (one with no evidence is dropped before verification),
-then a refuter and a reproducer at once; a diagnosis survives only when both
-answer and neither refutes it. The diagnosis reads the code that wrote the
-row: the Rust crates for `engine: "rust"`, the Workflow and `lib/` for any
-other. The patch is written down, not applied, unless `--apply`, and the
-battery is `cargo test --workspace --locked` (`--no-battery` skips it).
+`tribunal selfcheck` is the former `workflows/harness-selfcheck.js` (removed
+in v115) as a subcommand (`tribunal-pipeline::selfcheck`). The audit is
+`audit_run` over the last metrics row, in process. Each violation gets a
+diagnosis dispatch that must quote what it read (one with no evidence is
+dropped before verification), then a refuter and a reproducer at once; a
+diagnosis survives only when both answer and neither refutes it. The
+diagnosis reads the code that wrote the row: the Rust crates for
+`engine: "rust"`. For an older Workflow row it still names
+`workflows/tribunal.js` and `lib/`, which v115 removed. The patch is written
+down, not applied, unless `--apply`, and the battery is `cargo test --workspace --locked` (`--no-battery` skips it).
 `tests/selfcheck.rs` runs it with a scripted agent.
 
 ## Running the tests
 
 ```bash
 cd plugins/tribunal/rust
-cargo test                       # unit + differential (needs node)
-TRIBUNAL_HARNESS_DATA=<dir> cargo test -- --include-ignored
+cargo test                       # unit + differential (two tests run a node stand-in gh)
+TRIBUNAL_TS_FROM=<repo> cargo test -- --include-ignored   # <repo>/node_modules has typescript
 ```
 
-The differential tests start `oracle/region-oracle.mjs`, which slices the
-region out of `workflow-src/tribunal.js` in this checkout and runs it on the
-same generated inputs as the Rust function. A new port is not done until its
-test has been shown to fail with a fault injected on either side.
+The differential tests replay goldens recorded with `oracle/region-oracle.mjs`,
+which sliced each region out of the Workflow and ran it on the same generated
+inputs as the Rust function.
 
 ## Building and releasing
 
@@ -675,15 +670,14 @@ with the command that regenerates it. A recorded script that no longer exists
 is retired: its golden is final and the comparison still runs. Regenerate one
 test binary at a time, over the whole binary so that every case is recorded:
 `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p <crate> --test <name>`. The
-classifier goldens of `diff_classify_heads.rs` regenerate only on a Mac,
-because the scripts depend on macOS's userland: GNU `cut -c` counts bytes and
-splits a character, mawk folds case byte by byte, and glibc collates `*.out`
-in another order. `tribunal-core`'s `common::oracle` and
-`tribunal-pipeline`'s `common::span`, which evaluate a region or a span of
-the Workflow, record and replay per test binary: a binary with
-`tests/goldens/oracle/<name>.json` (or `span/<name>.json`) replays it and
-fails on a call it does not hold, and a binary without one runs node as
-before. `diff_profile.rs` also runs a composite driver of its own; that call
+classifier goldens of `diff_classify_heads.rs` were recorded on a Mac,
+because the scripts depended on macOS's userland: GNU `cut -c` counts bytes
+and splits a character, mawk folds case byte by byte, and glibc collates
+`*.out` in another order. `tribunal-core`'s `common::oracle` and
+`tribunal-pipeline`'s `common::span`, which evaluated a region or a span of
+the Workflow, now only replay: a binary's `tests/goldens/oracle/<name>.json`
+(or `span/<name>.json`) answers its calls, and a call it does not hold fails
+the test. `diff_profile.rs` also runs a composite driver of its own; that call
 is recorded in the same file, keyed by the driver's source too, so an edited
 driver is a call the golden lacks. `diff_loaders.rs` keeps one golden,
 `tests/goldens/loaders.json`: each call to a script, to its bulk oracle or to
@@ -693,8 +687,10 @@ recording a binary, create its golden as `{}` and regenerate.
 `diff_resolve_evidence.rs` and `diff_section_diff.rs` read commits of this
 repository's history: their goldens keep the commit SHAs and replay them with
 `git show`, so they need the full history. The `#[ignore]` tests that compare
-against data outside this repository (`TRIBUNAL_HARNESS_DATA`,
-`TRIBUNAL_AST_CORPUS`) still run the scripts. The helpers the
+against data outside this repository have no golden. The
+`TRIBUNAL_AST_CORPUS` ones still run `tribunal-context/src/js/`. The ones that
+compared a script with its port over `TRIBUNAL_HARNESS_DATA` fixtures were
+removed in v115 with the scripts. The helpers the
 `tribunal-context` goldens share live in `tests/posting/mod.rs`. The `macos` job runs the whole suite on a Mac on every
 pull request that touches this directory, and by hand (`workflow_dispatch`).
 While the repository is public GitHub's Macs are free; were it private, the job
@@ -722,7 +718,7 @@ A release:
    rewrites `release.json` from those `.sha256` files.
 4. Commit `release.json` with the plugin version that should use the binary.
 
-`/tribunal:review-pr`, whose default engine is this binary, reads `release.json` through
+`/tribunal:review-pr`, whose engine is this binary, reads `release.json` through
 `bin/tribunal-engine`, which downloads the archive for the machine once with
 `gh release download`, refuses it unless its sha256 matches, and caches it
 under `<tribunal-data>/bin/`. `TRIBUNAL_BIN` points it at a local build instead.
@@ -773,7 +769,7 @@ What this measures and what it does not:
 ## Open questions
 
 1. Whether `claude -p` loads the operator's global `CLAUDE.md` into every
-   lens. Workflow subagents already do, so this is parity, but it is worth
+   lens. Workflow subagents did, so this is parity, but it is worth
    deciding on purpose.
 2. `--bare` becoming the default for `-p`: the binary must pass whatever flag
    keeps the subscription login once that ships.

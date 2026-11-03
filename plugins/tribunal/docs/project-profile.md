@@ -23,10 +23,9 @@ so a profile edit is visible in the data.
 forces (`migration`, `security` or `dataContract`), as `{focus, pattern}` with a
 case-insensitive regular expression. The forced foci read it. A rule naming any
 other focus is ignored. Without `riskPaths` no path is high-risk, and the loader
-prints a warning saying so. On the Rust engine, every forced focus gets a lens
+prints a warning saying so. Every forced focus gets a lens
 of its own and a forced focus never takes the place of `correctness`: when the
-forced foci fill the lens budget, the run adds lenses for them instead. The
-Workflow caps the lens count at the budget and drops what does not fit.
+forced foci fill the lens budget, the run adds lenses for them instead.
 `tribunal.inContextRiskPaths` belonged to an in-context review path that was
 removed: the loader still accepts it and nothing reads it.
 
@@ -34,8 +33,8 @@ removed: the loader still accepts it and nothing reads it.
 `.claude/review-rules.md`, read at the same ref as the profile. The plugin's
 methodology (`methodology/templates/backend.md`, `frontend.md`, `e2e.md` and `python.md`) has named
 slots with generic text, and a `tribunal/<slot>` block in that file replaces the
-slot's text for this repo. `skills/review-pr/scripts/assemble-methodology.mjs`
-builds the file a review reads, and every row records the rules' sha256. Without
+slot's text for this repo. The engine builds the file a review reads from them
+(`tribunal assemble-methodology` does the same on its own), and every row records the rules' sha256. Without
 `projectRules` the reviewers get the generic methodology. A block under another
 tool's name, such as `other-tool/<slot>`, is ignored.
 
@@ -44,15 +43,14 @@ tool's name, such as `other-tool/<slot>`, is ignored.
 only. A harness subagent loads none of them by itself: a session started
 outside the repo carries no project `CLAUDE.md`, and a rule scoped with `paths:`
 frontmatter loads only when the Read tool opens a matching file.
-`skills/review-pr/scripts/load-conventions.mjs` reads them at the same ref as
+The engine reads them at the same ref as
 the profile, keeps a scoped rule only when the PR changes a path it names (a
 `CLAUDE.md` below the root counts as scoped to its directory), and writes one
 file that every reviewer and Claude refuter reads. The row records which files
 were read, which scoped rules were left out, and any named file the repo does
 not have. Without `conventionFiles` the prompts carry no conventions line.
 
-`conventionSources` (Rust engine only; the Workflow prints a warning and skips
-it) names documentation bundles: kept in another repo, such as
+`conventionSources` names documentation bundles: kept in another repo, such as
 a docs repo mounted as a git submodule (which the contents API cannot read
 through the reviewed repo), or in a folder of the reviewed repo itself. Each
 entry is
@@ -185,5 +183,4 @@ change `repo` and whatever differs, check it with `templates/check.sh`, and comm
 it to that repo as `.claude/review-profile.json`. One limit: the reviewer personas carry the stack knowledge they
 were written for (Node, Express and Prisma for `backend`, React for
 `frontend`, Playwright for `e2e`, Python for `python`). A repo on another stack
-can have a profile, but its reviewers do not know that stack yet. The `python`
-kind runs on the Rust engine only: the Workflow fallback refuses it.
+can have a profile, but its reviewers do not know that stack yet.

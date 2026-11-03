@@ -43,7 +43,6 @@
 set -euo pipefail
 
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SKILL="$ROOT/skills/review-pr"
 MANIFEST="$ROOT/.claude-plugin/plugin.json"
 # The release log is this repository's own and carries no client data, so it
 # lives at the repo root. TRIBUNAL_RELEASES overrides it.
@@ -125,7 +124,7 @@ cat <<PLAN
   version    $SEMVER   (manifest: .claude-plugin/plugin.json)
   tag        $TAG
   branch     $BRANCH -> $REMOTE
-  harness    $(cd "$SKILL" && node scripts/harness-version.mjs --short)
+  harness    $("$ROOT/bin/tribunal-engine" run -- harness-version --short)
 PLAN
 
 if [ -n "$DRY" ]; then
@@ -223,7 +222,7 @@ read -r ans; [ "$ans" = "y" ] || die "aborted before commit — nothing was push
 git commit -m "chore(tribunal): freeze $TAG"
 
 step "4/5  Tagging"
-git tag -a "$TAG" -m "tribunal $SEMVER — offline battery green at $(cd "$SKILL" && node scripts/harness-version.mjs --short)"
+git tag -a "$TAG" -m "tribunal $SEMVER: offline battery green at $("$ROOT/bin/tribunal-engine" run -- harness-version --short)"
 echo "   $TAG -> $(git rev-parse --short "$TAG")"
 
 step "5/5  Pushing (branch and tag are two separate pushes)"

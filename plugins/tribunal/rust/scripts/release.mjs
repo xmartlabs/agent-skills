@@ -44,7 +44,6 @@ import { appendFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmS
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { harnessVersion } from "../../skills/review-pr/scripts/harness-version.mjs";
 import { HARNESS_DATA, RELEASES_PATH } from "./gate-paths.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -216,7 +215,7 @@ function pinCheck() {
     return fail(
       `the pinned binary ${tag} was built without these changes:\n` +
         changed.map((p) => `  ${p}`).join("\n") +
-        '\n  Release a new tribunal-rust binary and pin it (rust/README.md, "A release").',
+        '\n  Release a new tribunal-rust binary and pin it (rust/README.md, "Building and releasing").',
     );
   }
   // A fresh data directory, so the archive is downloaded and checked against the
@@ -240,7 +239,17 @@ function pinCheck() {
   }
 }
 
-const { id, entries } = harnessVersion();
+// The plugin's harness id, from the binary's `harness-version --manifest`: the
+// id on the first line, then one `<sha>  <path>` line per file.
+const { id, entries } = (() => {
+  const [first, ...rest] = execFileSync("bash", [join(CLAUDE, "bin", "tribunal-engine"), "run", "--", "harness-version", "--manifest"], {
+    env: { ...process.env, TRIBUNAL_PLUGIN_ROOT: CLAUDE },
+    encoding: "utf8",
+  })
+    .trim()
+    .split("\n");
+  return { id: first.trim(), entries: rest.map((l) => ({ path: l.trim().split(/\s+/)[1] })) };
+})();
 // The battery has its own id because the row's central claim is about the
 // battery, and the harness hash never covered it: `pr-harness-4af7ff70ff8e` is
 // the same id `main` carried while `replay-embedded-bash` was red, so "green at

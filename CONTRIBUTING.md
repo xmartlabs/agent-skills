@@ -23,23 +23,16 @@ of what follows depends on which one you touch.
 
 ## tribunal
 
-Two engines implement the same review: the Workflow script
-(`workflow-src/tribunal.js`, built into `workflows/tribunal.js` by
-`node skills/review-pr/scripts/build-workflow.mjs`) and the Rust binary. A rule
-that exists in both changes on both sides in the same pull request.
+The Rust binary in `plugins/tribunal/rust` runs the review. What you can run:
 
-What you can run:
-
-- `bash plugins/tribunal/scripts/check-portable.sh`: about two thirds of the
-  offline replays. Set `TRIBUNAL_TS_FROM` to any directory whose
-  `node_modules` has `typescript` for the two replays that parse TypeScript.
 - `cargo test --workspace`, `cargo fmt --all --check` and
   `cargo clippy --workspace --all-targets -- -D warnings` in
   `plugins/tribunal/rust`.
+- `bash plugins/tribunal/templates/check.sh` after changing a template.
 
-The rest of the offline gate replays recorded reviews of private pull
-requests, so it needs a test-data directory that is not public. A maintainer
-runs the full gate before every release; your pull request does not need it.
+The release gate also scans the plugin for client names, which needs a
+test-data directory that is not public. A maintainer runs the full gate
+before every release; your pull request does not need it.
 For any pull request that touches the engine, CI runs the whole Rust suite on
 Linux and macOS, and the unit tests on Windows.
 

@@ -25,11 +25,10 @@ To run it in CI instead, on every pull request that gets a `tribunal` label, use
 [tribunal GitHub Action](../../actions/tribunal/README.md): one workflow file and a secret, no
 install.
 
-You need `gh` (logged in). The default engine, a binary the plugin downloads on
-first use, needs nothing else; on a TypeScript repository it also runs the
-repository's own type check with that repository's `npm`/`npx` when they are
-there. `node` is needed only for the older Workflow engine: `--engine workflow`,
-or the fallback on a machine with no binary build.
+You need `gh` (logged in) and `claude`. The review runs in a binary the plugin
+downloads on first use, which needs nothing else; on a TypeScript repository it
+also runs the repository's own type check with that repository's `npm`/`npx`
+when they are there.
 The `codex` CLI is optional and adds a second model to the refutation panel.
 
 **1. Install both plugins** in Claude Code. Tribunal runs its report through
@@ -50,8 +49,17 @@ branch. Without the first one the review stops.
 | `.claude/review-profile.json` | [`review-profile.backend.json`](templates/review-profile.backend.json), [`review-profile.frontend.json`](templates/review-profile.frontend.json), [`review-profile.e2e.json`](templates/review-profile.e2e.json) or [`review-profile.python.json`](templates/review-profile.python.json) | `project`, `repo`, `baseBranch`, `deployBranches`, and the `riskPaths` that matter in your code |
 | `.claude/review-rules.md` | [`review-rules.md`](templates/review-rules.md) | The `intro` and `project-traps` blocks: your stack and the mistakes your team keeps making |
 
-Every field is explained in [templates/README.md](templates/README.md), which
-also has a checker that validates both files before you commit them.
+Every field is explained in [templates/README.md](templates/README.md). Before
+you commit them, check both files with tribunal's own loaders:
+
+```
+<tribunal>/templates/check.sh .claude/review-profile.json .claude/review-rules.md
+```
+
+`<tribunal>` is this plugin's directory: `plugins/tribunal` in a clone of this
+repository, or `~/.claude/plugins/cache/xmartlabs/tribunal/<version>` once
+installed. [`templates/check.sh`](templates/check.sh) needs `python3` and the
+binary, which it downloads on first use like a review does.
 
 **3. Run a first review that posts nothing**, from a checkout of that repo:
 
@@ -91,23 +99,23 @@ To report a vulnerability, see [SECURITY.md](../../SECURITY.md).
 
 1. **Context**: fetches the PR, pins its head in a git worktree, determines what
    changed since the last review it posted, and sizes the review to the diff.
-   The same script lists the unchanged code that calls what the PR changed,
+   The same step lists the unchanged code that calls what the PR changed,
    resolved by binding rather than by name and ranked by whether the call is
    awaited, inside a `try`, or on a request or job path. It also parses the
-   changed code with the reviewed repo's own TypeScript parser and lists
+   changed JavaScript and TypeScript and lists
    **syntax facts**: a value returned from a `catch` that callers read as an
    answer, a check that answers 403 before the 401 it should follow, a new
    writer that leaves empty a column its readers filter on, a test that cannot
    fail. Nothing is judged at this step; the facts tell the lenses where to look.
 2. **Lenses**: independent reviewers run in parallel over a partition of the
    changed files, so coverage is total and no two lenses read the same code.
-   Each gets the callers list and the syntax facts. On the Rust engine each
-   also says what it did not reach and why, and a `riskPaths` file that every
+   Each gets the callers list and the syntax facts. Each also says what it
+   did not reach and why, and a `riskPaths` file that every
    lens holding it left unread for lack of budget keeps the verdict from
    APPROVE.
 3. **Gaps**: a completeness critic asks what no lens read. A gap it traces in
    the code becomes a finding and goes through the same checks and panel as a
-   lens finding. The Rust engine hands the critic the changed files no finding
+   lens finding. The engine hands the critic the changed files no finding
    names and what the lenses reported they did not reach, works those lists out
    in code, and gives it the diff already on disk and about 20 tool calls. It also
    gets a short list of siblings: code outside the PR that calls a name the changed
@@ -119,20 +127,11 @@ To report a vulnerability, see [SECURITY.md](../../SECURITY.md).
 5. **Report**: survivors, ranked, with a suggested verdict. Nothing reaches
    GitHub until you confirm.
 
-![Tribunal workflow: who does each step, from pinning the PR through checks and the refuter panel to the verdict and the run row](docs/architecture.svg)
-
-The interactive version, with guided views, is [docs/architecture.html](docs/architecture.html).
-
-**The same review in Rust, and the default.** A binary runs the review
-instead of the Workflow script. Judgement stays with the model: every lens,
+**A Rust binary runs the review.** Judgement stays with the model: every lens,
 refuter, critic and the report writer is a `claude -p` call on your own login.
-The deterministic steps, including the ones the Workflow hands to haiku
-mechanics, are Rust code in the same process. The three runs measured so far
-took between 2 and 3 minutes, against a median of 11 for the Workflow over 80
-runs; that sample is small. `--engine workflow` runs the Workflow instead, and
-the review falls back to it when the binary cannot run.
+The deterministic steps are Rust code in the same process.
 
-![Tribunal with --engine rust at a glance: each step marked as a model call or deterministic code, and what the run writes to disk along the way](docs/architecture-rust-overview.svg)
+![Tribunal at a glance: each step marked as a model call or deterministic code, and what the run writes to disk along the way](docs/architecture-rust-overview.svg)
 
 Each box says whether it calls a model. The run writes to disk at several
 points, not only at the end: a start marker before any lens, a transcript and
@@ -142,22 +141,16 @@ metrics row when it finishes, and the row's update when the review is posted.
 Every step, one box each, is in [docs/architecture-rust.svg](docs/architecture-rust.svg)
 ([interactive](docs/architecture-rust.html)).
 
-Four properties worth knowing, since they explain what the machinery is for:
+Three properties worth knowing, since they explain what the machinery is for:
 
 - **Votes are reconciled against the CLI's own artifacts**, not against what a
-  wrapper agent reported saying. Across the 35 workflow runs where that check ran,
-  it caught **216 mismatched votes** in 16 of them. It isn't a theoretical
-  safeguard: it fires on roughly half the runs.
+  wrapper agent reported saying. Across 35 runs of the earlier Workflow engine
+  where that check ran, it caught **216 mismatched votes** in 16 of them.
 - **A finding the panel never adjudicated can't be reported as blocking.** When
   the panel budget runs out, the dropped candidates are listed explicitly rather
   than silently omitted.
-- **Script results reach the workflow as a file, not as a model's copy.** A
-  mechanic used to copy each script's JSON into its answer, and haiku miscopied
-  long or text-heavy ones. The script now writes it under the repo's `.git` and
-  the workflow loads it and checks its checksum; the copy is the fallback.
-- **Changes to tribunal are validated offline before they cost a run**: 94
-  replay files over recorded and synthetic data, plus a mirror check that fails
-  if the prose and the code disagree about any rule.
+- **Changes to tribunal are validated offline before they cost a run**: the
+  Rust test suite and a release gate that every version has to pass.
 
 ## What it costs
 
@@ -173,12 +166,11 @@ Reach for it when a PR touches money, auth, Prisma schema or migrations; when it
 is large enough that reading it end to end is real work; or when you want to be
 able to say *this was checked* rather than *this looked fine*.
 
-Every review runs one engine, whatever its size: the Rust binary, or the
-workflow with `--engine workflow`; the lens count scales with the files and
-churn. Until v101, PRs under 10 files ran instead through an
+Every review runs the same way, whatever its size; the lens count scales with
+the files and churn. Until v101, PRs under 10 files ran instead through an
 in-context path that the orchestrating session drove step by step. Measured on
-2026-10-21 with that session's own cost counted, it cost about twice the
-workflow on a small PR, so it was removed.
+2026-10-21 with that session's own cost counted, it cost about twice the full
+review on a small PR, so it was removed.
 
 **Do not use it for:**
 
@@ -194,12 +186,11 @@ neither, which is why it belongs to the agent rather than to tribunal.
 ## Limitations
 
 The ones that actually bite. The full list is in [`RELEASES.md`](RELEASES.md) under
-**Known open**. The release log, the specs, the labelled corpus, the test
-fixtures and the recorded runs the replays re-decide are measured on one
-client's PRs, so they are not part of this repository: they live in a separate
-private data directory, which `TRIBUNAL_HARNESS_DATA` points at, and installing the
-plugin never copies them. Without that variable the replays and `release.sh` that
-need them fail on the missing file.
+**Known open**. The specs, the labelled corpus and the recorded runs come from
+one client's PRs, so they are not part of this repository: they live in a
+separate private data directory, which `TRIBUNAL_HARNESS_DATA` points at, and
+installing the plugin never copies them. Without that variable `release.sh`
+runs only with `--portable`, which skips the client-name scan.
 
 - **A truncated run is not a clean run.** Panels are capped (default 40). If
   `panelSkippedForBudget` is non-empty, findings went unadjudicated: raise the
@@ -240,7 +231,7 @@ a `git pull` prompts you to install it: accept, then run `/reload-plugins`.
 
 Turn auto-update on once, because third-party marketplaces have it off by default: `/plugin`, then **Marketplaces**, select `xmartlabs`, then **Enable auto-update**. To update by hand, run `/plugin marketplace update xmartlabs`, then `/reload-plugins`. A plugin moves only when its version in `plugin.json` does, and the footer of each posted review names the version that ran, for example `tribunal v110`.
 
-**The Rust engine needs nothing else installed.** The first review
+**The engine needs nothing else installed.** The first review
 downloads the binary for your machine from the release pinned
 in [`rust/release.json`](rust/release.json), with your `gh` login, and refuses
 it unless its sha256 matches the pin. Later runs reuse it from
@@ -248,8 +239,7 @@ it unless its sha256 matches the pin. Later runs reuse it from
 Intel), Linux x64 and Windows x64. On Windows, Claude Code from the native
 installer or from npm both work: npm's `claude.cmd` is read for the
 `claude.exe` it starts, which the binary then runs directly. With no build for
-your machine, or when the download
-fails, the review says why and runs the Workflow instead.
+your machine, or when the download fails, the review says why and stops.
 
 ## Use
 
@@ -257,12 +247,10 @@ fails, the review says why and runs the Workflow instead.
 /tribunal:review-pr 1935              # review PR 1935, ask before posting
 /tribunal:review-pr 1935 --no-post    # show the report, never post
 /tribunal:review-pr 1935 --preflight  # dry run: what it WOULD do (~3 min, no review)
-/tribunal:review-pr 1935 --engine workflow   # the same review, run by the Workflow
 ```
 
 | Flag | Effect |
 |---|---|
-| `--engine workflow` | Run the review with the Workflow instead of the Rust binary |
 | `--repo <owner/name>` | The repo to review (default: see *Which repo it reviews*) |
 | `--context "<text>"` | Decisions reviewers must not re-litigate |
 | `--full` | Re-review everything, ignoring the incremental baseline |
@@ -284,7 +272,7 @@ A review runs against one repo, and that repo needs a profile, `.claude/review-p
 | **React and TypeScript frontend** | **Tested.** Same. |
 | **Playwright and TypeScript end-to-end test suite** (`reviewer: "e2e"`) | **Tested on one suite.** Its reviewer checks the tests themselves: whether a test can fail for the bug it names, waits and locators, route mocks, secrets in traces, writes to real environments and retries. |
 | Another JavaScript or TypeScript stack (Nest, Fastify, Next.js, plain JavaScript, a different ORM) | Should work, **not measured**. Every step runs. The default text still talks about Prisma, Zod and BullMQ, or React, so put your stack's own traps in `review-rules.md`. |
-| **Python** (`reviewer: "python"`; Django, FastAPI, Flask, SQLAlchemy, scripts and workers) | **Not measured: only five smoke runs on small PRs, with no known defects to score them against.** Its reviewer knows the usual Python traps (mutable defaults, naive datetimes, blocking calls in async code, unsafe deserialization, ORM N+1, migrations) but nothing about your codebase, so put that in `review-rules.md`. The Workflow fallback refuses this kind; only the Rust engine runs it, and only from the next tribunal-rust binary: the one pinned today predates it. Three steps do nothing (below). |
+| **Python** (`reviewer: "python"`; Django, FastAPI, Flask, SQLAlchemy, scripts and workers) | **Not measured: only five smoke runs on small PRs, with no known defects to score them against.** Its reviewer knows the usual Python traps (mutable defaults, naive datetimes, blocking calls in async code, unsafe deserialization, ORM N+1, migrations) but nothing about your codebase, so put that in `review-rules.md`. Three steps do nothing (below). |
 | Java, Go, mobile, anything else | Runs if you register the repo as `backend`, `frontend` or `e2e`, but **no run was tried** on such a repo, three steps do nothing (below), and no reviewer is written for your language. Replace the intro and traps in your rules file. |
 
 Three steps read the code itself rather than the diff, and they only
@@ -302,11 +290,7 @@ lose elsewhere is the context those three steps add, so expect more findings
 that misread how the changed code is used.
 
 Plain JavaScript gets the callers list and the syntax facts but no type check.
-The Rust engine, the default, parses JS and TS by itself. The Workflow engine
-(`--engine workflow`) borrows the `typescript` package from the reviewed repo's
-`node_modules`. Without it, the Workflow builds the callers list by matching
-names instead of following imports, which is less precise, and finds no syntax
-facts.
+The engine parses JS and TS by itself.
 
 What "tested" covers: the review quality was measured only on the first two
 rows. On any other stack you get a working review and unknown quality. To find
@@ -333,7 +317,7 @@ version hash and the release steps are in
 |---|---|
 | Install and review PRs | Nothing beyond this repo |
 | Review a new project | The files in [`templates/`](templates/README.md) |
-| Check a code change without extra data | `scripts/check-portable.sh`, about two thirds of the tests |
+| Check a code change without extra data | `cargo test` in [`rust/`](rust/README.md) |
 | Run every test, or publish a version | A test-data folder, set with `TRIBUNAL_HARNESS_DATA` |
 
 **The test-data folder is not in this repo.** It holds real past reviews, PRs
