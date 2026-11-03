@@ -252,10 +252,24 @@ your machine, or when the download fails, the review says why and stops.
 | Flag | Effect |
 |---|---|
 | `--repo <owner/name>` | The repo to review (default: see *Which repo it reviews*) |
+| `--post` / `--no-post` | Post without asking, or never post |
 | `--context "<text>"` | Decisions reviewers must not re-litigate |
 | `--full` | Re-review everything, ignoring the incremental baseline |
-| `--max-panels <n>` | Raise the adjudication ceiling for a PR that deserves it |
-| `--no-codex` | Skip the second-opinion head (cheaper, weaker) |
+| `--since <sha>` | Take this commit as the incremental baseline |
+| `--max-panels <n>` | Raise the adjudication ceiling for a PR that deserves it (default 40) |
+| `--lens-samples <n>` | Run each lens `n` times, 1 to 4, and merge what they share (finds more, costs about `n` times the lens stage) |
+| `--codex` / `--no-codex` | Force the second-opinion head on or off (off is cheaper, weaker) |
+| `--gemini` | Add Google's head (off by default) |
+| `--bot-comments` | Also vet existing bot comments on the PR |
+| `--profile <path>` / `--rules <path>` | Try a profile before committing it |
+| `--head-sha <sha>` / `--thread-before <iso>` | Pin the tree and the thread, to compare a re-run with an earlier one |
+| `--model <id>` / `--effort <level>` | Model and reasoning effort for the agents |
+
+The skill's [quick reference](skills/review-pr/SKILL.md#commands-and-flags-quick-reference)
+has every flag, including the cost ceilings (`--max-agents`,
+`--max-output-tokens`) and the experiment knobs (`--lenses`,
+`--batch-panels`, `--concurrency`), and the read-only commands: `--metrics`,
+`--audit`, `--cost`, `--selfcheck` and `--queue`.
 
 `--preflight` is the habit worth forming: it prints the plan (mode, baseline,
 files in scope, lens count) for a small fraction of a run.
