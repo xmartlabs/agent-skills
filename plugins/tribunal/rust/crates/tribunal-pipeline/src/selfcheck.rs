@@ -77,15 +77,16 @@ fn last_row(data_dir: &Path) -> Option<String> {
 }
 
 /// What the diagnosis reads for the code that wrote `row`: the Rust source for
-/// a row the binary wrote (`engine: "rust"`), the Workflow and its scripts for
-/// any other.
+/// a row the binary wrote (`engine: "rust"`), and for an older row, which the
+/// removed Workflow wrote, the same crates with a note that its own code is
+/// gone.
 #[must_use]
 pub fn code_to_read(plugin_root: &Path, row: &Value) -> String {
     let root = plugin_root.display();
     if js::get(row, "engine").and_then(Value::as_str) == Some("rust") {
         format!("the Rust engine under {root}/rust/crates (the row's `engineVersion` names the build that wrote it)")
     } else {
-        format!("{root}/workflows/tribunal.js and {root}/lib/")
+        format!("the Rust engine under {root}/rust/crates. This row was written by the Workflow engine, which v115 removed, so its code is not in the plugin; say so in the diagnosis, and diagnose only what the Rust engine still does the same way")
     }
 }
 
@@ -541,7 +542,13 @@ mod tests {
     fn a_rust_row_points_the_diagnosis_at_the_rust_source() {
         let root = Path::new("/p");
         assert!(code_to_read(root, &json!({"engine": "rust"})).contains("/p/rust/crates"));
-        assert!(code_to_read(root, &json!({})).contains("/p/workflows/tribunal.js"));
+        let workflow_row = code_to_read(root, &json!({}));
+        assert!(workflow_row.contains("/p/rust/crates"), "{workflow_row}");
+        assert!(workflow_row.contains("removed"), "{workflow_row}");
+        assert!(
+            !workflow_row.contains("workflows/tribunal.js"),
+            "{workflow_row}"
+        );
     }
 
     #[test]

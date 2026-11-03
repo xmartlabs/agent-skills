@@ -319,6 +319,11 @@ pub fn apply_typecheck_result(
     ground_on_coverage(text, &all, &SOURCE_EXT, pr_files, logs)
 }
 
+/// The log when the typecheck lists no program files. tsc that never started
+/// (no `npx`, a broken install) reads the same as one whose program is empty,
+/// so the line does not claim it ran.
+pub const NO_PROGRAM_LOG: &str = "Grounded typecheck listed no program files, so it may not have run: confirm-only, no pre-panel refutations";
+
 fn ground_on_coverage(
     text: &str,
     all: &[TscDiagnostic],
@@ -362,9 +367,7 @@ fn ground_on_coverage(
     if program_size == 0.0 {
         g.diags_by_file = grouped()?;
         g.available = true;
-        logs.push(
-            "Grounded typecheck ran but coverage is unknown — confirm-only, no pre-panel refutations".into(),
-        );
+        logs.push(NO_PROGRAM_LOG.into());
     } else if pr_covered == 0 {
         logs.push(format!(
             "Grounded check covers 0 of {} PR file(s) (tsconfig program excludes them) — findings fall through to panel",
