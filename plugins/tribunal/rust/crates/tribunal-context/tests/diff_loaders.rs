@@ -72,17 +72,15 @@ fn template_shas() -> Value {
     Value::Object(out)
 }
 
-fn shim_sha() -> Value {
-    let p = shim_dir().join("gh");
-    json!(sha256_hex(&std::fs::read(&p).unwrap()))
-}
-
+/// The golden also keeps the SHA-256 of the node shim for `gh` it was
+/// recorded with. `tribunal-test-gh` replaced it and answers the same way,
+/// so that is no longer checked.
 fn recorded_with() -> Value {
     let entries: serde_json::Map<String, Value> = ENTRIES
         .iter()
         .map(|e| ((*e).to_owned(), posting::module_shas(e)))
         .collect();
-    json!({"entries": entries, "templates": template_shas(), "shim": shim_sha()})
+    json!({"entries": entries, "templates": template_shas()})
 }
 
 fn stale(rw: &Value) -> Vec<String> {
@@ -92,9 +90,6 @@ fn stale(rw: &Value) -> Vec<String> {
     }
     if rw["templates"] != template_shas() {
         out.push("methodology/templates".to_owned());
-    }
-    if rw["shim"] != shim_sha() {
-        out.push("tests/shim/gh".to_owned());
     }
     out
 }

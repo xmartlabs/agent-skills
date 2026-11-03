@@ -1,5 +1,5 @@
 //! `post-review.mjs` against `post_review`, with a fake `gh` on both sides.
-//! Nothing here can reach GitHub: the script runs with `PATH` holding only
+//! Nothing here can reach GitHub: the script ran with `PATH` holding only
 //! the fake, a `node` symlink, `/usr/bin` and `/bin`, an empty environment
 //! and an empty `GH_CONFIG_DIR`, and the port runs the fake by absolute path.
 //!
@@ -10,18 +10,20 @@
 //! Each case compares stdout, stderr (unless the script crashed), exit
 //! status, the recorded calls, and the body files left in the temp dir.
 //!
-//! Nothing here runs the script outside a regeneration; the port still runs
-//! the fake `gh`, which is a node script. The script's side of the generated
-//! review lists is read from `tests/goldens/post-review.json`, which keeps the
-//! text of the scripts and of the fake `gh` it was recorded with. The fixed
-//! cases (the fixtures, the posted body, the declared difference) are read
-//! from `tests/goldens/post-review-fixed.json`, one entry per test, with a
-//! SHA-256 of each module the script imports and, per case, of its input and
-//! of the fake `gh`; each case keeps the calls the fake recorded and the body
-//! files left behind. Editing a script, the fake or a case without a
-//! regeneration fails here; a script no longer on disk was retired with the
-//! Workflow, so its check is skipped and the golden is final. Regenerate
-//! after changing them, over the whole binary:
+//! The fake is `tribunal-test-gh` in its `post-review` mode. The goldens were
+//! recorded with a node fake that it replaced, and which logged and answered
+//! the same way, so a change to what the mode logs fails the comparison.
+//! Nothing here runs the script outside a regeneration. The script's side of
+//! the generated review lists is read from `tests/goldens/post-review.json`,
+//! which keeps the text of the scripts it was recorded with. The fixed cases
+//! (the fixtures, the posted body, the declared difference) are read from
+//! `tests/goldens/post-review-fixed.json`, one entry per test, with a SHA-256
+//! of each module the script imports and, per case, of its input and of the
+//! node fake; each case keeps the calls the fake recorded and the body files
+//! left behind. Editing a script or a case without a regeneration fails here;
+//! a script no longer on disk was retired with the Workflow, so its check is
+//! skipped and the golden is final. Regenerate after changing them, over the
+//! whole binary:
 //! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_post_review`.
 
 mod posting;
@@ -38,38 +40,12 @@ use tribunal_context::exec::Tools;
 use tribunal_context::operator::CliOutput;
 use tribunal_context::post_review::{self, PostEnv};
 
-const FAKE_GH: &str = r#"#!/usr/bin/env node
-const fs = require("fs");
-const path = require("path");
-const args = process.argv.slice(2);
-const stdin = fs.readFileSync(0, "utf8");
-let bodyPath = null;
-const norm = args.map((a, i) => {
-  if (args[i - 1] === "--body-file") { bodyPath = a; return "<BODY>"; }
-  if (a.startsWith("body=@")) { bodyPath = a.slice(6); return "body=@<BODY>"; }
-  return a;
-});
-const body = bodyPath === null ? null : fs.readFileSync(bodyPath, "utf8");
-const inTmp = bodyPath === null ? null
-  : path.dirname(bodyPath) === process.env.FAKE_GH_TMP && /^post-review-body-\d+\.md$/.test(path.basename(bodyPath));
-fs.appendFileSync(process.env.FAKE_GH_LOG, JSON.stringify({ args: norm, stdin, body, inTmp }) + "\n");
-if (body !== null) fs.writeFileSync(process.env.FAKE_GH_STATE, body);
-const rules = JSON.parse(fs.readFileSync(process.env.FAKE_GH_SCRIPT, "utf8"));
-const key = JSON.stringify(norm);
-const rule = rules.find((r) => JSON.stringify(r.args) === key);
-if (!rule) {
-  process.stderr.write(`fake gh: unscripted call ${key}\n`);
-  process.exit(99);
-}
-let out = rule.stdout;
-if (out.includes("{{BODY}}")) {
-  const posted = fs.existsSync(process.env.FAKE_GH_STATE) ? fs.readFileSync(process.env.FAKE_GH_STATE, "utf8") : "";
-  out = out.split("{{BODY}}").join(JSON.stringify(posted).slice(1, -1));
-}
-process.stdout.write(out);
-process.stderr.write(rule.stderr || "");
-process.exitCode = rule.code ?? 0;
-"#;
+/// The SHA-256 of the node fake `gh` the goldens were recorded with. It was
+/// replaced by `tribunal-test-gh` in its `post-review` mode, which records
+/// and answers the same way, byte for byte; each fixed case's input still
+/// names it.
+const RECORDED_FAKE_GH_SHA: &str =
+    "86a0359cb53e709a966baa22947fd3e941c0ab02e474ad710252edb53a063eb6";
 
 const REPO: &str = "acme/widgets";
 const PR: &str = "42";
@@ -159,29 +135,14 @@ struct Dirs {
     fake: PathBuf,
 }
 
-/// The directory holding the fake `gh`, written once for the whole binary.
-/// A case that wrote its own and ran it at once could fail to start it with
-/// `ETXTBSY`: a child another thread forks meanwhile keeps the write
-/// descriptor until it execs. Running it once here, retrying while busy,
-/// leaves no write descriptor for a case to meet.
+/// The directory holding the fake `gh`, a link to `tribunal-test-gh`, made
+/// once for the whole binary.
 fn fake_dir() -> PathBuf {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
         let dir = scratch("post-review-fake");
-        let gh = dir.join("gh");
-        std::fs::write(&gh, FAKE_GH).unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
-        for _ in 0..200 {
-            match std::process::Command::new(&gh).output() {
-                Ok(_) => return dir,
-                Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
-                    std::thread::sleep(std::time::Duration::from_millis(5));
-                }
-                Err(e) => panic!("{}: {e}", gh.display()),
-            }
-        }
-        panic!("{} stayed busy for a second", gh.display());
+        std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_tribunal-test-gh"), dir.join("gh")).unwrap();
+        dir
     })
     .clone()
 }
@@ -211,6 +172,7 @@ fn setup(root: &Path, name: &str, case: &Case) -> Dirs {
 fn fake_env(d: &Dirs, side: &str) -> Vec<(&'static str, String)> {
     let s = |p: PathBuf| p.to_string_lossy().into_owned();
     vec![
+        ("TRIBUNAL_TEST_GH", "post-review".to_owned()),
         ("FAKE_GH_SCRIPT", s(d.dir.join("rules.json"))),
         ("FAKE_GH_LOG", s(d.dir.join(format!("calls-{side}.jsonl")))),
         ("FAKE_GH_STATE", s(d.dir.join(format!("state-{side}")))),
@@ -772,7 +734,7 @@ fn fixtures() -> Vec<Case> {
 fn fixed_sides(test: &str, root: &Path, cases: &[Case]) -> Vec<(Side, Run)> {
     let inputs: Vec<Value> = cases
         .iter()
-        .map(|c| json!({"name": c.name, "case": sha(&format!("{c:?}")), "fakeGh": sha(FAKE_GH)}))
+        .map(|c| json!({"name": c.name, "case": sha(&format!("{c:?}")), "fakeGh": RECORDED_FAKE_GH_SHA}))
         .collect();
     let recorded = fixed(
         FIXED,
@@ -951,31 +913,28 @@ fn review() -> impl Strategy<Value = Value> {
 const SCRIPTS: [&str; 2] = ["post-review.mjs", "strip-draft-comments.mjs"];
 const GOLDEN: &str = "post-review.json";
 
-/// The scripts and the fake `gh`, which decides what a call records.
+/// The scripts. The golden also keeps the text of the node fake `gh` it was
+/// recorded with, which is gone: the calls `tribunal-test-gh` logs for the
+/// port are compared with the calls that fake logged for the script.
 fn recorded_with() -> Value {
     let texts: BTreeMap<&str, String> = SCRIPTS
         .iter()
         .map(|s| (*s, std::fs::read_to_string(script(s)).unwrap()))
         .collect();
-    json!({"scripts": texts, "fakeGh": FAKE_GH})
+    json!({ "scripts": texts })
 }
 
 /// What changed since `with` was recorded: a script still on disk whose text
-/// differs (one that is gone was retired and is skipped), or the fake `gh`,
-/// which this file holds and so is always checked.
+/// differs. One that is gone was retired and is skipped.
 fn stale_with(with: &Value) -> Vec<String> {
-    let mut stale: Vec<String> = SCRIPTS
+    SCRIPTS
         .iter()
         .filter(|s| {
             on_disk(&format!("skills/review-pr/scripts/{s}"))
                 .is_some_and(|text| with["scripts"][**s] != json!(text))
         })
         .map(|s| (*s).to_owned())
-        .collect();
-    if with["fakeGh"] != json!(FAKE_GH) {
-        stale.push("the fake gh".into());
-    }
-    stale
+        .collect()
 }
 
 /// The script's run and calls with the machine's paths replaced by

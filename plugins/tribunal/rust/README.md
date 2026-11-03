@@ -600,12 +600,15 @@ latest Claude Code with npm on every run, so a change to how the package
 installs shows up there first.
 
 The context goldens were recorded running each script against the same `gh`
-recordings as its port, with `crates/tribunal-context/tests/shim/gh`, a node
-script, first on `PATH`. The port is passed `tribunal-test-gh` as `Tools.gh`: a binary of
-`tribunal-context` (`src/bin/tribunal-test-gh.rs`) that answers the same way
-without starting node for each call, and hands to the node shim whatever it
-cannot reproduce exactly. `tests/shim.rs` checks the two byte for byte. A call
-nobody recorded exits 99.
+recordings as its port, with a node shim for `gh` first on `PATH`. The port is
+passed `tribunal-test-gh` as `Tools.gh`: a binary of `tribunal-context`
+(`src/bin/tribunal-test-gh.rs`) that answers as that shim did, byte for byte,
+and needs no node. A call nobody recorded exits 99. `TRIBUNAL_TEST_GH` picks
+a mode for the other fake `gh`s the goldens were recorded with: `bytes`
+writes raw bytes, invalid UTF-8 included, `clone` makes `gh repo clone`
+clone a local bare repository, and `post-review` logs each posted review
+body and answers from scripted rules. `tests/shim.rs` checks the recorded
+answers against what the node shim printed, kept in the test.
 
 `tribunal selfcheck` is the former `workflows/harness-selfcheck.js` (removed
 in v115) as a subcommand (`tribunal-pipeline::selfcheck`). The audit is
@@ -623,7 +626,7 @@ down, not applied, unless `--apply`, and the battery is `cargo test --workspace 
 
 ```bash
 cd plugins/tribunal/rust
-cargo test                       # unit + differential (two tests run a node stand-in gh)
+cargo test                       # unit + differential (four tests compare against node itself)
 TRIBUNAL_TS_FROM=<repo> cargo test -- --include-ignored   # <repo>/node_modules has typescript
 ```
 
@@ -651,8 +654,11 @@ The full suite runs in the `linux` job, on the runner the `RUNNER` repository
 variable names (a self-hosted one costs no Actions minutes), else on GitHub's
 `ubuntu-24.04`. A pull request from a fork always runs on GitHub's runners:
 the repository is public, and only a branch of this repository, a manual run
-or a release tag reaches the self-hosted ones. The runner needs node 24, bash, git, python3 (two of the scripts the tests
-run call it), a C linker, and the
+or a release tag reaches the self-hosted ones. The runner needs node 24
+(for the four tests that compare number conversions, `JSON.stringify` and
+`node:path` against node itself; the stand-in `gh` is a compiled binary),
+bash, git, python3 (two of the scripts the tests run call it), a C linker,
+and the
 `en_US.UTF-8` locale, which the differential tests set; the job checks for
 the locale and installs rustup when it is missing. It must not run as root:
 the tests that `chmod 000` a file expect the read to fail. The differential tests compare the port

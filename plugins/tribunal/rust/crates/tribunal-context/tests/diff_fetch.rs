@@ -18,11 +18,13 @@
 //! left) and `region` (the region's functions through
 //! `rust/oracle/region-oracle.mjs`). Inputs and outputs past 16 KiB, such as
 //! the 60,000-byte diffs at the window edges, are kept as their SHA-256.
-//! Editing a script, the region, a driver or the recorded `gh` without a
-//! regeneration fails the oracle that reads it; once any file an oracle reads
-//! is deleted, the oracle is retired, that check is skipped, and its recorded
-//! outputs are final. Regenerate the whole binary at once, on a Mac, after
-//! changing them, so that every case is recorded:
+//! Editing a script, the region or a driver without a regeneration fails the
+//! oracle that reads it; once any file an oracle reads is deleted, the oracle
+//! is retired, that check is skipped, and its recorded outputs are final. The
+//! node stand-ins for `gh` the golden was recorded with are gone, replaced by
+//! `tribunal-test-gh`, so every oracle that ran one is retired. Regenerate
+//! the whole binary at once, on a Mac, after changing them, so that every
+//! case is recorded:
 //! `TRIBUNAL_REGEN_GOLDENS=1 cargo test -p tribunal-context --test diff_fetch`.
 mod common;
 use common::*;
@@ -643,18 +645,28 @@ fn region_text(root: &Path) -> Option<String> {
     Some(slices.join("\n"))
 }
 
+/// The node stand-ins for `gh` the golden was recorded with, by their key in
+/// `recordedWith` and their file name in a `stand_ins` directory: the
+/// recorded `gh`, the one that wrote raw bytes and the one that cloned.
+const STAND_INS: [(&str, &str); 3] = [
+    ("gh shim", "gh"),
+    ("BYTES_GH", "BYTES_GH"),
+    ("CLONING_GH", "CLONING_GH"),
+];
+
 /// What each oracle reads besides its input, under the plugin `root`: the
 /// scripts it runs and every module they import, the workflow region it
-/// slices, the recorded `gh` at `shim`, and this file's drivers and fake
-/// `gh`s. An oracle is `None` once any file it reads is gone: it is retired,
-/// and its golden is final.
+/// slices, the node stand-ins for `gh` in `stand_ins`, and this file's
+/// drivers. An oracle is `None` once any file it reads is gone: it is
+/// retired, and its golden is final. The stand-ins were replaced by
+/// `tribunal-test-gh`, so a real run passes `None` for them.
 fn oracle_texts(
     root: &Path,
-    shim: &Path,
+    stand_ins: Option<&Path>,
 ) -> BTreeMap<&'static str, Option<BTreeMap<String, String>>> {
     let read = |entries: &[&str],
                 region: bool,
-                gh: bool,
+                ghs: &[&str],
                 own: &[(&str, &str)]|
      -> Option<BTreeMap<String, String>> {
         let mut texts = BTreeMap::new();
@@ -664,8 +676,10 @@ fn oracle_texts(
         if region {
             texts.insert(format!("{WORKFLOW}#{REGION}"), region_text(root)?);
         }
-        if gh {
-            texts.insert("gh shim".to_owned(), std::fs::read_to_string(shim).ok()?);
+        for key in ghs {
+            let (_, file) = STAND_INS.iter().find(|(k, _)| k == key).unwrap();
+            let text = std::fs::read_to_string(stand_ins?.join(file)).ok()?;
+            texts.insert((*key).to_owned(), text);
         }
         for (k, v) in own {
             texts.insert((*k).to_owned(), (*v).to_owned());
@@ -678,12 +692,11 @@ fn oracle_texts(
             read(
                 &[SCRIPT],
                 false,
-                true,
+                &["gh shim", "BYTES_GH"],
                 &[
                     ("FETCH_DRIVER", FETCH_DRIVER),
                     ("EXPORTS_DRIVER", EXPORTS_DRIVER),
                     ("BYTES_DRIVER", BYTES_DRIVER),
-                    ("BYTES_GH", BYTES_GH),
                 ],
             ),
         ),
@@ -692,14 +705,11 @@ fn oracle_texts(
             read(
                 &[SCRIPT, EXTRACT],
                 true,
-                true,
-                &[
-                    ("WORKTREE_DRIVER", WORKTREE_DRIVER),
-                    ("CLONING_GH", CLONING_GH),
-                ],
+                &["gh shim", "CLONING_GH"],
+                &[("WORKTREE_DRIVER", WORKTREE_DRIVER)],
             ),
         ),
-        ("region", read(&[REGION_ORACLE], true, false, &[])),
+        ("region", read(&[REGION_ORACLE], true, &[], &[])),
     ])
 }
 
@@ -736,14 +746,14 @@ fn recorded(oracle: &str) -> Option<&'static Value> {
             let text = std::fs::read_to_string(&path)
                 .unwrap_or_else(|e| panic!("{}: {e}; {REGENERATE}", path.display()));
             let golden: Value = serde_json::from_str(&text).unwrap();
-            let now = oracle_texts(&plugin_root(), &shim_dir().join("gh"));
+            let now = oracle_texts(&plugin_root(), None);
             let stale_ones = stale(&golden["recordedWith"], &now);
             Some((golden, stale_ones))
         })
         .as_ref()?;
     assert!(
         !stale_ones.contains(&oracle),
-        "{oracle}: a script, the region, a driver or the gh shim it reads changed since {} was recorded; {REGENERATE}",
+        "{oracle}: a script, the region or a driver it reads changed since {} was recorded; {REGENERATE}",
         golden_path().display()
     );
     Some(&golden[oracle])
@@ -767,7 +777,7 @@ fn record(oracle: &str, name: &str, entry: Value, dir: &Path) {
         );
     }
     let with = WITH.get_or_init(|| {
-        let texts: BTreeMap<_, _> = oracle_texts(&plugin_root(), &shim_dir().join("gh"))
+        let texts: BTreeMap<_, _> = oracle_texts(&plugin_root(), None)
             .into_iter()
             .map(|(k, v)| {
                 (
@@ -2689,20 +2699,6 @@ async fn fetch_pr_context_matches_js_on_more_write_errors() {
     assert_eq!(out["errors"][0]["step"], "diff-write");
 }
 
-/// A `gh` that writes raw bytes, in two writes when the recording splits
-/// them, so invalid UTF-8 and a sequence cut between reads reach both sides.
-const BYTES_GH: &str = r#"#!/usr/bin/env node
-const { readFileSync, appendFileSync } = require("node:fs");
-const args = process.argv.slice(2);
-if (process.env.GH_CALL_LOG) appendFileSync(process.env.GH_CALL_LOG, JSON.stringify(args) + "\n");
-const hit = JSON.parse(readFileSync(process.env.GH_BYTES, "utf8")).find((c) => JSON.stringify(c.args) === JSON.stringify(args));
-if (!hit) process.exit(99);
-const out = Buffer.from(hit.hex, "hex");
-const cut = hit.cut ?? out.length;
-process.stdout.write(out.subarray(0, cut));
-setTimeout(() => { process.stdout.write(out.subarray(cut)); process.exitCode = hit.code; }, 150);
-"#;
-
 const BYTES_DRIVER: &str = r#"
 import { pathToFileURL } from "node:url";
 const [tmp, log, ghdir, script, ...rest] = process.argv.slice(2);
@@ -2717,14 +2713,14 @@ fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
+/// `gh` is `tribunal-test-gh` in its `bytes` mode, which writes raw bytes, in
+/// two writes when the recording splits them, so invalid UTF-8 and a
+/// sequence cut between reads reach both sides.
 #[tokio::test]
 async fn fetch_pr_context_matches_js_on_invalid_utf8() {
     let dir = scratch("fetch-bytes");
     let ghdir = dir.join("bin");
-    std::fs::create_dir_all(&ghdir).unwrap();
-    let gh = ghdir.join("gh");
-    std::fs::write(&gh, BYTES_GH).unwrap();
-    std::fs::set_permissions(&gh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let gh = link_gh(&ghdir);
     let tails: [(&[u8], Option<usize>); 8] = [
         (b"caf\xe9 latin-1\n", None),
         (b"A\xe0\x80A\xed\xa0\x80A\xf4\x90\x80\x80\xff\xfe\n", None),
@@ -2790,6 +2786,7 @@ async fn fetch_pr_context_matches_js_on_invalid_utf8() {
                     .arg(&driver)
                     .args(&args)
                     .env("GH_BYTES", &rec_path)
+                    .env("TRIBUNAL_TEST_GH", "bytes")
                     .output()
                     .unwrap();
                 assert!(
@@ -2812,6 +2809,7 @@ async fn fetch_pr_context_matches_js_on_invalid_utf8() {
             gh: gh.to_string_lossy().into_owned(),
             git: "git".into(),
             env: vec![
+                ("TRIBUNAL_TEST_GH".into(), "bytes".into()),
                 ("GH_BYTES".into(), rec_path.clone().into_os_string()),
                 ("GH_CALL_LOG".into(), rs_log.clone().into_os_string()),
             ],
@@ -2890,31 +2888,18 @@ async fn head_worktree_matches_the_bash_with_a_relative_tmpdir() {
     assert_eq!(head(&rs.repo, &rs_wt), o.c2);
 }
 
-/// A `gh` whose `repo clone` really clones, from the bare remote in
-/// `GH_BARE`, so the clone fallback's success branch runs on both sides.
-const CLONING_GH: &str = r#"#!/usr/bin/env node
-const { appendFileSync } = require("node:fs");
-const { spawnSync } = require("node:child_process");
-const args = process.argv.slice(2);
-if (process.env.GH_CALL_LOG) appendFileSync(process.env.GH_CALL_LOG, JSON.stringify(args) + "\n");
-if (args[0] !== "repo" || args[1] !== "clone" || args[4] !== "--") process.exit(99);
-const r = spawnSync("git", ["clone", ...args.slice(5), "file://" + process.env.GH_BARE, args[3]], { stdio: "inherit" });
-process.exit(r.status ?? 1);
-"#;
-
 /// The clone fallback when it succeeds: the remote is not the PR's repo, so
 /// no worktree is tried, and `gh repo clone` plus a fetch of the sha build
-/// the checkout.
+/// the checkout. `gh` is `tribunal-test-gh` in its `clone` mode, whose `repo
+/// clone` really clones, from the bare remote in `GH_BARE`, so the clone
+/// fallback's success branch runs on both sides.
 #[tokio::test]
 async fn head_worktree_clones_as_the_bash_does() {
     let dir = wt_scratch("wt-clone");
     let o = origin(&dir);
     let (js, rs) = twin_pair(&dir, &o);
     let bin = dir.join("bin");
-    std::fs::create_dir_all(&bin).unwrap();
-    let gh = bin.join("gh");
-    std::fs::write(&gh, CLONING_GH).unwrap();
-    std::fs::set_permissions(&gh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let gh = link_gh(&bin);
     // c2 is on `feature`, which a --depth 1 clone of `main` does not hold.
     let context = ctx(&o.c2);
     let input = json!({"context": context, "repo": "other/thing", "pr": "350"});
@@ -2942,6 +2927,7 @@ async fn head_worktree_clones_as_the_bash_does() {
             .current_dir(&js.repo)
             .env("PATH", path)
             .env("GH_BARE", &o.bare)
+            .env("TRIBUNAL_TEST_GH", "clone")
             .output()
             .unwrap();
         assert!(
@@ -2957,6 +2943,7 @@ async fn head_worktree_clones_as_the_bash_does() {
         gh: gh.to_string_lossy().into_owned(),
         git: "git".into(),
         env: vec![
+            ("TRIBUNAL_TEST_GH".into(), "clone".into()),
             ("GH_BARE".into(), o.bare.clone().into_os_string()),
             ("GH_CALL_LOG".into(), rs.log.clone().into_os_string()),
         ],
@@ -3083,21 +3070,22 @@ fn a_retired_oracle_is_not_held_to_the_golden() {
         serde_json::from_str(&std::fs::read_to_string(golden_path()).unwrap()).unwrap();
     let with = &golden["recordedWith"];
     let root = scratch("fetch-retired");
-    let shim = root.join("shim/gh");
+    let stand_ins = root.join("stand-ins");
     for texts in with.as_object().unwrap().values() {
         for (key, text) in texts.as_object().unwrap() {
-            let path = match key.split_once('#') {
-                Some((file, _)) => root.join(file),
-                None if key == "gh shim" => shim.clone(),
-                None if key.contains('/') => root.join(key),
-                // This file's own drivers and fake `gh`s.
-                None => continue,
+            let stand_in = STAND_INS.iter().find(|(k, _)| k == key);
+            let path = match (key.split_once('#'), stand_in) {
+                (Some((file, _)), _) => root.join(file),
+                (None, Some((_, file))) => stand_ins.join(file),
+                (None, None) if key.contains('/') => root.join(key),
+                // This file's own drivers.
+                (None, None) => continue,
             };
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(path, text.as_str().unwrap()).unwrap();
         }
     }
-    let now = || oracle_texts(&root, &shim);
+    let now = || oracle_texts(&root, Some(&stand_ins));
     assert_eq!(stale(with, &now()), Vec::<&str>::new());
 
     let script = root.join(SCRIPT);

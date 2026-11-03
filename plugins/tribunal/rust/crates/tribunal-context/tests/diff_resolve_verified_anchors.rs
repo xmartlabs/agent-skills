@@ -772,10 +772,12 @@ fn golden_path() -> PathBuf {
 }
 
 /// What the script reads besides its input, under the plugin `root`: itself,
-/// every module it reaches through a relative import, and the recorded `gh`
-/// it calls. `None` once any of them is gone from disk: the script is retired
-/// and the golden is final, so there is nothing left to hold it to.
-fn oracle_texts(root: &Path, shim: &Path) -> Option<BTreeMap<String, String>> {
+/// every module it reaches through a relative import, and the node shim for
+/// `gh` it called, at `shim`. `None` once any of them is gone from disk: the
+/// script is retired and the golden is final, so there is nothing left to
+/// hold it to. The shim was replaced by `tribunal-test-gh`, so a real run
+/// passes `None` for it.
+fn oracle_texts(root: &Path, shim: Option<&Path>) -> Option<BTreeMap<String, String>> {
     let import = regex::Regex::new(r#"(?:from|import)\s*\(?\s*"(\.{1,2}/[^"]+)""#).unwrap();
     let root = root.canonicalize().ok()?;
     let mut texts = BTreeMap::new();
@@ -795,12 +797,12 @@ fn oracle_texts(root: &Path, shim: &Path) -> Option<BTreeMap<String, String>> {
         todo.extend(import.captures_iter(&text).map(|m| dir.join(&m[1])));
         texts.insert(key, text);
     }
-    texts.insert("gh shim".into(), std::fs::read_to_string(shim).ok()?);
+    texts.insert("gh shim".into(), std::fs::read_to_string(shim?).ok()?);
     Some(texts)
 }
 
 fn recorded_with() -> Option<BTreeMap<String, String>> {
-    oracle_texts(&plugin_root(), &shim_dir().join("gh"))
+    oracle_texts(&plugin_root(), None)
 }
 
 /// Whether the oracle is still on disk and differs from what the golden was
@@ -1320,7 +1322,7 @@ fn a_retired_script_is_not_held_to_the_golden() {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, text.as_str().unwrap()).unwrap();
     }
-    assert!(!stale(with, oracle_texts(&root, &shim).as_ref()));
+    assert!(!stale(with, oracle_texts(&root, Some(&shim)).as_ref()));
     for key in [
         "lib/resolve-verified-anchors.mjs",
         "rust/crates/tribunal-context/src/js/relay.mjs",
@@ -1328,12 +1330,18 @@ fn a_retired_script_is_not_held_to_the_golden() {
         let path = root.join(key);
         let text = std::fs::read_to_string(&path).unwrap();
         std::fs::write(&path, format!("{text}// edited\n")).unwrap();
-        assert!(stale(with, oracle_texts(&root, &shim).as_ref()), "{key}");
+        assert!(
+            stale(with, oracle_texts(&root, Some(&shim)).as_ref()),
+            "{key}"
+        );
         std::fs::remove_file(&path).unwrap();
-        assert!(oracle_texts(&root, &shim).is_none(), "{key}");
-        assert!(!stale(with, oracle_texts(&root, &shim).as_ref()), "{key}");
+        assert!(oracle_texts(&root, Some(&shim)).is_none(), "{key}");
+        assert!(
+            !stale(with, oracle_texts(&root, Some(&shim)).as_ref()),
+            "{key}"
+        );
         std::fs::write(&path, text).unwrap();
     }
     std::fs::write(&shim, "edited").unwrap();
-    assert!(stale(with, oracle_texts(&root, &shim).as_ref()));
+    assert!(stale(with, oracle_texts(&root, Some(&shim)).as_ref()));
 }
