@@ -21,23 +21,23 @@
 # The gate itself is release.mjs, which refuses to record on a red battery. This
 # script adds no judgment; it only makes the sequence hard to perform wrongly.
 #
-# HOW VERSIONS ACTUALLY MOVE, because this script only expresses half of it.
-# A freeze takes the next integer and lands as N.0.0. Minor and patch bumps are
-# hand-edited into .claude-plugin/plugin.json inside the ordinary feature PR that
-# earns them, and never come through here. tribunal has never used a non-zero
-# minor, so the rule is a convention rather than a property of the tooling. A further wrinkle worth
-# knowing: on every recent freeze checked (v60, v62, v63, v64) the commit does
-# not touch plugin.json at all, because the manifest was already at the target
-# version, set by hand on the same branch, so step 2/5 below rewrote the value
-# that was already there. The script agreed with the human by matching the next
-# integer, which is not the same as the script deciding the version.
+# HOW VERSIONS MOVE. One semver number names the plugin, its tag and the
+# binary it pins. A fix, docs or a template change is a patch (115.0.1); a
+# feature or a new binary that breaks nothing is a minor (115.1.0); a removed
+# flag or a profile that stops loading is a major (116.0.0). A freeze that pins
+# a new tribunal-rust binary pins the one tagged with this same version
+# (tribunal-rust-v115.1.0 ships in tribunal/v115.1.0); a freeze with no binary
+# change keeps the previous pin. Versions only go up: the plugin cache keys
+# updates off plugin.json, and a lower number there may never reach anyone.
+# Freezes up to 115 took the next integer as N.0.0, and their binaries had a
+# 0.x numbering of their own.
 #
 # Usage:
-#   ./release.sh 31                        # freeze as tribunal/v31, version 31.0.0
-#   ./release.sh 31 --dry-run              # print the plan, touch nothing
-#   ./release.sh 31 --notes-file <path>    # take the row's notes from a file
+#   ./release.sh 115.1.0                   # freeze as tribunal/v115.1.0
+#   ./release.sh 115.1.0 --dry-run         # print the plan, touch nothing
+#   ./release.sh 115.1.0 --notes-file <path>   # take the row's notes from a file
 #                                          # instead of opening $EDITOR
-#   ./release.sh 31 --portable             # no test-data directory on this machine:
+#   ./release.sh 115.1.0 --portable        # no test-data directory on this machine:
 #                                          # run only the replays that need none,
 #                                          # and say so in the row
 set -euo pipefail
@@ -70,11 +70,25 @@ done
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 step() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
-[ -n "$VERSION" ] || die "usage: ./release.sh <N> [--dry-run]   (N is the version number, e.g. 31)"
-[[ "$VERSION" =~ ^[0-9]+$ ]] || die "version must be a bare number — got '$VERSION'. The tag becomes tribunal/v\$N."
+[ -n "$VERSION" ] || die "usage: ./release.sh <major.minor.patch> [--dry-run]   (e.g. 115.1.0)"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "version must be major.minor.patch, got '$VERSION'. The tag becomes tribunal/v<version>."
 
 TAG="tribunal/v$VERSION"
-SEMVER="$VERSION.0.0"
+SEMVER="$VERSION"
+
+# 0 when $1 is a higher version than $2, comparing each part as a number.
+semver_gt() {
+  local a b i
+  IFS=. read -r -a a <<<"$1"
+  IFS=. read -r -a b <<<"$2"
+  for i in 0 1 2; do
+    [ "${a[i]:-0}" -gt "${b[i]:-0}" ] && return 0
+    [ "${a[i]:-0}" -lt "${b[i]:-0}" ] && return 1
+  done
+  return 1
+}
+CURRENT=$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$MANIFEST" | head -1)
+semver_gt "$SEMVER" "$CURRENT" || die "$SEMVER is not higher than the current version $CURRENT. Versions only go up: /plugin update keys off this number."
 
 cd "$ROOT"
 git rev-parse --git-dir >/dev/null 2>&1 || die "not inside a git repository"
@@ -119,9 +133,21 @@ if [ "$BEHIND" -gt 0 ]; then
   echo "   note: $BEHIND commit(s) behind $REMOTE/$DEFAULT_BRANCH, none touching $(basename "$ROOT"). Freezing anyway."
 fi
 
+# A new binary carries this freeze's version. The pin on the default branch is
+# the previous freeze's; when this tree pins another one, it has to be
+# tribunal-rust-v$SEMVER.
+PIN_FILE="$ROOT/rust/release.json"
+pin_of() { sed -n 's/^ *"tag": *"\([^"]*\)".*/\1/p' | head -1; }
+PIN=$(pin_of < "$PIN_FILE")
+PREV_PIN=$(git show "$REMOTE/$DEFAULT_BRANCH:$(git rev-parse --show-prefix)rust/release.json" 2>/dev/null | pin_of || true)
+if [ "$PIN" != "$PREV_PIN" ] && [ "$PIN" != "tribunal-rust-v$SEMVER" ]; then
+  die "this freeze pins $PIN, a new binary, so it must be tribunal-rust-v$SEMVER: tag the binary with the version of the freeze that first ships it"
+fi
+
 step "Plan"
 cat <<PLAN
-  version    $SEMVER   (manifest: .claude-plugin/plugin.json)
+  version    $SEMVER   (manifest: .claude-plugin/plugin.json, now $CURRENT)
+  binary     $PIN
   tag        $TAG
   branch     $BRANCH -> $REMOTE
   harness    $("$ROOT/bin/tribunal-engine" run -- harness-version --short)

@@ -18,7 +18,7 @@
 //
 // Usage:
 //   node rust/scripts/release.mjs             # run the gate, print the verdict
-//   node rust/scripts/release.mjs --record --tag tribunal/v44 --notes-file <path>
+//   node rust/scripts/release.mjs --record --tag tribunal/v115.1.0 --notes-file <path>
 //
 // Exits non-zero if anything in the battery is red. `--record` on a red gate is
 // refused: a RELEASES.md row is a claim that the battery passed.
@@ -87,7 +87,7 @@ if (record && !notesFileArg) {
       "  The notes cell is what makes a freeze row worth keeping — what changed, what was\n" +
       "  measured, what stayed open. It cannot be defaulted and then fixed later, because\n" +
       "  release.sh commits immediately after this step.\n" +
-      "  Use ./release.sh <N>, which collects it in $EDITOR and passes it here.",
+      "  Use ./release.sh <version>, which collects it in $EDITOR and passes it here.",
   );
   process.exit(2);
 }
