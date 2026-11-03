@@ -289,18 +289,15 @@ jobs:
           ../bin/tribunal-engine run -- harness-version --short | grep -E '^pr-harness-[0-9a-f]{12}$'
           [ -z "$(../bin/tribunal-engine run -- lost-runs --recent 7)" ]
 
-  # The jobs a tag runs (build, build-darwin, release) take the runner the
-  # RELEASE_RUNNER variable names, else RUNNER: a runner that never builds pull
-  # requests keeps their code away from the release and its write token.
-  #
-  # The Linux release binary, built on the Linux runner in the container of
-  # rust/docker/Dockerfile: a static musl binary. The Windows and macOS ones
-  # build on GitHub's own runners, below.
+  # The jobs a tag runs build every release binary on GitHub's own runners,
+  # each a fresh machine that builds no pull request's code: Linux on
+  # ubuntu-24.04 (rust/scripts/build-linux.sh, a static musl binary), macOS on
+  # macos-15 (rust/scripts/build-darwin.sh) and Windows on windows-2025. The
+  # `linux-release-build` job runs the Linux script on every pull request.
   # While the repository is private, GitHub-hosted runners bill the
   # organization's Actions minutes, macOS at ten times the Linux rate, and a
   # release builds four binaries from scratch. A tag pushed then builds
-  # nothing: release-guard fails and says why. Build locally meanwhile with
-  # rust/docker/check.sh and rust/scripts/build-darwin.sh.
+  # nothing: release-guard fails and says why.
   release-guard:
     if: startsWith(github.ref, 'refs/tags/tribunal-rust-v') && github.event.repository.private
     runs-on: ubuntu-24.04
@@ -311,12 +308,7 @@ jobs:
 
   build:
     if: startsWith(github.ref, 'refs/tags/tribunal-rust-v') && !github.event.repository.private
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - { target: x86_64-unknown-linux-musl, stage: linux-bin, bin: tribunal, archive: tar.gz }
-    runs-on: ${{ vars.RELEASE_RUNNER || vars.RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write
@@ -337,52 +329,24 @@ jobs:
           fi
           git fetch --no-tags -q origin main
           git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD || { echo "the tag's commit is not on main"; exit 1; }
-      # A builder of its own and no cache: the runner also builds pull
-      # requests, whose BuildKit cache mounts a release must not reuse.
+      - name: musl-tools
+        run: sudo apt-get update -q && sudo apt-get install -y --no-install-recommends musl-tools
       - name: build
-        working-directory: plugins/tribunal
-        run: |
-          builder="tribunal-release-$GITHUB_RUN_ID-${{ strategy.job-index }}"
-          docker buildx create --name "$builder" --driver docker-container >/dev/null
-          trap 'docker buildx rm "$builder" >/dev/null' EXIT
-          # A tar, not type=local: that exporter keeps root as the owner, which
-          # a runner that is not root cannot set.
-          docker buildx build --builder "$builder" --no-cache \
-            -f rust/docker/Dockerfile --target ${{ matrix.stage }} \
-            --output "type=tar,dest=$RUNNER_TEMP/bin.tar" --progress plain .
-          mkdir -p "$RUNNER_TEMP/bin"
-          tar -xf "$RUNNER_TEMP/bin.tar" -C "$RUNNER_TEMP/bin" --no-same-owner
-      - name: package
-        run: |
-          # tribunal-v0.1.0-<target>: rust/scripts/pin-release.mjs and the
-          # launcher (bin/tribunal-engine) read this shape.
-          name="tribunal-${GITHUB_REF_NAME#tribunal-rust-}-${{ matrix.target }}"
-          mkdir -p "$RUNNER_TEMP/$name"
-          cp "$RUNNER_TEMP/bin/${{ matrix.bin }}" "$RUNNER_TEMP/$name/"
-          cd "$RUNNER_TEMP"
-          if [ "${{ matrix.archive }}" = zip ]; then
-            python3 -m zipfile -c "$name.zip" "$name"
-          else
-            tar -czf "$name.tar.gz" "$name"
-          fi
-          asset="$name.${{ matrix.archive }}"
-          sha256sum "$asset" > "$asset.sha256"
-          echo "ASSET=$asset" >> "$GITHUB_ENV"
-      # The musl binary starts here before it ships.
-      - if: matrix.archive == 'tar.gz'
-        run: '"$RUNNER_TEMP/bin/${{ matrix.bin }}" --version'
+        working-directory: .
+        env:
+          OUT_DIR: ${{ runner.temp }}/linux
+        run: bash plugins/tribunal/rust/scripts/build-linux.sh
       # A signed statement that this workflow, at this commit, built the
       # archive: `gh attestation verify <archive> --repo xmartlabs/agent-skills`
       # checks it before pinning.
       - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
-          subject-path: ${{ runner.temp }}/${{ env.ASSET }}
+          subject-path: ${{ runner.temp }}/linux/*.tar.gz
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: ${{ matrix.target }}
-          path: |
-            ${{ runner.temp }}/${{ env.ASSET }}
-            ${{ runner.temp }}/${{ env.ASSET }}.sha256
+          name: x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/linux/*-x86_64-unknown-linux-musl.tar.gz*
+          if-no-files-found: error
           retention-days: 1
 
   # rust/scripts/build-darwin.sh builds both macOS archives at this commit,
@@ -503,7 +467,7 @@ jobs:
 
   release:
     needs: [build, build-darwin, build-windows]
-    runs-on: ${{ vars.RELEASE_RUNNER || vars.RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
@@ -534,8 +498,25 @@ jobs:
 
   # `macos` is skipped only in a private repository without MAC_RUNNER, and
   # that passes; it failing does not.
+  # The Linux release build, exactly as a tag runs it, so a change that
+  # breaks it fails here and not on the tag.
+  linux-release-build:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: musl-tools
+        run: sudo apt-get update -q && sudo apt-get install -y --no-install-recommends musl-tools
+      - name: build
+        working-directory: .
+        env:
+          OUT_DIR: ${{ runner.temp }}/linux
+        run: bash plugins/tribunal/rust/scripts/build-linux.sh
+
   gate:
-    needs: [macos, linux, windows]
+    needs: [macos, linux, windows, linux-release-build]
     if: always() && github.event_name != 'push'
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.RUNNER || 'ubuntu-24.04' }}
     steps:
@@ -543,8 +524,9 @@ jobs:
           MACOS: ${{ needs.macos.result }}
           LINUX: ${{ needs.linux.result }}
           WINDOWS: ${{ needs.windows.result }}
+          LINUX_RELEASE: ${{ needs.linux-release-build.result }}
         working-directory: .
         run: |
-          echo "macos: $MACOS, linux: $LINUX, windows: $WINDOWS"
+          echo "macos: $MACOS, linux: $LINUX, windows: $WINDOWS, linux-release-build: $LINUX_RELEASE"
           { [ "$MACOS" = success ] || [ "$MACOS" = skipped ]; } &&
-            [ "$LINUX" = success ] && [ "$WINDOWS" = success ]
+            [ "$LINUX" = success ] && [ "$WINDOWS" = success ] && [ "$LINUX_RELEASE" = success ]

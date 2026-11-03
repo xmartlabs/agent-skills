@@ -639,25 +639,22 @@ in `tribunal-context/src/proc.rs` and its callers, and the prompt reaches
 `claude -p` on stdin, because Windows caps a command line at 32,767
 characters.
 
-`docker/check.sh` builds the Linux (static musl) and Windows binaries in
-containers and starts each on a machine with nothing else installed, the
-Windows one under Wine. Wine shows the binary links and starts; it does not
-show that killing a process tree or finding a `.cmd` behaves as on Windows.
 The `windows` job in `.github/workflows/tribunal-rust.yml`, on every pull
 request that touches this directory, runs on GitHub's `windows-2025` runner:
 the release's target, `x86_64-pc-windows-msvc`, with clippy, the unit tests,
 a Claude Code installed with npm that `launch.rs` has to start, the release
-build and `--version`, on a real Windows machine, so the Wine limit
-does not apply to it. `docker/check.sh` stays for a local check from macOS or
-Linux, and the release still cross-builds the Windows binary in the
-`windows-msvc-bin` stage.
+build and `--version`, on a real Windows machine. The `linux-release-build`
+job runs `rust/scripts/build-linux.sh` on GitHub's `ubuntu-24.04`, the Linux
+release build exactly as a tag runs it. `docker/check.sh` builds the Linux
+and Windows binaries in containers for a local check from macOS; no job uses
+it.
 
 The full suite runs in the `linux` job, on the runner the `RUNNER` repository
 variable names (a self-hosted one costs no Actions minutes), else on GitHub's
 `ubuntu-24.04`. A pull request from a fork always runs on GitHub's runners:
 the repository is public, and only a branch of this repository, a manual run
 or a release tag reaches the self-hosted ones. The runner needs node 24, bash, git, python3 (two of the scripts the tests
-run call it), a C linker, Docker with buildx (the release's `build` job), and the
+run call it), a C linker, and the
 `en_US.UTF-8` locale, which the differential tests set; the job checks for
 the locale and installs rustup when it is missing. It must not run as root:
 the tests that `chmod 000` a file expect the read to fail. The differential tests compare the port
@@ -705,10 +702,10 @@ A release:
 1. Bump `version` in `crates/tribunal-cli/Cargo.toml`, merge, and push the tag
    `tribunal-rust-v<version>`. The workflow refuses a tag that names another
    version, builds the four archives and attaches each with its `.sha256`.
-   The Linux and Windows archives come from the `linux-bin` and
-   `windows-msvc-bin` stages of `docker/Dockerfile` on the Linux runner. The
-   two macOS archives come from `rust/scripts/build-darwin.sh`, run on a
-   GitHub `macos-15` runner.
+   Every archive is built on a GitHub runner: Linux by
+   `rust/scripts/build-linux.sh` on `ubuntu-24.04`, the two macOS ones by
+   `rust/scripts/build-darwin.sh` on `macos-15`, and Windows on
+   `windows-2025`.
 2. Check that this repository's workflow built each archive, from a commit on
    `main`: `gh release download tribunal-rust-v<version> --repo
    xmartlabs/agent-skills --dir /tmp/tr`, then `gh attestation verify
