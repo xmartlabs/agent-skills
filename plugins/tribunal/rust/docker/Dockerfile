@@ -1,6 +1,6 @@
 # Release builds of `tribunal` for Linux and Windows, and a smoke test of
 # each on a machine that has nothing else installed. Run from
-# plugins/tribunal (the build reads ../lib through include_str!):
+# plugins/tribunal:
 #
 #   docker buildx build -f rust/docker/Dockerfile --target linux-smoke .
 #   docker buildx build -f rust/docker/Dockerfile --target windows-smoke .
@@ -19,7 +19,6 @@ RUN apt-get update \
 RUN rustup target add "$(uname -m)-unknown-linux-musl" x86_64-pc-windows-gnu \
  && rustup component add clippy
 WORKDIR /src
-COPY lib ./lib
 COPY rust ./rust
 WORKDIR /src/rust
 # Overrides rust/.cargo/config.toml, whose target-dir is relative to the repo.
@@ -86,7 +85,6 @@ ENV XWIN_ACCEPT_LICENSE=1 XWIN_CACHE_DIR=/xwin \
 WORKDIR /src
 # The unit tests read the agent definitions next to the crates.
 COPY agents ./agents
-COPY lib ./lib
 COPY rust ./rust
 WORKDIR /src/rust
 ENV CARGO_TARGET_DIR=/build
