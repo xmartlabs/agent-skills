@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::exec::{run as exec, Tools};
-use crate::head_worktree::{grep_i, in_cwd, input_lines, mktemp_then_rmdir, rm_rf, words};
+use crate::head_worktree::{grep_i, in_cwd, input_lines, rm_rf};
 use crate::python_typecheck;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,21 +81,22 @@ fn coverage_lines(cov: &[String], pr_files: &[String]) -> Vec<String> {
 }
 
 /// Runs the typecheck the workflow's bash runs and returns what it prints.
-/// `cwd` is the ambient checkout; `pinned` the head worktree when there is
-/// one, else this makes its own at `head_sha`.
+/// `cwd` is the checkout the packages and the `tsconfig` gate are taken from,
+/// read only; `pinned` is the head checkout the code is typed in. Without
+/// `pinned` there is nothing to type and the text is `DEGRADED_NO_PINNED_TREE`.
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
     tools: &Tools,
     repo: &str,
-    pr_number: &str,
-    head_sha: &str,
+    _pr_number: &str,
+    _head_sha: &str,
     pr_files: &[String],
     pinned: Option<&str>,
     cwd: &Path,
-    tmpdir: &str,
+    _tmpdir: &str,
 ) -> TypecheckRun {
     let mut lines: Vec<String> = Vec::new();
-    let mut created = None;
+    let created: Option<String> = None;
     let done = |lines: Vec<String>, created: Option<String>| TypecheckRun {
         text: lines.join("\n"),
         created_worktree: created,
@@ -128,36 +129,12 @@ pub async fn run(
     if !python && !has_tsconfig {
         return done(vec!["NO_TSCONFIG".into()], None);
     }
-    let wt = match pinned.filter(|p| !p.is_empty()) {
-        Some(p) => p.to_owned(),
-        None => {
-            let wt = mktemp_then_rmdir(tmpdir, pr_number, Some(cwd));
-            let sha = words(head_sha);
-            let add: Vec<&str> = ["worktree", "add", "--force", "--detach", wt.as_str()]
-                .into_iter()
-                .chain(sha.iter().copied())
-                .collect();
-            if !tools.git(&add, Some(cwd)).await.is_ok_and(|o| o.ok()) {
-                let fetch: Vec<&str> = ["fetch", "origin"]
-                    .into_iter()
-                    .chain(sha.iter().copied())
-                    .collect();
-                let _ = tools.git(&fetch, Some(cwd)).await;
-                let _ = tools.git(&add, Some(cwd)).await;
-            }
-            if tools
-                .git(&["-C", &wt, "rev-parse", "HEAD"], Some(cwd))
-                .await
-                .is_ok_and(|o| o.ok())
-            {
-                lines.push(format!("CREATED_WORKTREE {wt}"));
-                created = Some(wt.clone());
-                wt
-            } else {
-                lines.push("DEGRADED_NO_WORKTREE".into());
-                return done(lines, None);
-            }
-        }
+    // Declared difference from the workflow's bash: without a pinned checkout
+    // it made its own worktree in `cwd` and fetched the commit into it, a
+    // write to that repo's `.git`. The typecheck never writes to the directory
+    // it takes packages from, so it stops here instead.
+    let Some(wt) = pinned.filter(|p| !p.is_empty()).map(str::to_owned) else {
+        return done(vec!["DEGRADED_NO_PINNED_TREE".into()], None);
     };
     let wt_dir = in_cwd(Some(cwd), &wt);
     if let Some(checker) = checker {

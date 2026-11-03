@@ -1984,6 +1984,42 @@ fn aged(p: &Path) -> bool {
     born.elapsed().is_ok_and(|age| age.as_secs() > 86_400)
 }
 
+/// Declared difference (`head_worktree::build_head_worktree`): when the
+/// working directory's `origin` was the reviewed repo, the bash built the
+/// checkout as a worktree of that repo, fetching the commit into it when it
+/// was missing. The port always clones into the temp directory and writes
+/// nothing to the repo. Everything else the two sides leave behind is the same:
+/// the repo's worktree list and the temp directory's leftovers, once the
+/// entry the bash made for this PR is set aside, and what pruning removed.
+fn assert_declared_difference(a: &WtState, b: &WtState, pr: &str) {
+    let mark = format!("peer-review-wt-{pr}-");
+    let blocks = |list: &str| -> Vec<String> {
+        list.split("\n\n")
+            .filter(|block| !block.contains(&mark))
+            .map(str::to_owned)
+            .collect()
+    };
+    assert_eq!(blocks(&a.list), blocks(&b.list), "{}\n{}", a.list, b.list);
+    assert!(
+        !b.list.contains(&mark),
+        "the port wrote a worktree into the repo: {}",
+        b.list
+    );
+    let kept = |v: &[String]| -> Vec<String> {
+        v.iter().filter(|n| !n.contains(&mark)).cloned().collect()
+    };
+    assert_eq!(kept(&a.leftovers), kept(&b.leftovers));
+    assert_eq!(a.removed, b.removed);
+    assert!(
+        b.worktree == json!("WORKTREE_FAILED")
+            || b.worktree
+                .as_str()
+                .is_some_and(|w| w.starts_with("CLONED:")),
+        "{:?}",
+        b.worktree
+    );
+}
+
 struct Twin {
     repo: PathBuf,
     tmp: PathBuf,
@@ -2095,20 +2131,25 @@ async fn head_worktree_builds_the_same_checkout_as_the_bash() {
         }
         done.push(name);
         let (a, b) = prep_both(name, &dir, &js, &rs, &ctx(&o.c2), REPO, "301", None).await;
-        assert_eq!(a, b);
+        assert_declared_difference(&a, &b, "301");
+        // The bash's side, from the golden: a worktree of the repo.
         assert_eq!(a.head.as_deref(), Some(o.c2.as_str()));
         assert!(a
             .worktree
             .as_str()
             .unwrap()
             .starts_with("CREATED_WORKTREE <TMP>/peer-review-wt-301-XXXXXX"));
+        // The port's side: a clone attempt, and no worktree in the repo.
+        assert_eq!(b.gh_calls.len(), 1, "{:?}", b.gh_calls);
         // The stale unlocked checkout is gone where it could be aged; the rest stay.
-        assert_eq!(a.list.contains("abc123"), !stale, "{}", a.list);
-        assert!(
-            a.list.contains("lock01") && a.list.contains("fresh1"),
-            "{}",
-            a.list
-        );
+        for side in [&a, &b] {
+            assert_eq!(side.list.contains("abc123"), !stale, "{}", side.list);
+            assert!(
+                side.list.contains("lock01") && side.list.contains("fresh1"),
+                "{}",
+                side.list
+            );
+        }
     }
 }
 
@@ -2131,8 +2172,17 @@ async fn head_worktree_fetches_a_commit_only_the_remote_has() {
         None,
     )
     .await;
-    assert_eq!(a, b);
+    assert_declared_difference(&a, &b, "302");
+    // The bash fetched the commit into the repo; the port does not.
     assert_eq!(a.head.as_deref(), Some(c3.as_str()));
+    assert_eq!(b.gh_calls.len(), 1, "{:?}", b.gh_calls);
+    let fetched = Command::new("git")
+        .args(["-C", rs.repo.to_str().unwrap(), "cat-file", "-e"])
+        .arg(format!("{c3}^{{commit}}"))
+        .status()
+        .unwrap()
+        .success();
+    assert!(!fetched, "the port fetched the commit into the repo");
 }
 
 #[tokio::test]
@@ -2185,8 +2235,12 @@ async fn head_worktree_falls_back_and_fails_as_the_bash_does() {
         None,
     )
     .await;
-    assert_eq!(a, b);
+    // Declared difference (`build_head_worktree`): `.` matched `/`, so the
+    // bash built a worktree in the repo; the port clones and leaves it alone.
+    assert_declared_difference(&a, &b, "305");
     assert_eq!(a.head.as_deref(), Some(o.c1.as_str()));
+    assert_eq!(b.worktree, json!("WORKTREE_FAILED"));
+    assert_eq!(b.gh_calls.len(), 1, "{:?}", b.gh_calls);
 
     // Declared difference: `.` is the only metacharacter the port honours,
     // since a GitHub owner or name cannot hold the others. To grep `s*` is
@@ -2224,10 +2278,16 @@ async fn head_worktree_matches_the_bash_when_mktemp_fails() {
         Some((js_missing.to_str().unwrap(), rs_missing.to_str().unwrap())),
     )
     .await;
-    assert_eq!(a, b);
     // `$WT` is empty and `git -C ""` reads the ambient repo, so the bash
     // prints a marker with no path, which parses as no checkout.
     assert_eq!(a.worktree, json!("CREATED_WORKTREE"));
+    // Declared difference (`build_head_worktree`): with no directory to clone
+    // into the port says so and never calls `gh`. The repo is left as the
+    // bash left it.
+    assert_eq!(b.worktree, json!("WORKTREE_FAILED"));
+    assert!(b.gh_calls.is_empty(), "{:?}", b.gh_calls);
+    assert_eq!(a.list, b.list);
+    assert_eq!(a.leftovers, b.leftovers);
 }
 
 #[tokio::test]
@@ -2879,13 +2939,21 @@ async fn head_worktree_matches_the_bash_with_a_relative_tmpdir() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(mask_suffix(js_wt, "330"), mask_suffix(&rs_wt, "330"));
+    // The bash's side, from the golden: a worktree under the relative dir.
     assert!(
         js_wt.starts_with("CREATED_WORKTREE rel-tmp/peer-review-wt-330-"),
         "{js_wt}"
     );
     assert_eq!(kept["head"], json!(o.c2));
-    assert_eq!(head(&rs.repo, &rs_wt), o.c2);
+    // Declared difference (`build_head_worktree`): the port clones, which the
+    // recorded `gh` here cannot answer, and writes nothing to the repo or to
+    // the relative temp directory.
+    assert_eq!(rs_wt, "WORKTREE_FAILED");
+    assert!(!git(&rs.repo, &["worktree", "list", "--porcelain"]).contains("peer-review-wt-330-"));
+    assert_eq!(
+        std::fs::read_dir(rs.repo.join("rel-tmp")).unwrap().count(),
+        0
+    );
 }
 
 /// The clone fallback when it succeeds: the remote is not the PR's repo, so

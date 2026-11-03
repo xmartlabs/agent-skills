@@ -243,10 +243,16 @@ async fn ok(fut: impl std::future::Future<Output = std::io::Result<crate::exec::
     fut.await.is_ok_and(|o| o.ok())
 }
 
-/// Builds the pinned checkout as [`head_worktree_bash`] does, run in `cwd`
-/// with `${TMPDIR:-/tmp}` = `tmpdir`, and returns what the bash prints:
-/// `CREATED_WORKTREE <path>`, `CLONED:<path>` or `WORKTREE_FAILED`, with its
-/// newline.
+/// Builds the pinned checkout in a temporary directory and returns what
+/// [`head_worktree_bash`] prints: `CLONED:<path>` or `WORKTREE_FAILED`, with
+/// its newline.
+///
+/// Declared difference from the bash: the bash made a worktree in the working
+/// directory's repo when its `origin` was the reviewed repo, and fetched the
+/// commit into it when it was missing. That wrote to the reviewer's own `.git`
+/// (a `worktrees/` entry, fetched objects), so the checkout is always a clone
+/// of the remote now and the review never touches the working directory's repo.
+/// `CREATED_WORKTREE` is still understood by [`parse_head_worktree`].
 pub async fn build_head_worktree(
     tools: &Tools,
     sha: &str,
@@ -256,29 +262,13 @@ pub async fn build_head_worktree(
     tmpdir: &str,
 ) -> String {
     let wt = mktemp_then_rmdir(tmpdir, pr_number, cwd);
+    if wt.is_empty() {
+        // `mktemp` failed: there is no directory to clone into, and an empty
+        // destination must not reach `gh`.
+        return "WORKTREE_FAILED\n".to_owned();
+    }
     let sha_words = words(sha);
     let repo_words = words(repo);
-    let add_args: Vec<&str> = ["worktree", "add", "--force", "--detach", wt.as_str()]
-        .into_iter()
-        .chain(sha_words.iter().copied())
-        .collect();
-
-    let ambient = tools
-        .git(&["remote", "get-url", "origin"], cwd)
-        .await
-        .is_ok_and(|o| input_lines(&o.stdout).any(|l| grep_i(l, repo)));
-    if ambient && !ok(tools.git(&add_args, cwd)).await {
-        let fetch: Vec<&str> = ["fetch", "origin"]
-            .into_iter()
-            .chain(sha_words.iter().copied())
-            .collect();
-        let _ = tools.git(&fetch, cwd).await;
-        let _ = tools.git(&add_args, cwd).await;
-    }
-    if ok(tools.git(&["-C", &wt, "rev-parse", "HEAD"], cwd)).await {
-        return format!("CREATED_WORKTREE {wt}\n");
-    }
-    rm_rf(&wt, cwd);
     let clone: Vec<&str> = ["repo", "clone"]
         .into_iter()
         .chain(repo_words.iter().copied())

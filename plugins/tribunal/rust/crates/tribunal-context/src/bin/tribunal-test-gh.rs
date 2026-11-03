@@ -195,6 +195,12 @@ fn same(recorded: Option<&Value>, args: &[String]) -> bool {
 }
 
 fn recordings(args: &[String]) {
+    // A `repo clone` is not recorded: its destination is a temp directory the
+    // recording cannot name. With `GH_BARE` set it is answered by cloning from
+    // that repo, as in `clone` mode, and everything else is still recorded.
+    if env("GH_BARE").is_some() && args.len() >= 2 && args[0] == "repo" && args[1] == "clone" {
+        return clone(args);
+    }
     log_call(args);
     let Some(file) = env("GH_RECORDINGS") else {
         fail(98, "GH_RECORDINGS is not set")

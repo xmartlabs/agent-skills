@@ -258,13 +258,24 @@ fn head(dir: &Path) -> String {
 async fn typecheck(root: &Path, dir: &Path, tools: &Tools, pr: &[&str]) -> String {
     let tmp = root.join("tmp");
     std::fs::create_dir_all(&tmp).unwrap();
+    // The engine hands the typecheck a clone of the head commit. Since the
+    // fallback that made a worktree inside `dir` is gone, the test gives it one.
+    let pin = root.join("pinned");
+    let _ = std::fs::remove_dir_all(&pin);
+    let cloned = Command::new("git")
+        .args(["clone", "-q"])
+        .arg(dir)
+        .arg(&pin)
+        .status()
+        .unwrap();
+    assert!(cloned.success());
     let ours = run(
         tools,
         "acme/widgets",
         "5",
         &head(dir),
         &s(pr),
-        None,
+        pin.to_str(),
         dir,
         &tmp.to_string_lossy(),
     )
@@ -309,6 +320,46 @@ async fn the_run_picks_the_language_and_the_checker_from_the_repo() {
     assert_eq!(g.covered, vec!["src/a.py"]);
     assert_eq!(g.diags_by_file.len(), 1);
     assert_eq!(g.diags_by_file.get("src/a.py").unwrap()[0].line, 2.0);
+}
+
+/// Declared difference (`grounded_typecheck::run`): without a pinned checkout
+/// the workflow's bash made a worktree in `cwd` and fetched the commit into
+/// it. The port stops, so the checkout it takes packages from is only read.
+#[tokio::test]
+async fn without_a_pinned_checkout_nothing_is_made_in_the_repo() {
+    let root = scratch("nopin");
+    let tools = fake_checker(&root, "mypy", "", 0);
+    let dir = repo(
+        &root,
+        &[("pyproject.toml", "[tool.mypy]\n"), ("src/a.py", "x = 1\n")],
+    );
+    let tmp = root.join("tmp");
+    std::fs::create_dir_all(&tmp).unwrap();
+    let ours = run(
+        &tools,
+        "acme/widgets",
+        "5",
+        &head(&dir),
+        &s(&["src/a.py"]),
+        None,
+        &dir,
+        &tmp.to_string_lossy(),
+    )
+    .await;
+    assert_eq!(ours.text, "DEGRADED_NO_PINNED_TREE");
+    assert!(ours.created_worktree.is_none());
+    let list = Command::new("git")
+        .args(["worktree", "list", "--porcelain"])
+        .current_dir(&dir)
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&list.stdout)
+            .matches("worktree ")
+            .count(),
+        1
+    );
+    assert!(!root.join("bin/args").exists());
 }
 
 #[tokio::test]
