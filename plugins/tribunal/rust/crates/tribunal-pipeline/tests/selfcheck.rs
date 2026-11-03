@@ -198,7 +198,8 @@ async fn a_refuted_diagnosis_is_dropped_and_nothing_is_patched() {
         .find(|c| c.label.starts_with("diagnose:"))
         .unwrap();
     assert!(
-        diag.prompt.contains("/plugin/workflows/tribunal.js"),
+        diag.prompt.contains("/plugin/rust/crates")
+            && diag.prompt.contains("Workflow engine, which v115 removed"),
         "{}",
         diag.prompt
     );

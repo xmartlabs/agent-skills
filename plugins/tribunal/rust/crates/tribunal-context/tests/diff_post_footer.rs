@@ -249,6 +249,32 @@ fn case() -> impl Strategy<Value = Case> {
         })
 }
 
+/// A whole semver version after `tribunal v`, as the port prints one whose
+/// minor or patch is not zero.
+fn semver_label() -> Regex {
+    Regex::new(r"tribunal v(\d+)\.\d+\.\d+ ").unwrap()
+}
+
+#[test]
+fn engine_label_prints_a_semver_version_whole() {
+    use tribunal_context::post_footer::engine_label;
+    let row = |v: &str| json!({"pluginVersion": v, "engine": "rust", "engineVersion": "rust-abc"});
+    assert_eq!(
+        engine_label(&row("115.1.0"), None),
+        "v115.1.0 (rust rust-abc)"
+    );
+    assert_eq!(
+        engine_label(&row("115.0.2"), None),
+        "v115.0.2 (rust rust-abc)"
+    );
+    assert_eq!(engine_label(&row("115.0.0"), None), "v115 (rust rust-abc)");
+    assert_eq!(engine_label(&row("106"), None), "v106 (rust rust-abc)");
+    assert_eq!(
+        semver_label().replace("tribunal v106.2.0 (skill)", "tribunal v$1 "),
+        "tribunal v106 (skill)"
+    );
+}
+
 fn now_segment() -> Regex {
     Regex::new(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)</sub>\n$").unwrap()
 }
@@ -426,6 +452,12 @@ fn build_post_footer_matches_js_on_generated_rows_and_flags() {
             *seen.lock().unwrap().entry("clocked").or_default() += 1;
         }
         rs.stdout = without_clock(&rs.stdout, clocked);
+        // Declared difference: the port prints a version with a minor or a
+        // patch whole (`tribunal v106.2.0`), where the script printed its
+        // major only. Witness: `engine_label_prints_a_semver_version_whole`.
+        rs.stdout = semver_label()
+            .replace(&rs.stdout, "tribunal v$1 ")
+            .into_owned();
         for k in kinds(&js, c) {
             *seen.lock().unwrap().entry(k).or_default() += 1;
         }
