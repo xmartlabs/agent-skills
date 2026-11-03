@@ -215,6 +215,7 @@ fn ledger_row(engine: Option<&str>, schema: Option<u64>, rerun: serde_json::Valu
     });
     if let Some(e) = engine {
         r["engine"] = serde_json::json!(e);
+        r["pluginVersion"] = serde_json::json!("115.0.0");
     }
     if let Some(v) = schema {
         r["schemaVersion"] = serde_json::json!(v);
@@ -239,8 +240,14 @@ fn metrics_reads_the_ledger_in_the_data_dir() {
     assert!(out.starts_with(
         "tribunal metrics: 2 rows aggregated, 1 legacy skipped, 1 re-runs excluded (of 4 rows read, plus 1 unreadable lines)\n"
     ), "{out}");
-    assert!(out.contains("\nrust, schemaVersion 3: 1 rows"), "{out}");
-    assert!(out.contains("\nworkflow, schemaVersion 3: 1 rows"), "{out}");
+    assert!(
+        out.contains("\nrust, v91+, schemaVersion 3: 1 rows"),
+        "{out}"
+    );
+    assert!(
+        out.contains("\nworkflow, pre-v91, schemaVersion 3: 1 rows"),
+        "{out}"
+    );
     assert!(out.contains("not-triggered 1 of 1 (100.0%)"), "{out}");
 
     let j = json_line(&tribunal(&["metrics", "--json", "--repo", "o/r"], &dir));

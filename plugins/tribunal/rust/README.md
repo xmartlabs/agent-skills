@@ -622,6 +622,39 @@ diagnosis reads the code that wrote the row: the Rust crates for
 down, not applied, unless `--apply`, and the battery is `cargo test --workspace --locked` (`--no-battery` skips it).
 `tests/selfcheck.rs` runs it with a scripted agent.
 
+`tribunal panel` (`tribunal-pipeline::panel_only`) is a maintainer tool for
+measuring the refuters on labelled claims: known-false ones the panel should
+kill and known-real ones it should keep. Lenses rarely raise the false ones,
+so a review cannot test them, and `--context "RETEST: ..."` only forces a
+finding a lens already raised. The command is
+`tribunal panel --pr <n> --repo <owner/name> --head-sha <sha> --findings <file.json>`,
+with `--thread-before`, `--codex`/`--no-codex`, `--gemini`/`--no-gemini`,
+`--batch-panels`/`--no-batch-panels`, `--model`, `--effort` and `--out` as in
+`review`. It runs a review's own preparation and Context phase (the PR, the
+thread's decisions, the checkout pinned at `--head-sha`), then the review's
+`verify_phase` with `RunArgs::panel_only` set: the given findings are the
+candidates, they go through the evidence resolver as lens findings do, and
+each one is a retest target, so none is held back by the severity gate. The
+mode skips the lenses, the out-of-diff gate, the pre-panel dedup, the
+grounded typecheck and the completeness critic, and raises the panel ceiling
+when the review's would not seat every finding. The refuters, the tally,
+`T_KILL`, escalation, refine, the vote-quote check and the debate are the
+review's code, unchanged. `--findings` is a JSON array in the lens shape; only
+`title` and `file` are required. `line` is a number, `severity` defaults to
+`important`, `description` (or `claim`) to the title, `evidence` to
+`No relevant quotes found`, `lens` to `panel`, `isBehaviorChanging` to false,
+`confidence` to 0.6, and `touchesHighRiskSurface` to what the profile's
+`riskPaths` say about the file. It prints one JSON object (`--out` writes it to
+a file): `pr`, `repo`, `headSha`, `summary` (`given`, `paneled`, `killed`,
+`unverified`), `findings` with the metrics row's field names (`panelRan`,
+`survived`, `unverified`, `borderline`, `refuteFraction`, `escalated`,
+`refined`, `refineOutcome`, `placement`, `votes`, `failedSlots`, `debate`,
+and `killReason` from the first counted `REFUTED` vote of a killed finding),
+the panel's budget and degradation fields, `agentCost` and `logs`. It writes no
+metrics row and no inflight marker, synthesizes nothing and never posts.
+`tests/panel_only.rs` runs it end to end over a local repo, a shell `gh` and a
+scripted agent.
+
 ## Running the tests
 
 ```bash

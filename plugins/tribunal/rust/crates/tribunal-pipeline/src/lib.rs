@@ -11,6 +11,7 @@ pub mod live;
 pub mod metrics;
 pub mod operator_override;
 pub mod panel;
+pub mod panel_only;
 pub mod panel_prompts;
 pub mod persist;
 pub mod plan;
