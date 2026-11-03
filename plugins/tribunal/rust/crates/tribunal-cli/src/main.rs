@@ -7,6 +7,13 @@
 //!     [--context <text>] [--bot-comments] [--model <id>] [--preflight]
 //!     [--max-panels <n>] [--max-agents <n>] [--concurrency <n>]
 //!     [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]
+//!
+//!   tribunal panel --pr <n> --repo <owner/name> --head-sha <sha> --findings <file.json>
+//!     [--thread-before <iso>] [--codex|--no-codex] [--gemini|--no-gemini]
+//!     [--batch-panels|--no-batch-panels] [--model <id>] [--effort <level>] [--out <file>]
+//!
+//! `panel` runs only the refutation panel on the given findings, to measure
+//! the refuters on labelled claims. It writes no metrics row.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -37,7 +44,147 @@ fn usage() -> ExitCode {
     eprintln!("usage: tribunal selfcheck [--apply] [--no-battery] [--model <id>] [--effort <level>] [--out <file>]");
     eprintln!("usage: tribunal post --from <run.json> [--verdict approve|request-changes|comment] [--delta|--edit-existing] [--over-own-review] [--over-standing-review] [--model <id>] [--effort <level>]");
     eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>] [--context <text>] [--bot-comments] [--model <id>] [--preflight] [--max-panels <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
+    eprintln!("usage: tribunal panel --pr <n> --repo <owner/name> --head-sha <sha> --findings <file.json> [--thread-before <iso>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--model <id>] [--effort <level>] [--out <file>]");
     ExitCode::from(2)
+}
+
+/// `tribunal panel`'s arguments: the review's own, the findings read and
+/// checked, and where the result goes.
+struct PanelCli {
+    args: RunArgs,
+    policy: DispatchPolicy,
+    findings: Vec<Value>,
+    out: Option<String>,
+}
+
+/// `Err((message, usage))`: `usage` is true for a malformed command line,
+/// false for a findings file that cannot be read or is not findings.
+fn parse_panel(argv: &[String]) -> Result<PanelCli, (String, bool)> {
+    let mut args = RunArgs {
+        review_model: DEFAULT_MODEL.to_owned(),
+        panel_only: true,
+        ..RunArgs::default()
+    };
+    let mut policy = DispatchPolicy::default();
+    let mut out = None;
+    let mut findings_path = String::new();
+    let mut it = argv.iter();
+    let usage_err = |e: String| (e, true);
+    while let Some(a) = it.next() {
+        let mut value = || {
+            it.next()
+                .filter(|v| !v.starts_with("--"))
+                .cloned()
+                .ok_or_else(|| usage_err(format!("{a} needs a value")))
+        };
+        match a.as_str() {
+            "--pr" => args.pr = value()?,
+            "--repo" => args.repo = value()?,
+            "--head-sha" => args.head_sha = value()?,
+            "--findings" => findings_path = value()?,
+            "--thread-before" => args.thread_before = value()?,
+            "--model" => args.review_model = value()?,
+            "--effort" => policy.effort = Some(value()?),
+            "--out" => out = Some(value()?),
+            "--codex" => args.codex = Some(true),
+            "--no-codex" => args.codex = Some(false),
+            "--gemini" => args.gemini = Some(true),
+            "--no-gemini" => args.gemini = Some(false),
+            "--batch-panels" => args.batch_panels = Some(true),
+            "--no-batch-panels" => args.batch_panels = Some(false),
+            other => return Err(usage_err(format!("unknown argument {other}"))),
+        }
+    }
+    if args.pr.is_empty() || !args.pr.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(usage_err("--pr <n> is required".into()));
+    }
+    for (flag, v) in [
+        ("--repo <owner/name>", &args.repo),
+        ("--head-sha <sha>", &args.head_sha),
+        ("--findings <file.json>", &findings_path),
+    ] {
+        if v.is_empty() {
+            return Err(usage_err(format!("{flag} is required")));
+        }
+    }
+    if !args.thread_before.is_empty() && !is_utc_instant(&args.thread_before) {
+        return Err(usage_err(format!(
+            "--thread-before must be an ISO 8601 UTC instant, got {:?}",
+            args.thread_before
+        )));
+    }
+    let text = std::fs::read_to_string(&findings_path).map_err(|e| {
+        (
+            format!("cannot read --findings {findings_path}: {e}"),
+            false,
+        )
+    })?;
+    let findings = tribunal_pipeline::panel_only::parse_findings(&text)
+        .map_err(|e| (format!("{findings_path}: {e}"), false))?;
+    if policy.effort.is_none() {
+        policy.effort = operator_effort();
+    }
+    Ok(PanelCli {
+        args,
+        policy,
+        findings,
+        out,
+    })
+}
+
+/// `tribunal panel`: the refutation panel alone over the given findings at a
+/// pinned commit. Prints one JSON object; writes no metrics row.
+async fn panel_main(argv: &[String]) -> ExitCode {
+    use tribunal_pipeline::panel_only::{panel_only, report};
+    let cli = match parse_panel(argv) {
+        Ok(c) => c,
+        Err((e, show_usage)) => {
+            eprintln!("tribunal: {e}");
+            return if show_usage {
+                usage()
+            } else {
+                ExitCode::FAILURE
+            };
+        }
+    };
+    let rt = runtime();
+    let agent = Progress {
+        inner: match claude_agent() {
+            Ok(a) => a,
+            Err(code) => return code,
+        },
+        started: std::time::Instant::now(),
+    };
+    let mut logs = Vec::new();
+    let run = panel_only(&agent, &rt, &cli.args, &cli.policy, cli.findings, &mut logs).await;
+    for l in &logs {
+        eprintln!("{l}");
+    }
+    let run = match run {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("tribunal: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let out = report(&run, &cli.args, &logs);
+    let t = &out["summary"];
+    eprintln!(
+        "tribunal panel: {} given, {} paneled, {} killed, {} unverified. No metrics row written, nothing posted.",
+        t["given"], t["paneled"], t["killed"], t["unverified"]
+    );
+    let text = format!("{}\n", serde_json::to_string_pretty(&out).expect("JSON"));
+    match cli.out {
+        Some(path) => {
+            if let Err(e) = std::fs::write(&path, text) {
+                eprintln!("tribunal: cannot write {path}: {e}");
+                return ExitCode::FAILURE;
+            }
+            eprintln!("wrote {path}");
+        }
+        None => print!("{text}"),
+    }
+    ExitCode::SUCCESS
 }
 
 struct Cli {
@@ -877,6 +1024,7 @@ async fn main() -> ExitCode {
     match argv.first().map(String::as_str) {
         Some("review") => {}
         Some("post") => return post_main(&argv[1..]).await,
+        Some("panel") => return panel_main(&argv[1..]).await,
         Some("selfcheck") => return selfcheck_main(&argv[1..]).await,
         Some("cost") => return cost_main(&argv[1..]),
         Some("metrics") => return metrics_main(&argv[1..]),

@@ -138,6 +138,9 @@ pub struct PanelEnv<'a> {
     pub critic_gap: Option<CriticGap<'a>>,
     pub blast_radius: Option<&'a Value>,
     pub file_count: f64,
+    /// Whether the completeness critic may run. Off in `tribunal panel`,
+    /// which judges only the findings it was given.
+    pub critic: bool,
     pub flags: PanelFlags,
     pub codex_installed: bool,
     pub gemini_installed: bool,
@@ -694,7 +697,7 @@ pub async fn panel_phase<I: PanelIo>(
     }
 
     // --- Completeness critic ---
-    if env.file_count > 2.0 {
+    if env.critic && env.file_count > 2.0 {
         let critic_started = std::time::Instant::now();
         let critic_text = match (env.critic_gap, env.diff_path) {
             (Some(gap), Some(diff_path)) => critic_gap_prompt(
