@@ -4,8 +4,9 @@
 //!
 //! Rows with no `schemaVersion` (the legacy log) and re-runs (a non-null
 //! `rerunOf`) are counted and left out. The rest are grouped by the engine
-//! that wrote them and by `schemaVersion`, and each group is reported on its
-//! own: two groups are never averaged together. A figure whose field is
+//! that wrote them, by harness era (before or since v91) and by
+//! `schemaVersion`, and each group is reported on its own: two groups are
+//! never averaged together. A figure whose field is
 //! missing on most of the items it applies to carries a note saying so, and a
 //! figure with no field at all is printed as not recorded rather than as 0.
 
@@ -81,9 +82,66 @@ pub fn is_rerun(row: &Value) -> bool {
     row.get("rerunOf").is_some_and(|v| !v.is_null())
 }
 
+/// The harness eras, newest first. Since v91 a REFUTED vote has to quote the
+/// code that contradicts the finding, and kill rates fell by an order of
+/// magnitude, so rows from the two sides are never averaged together.
+pub const ERAS: [&str; 2] = ["v91+", "pre-v91"];
+
+fn plugin_major(row: &Value) -> Option<u64> {
+    let v = row.get("pluginVersion").and_then(Value::as_str)?;
+    v.trim_start_matches('v').split('.').next()?.parse().ok()
+}
+
+/// `Some(true)` when a vote carries the v91 fields (`contradiction`,
+/// `quoteFound`), `Some(false)` when the row has votes without them, `None`
+/// when it has no votes.
+fn v91_votes(row: &Value) -> Option<bool> {
+    let mut any = false;
+    for v in array(row, "findings")
+        .iter()
+        .flat_map(|f| array(f, "votes"))
+    {
+        any = true;
+        if v.get("contradiction").is_some() || v.get("quoteFound").is_some() {
+            return Some(true);
+        }
+    }
+    any.then_some(false)
+}
+
+/// The `ts` of the earliest row that is v91+ by its own fields, the date
+/// `era_of` falls back to for rows that carry none.
+#[must_use]
+pub fn v91_boundary(rows: &[Value]) -> Option<&str> {
+    rows.iter()
+        .filter(|r| plugin_major(r).is_some_and(|m| m >= 91) || v91_votes(r) == Some(true))
+        .filter_map(|r| r.get("ts").and_then(Value::as_str))
+        .min()
+}
+
+/// A row's harness era, from its `pluginVersion` (only Rust rows have one),
+/// else from its votes, else from its `ts` against `boundary`. The flag is
+/// true when the date decided.
+#[must_use]
+pub fn era_of(row: &Value, boundary: Option<&str>) -> (&'static str, bool) {
+    let v91 = match (plugin_major(row), v91_votes(row)) {
+        (Some(major), _) => Some(major >= 91),
+        (None, votes) => votes,
+    };
+    if let Some(v91) = v91 {
+        return (ERAS[usize::from(!v91)], false);
+    }
+    let by_date = matches!(
+        (row.get("ts").and_then(Value::as_str), boundary),
+        (Some(ts), Some(b)) if ts >= b
+    );
+    (ERAS[usize::from(!by_date)], true)
+}
+
 #[derive(Debug)]
 pub struct Group<'a> {
     pub engine: &'static str,
+    pub era: &'static str,
     pub schema_version: u64,
     pub rows: Vec<&'a Value>,
 }
@@ -98,6 +156,9 @@ pub struct Selection<'a> {
     pub reruns: Vec<&'a Value>,
     /// Aggregated rows with no `rerunOf` key at all, counted as first runs.
     pub rerun_of_absent: usize,
+    /// Aggregated rows whose era came from their date.
+    pub era_by_date: usize,
+    pub v91_boundary: Option<&'a str>,
     pub groups: Vec<Group<'a>>,
 }
 
@@ -117,6 +178,7 @@ impl Selection<'_> {
             "rerunsExcluded": self.reruns.len(),
             "aggregated": self.aggregated(),
             "rerunOfAbsent": self.rerun_of_absent,
+            "eraByDate": self.era_by_date,
         })
     }
 
@@ -148,9 +210,10 @@ pub fn select<'a>(rows: &'a [Value], unreadable: usize, f: &RowFilter) -> Select
     let mut sel = Selection {
         read: rows.len(),
         unreadable,
+        v91_boundary: v91_boundary(rows),
         ..Selection::default()
     };
-    let mut groups: BTreeMap<(usize, std::cmp::Reverse<u64>), Vec<&Value>> = BTreeMap::new();
+    let mut groups: BTreeMap<(usize, usize, std::cmp::Reverse<u64>), Vec<&Value>> = BTreeMap::new();
     for row in rows {
         if !f.keep(row) {
             sel.filtered_out += 1;
@@ -169,15 +232,19 @@ pub fn select<'a>(rows: &'a [Value], unreadable: usize, f: &RowFilter) -> Select
         }
         let engine = engine_of(row);
         let rank = ENGINES.iter().position(|e| *e == engine).unwrap_or(0);
+        let (era, by_date) = era_of(row, sel.v91_boundary);
+        sel.era_by_date += usize::from(by_date);
+        let era_rank = ERAS.iter().position(|e| *e == era).unwrap_or(0);
         groups
-            .entry((rank, std::cmp::Reverse(v)))
+            .entry((rank, era_rank, std::cmp::Reverse(v)))
             .or_default()
             .push(row);
     }
     sel.groups = groups
         .into_iter()
-        .map(|((rank, v), rows)| Group {
+        .map(|((rank, era_rank, v), rows)| Group {
             engine: ENGINES[rank],
+            era: ERAS[era_rank],
             schema_version: v.0,
             rows,
         })
@@ -558,6 +625,7 @@ fn group_metrics(g: &Group) -> Value {
 
     json!({
         "engine": g.engine,
+        "era": g.era,
         "schemaVersion": g.schema_version,
         "rows": g.rows.len(),
         "pinnedRows": pinned,
@@ -625,8 +693,8 @@ fn group_metrics(g: &Group) -> Value {
     })
 }
 
-/// The scorecard: the selection's counts and one entry per engine and
-/// `schemaVersion`.
+/// The scorecard: the selection's counts and one entry per engine, harness
+/// era and `schemaVersion`.
 #[must_use]
 pub fn metrics_report(rows: &[Value], unreadable: usize, f: &RowFilter) -> Value {
     let sel = select(rows, unreadable, f);
@@ -636,6 +704,18 @@ pub fn metrics_report(rows: &[Value], unreadable: usize, f: &RowFilter) -> Value
             "{} aggregated rows have no rerunOf field and are counted as first runs",
             sel.rerun_of_absent
         ));
+    }
+    if sel.era_by_date > 0 {
+        notes.push(match sel.v91_boundary {
+            Some(b) => format!(
+                "{} aggregated rows have no votes and no pluginVersion; their era comes from their date against the first v91 row ({b})",
+                sel.era_by_date
+            ),
+            None => format!(
+                "{} aggregated rows have no votes and no pluginVersion, and no row is v91+ by its own fields, so they count as pre-v91",
+                sel.era_by_date
+            ),
+        });
     }
     json!({
         "rows": sel.counts(),
@@ -665,8 +745,9 @@ pub fn of(num: usize, den: usize) -> String {
 fn render_group(s: &mut String, g: &Value) {
     let paneled = n(&g["paneled"]);
     s.push_str(&format!(
-        "\n{}, schemaVersion {}: {} rows ({} pinned), {} findings, {} paneled\n",
+        "\n{}, {}, schemaVersion {}: {} rows ({} pinned), {} findings, {} paneled\n",
         g["engine"].as_str().unwrap_or("?"),
+        g["era"].as_str().unwrap_or("?"),
         g["schemaVersion"],
         g["rows"],
         g["pinnedRows"],
@@ -859,7 +940,7 @@ pub fn render(report: &Value) -> String {
         report["headline"].as_str().unwrap_or("")
     );
     s.push_str(
-        "Each engine and schemaVersion is reported on its own; groups are never averaged together.\n",
+        "Each engine, harness era and schemaVersion is reported on its own; groups are never averaged together.\n",
     );
     for note in report["notes"].as_array().into_iter().flatten() {
         s.push_str(&format!("note: {}\n", note.as_str().unwrap_or("")));
@@ -901,6 +982,7 @@ mod tests {
         });
         if let Some(e) = engine {
             r["engine"] = json!(e);
+            r["pluginVersion"] = json!("115.0.0");
         }
         if let Some(v) = schema {
             r["schemaVersion"] = json!(v);
@@ -969,6 +1051,7 @@ mod tests {
         old.as_object_mut().unwrap().remove("hadExternalVoter");
         let workflow = row(None, Some(3), Value::Null, vec![debated, old]);
         let mut workflow_v2 = row(None, Some(2), Value::Null, vec![]);
+        workflow_v2["ts"] = json!("2026-07-25T10:00:00Z");
         workflow_v2.as_object_mut().unwrap().remove("rerunOf");
         workflow_v2.as_object_mut().unwrap().remove("candidates");
         let rerun = row(
@@ -1009,20 +1092,21 @@ mod tests {
             r["rows"],
             json!({
                 "read": 7, "unreadableLines": 2, "filteredOut": 0, "legacySkipped": 1,
-                "rerunsExcluded": 1, "aggregated": 5, "rerunOfAbsent": 1,
+                "rerunsExcluded": 1, "aggregated": 5, "rerunOfAbsent": 1, "eraByDate": 1,
             })
         );
         assert_eq!(
             r["headline"],
             "5 rows aggregated, 1 legacy skipped, 1 re-runs excluded (of 7 rows read, plus 2 unreadable lines)"
         );
-        let keys: Vec<(String, u64)> = r["groups"]
+        let keys: Vec<(String, String, u64)> = r["groups"]
             .as_array()
             .unwrap()
             .iter()
             .map(|g| {
                 (
                     g["engine"].as_str().unwrap().to_owned(),
+                    g["era"].as_str().unwrap().to_owned(),
                     g["schemaVersion"].as_u64().unwrap(),
                 )
             })
@@ -1030,10 +1114,77 @@ mod tests {
         assert_eq!(
             keys,
             [
-                ("rust".to_owned(), 3),
-                ("workflow".to_owned(), 3),
-                ("workflow".to_owned(), 2)
+                ("rust".to_owned(), "v91+".to_owned(), 3),
+                ("workflow".to_owned(), "pre-v91".to_owned(), 3),
+                ("workflow".to_owned(), "pre-v91".to_owned(), 2)
             ]
+        );
+        assert_eq!(
+            r["notes"][1],
+            "1 aggregated rows have no votes and no pluginVersion; their era comes from their date against the first v91 row (2026-10-30T10:00:00Z)"
+        );
+    }
+
+    #[test]
+    fn era_comes_from_the_plugin_version_then_the_votes_then_the_date() {
+        let boundary = Some("2026-10-20T00:00:00Z");
+        let v91_vote = json!({"source": "claude", "verdict": "REFUTED", "quoteFound": true});
+        let old_vote = vote("claude", "REFUTED", None);
+        let with = |votes: Vec<Value>, ts: &str| {
+            let mut r = row(None, Some(3), Value::Null, vec![finding(false, 0.9, votes)]);
+            r["ts"] = json!(ts);
+            r
+        };
+        // Votes decide over the date, both ways.
+        assert_eq!(
+            era_of(&with(vec![v91_vote.clone()], "2026-09-01"), boundary),
+            ("v91+", false)
+        );
+        assert_eq!(
+            era_of(&with(vec![old_vote], "2026-11-01"), boundary),
+            ("pre-v91", false)
+        );
+        // pluginVersion decides over the votes.
+        let mut pinned = with(vec![v91_vote], "2026-11-01");
+        pinned["pluginVersion"] = json!("90.0.0");
+        assert_eq!(era_of(&pinned, boundary), ("pre-v91", false));
+        pinned["pluginVersion"] = json!("115.1.0");
+        assert_eq!(era_of(&pinned, None), ("v91+", false));
+        // No votes and no pluginVersion: the date against the boundary.
+        let mut bare = row(None, Some(3), Value::Null, vec![]);
+        bare["ts"] = json!("2026-10-20T00:00:00Z");
+        assert_eq!(era_of(&bare, boundary), ("v91+", true));
+        bare["ts"] = json!("2026-10-19T23:59:59Z");
+        assert_eq!(era_of(&bare, boundary), ("pre-v91", true));
+        assert_eq!(era_of(&bare, None), ("pre-v91", true));
+        bare.as_object_mut().unwrap().remove("ts");
+        assert_eq!(era_of(&bare, boundary), ("pre-v91", true));
+    }
+
+    #[test]
+    fn the_boundary_is_the_first_row_that_is_v91_by_its_own_fields() {
+        let mut quoted = row(
+            None,
+            Some(3),
+            Value::Null,
+            vec![finding(
+                false,
+                0.9,
+                vec![json!({"source": "codex", "verdict": "NOT_REFUTED", "contradiction": null})],
+            )],
+        );
+        quoted["ts"] = json!("2026-10-21T00:00:00Z");
+        let mut rust = row(Some("rust"), Some(3), Value::Null, vec![]);
+        rust["ts"] = json!("2026-10-25T00:00:00Z");
+        let mut bare = row(None, Some(3), Value::Null, vec![]);
+        bare["ts"] = json!("2026-10-01T00:00:00Z");
+        let rows = [bare, rust, quoted];
+        assert_eq!(v91_boundary(&rows), Some("2026-10-21T00:00:00Z"));
+        assert_eq!(v91_boundary(&rows[..1]), None);
+        let r = metrics_report(&rows[..1], 0, &RowFilter::default());
+        assert_eq!(
+            r["notes"],
+            json!(["1 aggregated rows have no votes and no pluginVersion, and no row is v91+ by its own fields, so they count as pre-v91"])
         );
     }
 
@@ -1177,7 +1328,7 @@ mod tests {
             since: Some("2026-08-01".into()),
         };
         let r = metrics_report(&rows, 0, &f);
-        assert_eq!(r["rows"]["filteredOut"], 1);
+        assert_eq!(r["rows"]["filteredOut"], 2);
         assert_eq!(r["rows"]["legacySkipped"], 0);
     }
 
@@ -1189,7 +1340,9 @@ mod tests {
             "tribunal metrics: 5 rows aggregated, 1 legacy skipped, 1 re-runs excluded (of 7 rows read)\n"
         ), "{text}");
         assert!(
-            text.contains("\nrust, schemaVersion 3: 3 rows (0 pinned), 5 findings, 4 paneled\n"),
+            text.contains(
+                "\nrust, v91+, schemaVersion 3: 3 rows (0 pinned), 5 findings, 4 paneled\n"
+            ),
             "{text}"
         );
         assert!(
@@ -1208,7 +1361,7 @@ mod tests {
         );
         assert_eq!(
             render(&metrics_report(&[], 0, &RowFilter::default())),
-            "tribunal metrics: 0 rows aggregated, 0 legacy skipped, 0 re-runs excluded (of 0 rows read)\nEach engine and schemaVersion is reported on its own; groups are never averaged together.\nNo rows to aggregate.\n"
+            "tribunal metrics: 0 rows aggregated, 0 legacy skipped, 0 re-runs excluded (of 0 rows read)\nEach engine, harness era and schemaVersion is reported on its own; groups are never averaged together.\nNo rows to aggregate.\n"
         );
     }
 
