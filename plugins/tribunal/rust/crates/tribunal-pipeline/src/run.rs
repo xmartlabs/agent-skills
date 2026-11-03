@@ -13,6 +13,7 @@ use tribunal_context::head_worktree::{
     build_head_worktree, mktemp_then_rmdir, parse_head_worktree,
 };
 use tribunal_context::heads::{self, HeadSetup};
+use tribunal_context::repo_locator::{self, RepoCwd, ENV_REPO_DIR};
 use tribunal_context::{resolve_evidence_line, resolve_verified_anchors};
 use tribunal_core::evidence::line_correction::apply_line_correction;
 use tribunal_core::js;
@@ -30,6 +31,7 @@ use crate::agent_def::{self, AgentDef};
 use crate::context::{
     context_phase, prepare, reviewer_cwd, ContextOutcome, Prepared, ReviewContext, RunArgs, Runtime,
 };
+use crate::coverage_report;
 use crate::decisions::is_retest_target;
 use crate::live::{LiveIo, PanelAgents};
 use crate::panel::{
@@ -474,6 +476,13 @@ pub struct VerifyOutcome {
     pub panel_seconds: f64,
     pub dedup: Dedup,
     pub typecheck: Option<TypecheckRun>,
+    /// Which directory stood for the reviewed repo when the typecheck ran.
+    pub repo_cwd: RepoCwd,
+    /// Whether the reviewed tree had anything for a typecheck to check.
+    pub typecheck_applies: bool,
+    /// The manifests that differ between the checkout that supplied the
+    /// installed packages and the reviewed commit. Empty when none ran.
+    pub deps_drift: Vec<String>,
     pub grounded: Grounded,
     pub gate: GroundedGate,
     pub panel: PanelOutcome,
@@ -558,6 +567,35 @@ pub async fn verify_phase<A: Agent>(
     let pinned = js::get(&rc.head_pin, "path")
         .and_then(Value::as_str)
         .filter(|_| pin_ok);
+    let repo_cwd = repo_locator::resolve(
+        &rt.tools,
+        &review.prepared.repo,
+        &rt.operator.cwd,
+        std::env::var(ENV_REPO_DIR).ok().as_deref(),
+    )
+    .await;
+    match &repo_cwd {
+        RepoCwd::Ambient => {}
+        RepoCwd::Resolved {
+            dir,
+            how,
+            branch,
+            head,
+        } => logs.push(format!(
+            "The working directory is not {}: the typecheck runs in {} ({how}; on {} at {}). Its dependencies and tsconfig come from that checkout, so a clone left on an old branch can skew the result",
+            review.prepared.repo,
+            dir.display(),
+            branch.as_deref().unwrap_or("an unknown branch"),
+            head.as_deref().unwrap_or("an unknown commit")
+        )),
+        RepoCwd::Unresolved { cwd_origin, .. } => logs.push(format!(
+            "WARNING: the working directory is {}, not {}, and no local checkout of {} was found, so the typecheck cannot run. Run from a checkout of it or set {ENV_REPO_DIR}",
+            cwd_origin.as_deref().unwrap_or("not a GitHub checkout"),
+            review.prepared.repo,
+            review.prepared.repo
+        )),
+    }
+    let typecheck_cwd = repo_cwd.dir(&rt.operator.cwd).to_path_buf();
     let mut grounded = Grounded::default();
     let mut typecheck = None;
     if eligible && js::truthy(head) {
@@ -568,12 +606,35 @@ pub async fn verify_phase<A: Agent>(
             &to_js_string(head),
             pr_files,
             pinned,
-            &rt.operator.cwd,
+            &typecheck_cwd,
             &rt.tmpdir,
         )
         .await;
         grounded = apply_typecheck_result(&run.text, pr_files, logs)?;
         typecheck = Some(run);
+    }
+    let pinned_tree = pinned.map(std::path::Path::new);
+    let typecheck_applies = coverage_report::typecheck_applies(pinned_tree, pr_files);
+    let mut deps_drift: Vec<String> = Vec::new();
+    if let (Some(t), Some(tree)) = (&typecheck, pinned_tree) {
+        if coverage_report::typecheck_ran(&t.text) {
+            let top = match rt
+                .tools
+                .git(&["rev-parse", "--show-toplevel"], Some(&typecheck_cwd))
+                .await
+            {
+                Ok(o) if o.ok() => PathBuf::from(o.stdout.trim_end_matches('\n')),
+                _ => typecheck_cwd.clone(),
+            };
+            deps_drift = coverage_report::deps_drift(&top, tree);
+            if !deps_drift.is_empty() {
+                logs.push(format!(
+                    "The typecheck ran on packages installed from {}, whose {} differ from the reviewed commit's",
+                    top.display(),
+                    deps_drift.join(", ")
+                ));
+            }
+        }
     }
     let gate = grounded_gate(&dedup.panel_candidates, &grounded, pr_files, logs)?;
 
@@ -785,6 +846,9 @@ pub async fn verify_phase<A: Agent>(
         panel_seconds,
         dedup,
         typecheck,
+        repo_cwd,
+        typecheck_applies,
+        deps_drift,
         grounded,
         gate,
         panel,
@@ -813,6 +877,9 @@ pub struct SynthesisOutcome {
     /// The `riskPaths` files every lens that held them left unread for
     /// budget, which keep the verdict from APPROVE.
     pub unread_risk_files: Vec<String>,
+    /// What the dispatches read outside the reviewed repo, and the critic's
+    /// "not checked" list set against the lenses' commands.
+    pub coverage: coverage_report::CoverageFacts,
     pub dispatches: Vec<(String, DispatchResult)>,
 }
 
@@ -1095,6 +1162,50 @@ pub async fn synthesize_phase<A: Agent>(
         report,
         &coverage_banner(&review.candidates.lens_gaps, &unread_risk),
     );
+    let lens_calls: Vec<(String, Vec<coverage_report::Call>)> = review
+        .labels
+        .iter()
+        .zip(&review.dispatches)
+        .map(|(label, d)| (label.clone(), transcript_calls(d)))
+        .collect();
+    let other_calls: Vec<(String, String, Vec<coverage_report::Call>)> = verify
+        .dispatches
+        .iter()
+        .map(|(label, d)| {
+            (
+                label.clone(),
+                dispatch_kind(label).to_owned(),
+                transcript_calls(d),
+            )
+        })
+        .collect();
+    let coverage = coverage_report::facts(
+        &review.prepared.repo,
+        &lens_calls,
+        &other_calls,
+        &verify.panel.critic_output,
+    );
+    let report = with_coverage(
+        report,
+        &coverage_report::typecheck_banner(
+            verify.typecheck.as_ref().map(|t| t.text.as_str()),
+            &review.prepared.repo,
+            &verify.repo_cwd,
+            verify.typecheck_applies,
+        ),
+    );
+    let report = with_coverage(
+        report,
+        &coverage_report::deps_drift_banner(&verify.deps_drift, &verify.repo_cwd),
+    );
+    let report = with_coverage(report, &coverage.banner());
+    let anchor_format = coverage_report::anchor_format(&anchors);
+    if let Some(first) = anchor_format["files"].get(0).and_then(Value::as_str) {
+        logs.push(format!(
+            "{} verifiedBy anchor(s) name a file with a note after the path, such as `{first}`, so they were looked up in the reviewed repo and not found. A file in another repo is written `<repo-name>/<path>`.",
+            anchor_format["annotatedUnresolved"]
+        ));
+    }
     let report = match (verdict.guess, risk_path_rules(profile)) {
         ("REQUEST CHANGES", Ok(rules)) => {
             match verdict_basis(&with_risk_path_surface(Some(&surviving), Some(&rules))) {
@@ -1115,8 +1226,26 @@ pub async fn synthesize_phase<A: Agent>(
         prompt,
         report,
         unread_risk_files: unread_risk,
+        coverage,
         dispatches,
     })
+}
+
+fn transcript_calls(d: &DispatchResult) -> Vec<coverage_report::Call> {
+    d.transcript
+        .as_deref()
+        .map(coverage_report::calls_in_transcript)
+        .unwrap_or_default()
+}
+
+fn dispatch_kind(label: &str) -> &'static str {
+    if label.starts_with("completeness-critic") {
+        "critic"
+    } else if label.starts_with("refute") {
+        "refuter"
+    } else {
+        "other"
+    }
 }
 
 /// APPROVE becomes COMMENT when a `riskPaths` file went unread for budget,
@@ -1178,7 +1307,10 @@ pub(crate) async fn teardown(rt: &Runtime, review: &ReviewOutcome, verify: Optio
         .and_then(|v| v.typecheck.as_ref())
         .and_then(|t| t.created_worktree.as_deref())
     {
-        remove_tree(&rt.tools, wt, false, &rt.operator.cwd).await;
+        let tc_cwd = verify.map_or(rt.operator.cwd.as_path(), |v| {
+            v.repo_cwd.dir(&rt.operator.cwd)
+        });
+        remove_tree(&rt.tools, wt, false, tc_cwd).await;
     }
     if let Some((tree, clone)) = verify.and_then(|v| v.external_tree.as_ref()) {
         remove_tree(&rt.tools, tree, *clone, &rt.operator.cwd).await;

@@ -6,6 +6,7 @@
 pub mod agent_def;
 pub mod context;
 pub mod cost_report;
+pub mod coverage_report;
 pub mod decisions;
 pub mod live;
 pub mod metrics;

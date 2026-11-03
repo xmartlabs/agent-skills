@@ -123,6 +123,15 @@ go on, the first step below reports the same reason.
 
 **Read `metricsRowVerified` before anything else in Step 4.** The binary writes the run's `metrics.jsonl` row and then reads it back from disk; `metricsRowVerified` is that read-back's answer and `metricsRowDetail` says what went wrong when it is `false`. A run can produce a good report and still have written no row: the report is the product, the row is the measurement, and they fail independently. When it is `false`, say so to the user, plainly, before the report: this run is not in the log, so `--metrics`, `--audit` and `--cost` cannot see it. Posting is still allowed if Step 4 resolves to yes.
 
+**Tell the user what the run could not check, before the report, and ask when they can fix it.** Three signs, each also in the report as a `⚠️` or bold paragraph:
+
+- **`metrics.repoResolution.state` is `unresolved`**, or the report says "The typecheck did not run". The review ran from a directory that is not a checkout of the reviewed repo, and no local checkout was found, so no compiler checked the PR. Say so and ask whether to run it again from a checkout of the repo, or with `TRIBUNAL_REPO_DIR` set to one. State `resolved` means the engine found a checkout by itself and used it: mention which (`repoResolution.dir`), no question needed.
+- **`metrics.depsDrift` is not empty.** The typecheck ran, but on packages installed from a checkout whose lockfile differs from the PR's. Say which files, and that a type error about a missing module may not be the PR's.
+- **`metrics.coverageContradictions` is not empty**, or the report has "Listed as not checked, but a lens ran commands on it". The critic's coverage gaps are wrong about those names. Do not repeat the critic's "not checked" for them.
+- **`metrics.anchorFormat.annotatedUnresolved` is above 0.** Some `verifiedBy` anchors were written as `path (note)` and looked up in the wrong repo. The review stands; the anchors say nothing.
+
+`metrics.crossRepoReads` lists, per lens, critic and refuter, which repos they read outside the reviewed one and at which ref. Use it to answer "did anyone check the backend?" from what ran.
+
 ## Step 4: post decision
 
 The report is a candidate for posting, not a fait accompli. A GitHub review is visible to the whole team and awkward to walk back, so this is a hard checkpoint.

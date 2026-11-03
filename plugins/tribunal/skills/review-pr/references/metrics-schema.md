@@ -1212,6 +1212,22 @@ fixture (`fixtures/vote-reconciliation-model/`) with three codex slots split
 across two models plus a gemini slot that writes no `MODEL:` line, asserting
 `codexModelsUsed` dedupes, sorts, and never picks up the gemini slot.
 
+## Fields added for coverage visibility — `repoResolution`, `crossRepoReads`, `criticNotChecked`, `coverageContradictions`, `anchorFormat`
+
+Added so a reader can tell what a run verified without opening its transcripts.
+None changes what is reviewed or the verdict. `groundedChecker` already held the
+typecheck's state; what was missing was why it was skipped and a mention in the
+report.
+
+| Field | Meaning |
+|---|---|
+| `repoResolution` | Which directory stood for the reviewed repo when the grounded typecheck ran. `{state: "ambient"}` when the working directory is a checkout of it. `{state: "resolved", dir, how}` when it is not and the engine found one: `how` is `TRIBUNAL_REPO_DIR` or `sibling` (a git directory one or two levels above the working directory whose `origin` is the repo). `{state: "unresolved", cwdOrigin, searched}` when none was found, and the typecheck then prints `DEGRADED_WRONG_REPO`. Always carries `repo` and `cwd`. |
+| `crossRepoReads` | One entry per dispatch that read a repo other than the reviewed one: `{label, kind, reads}`, `kind` one of `lens`, `critic`, `refuter`, `other`, and `reads` mapping `owner/name@ref` to a count. A read with no ref in its command is `@(default)`, a code search `@(search)`. Read off the saved transcripts, so it is what ran. An empty list means no dispatch read another repo, or no transcript was saved. |
+| `criticNotChecked` | The sentences of the completeness critic's answer that say it did not check something and cite a file or endpoint in backticks: `{text, tokens}`. Taken from prose, so a sentence with no backticked name is not listed. |
+| `coverageContradictions` | The names in `criticNotChecked` that some lens's commands contain: `{claim, token, lenses}`. A match by name (the full path, its last two segments, or its last segment when it is at least six characters), so it shows a lens looked, not what it concluded. Also printed in the report. |
+| `depsDrift` | The manifests that differ between the checkout that supplied the typecheck's installed packages and the reviewed commit: the lockfiles (`package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`) compared as bytes, or, with none, the dependency maps of `package.json`. Empty when they match or when no typecheck ran. A non-empty list also prints a warning in the report: module and type errors may come from the packages, and a clean result may not hold with the PR's versions. |
+| `anchorFormat` | `{annotatedUnresolved, files}`: `verifiedBy` anchors that came back unresolved and whose `file` ends in a note such as `src/a.ts (BE staging)`. The resolver reads a file of another repo only as `<repo-name>/<path>`; the lens prompt says so since this field was added. |
+
 ## The posted-comment footer reads this row, it does not extend it
 
 Every posted GitHub comment ends with one `<sub>...</sub>` metadata line —

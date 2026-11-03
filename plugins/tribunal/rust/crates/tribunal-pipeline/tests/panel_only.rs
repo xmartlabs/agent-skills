@@ -225,6 +225,19 @@ fn world(name: &str) -> World {
     ];
     let recordings = root.join("gh-recordings.json");
     std::fs::write(&recordings, json!({ "calls": calls }).to_string()).unwrap();
+    // The pinned checkout is a clone of the remote, never a worktree of the
+    // working directory's repo, so `gh repo clone` needs a remote to clone.
+    let bare = root.join("remote.git");
+    git(
+        &root,
+        &[
+            "clone",
+            "-q",
+            "--bare",
+            repo.to_str().unwrap(),
+            bare.to_str().unwrap(),
+        ],
+    );
     let data = root.join("data");
     let tmp = root.join("tmp");
     std::fs::create_dir_all(&data).unwrap();
@@ -249,6 +262,7 @@ fn world(name: &str) -> World {
                     OsString::from("GH_CALL_LOG"),
                     root.join("gh.log").into_os_string(),
                 ),
+                (OsString::from("GH_BARE"), bare.into_os_string()),
             ],
             ..Tools::default()
         },
@@ -466,13 +480,22 @@ async fn every_given_finding_is_paneled_and_judged_by_its_votes() {
         .map(|c| &c["args"])
         .collect();
     let gh_log = std::fs::read_to_string(w.root.join("gh.log")).unwrap();
+    let mut clones = 0;
     for line in gh_log.lines() {
         let args: Value = serde_json::from_str(line).unwrap();
+        // The pinned checkout is cloned into a temp directory whose name the
+        // recording cannot know; `GH_BARE` answers it. Exactly one is made.
+        if args[0] == "repo" && args[1] == "clone" {
+            assert_eq!(args[2], REPO, "{line}");
+            clones += 1;
+            continue;
+        }
         assert!(
             recorded.contains(&&args),
             "unrecorded gh call {line}\n{gh_log}"
         );
     }
+    assert_eq!(clones, 1, "{gh_log}");
 }
 
 /// The same findings through the review's own gates would not all reach a

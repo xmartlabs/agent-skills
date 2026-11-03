@@ -14,7 +14,9 @@ mod common;
 use common::{assert_same, sample, span, Span, LOG_FN};
 use proptest::prelude::*;
 use serde_json::{json, Value};
-use tribunal_core::lens::lens_prompt::{NOT_REACHED_PARAGRAPH, WORKFLOW_NOT_REACHED_PARAGRAPH};
+use tribunal_core::lens::lens_prompt::{
+    ANCHOR_FILE_PARAGRAPH, NOT_REACHED_PARAGRAPH, WORKFLOW_NOT_REACHED_PARAGRAPH,
+};
 use tribunal_core::profile::conventions_channel::conventions_channel;
 use tribunal_pipeline::prompts::{
     lens_dispatch_prompt, methodology_line, methodology_path, DiffDelivery, DiffExposure,
@@ -149,16 +151,22 @@ fn rust_prompt_with(c: &Value, shared: bool) -> Value {
 fn lens_dispatch_prompt_matches_the_workflow() {
     let cases = sample(case());
     let js = span(&PROMPT_SPAN, &cases);
-    // Declared difference (`lens_prompt::NOT_REACHED_PARAGRAPH`): the port
-    // asks for each gap's kind. Each port prompt carries it once; with the
-    // Workflow's paragraph put back, the prompt is the Workflow's.
+    // Declared differences: the port asks for each gap's kind
+    // (`lens_prompt::NOT_REACHED_PARAGRAPH`) and says how an anchor names a
+    // file of another repo (`lens_prompt::ANCHOR_FILE_PARAGRAPH`). Each port
+    // prompt carries each once; with the Workflow's paragraph put back and
+    // the anchor paragraph taken out, the prompt is the Workflow's.
     let rust: Vec<Value> = cases
         .iter()
         .map(rust_prompt)
         .map(|mut r| {
             let p = r["prompt"].as_str().unwrap();
             assert_eq!(p.matches(NOT_REACHED_PARAGRAPH).count(), 1);
-            r["prompt"] = json!(p.replace(NOT_REACHED_PARAGRAPH, WORKFLOW_NOT_REACHED_PARAGRAPH));
+            assert_eq!(p.matches(ANCHOR_FILE_PARAGRAPH).count(), 1);
+            let workflow = p
+                .replace(&format!("\n{ANCHOR_FILE_PARAGRAPH}"), "")
+                .replace(NOT_REACHED_PARAGRAPH, WORKFLOW_NOT_REACHED_PARAGRAPH);
+            r["prompt"] = json!(workflow);
             r
         })
         .collect();
