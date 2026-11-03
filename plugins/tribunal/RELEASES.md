@@ -14,11 +14,13 @@ first freeze is 111. Rows before 99 are not included.
 
 **The Gate cell says which gate ran.**
 
-- `N/N full`: every replay and the mirror check ran against the test-data
+- `N/N full`: every check ran, the client-name scan included, against the test-data
   directory (`TRIBUNAL_HARNESS_DATA`), which is not part of this repository.
-- `N/N portable (M need data, not run)`: no test-data directory was available, so the
-  M replays listed in `scripts/needs-data.txt` were skipped. This is a weaker claim and
-  `release.sh` only records it when asked with `--portable`.
+- `N/N portable (client-name scan not run)`: no test-data directory was available.
+  This is a weaker claim and `release.sh` only records it when asked with `--portable`.
+- Rows up to v112 name the Workflow's replay battery (`pr-battery-`), and their
+  `portable` rows skipped the replays that needed the data; rows from v113 name the
+  Rust battery (`rust-battery-`).
 
 Notes are written in generic terms. Nothing that identifies a client's repo, PR or
 cost belongs in a row.

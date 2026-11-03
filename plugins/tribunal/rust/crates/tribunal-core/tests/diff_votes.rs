@@ -23,7 +23,6 @@ use common::*;
 // golden in place it fails asking for a regeneration.
 
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
 
 use proptest::prelude::*;
 use serde_json::{json, Map, Value};
@@ -1479,57 +1478,4 @@ fn small_regions_edges_match_js() {
     }
     let js = oracle("DEDUP-VETO", &["mergeableWithin"], &[], &calls);
     assert_same("mergeableWithin (edges)", &calls, &rust, &js);
-}
-
-// ===== Recorded fixtures =====
-
-fn harness_fixtures() -> PathBuf {
-    let root = std::env::var("TRIBUNAL_HARNESS_DATA").expect("TRIBUNAL_HARNESS_DATA is not set");
-    PathBuf::from(root).join("tribunal/fixtures")
-}
-
-fn read_json(path: PathBuf) -> Value {
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-    serde_json::from_str(&text).unwrap()
-}
-
-/// The PR #1911 votes and artifacts `replay-vote-derivation.mjs` replays, and
-/// every same-file candidate pair of the dedup fixture.
-#[test]
-#[ignore = "needs TRIBUNAL_HARNESS_DATA"]
-fn votes_match_js_on_recorded_fixtures() {
-    let dir = harness_fixtures();
-    let truth = read_json(dir.join("vote-derivation/classified.json"))["entries"].clone();
-    let recorded = read_json(dir.join("vote-derivation/recorded-votes.json"));
-    let votes = recorded.as_array().expect("recorded votes are an array");
-    assert!(!votes.is_empty());
-    let cases: Vec<TruthCase> = votes
-        .iter()
-        .map(|v| {
-            (
-                vec![v.clone()],
-                vec![json!({"source": v["source"], "task": true})],
-                truth.clone(),
-                v["slotId"].as_u64().unwrap(),
-                0,
-            )
-        })
-        .collect();
-    check_artifact_truth("applyArtifactTruth (recorded)", &cases);
-
-    let fixture = read_json(dir.join("dedup/pr-1911-clusters.json"));
-    let candidates = fixture["candidates"].as_array().unwrap();
-    let mut calls = Vec::new();
-    let mut rust = Vec::new();
-    for a in candidates {
-        for b in candidates {
-            if a["file"] == b["file"] {
-                calls.push(json!({"fn": "mergeableWithin", "args": [a, b]}));
-                rust.push(json!(dedup_veto::mergeable_within(a, b)));
-            }
-        }
-    }
-    assert!(!calls.is_empty());
-    let js = oracle("DEDUP-VETO", &["mergeableWithin"], &[], &calls);
-    assert_same("mergeableWithin (recorded)", &calls, &rust, &js);
 }

@@ -1,6 +1,6 @@
 // gate-paths.mjs: where the release gate finds the plugin, the test data and the
-// release log. It carries the three values the gate used from
-// skills/review-pr/eval/paths.mjs, so the gate does not import from eval/.
+// release log: the three values the gate once read from eval/paths.mjs, which
+// was removed with the Workflow in v115.
 
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

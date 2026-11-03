@@ -1,6 +1,6 @@
 ---
 name: tribunal-scribe
-description: "Text step runner for tribunal's PR review (`workflows/tribunal.js`): the dispatches whose whole input is already in the prompt, namely `synthesize` (the report a person reads), `dedup-candidates` (clustering findings that make the same claim) and `panel-ceiling-tiebreak` (ranking findings tied at the panel ceiling). Across the stored runs synthesize called no tool and dedup called only StructuredOutput, so this agent carries the smallest tool set Claude Code will launch. The workflow passes the model on every dispatch, so the definition pins none. Not a reviewer, a refuter or a mechanical step; those are `code-review-expert`, `fe-code-review-expert`, `tribunal-refuter` and `tribunal-mechanic`."
+description: "Text step runner for tribunal's PR review (the Rust engine): the dispatches whose whole input is already in the prompt, namely `synthesize` (the report a person reads), `dedup-candidates` (clustering findings that make the same claim) and `panel-ceiling-tiebreak` (ranking findings tied at the panel ceiling). Across the stored runs synthesize called no tool and dedup called only StructuredOutput, so this agent carries the smallest tool set Claude Code will launch. The engine passes the model on every dispatch, so the definition pins none. Not a reviewer, a refuter or a mechanical step; those are `code-review-expert`, `fe-code-review-expert`, `tribunal-refuter` and `tribunal-mechanic`."
 tools: Read
 ---
 

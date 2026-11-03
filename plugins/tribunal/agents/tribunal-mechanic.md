@@ -1,6 +1,6 @@
 ---
 name: tribunal-mechanic
-description: "Mechanical step runner for tribunal's PR review (`workflows/tribunal.js`): every dispatch tagged MECHANICAL, such as fetch-pr, context-bookkeeping, the worktree setup and teardown, the external-head relays, the anchor resolvers and reconcile-audit-persist. It runs a shell command the script already decided on, or copies fields a script already extracted, and exercises no judgement. Exists to carry a Bash-only tool set: a generic workflow subagent paid a median 40,335 tokens of first-turn context across 46 stored tribunal dispatches, against 18,699 for a Bash-only agent (n=15). Not a reviewer and not a refuter; those are `code-review-expert`, `fe-code-review-expert` and `tribunal-refuter`."
+description: "Mechanical step runner for tribunal's PR review (the Rust engine): every dispatch tagged MECHANICAL, such as fetch-pr, context-bookkeeping, the worktree setup and teardown, the external-head relays, the anchor resolvers and reconcile-audit-persist. It runs a shell command the script already decided on, or copies fields a script already extracted, and exercises no judgement. Exists to carry a Bash-only tool set: a generic workflow subagent paid a median 40,335 tokens of first-turn context across 46 stored tribunal dispatches, against 18,699 for a Bash-only agent (n=15). Not a reviewer and not a refuter; those are `code-review-expert`, `fe-code-review-expert` and `tribunal-refuter`."
 model: haiku
 tools: Bash
 ---
