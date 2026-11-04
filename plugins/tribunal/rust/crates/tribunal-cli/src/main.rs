@@ -36,6 +36,7 @@ fn usage() -> ExitCode {
     eprintln!(
         "usage: tribunal audit [--repo <owner/name>] [--since <iso date>] [--limit <n>] [--json]"
     );
+    eprintln!("usage: tribunal compare --a <file.json> --b <file.json> [--resamples <n>] [--seed <n>] [--json]");
     eprintln!("usage: tribunal lost-runs [--recent <days>]");
     eprintln!("usage: tribunal harness-version [--short|--manifest]");
     eprintln!("usage: tribunal load-profile [--repo <owner/name>] [--pr <n> | --ref <branch> | --profile <path>] [--rules <path>] [--save <file>] [--save-rules <file>]");
@@ -818,6 +819,59 @@ fn metrics_main(argv: &[String]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// `tribunal compare`: whether arm B of an A/B run did better than arm A, or
+/// the difference is inside the run-to-run noise. Reads two observation
+/// files and writes nothing.
+fn compare_main(argv: &[String]) -> ExitCode {
+    use tribunal_context::compare::{compare, render, CompareArgs};
+    let (mut a, mut b, mut as_json) = (None, None, false);
+    let mut args = CompareArgs::default();
+    let mut it = argv.iter();
+    while let Some(flag) = it.next() {
+        match flag.as_str() {
+            "--a" => a = it.next().cloned(),
+            "--b" => b = it.next().cloned(),
+            "--resamples" => match it.next().and_then(|v| v.parse().ok()) {
+                Some(n) => args.resamples = n,
+                None => {
+                    eprintln!("tribunal: --resamples takes a whole number");
+                    return usage();
+                }
+            },
+            "--seed" => match it.next().and_then(|v| v.parse().ok()) {
+                Some(n) => args.seed = n,
+                None => {
+                    eprintln!("tribunal: --seed takes a whole number");
+                    return usage();
+                }
+            },
+            "--json" => as_json = true,
+            other => {
+                eprintln!("tribunal: unknown argument {other}");
+                return usage();
+            }
+        }
+    }
+    let (Some(a), Some(b)) = (a, b) else {
+        eprintln!("tribunal: compare needs --a and --b");
+        return usage();
+    };
+    let read = |path: &str| -> Result<Value, String> {
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
+        serde_json::from_str(&text).map_err(|e| format!("{path}: not JSON ({e})"))
+    };
+    let report = read(&a).and_then(|va| read(&b).and_then(|vb| compare(&va, &vb, &args)));
+    match report {
+        Ok(report) if as_json => println!("{report}"),
+        Ok(report) => print!("{}", render(&report)),
+        Err(e) => {
+            eprintln!("tribunal: {e}");
+            return ExitCode::FAILURE;
+        }
+    }
+    ExitCode::SUCCESS
+}
+
 /// `tribunal audit`: what happened to posted findings after the review, from
 /// `metrics.jsonl` and `gh`. Reads only; posts and writes nothing.
 async fn audit_main(argv: &[String]) -> ExitCode {
@@ -1038,6 +1092,7 @@ async fn main() -> ExitCode {
         Some("cost") => return cost_main(&argv[1..]),
         Some("metrics") => return metrics_main(&argv[1..]),
         Some("audit") => return audit_main(&argv[1..]).await,
+        Some("compare") => return compare_main(&argv[1..]),
         Some("override") => return override_main(&argv[1..]),
         Some("lost-runs") => return lost_runs_main(&argv[1..]),
         Some("harness-version") => return harness_version_main(&argv[1..]),

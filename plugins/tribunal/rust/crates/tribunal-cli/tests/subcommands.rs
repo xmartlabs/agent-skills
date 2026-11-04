@@ -297,3 +297,54 @@ fn an_unreadable_ledger_fails_with_a_tribunal_line() {
         assert_eq!(tribunal(args, &dir).status.code(), Some(2), "{args:?}");
     }
 }
+
+#[test]
+fn compare_reads_two_arm_files() {
+    let dir = scratch("compare");
+    let arm = |name: &str, found: bool| {
+        let rows: Vec<_> = (0..6)
+            .flat_map(|u| {
+                (0..8).map(move |r| {
+                    serde_json::json!({"unit": format!("p{u}"), "run": r, "item": "d", "found": found})
+                })
+            })
+            .collect();
+        serde_json::json!({"arm": name, "detections": rows}).to_string()
+    };
+    let (a, b) = (dir.join("a.json"), dir.join("b.json"));
+    std::fs::write(&a, arm("base", false)).unwrap();
+    std::fs::write(&b, arm("edit", true)).unwrap();
+    let (a, b) = (a.to_str().unwrap(), b.to_str().unwrap());
+
+    let o = tribunal(
+        &["compare", "--a", a, "--b", b, "--json", "--seed", "7"],
+        &dir,
+    );
+    assert!(o.status.success(), "{}", stderr(&o));
+    let j = json_line(&o);
+    assert_eq!(j["recall"]["verdict"], "b-higher");
+    assert_eq!(j["seed"], 7);
+    assert_eq!(j["cost"]["recorded"], false);
+
+    let text = stdout(&tribunal(&["compare", "--a", a, "--b", b], &dir));
+    assert!(
+        text.starts_with("tribunal compare: A (base) against B (edit)\n"),
+        "{text}"
+    );
+    assert!(text.contains("B minus A  +100.0 points"), "{text}");
+    assert!(text.contains("verdict: B found more"), "{text}");
+
+    let missing = tribunal(&["compare", "--a", a], &dir);
+    assert_eq!(missing.status.code(), Some(2));
+    let nofile = tribunal(&["compare", "--a", a, "--b", "no-such.json"], &dir);
+    assert_eq!(nofile.status.code(), Some(1));
+    assert!(
+        stderr(&nofile).contains("no-such.json"),
+        "{}",
+        stderr(&nofile)
+    );
+    for bad in [["--resamples", "x"], ["--seed", "-1"]] {
+        let o = tribunal(&["compare", "--a", a, "--b", b, bad[0], bad[1]], &dir);
+        assert_eq!(o.status.code(), Some(2), "{bad:?}");
+    }
+}
