@@ -42,6 +42,10 @@ findings after the review. `tribunal override`
 records your own call on one finding of a run (a panel error, or a real finding
 at a lower severity), with the reason. All four need the Rust binary.
 
+`tribunal compare` is for the A/B of an edit: it takes two files of observations
+you produce and says whether the difference is outside the run-to-run noise
+([format and reading](compare.md)).
+
 Two consequences for you:
 
 **It lives outside the plugin on purpose.** The plugin directory is a cache that
