@@ -212,29 +212,102 @@ pub fn findings_in_body(findings: &[Value], body: &str) -> Vec<Value> {
         .collect()
 }
 
+/// What the fidelity checks find wrong with a posted body.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct FidelityGaps {
+    /// Items the body must carry, one line each.
+    pub missing: Vec<String>,
+    /// Unexamined wording to remove from a named finding, one line each.
+    pub unexamined: Vec<String>,
+}
+
+impl FidelityGaps {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.missing.is_empty() && self.unexamined.is_empty()
+    }
+
+    fn describe(&self) -> String {
+        let mut parts = Vec::new();
+        if !self.missing.is_empty() {
+            parts.push(format!(
+                "misses {} item(s): {}",
+                self.missing.len(),
+                self.missing.join("; ")
+            ));
+        }
+        if !self.unexamined.is_empty() {
+            parts.push(format!(
+                "still calls {} finding(s) unexamined: {}",
+                self.unexamined.len(),
+                self.unexamined.join("; ")
+            ));
+        }
+        parts.join(", and ")
+    }
+}
+
+fn bullets(items: &[String]) -> String {
+    items
+        .iter()
+        .map(|m| format!("- {m}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// The fidelity gate's patch prompt for one round.
 #[must_use]
-pub fn patch_prompt(body: &Path, missing: &[String]) -> String {
+pub fn patch_prompt(body: &Path, gaps: &FidelityGaps) -> String {
+    let mut parts = Vec::new();
+    if !gaps.missing.is_empty() {
+        parts.push(format!(
+            "The review body in {} must carry these items and does not:\n{}\n\nEdit the file so each one appears, in the finding it belongs to.",
+            body.display(),
+            bullets(&gaps.missing)
+        ));
+    }
+    if !gaps.unexamined.is_empty() {
+        let lead = if gaps.missing.is_empty() {
+            format!(
+                "The review body in {} calls findings unexamined that the refutation panel examined:",
+                body.display()
+            )
+        } else {
+            "The body also calls findings unexamined that the refutation panel examined:".into()
+        };
+        parts.push(format!(
+            "{lead}\n{}\n\nThe evidence gate only lowered each one's severity after its panel voted. In each of those findings, remove that wording and any other line saying no refuter examined it. Touch no other finding, and add no claim about the panel's votes that the finding does not already carry.",
+            bullets(&gaps.unexamined)
+        ));
+    }
     format!(
-        "The review body in {} must carry these items and does not:\n{}\n\nEdit the file so each one appears, in the finding it belongs to. Change nothing else, keep the `### Draft comments` section, and do not add a verdict banner or a footer. Answer with the single word DONE.",
-        body.display(),
-        missing.iter().map(|m| format!("- {m}")).collect::<Vec<_>>().join("\n")
+        "{} Change nothing else, keep the `### Draft comments` section, and do not add a verdict banner or a footer. Answer with the single word DONE.",
+        parts.join("\n\n")
     )
 }
 
-/// The items the posted body is missing, one line each, from the four
-/// `*MissingFromReport` arrays the fidelity checks write.
+/// What the posted body gets wrong, from the arrays the fidelity checks
+/// write: the four `*MissingFromReport` ones are items to add, and
+/// `unexaminedWordingInReport` is wording to remove.
 ///
 /// # Errors
 /// The checks' own TypeError on a malformed finding.
-pub fn missing_items(findings: &[Value], body: &str) -> Result<Vec<String>, String> {
+pub fn fidelity_gaps(findings: &[Value], body: &str) -> Result<FidelityGaps, String> {
     let mut list = Value::Array(findings.to_vec());
     apply_fidelity_checks(&mut list, &strip_draft_comments_from_body(body))?;
-    let mut out = Vec::new();
+    let mut out = FidelityGaps::default();
     for f in list.as_array().into_iter().flatten() {
         let title = js::get(f, "title")
             .and_then(Value::as_str)
             .unwrap_or("(untitled)");
+        for m in js::get(f, "unexaminedWordingInReport")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            out.unexamined
+                .push(format!("{title}: \"{}\"", to_js_string(Some(m))));
+        }
         for (key, what) in [
             ("mergedLocationsMissingFromReport", "also at"),
             ("killReasonMissingFromReport", "kill reason"),
@@ -249,7 +322,8 @@ pub fn missing_items(findings: &[Value], body: &str) -> Result<Vec<String>, Stri
                 .into_iter()
                 .flatten()
             {
-                out.push(format!("{title}: {what} {}", to_js_string(Some(m))));
+                out.missing
+                    .push(format!("{title}: {what} {}", to_js_string(Some(m))));
             }
         }
     }
@@ -445,29 +519,33 @@ pub async fn post_phase<A: Agent>(
         } else {
             findings.clone()
         };
-        let missing = match missing_items(&checked, &body) {
-            Ok(m) => m,
+        let gaps = match fidelity_gaps(&checked, &body) {
+            Ok(g) => g,
             Err(e) => return PostOutcome::Held(format!("the fidelity gate failed: {e}")),
         };
-        if missing.is_empty() {
+        if gaps.is_empty() {
             break;
         }
         if round == FIDELITY_ROUNDS {
             return PostOutcome::Held(format!(
-                "the body still misses {} item(s) after {FIDELITY_ROUNDS} patch rounds: {}",
-                missing.len(),
-                missing.join("; ")
+                "after {FIDELITY_ROUNDS} patch rounds the body still {}",
+                gaps.describe()
             ));
         }
         round += 1;
+        let removing = if gaps.unexamined.is_empty() {
+            String::new()
+        } else {
+            format!(" and {} unexamined marker(s)", gaps.unexamined.len())
+        };
         logs.push(format!(
-            "Fidelity gate round {round}: patching {} missing item(s)",
-            missing.len()
+            "Fidelity gate round {round}: patching {} missing item(s){removing}",
+            gaps.missing.len()
         ));
         ask(
             agent,
             &format!("patch-post:{round}"),
-            patch_prompt(&body_file, &missing),
+            patch_prompt(&body_file, &gaps),
             &args.review_model,
             input.effort,
             input.cwd,

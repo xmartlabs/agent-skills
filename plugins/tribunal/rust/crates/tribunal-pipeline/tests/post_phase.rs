@@ -12,7 +12,8 @@ use tribunal_context::exec::Tools;
 use tribunal_context::operator::OperatorEnv;
 use tribunal_pipeline::context::{RunArgs, Runtime};
 use tribunal_pipeline::post::{
-    post_phase, post_saved_run, PostChoice, PostInput, PostMode, PostOutcome,
+    patch_prompt, post_phase, post_saved_run, FidelityGaps, PostChoice, PostInput, PostMode,
+    PostOutcome,
 };
 
 /// Writes `compose` into the body file the compose prompt names, and
@@ -32,7 +33,11 @@ fn body_path(prompt: &str) -> Option<PathBuf> {
 fn patched_path(prompt: &str) -> Option<PathBuf> {
     let at = prompt.find("The review body in ")? + "The review body in ".len();
     let rest = &prompt[at..];
-    Some(PathBuf::from(&rest[..rest.find(" must carry")?]))
+    let end = [" must carry", " calls findings unexamined"]
+        .iter()
+        .filter_map(|m| rest.find(m))
+        .min()?;
+    Some(PathBuf::from(&rest[..end]))
 }
 
 impl Agent for Scribe {
@@ -327,6 +332,96 @@ async fn a_body_that_stays_short_is_never_posted() {
     );
     assert_eq!(gh_log(&w), "");
     assert_eq!(agent.labels.lock().unwrap().len(), 4);
+}
+
+fn demoted_row() -> Value {
+    let mut r = row("clear");
+    r["findings"] = json!([{
+        "title": "Demoted write", "file": "a.ts", "line": 12,
+        "votes": [{"verdict": "NOT_REFUTED"}],
+        "verifiedByGateNote": "Downgraded: no verifiedBy",
+    }]);
+    r
+}
+
+const UNEXAMINED_BODY: &str =
+    "### Nits\n**Demoted write** `a.ts:12`\nNOT ADJUDICATED: no refuter examined this claim\n";
+const EXAMINED_BODY: &str = "### Nits\n**Demoted write** `a.ts:12`\nPanel: 1 NOT_REFUTED vote.\n";
+
+#[tokio::test]
+async fn the_unexamined_marker_on_a_gate_demoted_finding_is_patched_out() {
+    let r = demoted_row();
+    let w = world("unexamined-patched", &r);
+    let agent = Scribe {
+        compose: UNEXAMINED_BODY.into(),
+        patched: Some(EXAMINED_BODY.into()),
+        labels: Mutex::default(),
+    };
+    let (out, logs) = post(&w, &agent, &r).await;
+    assert!(matches!(out, PostOutcome::Posted { .. }), "{out:?}");
+    assert_eq!(
+        *agent.labels.lock().unwrap(),
+        ["compose-post", "patch-post:1"]
+    );
+    assert!(
+        logs.iter()
+            .any(|l| l.contains("patching 0 missing item(s) and 2 unexamined marker(s)")),
+        "{logs:?}"
+    );
+    let posted = std::fs::read_to_string(w.root.join("posted-body.md")).unwrap();
+    assert!(!posted.contains("NOT ADJUDICATED"), "{posted}");
+}
+
+#[tokio::test]
+async fn a_review_that_keeps_the_unexamined_marker_is_held() {
+    let r = demoted_row();
+    let w = world("unexamined-kept", &r);
+    let agent = Scribe {
+        compose: UNEXAMINED_BODY.into(),
+        patched: Some(UNEXAMINED_BODY.into()),
+        labels: Mutex::default(),
+    };
+    let (out, _) = post(&w, &agent, &r).await;
+    assert!(
+        matches!(&out, PostOutcome::Held(why)
+            if why.contains("Demoted write") && why.contains("NOT ADJUDICATED")),
+        "{out:?}"
+    );
+    assert_eq!(gh_log(&w), "");
+    assert_eq!(agent.labels.lock().unwrap().len(), 4);
+}
+
+#[test]
+fn the_patch_prompt_names_what_to_add_and_what_to_remove() {
+    let body = Path::new("/tmp/body.md");
+    let add = FidelityGaps {
+        missing: vec!["Lost write: also at b.ts:9".into()],
+        unexamined: vec![],
+    };
+    assert_eq!(
+        patch_prompt(body, &add),
+        "The review body in /tmp/body.md must carry these items and does not:\n- Lost write: also at b.ts:9\n\nEdit the file so each one appears, in the finding it belongs to. Change nothing else, keep the `### Draft comments` section, and do not add a verdict banner or a footer. Answer with the single word DONE."
+    );
+
+    let both = FidelityGaps {
+        unexamined: vec!["Demoted write: \"NOT ADJUDICATED\"".into()],
+        ..add
+    };
+    let p = patch_prompt(body, &both);
+    assert!(p.contains("- Lost write: also at b.ts:9"), "{p}");
+    assert!(p.contains("- Demoted write: \"NOT ADJUDICATED\""), "{p}");
+    assert!(p.contains("remove that wording"), "{p}");
+
+    let remove = FidelityGaps {
+        missing: vec![],
+        ..both
+    };
+    let p = patch_prompt(body, &remove);
+    assert!(!p.contains("must carry these items"), "{p}");
+    assert!(
+        p.starts_with("The review body in /tmp/body.md calls findings unexamined"),
+        "{p}"
+    );
 }
 
 #[tokio::test]
