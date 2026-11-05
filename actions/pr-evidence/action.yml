@@ -70,6 +70,10 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Set up GitHub CLI
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/run.sh" setup-gh
+
     - id: gate
       shell: bash
       env:

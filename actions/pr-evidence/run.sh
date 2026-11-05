@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run.sh gate|prepare|install|warmup|capture|fallback|summary|cleanup — the steps of the pr-evidence
+# run.sh setup-gh|gate|prepare|install|warmup|capture|fallback|summary|cleanup — the steps of the pr-evidence
 # action.
 #
 # Each step is a subcommand so it can be tested on its own. State shared between steps lives in
@@ -161,26 +161,44 @@ pick_port() {
     ;(async () => { let p; do p = 20000 + Math.floor(Math.random() * 12000); while (!(await isFree(p))); console.log(p) })()'
 }
 
-gh_at_least() { # MAJOR MINOR
-  command -v gh >/dev/null || return 1
-  gh --version | python3 -c 'import re,sys; m=re.search(r"gh version (\d+)\.(\d+)",sys.stdin.read()); sys.exit(0 if m and (int(m[1]),int(m[2]))>=(int(sys.argv[1]),int(sys.argv[2])) else 1)' "$1" "$2"
+# Bootstrap before either gate: never trust an ambient gh (for example a broken Snap wrapper).
+# Reuse only this job's versioned installation; no sudo or system-wide changes are needed.
+cmd_setup_gh() {
+  set -e
+  local tools="$JOB/tools" arch binary staging rel tgz
+  case "$(uname -m)" in
+    x86_64) arch=amd64 ;;
+    aarch64 | arm64) arch=arm64 ;;
+    *) log "unsupported GitHub CLI architecture: $(uname -m)"; return 1 ;;
+  esac
+  binary="$tools/gh_${GH_VERSION}_linux_${arch}/bin/gh"
+  mkdir -p "$tools/bin"
+  if [ ! -x "$binary" ]; then
+    staging="$(mktemp -d "$tools/gh-download.XXXXXX")"
+    rel="https://github.com/cli/cli/releases/download/v${GH_VERSION}"
+    tgz="gh_${GH_VERSION}_linux_${arch}.tar.gz"
+    # Publish only after download, checksum validation and extraction all succeed. A later
+    # attempt uses a fresh staging directory, so partial downloads are never reused.
+    curl -fsSL -o "$staging/$tgz" "$rel/$tgz"
+    curl -fsSL -o "$staging/checksums.txt" "$rel/gh_${GH_VERSION}_checksums.txt"
+    awk -v name="$tgz" '$2 == name {print; found = 1} END {exit !found}' \
+      "$staging/checksums.txt" > "$staging/selected-checksum.txt"
+    (cd "$staging" && sha256sum -c selected-checksum.txt)
+    tar -xzf "$staging/$tgz" -C "$staging"
+    "$staging/gh_${GH_VERSION}_linux_${arch}/bin/gh" --version
+    mv "$staging/gh_${GH_VERSION}_linux_${arch}" "$tools/"
+    rm -rf "$staging"
+  fi
+  ln -sf "$binary" "$tools/bin/gh"
+  export PATH="$tools/bin:$PATH"
+  echo "$tools/bin" >> "${GITHUB_PATH:-/dev/null}"
 }
 
 # Tools go to the job directory and onto GITHUB_PATH; nothing is installed system-wide.
 cmd_install() {
   set -e
-  local tools="$JOB/tools" arch
-  mkdir -p "$tools/bin"; echo "$tools/bin" >> "${GITHUB_PATH:-/dev/null}"
-  export PATH="$tools/bin:$PATH"
-  case "$(uname -m)" in x86_64) arch=amd64 ;; aarch64 | arm64) arch=arm64 ;; *) arch="$(uname -m)" ;; esac
-  if ! gh_at_least 2 99; then
-    local rel="https://github.com/cli/cli/releases/download/v${GH_VERSION}" tgz="gh_${GH_VERSION}_linux_${arch}.tar.gz"
-    curl -fsSL -o "$tools/$tgz" "$rel/$tgz"
-    curl -fsSL -o "$tools/gh-checksums.txt" "$rel/gh_${GH_VERSION}_checksums.txt"
-    (cd "$tools" && grep " $tgz\$" gh-checksums.txt | sha256sum -c -)
-    tar -xzf "$tools/$tgz" -C "$tools"
-    ln -sf "$tools/gh_${GH_VERSION}_linux_${arch}/bin/gh" "$tools/bin/gh"
-  fi
+  cmd_setup_gh
+  local tools="$JOB/tools"
   if ! command -v playwright-cli >/dev/null; then
     npm install --silent --no-audit --no-fund --prefix "$tools/pwcli" "@playwright/cli@${PLAYWRIGHT_CLI_VERSION}"
     ln -sf "$tools/pwcli/node_modules/.bin/playwright-cli" "$tools/bin/playwright-cli"
@@ -345,6 +363,7 @@ cmd_cleanup() {
 }
 
 case "${1:-}" in
+  setup-gh) cmd_setup_gh ;;
   gate) cmd_gate ;;
   prepare) cmd_prepare ;;
   install) cmd_install ;;
@@ -353,5 +372,5 @@ case "${1:-}" in
   fallback) cmd_fallback ;;
   summary) cmd_summary ;;
   cleanup) cmd_cleanup ;;
-  *) echo "usage: run.sh gate|prepare|install|warmup|capture|fallback|summary|cleanup" >&2; exit 2 ;;
+  *) echo "usage: run.sh setup-gh|gate|prepare|install|warmup|capture|fallback|summary|cleanup" >&2; exit 2 ;;
 esac

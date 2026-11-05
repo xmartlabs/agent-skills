@@ -1,7 +1,8 @@
 name: PR evidence gate
 description: >-
   Decides whether the pr-evidence action would run on this pull request, without checking out or
-  installing anything. Use it in a cheap job before an expensive setup job, with the same inputs.
+  installing the capture tools. Installs its own pinned GitHub CLI. Use it in a cheap job before
+  an expensive setup job, with the same inputs.
 author: Xmartlabs
 
 inputs:
@@ -45,6 +46,10 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Set up GitHub CLI
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/../run.sh" setup-gh
+
     - id: gate
       shell: bash
       env:
