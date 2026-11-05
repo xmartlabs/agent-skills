@@ -215,9 +215,16 @@ sets the config's `host.target` from the token, whatever the config says:
 
 ## Runner requirements
 
-Linux x64 or arm64 with `bash`, `git`, `python3`, `node` and `npm`, which GitHub-hosted Ubuntu
-runners have. The action installs `gh`, `playwright-cli` with its browser, `ffmpeg` and the
-Claude CLI into the job's temporary directory when they are missing. On self-hosted runners that
+Linux x64 or arm64 with `bash`, `curl`, `tar`, `sha256sum`, `git`, `python3`, `node` and `npm`,
+which GitHub-hosted Ubuntu runners have. Both the gate and the capture action install a pinned
+GitHub CLI release into the job's temporary directory **before the gate runs**, verifying its
+SHA-256 checksum against the official release checksums. They put that binary first on `PATH`,
+regardless of an existing system or Snap installation; no `sudo` or GitHub CLI login is needed.
+Repeated setup in the same job reuses that job's versioned binary. The runner needs HTTPS access
+to the GitHub CLI release assets even when the gate skips capture.
+
+The capture action also installs `playwright-cli` with its browser, `ffmpeg` and the Claude CLI
+when they are missing. On self-hosted runners that
 share a host, it picks a free port and its own browser session, so parallel jobs do not collide.
 
 ## Security

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tests for actions/pr-evidence/run.sh: gate, prepare, capture, fallback and cleanup, with fake
-# gh and claude binaries. Tool installation and warm-up need the network and are not covered.
+# gh and claude binaries. GitHub CLI bootstrap is covered in action_pr_evidence_setup_test.sh;
+# capture-tool installation and warm-up need the network and are not covered.
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 . "$DIR/tests/helper.sh"
 RUN="$DIR/actions/pr-evidence/run.sh"
