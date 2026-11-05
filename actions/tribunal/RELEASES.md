@@ -1,6 +1,9 @@
 # Tribunal action releases
 
-## Unreleased — CI parity
+## v1.2.0 — CI parity
+
+Tag `tribunal-action-v1.2.0` (and `tribunal-action-v1`) at `7a3bd5b`. Bundled
+Tribunal plugin `115.2.0` with binary `tribunal-rust-v115.2.0`.
 
 Backward-compatible defaults: bundled Tribunal, full reviews, Claude-only panels,
 frontend fallback, and comment publication. As before, the engine also runs a Gemini
@@ -16,12 +19,12 @@ panel when the job environment has `GEMINI_API_KEY`; the action does not pass
 ### Maintainer release checklist
 
 - [x] Verify the checks recorded in [the SDD tasks](docs/ci-parity/tasks.md).
-- [ ] Merge through a PR; never push a branch directly to `main`.
-- [ ] Confirm the next unused compatible `tribunal-action-v1.<minor>.0` tag.
-- [ ] With explicit publishing authorization, freeze that action tag at the
+- [x] Merge through a PR; never push a branch directly to `main`.
+- [x] Confirm the next unused compatible `tribunal-action-v1.<minor>.0` tag.
+- [x] With explicit publishing authorization, freeze that action tag at the
   verified commit and update `tribunal-action-v1` to the same commit.
-- [ ] State the bundled Tribunal plugin version and binary tag in release notes.
-- [ ] Confirm examples use a published action ref before asking consumers to adopt.
+- [x] State the bundled Tribunal plugin version and binary tag in release notes.
+- [x] Confirm examples use a published action ref before asking consumers to adopt.
 
 No tag or release is created by these notes. A plugin freeze alone does not
 update the action's moving major tag.
