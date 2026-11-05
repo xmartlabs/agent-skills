@@ -7,8 +7,9 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Value};
 use tribunal_context::exec::Tools;
 use tribunal_core::verified_gate::finding_problems;
-use tribunal_pipeline::anchor_repair::repair_anchor_lines;
+use tribunal_pipeline::anchor_repair::{anchor_from_evidence, repair_anchor_lines};
 use tribunal_pipeline::synthesize::surviving_for_synthesis;
+use tribunal_pipeline::verify::merge_candidates;
 
 const REPO: &str = "acme/widgets";
 const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -198,4 +199,107 @@ async fn a_quote_that_appears_twice_gets_its_first_line() {
     let mut v = verified(QUOTE);
     repair_anchor_lines(&s.tools, HEAD, REPO, &[], &mut v, &mut Vec::new()).await;
     assert_eq!(line_of(&v), 2);
+}
+
+fn evidenced_verdict(severity: &str, kind: &str, line: Value) -> Value {
+    json!({
+        "finding": {
+            "title": "t", "severity": severity, "file": "src/limit.ts",
+            "evidence": format!("+{QUOTE}"),
+            "evidenceResolution": {"matchKind": kind,
+                                   "evidenceLocated": kind != "not-found",
+                                   "resolvedLine": line},
+        },
+        "panelRan": true, "unverified": false, "survived": true, "votes": [],
+    })
+}
+
+fn note_of(row: &Value) -> Option<String> {
+    row.get("verifiedByGateNote")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+}
+
+#[tokio::test]
+async fn located_evidence_gives_a_finding_without_verified_by_an_anchor_the_gate_accepts() {
+    let s = setup("evidence-located", false);
+    let unanchored = evidenced_verdict("important", "exact", json!(2));
+    let before = surviving_for_synthesis(std::slice::from_ref(&unanchored));
+    assert_eq!(before[0]["adjudicated"], json!(false));
+    assert!(note_of(&before[0])
+        .unwrap()
+        .contains("verifiedBy is missing or empty"));
+
+    let mut v = vec![Some(unanchored)];
+    assert_eq!(anchor_from_evidence(&mut v), 1);
+    let mut logs = Vec::new();
+    repair_anchor_lines(&s.tools, HEAD, REPO, &[], &mut v, &mut logs).await;
+    assert!(
+        logs.is_empty(),
+        "nothing is left for the resolver: {logs:?}"
+    );
+
+    let rows: Vec<Value> = v.into_iter().flatten().collect();
+    let after = surviving_for_synthesis(&rows);
+    assert_eq!(after[0]["adjudicated"], json!(true));
+    assert_eq!(note_of(&after[0]), None);
+    assert_eq!(
+        after[0]["verifiedBy"],
+        json!([{"file": "src/limit.ts", "line": 2, "quote": QUOTE.trim()}])
+    );
+}
+
+#[tokio::test]
+async fn unlocated_evidence_a_nit_and_a_cited_finding_stay_as_they_were() {
+    let cited = json!([{"file": "src/limit.ts", "line": 3, "quote": "  return count <= limit;"}]);
+    let mut with_anchor = evidenced_verdict("important", "exact", json!(2));
+    with_anchor["finding"]["verifiedBy"] = cited.clone();
+    let rows = [
+        evidenced_verdict("important", "not-found", Value::Null),
+        evidenced_verdict("nit", "exact", json!(2)),
+        with_anchor,
+    ];
+    let mut v: Vec<Option<Value>> = rows.iter().cloned().map(Some).collect();
+    assert_eq!(anchor_from_evidence(&mut v), 0);
+    assert_eq!(v, rows.iter().cloned().map(Some).collect::<Vec<_>>());
+
+    let kept: Vec<Value> = v.into_iter().flatten().collect();
+    let out = surviving_for_synthesis(&kept);
+    assert_eq!(out[0]["adjudicated"], json!(false));
+    assert!(note_of(&out[0]).is_some());
+    assert_eq!(note_of(&out[1]), None);
+    assert_eq!(out[2]["verifiedBy"], cited);
+}
+
+#[tokio::test]
+async fn the_anchor_of_a_merged_finding_is_found_in_the_file_at_head() {
+    let s = setup("evidence-merged", true);
+    let member = |lens: &str| {
+        json!({
+            "title": "t", "severity": "important", "file": "src/limit.ts", "line": 2,
+            "lens": lens, "evidence": format!("+{QUOTE}\n+  return count <= limit;"),
+            "evidenceResolution": {"matchKind": "exact", "evidenceLocated": true,
+                                   "resolvedLine": 2},
+        })
+    };
+    let (a, b) = (member("correctness"), member("errorHandling"));
+    let merged = merge_candidates(&[&a, &b]);
+    assert!(merged["evidence"]
+        .as_str()
+        .unwrap()
+        .starts_with("[correctness] "));
+    let mut v = vec![Some(json!({"finding": merged}))];
+    assert_eq!(anchor_from_evidence(&mut v), 1);
+    let anchors = v[0].as_ref().unwrap()["finding"]["verifiedBy"].clone();
+    assert_eq!(anchors[0]["quote"], QUOTE.trim());
+
+    let payload = serde_json::to_string(&json!([{"title": "t", "verifiedBy": anchors}])).unwrap();
+    let out = tribunal_context::resolve_verified_anchors::run(
+        &["-", HEAD, "--repo", REPO, "--relay"],
+        &payload,
+        &s.tools,
+    )
+    .await
+    .unwrap();
+    assert_eq!(out["results"][0]["status"], "found", "{out}");
 }
