@@ -839,6 +839,12 @@ pub async fn verify_phase<A: Agent>(
     );
     let panel_seconds = (panel_started.elapsed().as_secs_f64() - panel.critic_seconds).max(0.0);
     dispatches.extend(io.dispatches.into_inner().expect("lock"));
+    let anchored = crate::anchor_repair::anchor_from_evidence(&mut panel.verified);
+    if anchored > 0 {
+        logs.push(format!(
+            "verifiedBy: anchored {anchored} finding(s) written without one from their located evidence"
+        ));
+    }
     if let Some(head) = js::get(&review.context.pr_context, "headRefOid")
         .and_then(Value::as_str)
         .filter(|h| !h.is_empty())

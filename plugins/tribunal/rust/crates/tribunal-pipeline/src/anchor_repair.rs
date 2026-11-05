@@ -6,12 +6,79 @@
 //! quote is word for word what the gate asks for. The line is derived with the
 //! anchor resolver, so a quote that is not in its file at the reviewed head
 //! still fails the gate.
+//!
+//! A finding with no `verifiedBy` at all gets one from its own evidence when the
+//! evidence resolver already placed that evidence in the file at the head.
 
 use serde_json::{json, Value};
 use tribunal_context::exec::Tools;
 use tribunal_context::resolve_verified_anchors;
 use tribunal_core::js;
 use tribunal_core::verified_gate::MIN_QUOTE_CHARS;
+
+const ANCHORED_KINDS: [&str; 2] = ["exact", "shifted"];
+
+/// The anchor a finding's located evidence stands for: its file, the line the
+/// evidence resolver placed it on and the evidence line itself.
+fn evidence_anchor(finding: &Value) -> Option<Value> {
+    let resolution = js::get(finding, "evidenceResolution")?;
+    let kind = js::get(resolution, "matchKind").and_then(Value::as_str)?;
+    if !ANCHORED_KINDS.contains(&kind)
+        || js::get(resolution, "evidenceLocated") != Some(&json!(true))
+    {
+        return None;
+    }
+    let line = js::get(resolution, "resolvedLine")
+        .and_then(Value::as_u64)
+        .filter(|l| *l >= 1)?;
+    let file = match js::get(finding, "file") {
+        Some(Value::String(s)) if !s.is_empty() => s,
+        _ => return None,
+    };
+    let Some(Value::String(evidence)) = js::get(finding, "evidence") else {
+        return None;
+    };
+    let evidence = match js::get(finding, "mergedFrom").and_then(|m| m.get(0)) {
+        Some(Value::String(lens)) => evidence
+            .strip_prefix(&format!("[{lens}] "))
+            .unwrap_or(evidence),
+        _ => evidence,
+    };
+    let first = evidence.lines().find(|l| !js::trim(l).is_empty())?;
+    let quote = js::trim(first.strip_prefix(['+', '-', ' ']).unwrap_or(first));
+    if js::utf16_len(quote) < MIN_QUOTE_CHARS {
+        return None;
+    }
+    Some(json!({"file": file, "line": line, "quote": quote}))
+}
+
+/// Gives a finding with an empty `verifiedBy` the anchor its located evidence
+/// stands for, and returns how many it anchored. Nits, evidence the resolver
+/// did not place and findings that already cite code are left as they were.
+pub fn anchor_from_evidence(verified: &mut [Option<Value>]) -> usize {
+    let mut anchored = 0;
+    for v in verified.iter_mut().flatten() {
+        let Some(finding) = v.get_mut("finding").filter(|f| f.is_object()) else {
+            continue;
+        };
+        if js::get(finding, "severity") == Some(&json!("nit")) {
+            continue;
+        }
+        let empty = match js::get(finding, "verifiedBy") {
+            Some(Value::Array(a)) => a.is_empty(),
+            Some(Value::Null) | None => true,
+            Some(_) => false,
+        };
+        if !empty {
+            continue;
+        }
+        if let Some(anchor) = evidence_anchor(finding) {
+            finding["verifiedBy"] = json!([anchor]);
+            anchored += 1;
+        }
+    }
+    anchored
+}
 
 /// A finding in the panel's results whose anchors need a line: its slot there
 /// and the positions of those anchors in its `verifiedBy`.
@@ -243,6 +310,88 @@ mod tests {
         assert_eq!(
             problems(1),
             ["verifiedBy[0].line is not a positive integer"]
+        );
+    }
+
+    fn evidenced(severity: &str, kind: &str, line: Value, by: Option<Value>) -> Option<Value> {
+        let mut f = json!({
+            "title": "t", "severity": severity, "file": "src/db.ts",
+            "evidence": "+  const prisma = new PrismaClient({",
+            "evidenceResolution": {"matchKind": kind, "evidenceLocated": kind != "not-found",
+                                   "resolvedLine": line},
+        });
+        if let Some(by) = by {
+            f["verifiedBy"] = by;
+        }
+        Some(json!({"finding": f}))
+    }
+
+    fn by_of(v: &Option<Value>) -> Value {
+        v.as_ref().unwrap()["finding"]
+            .get("verifiedBy")
+            .cloned()
+            .unwrap_or(Value::Null)
+    }
+
+    #[test]
+    fn located_evidence_becomes_the_anchor_of_a_finding_without_one() {
+        for kind in ["exact", "shifted"] {
+            let mut v = vec![
+                evidenced("important", kind, json!(41), None),
+                evidenced("critical", kind, json!(41), Some(json!([]))),
+            ];
+            assert_eq!(anchor_from_evidence(&mut v), 2, "{kind}");
+            for row in &v {
+                assert_eq!(
+                    by_of(row),
+                    json!([{"file": "src/db.ts", "line": 41,
+                            "quote": "const prisma = new PrismaClient({"}])
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn nothing_changes_for_a_nit_unlocated_evidence_or_an_existing_anchor() {
+        let cited = json!([{"file": "src/a.ts", "line": 3, "quote": "export const a = 1;"}]);
+        let mut v = vec![
+            evidenced("nit", "exact", json!(41), None),
+            evidenced("important", "not-found", Value::Null, None),
+            evidenced("important", "ambiguous", Value::Null, None),
+            evidenced("important", "elsewhere", json!(41), None),
+            evidenced("important", "exact", Value::Null, None),
+            evidenced("important", "exact", json!(41), Some(cited.clone())),
+            None,
+            Some(json!({"finding": {"severity": "important"}})),
+        ];
+        let before = v.clone();
+        assert_eq!(anchor_from_evidence(&mut v), 0);
+        assert_eq!(v, before);
+        assert_eq!(by_of(&v[5]), cited);
+    }
+
+    #[test]
+    fn evidence_too_short_to_pass_the_gate_is_not_turned_into_an_anchor() {
+        let mut v = vec![evidenced("important", "exact", json!(4), None)];
+        v[0].as_mut().unwrap()["finding"]["evidence"] = json!("+ return x;");
+        assert_eq!(anchor_from_evidence(&mut v), 0);
+        v[0].as_mut().unwrap()["finding"]["evidence"] = json!("\n+  let total = a + b;\n+  more");
+        assert_eq!(anchor_from_evidence(&mut v), 1);
+        assert_eq!(by_of(&v[0])[0]["quote"], "let total = a + b;");
+    }
+
+    #[test]
+    fn the_lens_tag_of_a_merged_finding_is_not_part_of_the_quote() {
+        let mut v = vec![evidenced("important", "shifted", json!(41), None)];
+        let f = &mut v[0].as_mut().unwrap()["finding"];
+        f["evidence"] = json!(
+            "[correctness] const prisma = new PrismaClient({\n  log: [],\n});\n[errorHandling] other()"
+        );
+        f["mergedFrom"] = json!(["correctness", "errorHandling"]);
+        assert_eq!(anchor_from_evidence(&mut v), 1);
+        assert_eq!(
+            by_of(&v[0])[0]["quote"],
+            "const prisma = new PrismaClient({"
         );
     }
 }
