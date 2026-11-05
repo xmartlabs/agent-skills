@@ -17,10 +17,11 @@ sub="$1"; shift
 { echo "ARGS=$sub $*"; echo "PWD=$PWD"; echo "HOME=$HOME"; echo "TMPDIR=$TMPDIR"
   echo "DATA=$TRIBUNAL_DATA_DIR"; echo "ROOT=$TRIBUNAL_PLUGIN_ROOT"
   echo "TRIBUNAL_KEY=${TRIBUNAL_ANTHROPIC_API_KEY-<unset>}"; echo "OAUTH=${CLAUDE_CODE_OAUTH_TOKEN-<unset>}"
-  echo "API_KEY=${ANTHROPIC_API_KEY-<unset>}"; } > "$FX/tribunal-$sub.env"
+  echo "API_KEY=${ANTHROPIC_API_KEY-<unset>}"; echo "CODEX_HOME=$CODEX_HOME";
+  echo "OPENAI_KEY=${OPENAI_API_KEY-<unset>}"; echo "CODEX_KEY=${CODEX_API_KEY-<unset>}"; } > "$FX/tribunal-$sub.env"
 if [ "$sub" = review ]; then
   out=""; while [ $# -gt 0 ]; do [ "$1" = --out ] && out="$2"; shift; done
-  if [ -f "$FX/run.json" ]; then cp "$FX/run.json" "$out"; else echo '{"report":"x"}' > "$out"; fi
+  if [ -f "$FX/run.json" ]; then cp "$FX/run.json" "$out"; else printf '{"report":"x","metrics":{"headSha":"%s"}}' "$HEAD_SHA" > "$out"; fi
 fi
 if [ "$sub" = post ]; then cat "$FX/post-output" 2>/dev/null; exit "$(cat "$FX/post-rc" 2>/dev/null || echo 0)"; fi
 SH
@@ -48,9 +49,18 @@ SH
 # Fake npm: installs a stub claude where `npm install --prefix DIR` would.
 cat > "$TMP/bin/npm" <<'SH'
 #!/usr/bin/env bash
+packages="$*"
 prefix=""; while [ $# -gt 0 ]; do [ "$1" = --prefix ] && prefix="$2"; shift; done
 mkdir -p "$prefix/node_modules/.bin" && printf '#!/usr/bin/env bash\n' > "$prefix/node_modules/.bin/claude"
-chmod +x "$prefix/node_modules/.bin/claude"; echo "npm $prefix" >> "$FX/npm.log"
+chmod +x "$prefix/node_modules/.bin/claude"
+cat > "$prefix/node_modules/.bin/codex" <<'CODEX'
+#!/usr/bin/env bash
+[ "$1 $2" = "login --with-api-key" ] || exit 1
+mkdir -p "$CODEX_HOME"
+cat > "$CODEX_HOME/auth.json"
+CODEX
+chmod +x "$prefix/node_modules/.bin/codex"
+echo "npm $prefix $packages INPUT_OPENAI_API_KEY=${INPUT_OPENAI_API_KEY-<unset>}" >> "$FX/npm.log"
 SH
 # Fake gh: profile lookups answer from $FX/profile-<base|default|head>; the pull request's files,
 # its reviews and the token's user from $FX/files.json, reviews.json and user.json through --jq.
@@ -66,6 +76,7 @@ emit() { # FIXTURE: the fixture through --jq, an empty list when it is missing
 case "$*" in
   "--version") echo "gh version 2.103.3" ;;
   "auth setup-git") ;;
+  "api repos/acme/web-app/pulls/12 --jq .head.sha") echo "${LIVE_HEAD:-$HEAD_SHA}" ;;
   "api user"*) [ -f "$FX/user.json" ] || { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
     emit "$FX/user.json" ;;
   *repos/acme/web-app/pulls/12/files*) emit "$FX/files.json" ;;
@@ -82,7 +93,10 @@ case "$*" in
       *) f=default ;;
     esac
     [ -f "$FX/profile-$f" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
-    case "$*" in *"Accept: application/vnd.github.raw"*) echo '{"from":"'"$f"'"}' ;; *) echo .claude/review-profile.json ;; esac ;;
+    case "$*" in *"Accept: application/vnd.github.raw"*)
+      if [ "$f" = head ] && [ -f "$FX/rules-head" ]; then echo '{"from":"head","projectRules":".claude/review-rules.md"}'
+      else echo '{"from":"'"$f"'"}'; fi ;;
+      *) echo .claude/review-profile.json ;; esac ;;
   *contents/.claude/review-rules.md*) [ -f "$FX/rules-head" ] && echo "<!-- rules -->" || { echo "HTTP 404" >&2; exit 1; } ;;
   *) echo "unexpected gh call: $*" >&2; exit 1 ;;
 esac
@@ -195,7 +209,7 @@ assert_eq "the binary comes from release.json's repo, tag and asset" \
   "https://github.com/acme/tools/releases/download/tribunal-rust-v9/$ASSET" "$(head -1 "$FX/curl.log")"
 assert_ok "the binary is unpacked" test -x "$(cat "$(job)/bin-path")"
 assert_ok "homosapiens is staged in the job's HOME" test -f "$(job)/home/.claude/skills/homosapiens/SKILL.md"
-assert_eq "a base-branch profile needs no profile arguments" "" "$(args)"
+assert_eq "base-branch profile is snapshotted" "--profile $(job)/review-profile.json " "$(args)"
 
 new_job labeled tribunal; manifest "0000000000000000000000000000000000000000000000000000000000000000"
 prepare; RC=$?
@@ -204,13 +218,13 @@ assert_fail "no binary is kept after a mismatch" test -f "$(job)/bin-path"
 
 new_job labeled tribunal; touch "$FX/profile-default"
 prepare
-assert_eq "a default-branch profile needs no profile arguments" "" "$(args)"
+assert_eq "default-branch profile is snapshotted" "--profile $(job)/review-profile.json " "$(args)"
 
 new_job labeled tribunal; touch "$FX/profile-head" "$FX/rules-head"
 prepare
 assert_eq "without a base profile the PR's profile and rules are used" \
   "--profile $(job)/review-profile.json --rules $(job)/review-rules.md " "$(args)"
-assert_eq "the PR's profile comes from its head commit" '{"from":"head"}' "$(cat "$(job)/review-profile.json")"
+assert_eq "the PR's profile comes from its head commit" '{"from":"head","projectRules":".claude/review-rules.md"}' "$(cat "$(job)/review-profile.json")"
 
 new_job labeled tribunal
 prepare backend
@@ -228,7 +242,7 @@ assert_ok "an unknown reviewer kind fails" test "$RC" -ne 0
 
 # A PATH with the basic tools only, so no gh from the machine running the tests leaks in.
 mkdir -p "$TMP/nogh"
-for c in bash sh env python3 tar gzip xz sha256sum shasum perl cut sed grep cat mkdir find cp ln chmod date head tail tr rm dirname basename uname sort wc awk touch ls xargs mktemp readlink tee; do
+for c in git bash sh env python3 tar gzip xz sha256sum shasum perl cut sed grep cat mkdir find cp ln chmod date head tail tr rm dirname basename uname sort wc awk touch ls xargs mktemp readlink tee; do
   p="$(command -v "$c" 2>/dev/null)" && ln -sf "$p" "$TMP/nogh/$c"
 done
 new_job labeled tribunal; touch "$FX/profile-base"
@@ -243,7 +257,7 @@ review() { CLAUDE_CODE_OAUTH_TOKEN="${OAUTH-oauth-secret}" ANTHROPIC_API_KEY="${
 new_job labeled tribunal; touch "$FX/profile-head"; prepare
 review; RC=$?
 assert_eq "review exits 0" "0" "$RC"
-assert_eq "review flags" "ARGS=review --pr 12 --repo acme/web-app --head-sha aaaa1111 --no-codex --no-post --out $(job)/run.json --profile $(job)/review-profile.json" \
+assert_eq "review flags" "ARGS=review --pr 12 --repo acme/web-app --no-post --out $(job)/run.json --profile $(job)/review-profile.json --no-codex --head-sha aaaa1111 --full" \
   "$(grep '^ARGS=' "$FX/tribunal-review.env")"
 assert_ok "the run record is written" test -f "$(job)/run.json"
 assert_ok "it runs from the job's empty work dir" grep -qx "PWD=$(job)/work" "$FX/tribunal-review.env"
@@ -265,7 +279,7 @@ assert_ok "with both, the OAuth token is kept (an older binary falls back to it)
 post() { CLAUDE_CODE_OAUTH_TOKEN=oauth-secret bash "$RUN" post >/dev/null 2>&1; }
 post; RC=$?
 assert_eq "post exits 0 when the binary posts" "0" "$RC"
-assert_eq "post flags" "ARGS=post --from $(job)/run.json --verdict comment --over-standing-review" \
+assert_eq "post flags" "ARGS=post --from $(job)/run.json --over-standing-review --verdict comment" \
   "$(grep '^ARGS=' "$FX/tribunal-post.env")"
 echo 1 > "$FX/post-rc"; echo "NOT POSTED: duplicate-review gate is held" > "$FX/post-output"
 post; RC=$?
@@ -300,13 +314,13 @@ assert_eq "no npm on the runner: Node is set up" "true" "$(PATH="$TMP/nogh" node
 # --- summary ------------------------------------------------------------------------------------
 summary() { : > "$TMP/summary.md"; GITHUB_STEP_SUMMARY="$TMP/summary.md" bash "$RUN" summary >/dev/null 2>&1; }
 new_job labeled tribunal; mkdir -p "$(job)/tmp"
-# The binary prints the verdict in capitals, as the live runs show.
-echo "Posted COMMENT: https://github.com/acme/web-app/pull/12#pullrequestreview-9" > "$(job)/post.log"
+# The binary prints the verdict in capitals and the PR URL (no review anchor), as the live runs show.
+echo "Posted COMMENT: https://github.com/acme/web-app/pull/12" > "$(job)/post.log"
 printf '## Peer review: PR #12\n\n### Blocking\n\nNone.\n' > "$(job)/tmp/tribunal-report-12.md"
 summary; RC=$?
 assert_eq "summary exits 0" "0" "$RC"
 assert_ok "a posted review is marked as posted" grep -qF "### Tribunal — PR #12 · ✅ posted" "$TMP/summary.md"
-assert_ok "it links the posted review" grep -qF "https://github.com/acme/web-app/pull/12#pullrequestreview-9" "$TMP/summary.md"
+assert_ok "it links the posted review" grep -qF "https://github.com/acme/web-app/pull/12" "$TMP/summary.md"
 assert_ok "it includes the report" grep -qF "## Peer review: PR #12" "$TMP/summary.md"
 
 new_job labeled tribunal; mkdir -p "$(job)"
@@ -368,5 +382,72 @@ assert_ok "a vote dir of another head (another repo's PR 12) stays" test -d "$TM
 new_job labeled "needs review"; touch "$FX/label-present"
 INPUT_LABEL="needs review" bash "$RUN" cleanup >/dev/null 2>&1
 assert_ok "a label with a space is URL-encoded" grep -q "labels/needs%20review" "$FX/gh.log"
+
+# --- structured configuration, races and incremental fallback -----------------------------------
+for kind in python e2e; do
+  new_job labeled tribunal
+  prepare "$kind"
+  assert_eq "$kind generic profile" "\"$kind\"" "$(cfg reviewer)"
+done
+
+new_job labeled tribunal
+INPUT_MODEL=claude-model INPUT_EFFORT=high INPUT_CONCURRENCY=3 INPUT_MAX_PANELS=12 INPUT_MAX_AGENTS=30 INPUT_MAX_OUTPUT_TOKENS=2000 INPUT_PRIOR_VERIFY=2 INPUT_LENS_SAMPLES=2 INPUT_BOT_COMMENTS=true INPUT_VERDICT=suggested prepare
+review
+for flag in '--model claude-model' '--effort high' '--concurrency 3' '--max-panels 12' '--max-agents 30' '--max-output-tokens 2000' '--prior-verify 2' '--lens-samples 2' '--bot-comments'; do
+  assert_ok "structured $flag reaches review" grep -qF -- "$flag" "$FX/tribunal-review.env"
+done
+post
+assert_fail "suggested verdict does not override engine verdict" grep -qF -- '--verdict' "$FX/tribunal-post.env"
+assert_ok "model reaches report composition" grep -qF -- '--model claude-model --effort high' "$FX/tribunal-post.env"
+
+new_job labeled tribunal; prepare
+LIVE_HEAD=bbbb2222 review; RC=$?
+assert_ok "moved head before review fails" test "$RC" -ne 0
+assert_fail "moved head never dispatches the engine" test -f "$FX/tribunal-review.env"
+assert_ok "moved head reason reaches fallback log" grep -qF 'PR head moved before review' "$(job)/review.log"
+
+new_job labeled tribunal; prepare
+echo '{"report":"x","metrics":{"headSha":"bbbb2222"}}' > "$FX/run.json"
+review; RC=$?
+assert_ok "race while resolving head fails the post-review check" test "$RC" -ne 0
+post; RC=$?
+assert_ok "mismatched run is not posted" test "$RC" -ne 0
+assert_fail "mismatched run never invokes engine post" test -f "$FX/tribunal-post.env"
+
+new_job labeled tribunal; INPUT_REVIEW_MODE=incremental prepare
+bash "$RUN" restore >/dev/null 2>&1
+assert_eq "no verified baseline forces full review" full "$(cat "$(job)/effective-mode")"
+review
+assert_ok "fallback really passes --full (no human baseline)" grep -qF -- '--full' "$FX/tribunal-review.env"
+# Restore provenance is tested independently with real ZIPs in test_runtime.py.
+echo incremental > "$(job)/effective-mode"
+review
+assert_fail "incremental does not disable the probe with --head-sha" grep -qF -- '--head-sha' "$FX/tribunal-review.env"
+assert_fail "incremental does not force full" grep -qF -- '--full' "$FX/tribunal-review.env"
+
+new_job labeled tribunal; prepare
+bash "$RUN" baseline >/dev/null 2>&1
+assert_ok "unposted runs cannot upload a baseline" grep -qF 'saved=false' "$GITHUB_OUTPUT"
+assert_fail "unposted runs leave no baseline envelope" test -f "$(job)/baseline/baseline.json"
+
+# Codex setup is explicit, isolated, version-pinned, and never uploaded.
+new_job labeled tribunal
+INPUT_CODEX=true INPUT_OPENAI_API_KEY=fixture-openai-key INPUT_CODEX_MODEL=codex-model prepare
+assert_eq "Codex login uses only the supplied key" fixture-openai-key "$(cat "$(job)/home/.codex/auth.json")"
+assert_ok "Codex CLI is pinned" grep -qF '@openai/codex@0.165.0' "$FX/npm.log"
+assert_fail "dependency installs cannot read the OpenAI key" grep -qF fixture-openai-key "$FX/npm.log"
+assert_eq "Codex model is isolated" 'model = "codex-model"' "$(cat "$(job)/home/.codex/review.config.toml")"
+OPENAI_API_KEY=ambient-key CODEX_API_KEY=ambient-key CODEX_HOME=/wrong review
+assert_ok "Codex flag reaches the engine" grep -qF -- '--codex' "$FX/tribunal-review.env"
+assert_ok "Codex auth home is isolated" grep -qx "CODEX_HOME=$(job)/home/.codex" "$FX/tribunal-review.env"
+assert_ok "ambient OpenAI key is removed" grep -qx 'OPENAI_KEY=<unset>' "$FX/tribunal-review.env"
+assert_ok "ambient Codex key is removed" grep -qx 'CODEX_KEY=<unset>' "$FX/tribunal-review.env"
+# Each stage reopens the immutable selection, rather than reverting to bundled files.
+mkdir -p "$(job)/selected-plugin"
+printf '%s' "$(job)/selected-plugin" > "$(job)/plugin-path"
+review
+assert_ok "review uses the selected plugin root" grep -qx "ROOT=$(job)/selected-plugin" "$FX/tribunal-review.env"
+INPUT_LABEL=tribunal bash "$RUN" cleanup >/dev/null 2>&1
+assert_fail "cleanup removes Codex authentication" test -f "$(job)/home/.codex/auth.json"
 
 finish_tests

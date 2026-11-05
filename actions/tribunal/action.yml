@@ -1,6 +1,6 @@
 name: Tribunal review
 description: >-
-  Runs the tribunal adversarial review on a pull request and posts it as a comment review.
+  Runs the tribunal adversarial review on a pull request and posts its report.
   Independent reviewers read the diff, every serious finding faces a panel that tries to disprove
   it, and only the survivors are reported.
 author: Xmartlabs
@@ -41,9 +41,54 @@ inputs:
     default: 'false'
   reviewer:
     description: >-
-      `frontend` or `backend`: the reviewer kind used when the repository has no
+      `frontend`, `backend`, `python` or `e2e`: the reviewer kind used when the repository has no
       `.claude/review-profile.json` of its own.
     default: frontend
+  tribunal-version:
+    description: 'Tribunal freeze to run: bundled, latest stable Tribunal freeze, or an exact x.y.z version (115.2.0+).'
+    default: 'bundled'
+  verdict:
+    description: 'Publish comment (default) or suggested to use the engine verdict.'
+    default: 'comment'
+  review-mode:
+    description: 'full (default), or incremental using a verified compatible baseline artifact.'
+    default: 'full'
+  codex:
+    description: 'Enable the optional Codex refuter. Requires openai-api-key.'
+    default: 'false'
+  openai-api-key:
+    description: 'OpenAI API key for Codex. Store as a secret; only used when codex is true.'
+    default: ''
+  codex-model:
+    description: 'Optional Codex refuter model; empty uses the engine default.'
+    default: ''
+  bot-comments:
+    description: 'Also vet existing bot comments; may increase review cost.'
+    default: 'false'
+  model:
+    description: 'Claude model override; empty uses the engine default.'
+    default: ''
+  effort:
+    description: 'Reasoning effort override: low, medium, high or max; empty uses the engine default.'
+    default: ''
+  concurrency:
+    description: 'Positive maximum concurrent Claude dispatches; empty uses the engine default.'
+    default: ''
+  max-panels:
+    description: 'Positive panel budget; empty uses the engine default.'
+    default: ''
+  max-agents:
+    description: 'Positive agent budget; empty uses the engine default.'
+    default: ''
+  max-output-tokens:
+    description: 'Positive output-token budget; empty uses the engine default.'
+    default: ''
+  prior-verify:
+    description: 'Positive prior-finding verification limit; empty uses the engine default.'
+    default: ''
+  lens-samples:
+    description: 'Independent samples per lens, 1 to 4; empty uses the engine default.'
+    default: ''
   upload-run:
     description: Upload the run record, the report and the logs as a workflow artifact.
     default: 'true'
@@ -88,7 +133,29 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.github-token }}
         INPUT_REVIEWER: ${{ inputs.reviewer }}
+        INPUT_TRIBUNAL_VERSION: ${{ inputs.tribunal-version }}
+        INPUT_VERDICT: ${{ inputs.verdict }}
+        INPUT_REVIEW_MODE: ${{ inputs.review-mode }}
+        INPUT_CODEX: ${{ inputs.codex }}
+        INPUT_OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        INPUT_CODEX_MODEL: ${{ inputs.codex-model }}
+        INPUT_BOT_COMMENTS: ${{ inputs.bot-comments }}
+        INPUT_MODEL: ${{ inputs.model }}
+        INPUT_EFFORT: ${{ inputs.effort }}
+        INPUT_CONCURRENCY: ${{ inputs.concurrency }}
+        INPUT_MAX_PANELS: ${{ inputs.max-panels }}
+        INPUT_MAX_AGENTS: ${{ inputs.max-agents }}
+        INPUT_MAX_OUTPUT_TOKENS: ${{ inputs.max-output-tokens }}
+        INPUT_PRIOR_VERIFY: ${{ inputs.prior-verify }}
+        INPUT_LENS_SAMPLES: ${{ inputs.lens-samples }}
       run: bash "$GITHUB_ACTION_PATH/run.sh" prepare
+
+    - id: restore
+      if: steps.gate.outputs.run == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" restore
 
     - id: review
       if: steps.gate.outputs.run == 'true'
@@ -107,6 +174,21 @@ runs:
         CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude-token }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
       run: bash "$GITHUB_ACTION_PATH/run.sh" post
+
+    - id: baseline
+      if: steps.gate.outputs.run == 'true' && steps.post.outcome == 'success' && inputs.review-mode == 'incremental'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" baseline
+
+    - if: steps.baseline.outputs.saved == 'true'
+      uses: actions/upload-artifact@v7
+      with:
+        name: tribunal-baseline-pr-${{ github.event.pull_request.number }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/tribunal/baseline/baseline.json
+        if-no-files-found: error
+        retention-days: 14
 
     # A cancelled run (a newer request, or by hand) stays silent; the newer run reports.
     - if: ${{ !cancelled() && steps.gate.outputs.run == 'true' && steps.post.outcome != 'success' }}
