@@ -4,6 +4,7 @@
 //! `tribunal-agent`.
 
 pub mod agent_def;
+pub mod anchor_repair;
 pub mod context;
 pub mod cost_report;
 pub mod coverage_report;

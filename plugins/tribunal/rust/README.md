@@ -549,6 +549,13 @@ Pipeline differences from the Workflow it replaced, on purpose:
   diagnostic within a few lines of a finding still confirms it.
 - The verifiedBy anchors are resolved by `resolve_verified_anchors::run` in
   process; a resolver error reads as the workflow's `relay-not-verified`.
+- Before the evidence gate runs, `anchor_repair` gives an anchor whose `line`
+  is not a positive integer the line its `quote` has in the file at the
+  reviewed head, read with the same resolver. Lenses write `line: 0` for code
+  they read without line numbers, and the gate used to demote a finding the
+  panel upheld for that. A quote that is not in the file, or a failed read,
+  leaves the anchor as it was, so the gate still demotes it. The run's `logs`
+  say how many anchors were completed.
 - The wrong-ref audit greps the pinned checkout natively (no symlink below
   it is followed, as `grep -r` does not). It keeps the workflow's
   `file: v.file`, which reads a field results do not have, so a suspect's

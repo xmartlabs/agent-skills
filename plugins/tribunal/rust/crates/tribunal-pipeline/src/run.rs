@@ -839,6 +839,20 @@ pub async fn verify_phase<A: Agent>(
     );
     let panel_seconds = (panel_started.elapsed().as_secs_f64() - panel.critic_seconds).max(0.0);
     dispatches.extend(io.dispatches.into_inner().expect("lock"));
+    if let Some(head) = js::get(&review.context.pr_context, "headRefOid")
+        .and_then(Value::as_str)
+        .filter(|h| !h.is_empty())
+    {
+        crate::anchor_repair::repair_anchor_lines(
+            &rt.tools,
+            head,
+            &review.prepared.repo,
+            &cross_repo_flags(&review.prepared.profile),
+            &mut panel.verified,
+            logs,
+        )
+        .await;
+    }
     let verdicts = partition_results(
         &panel.verified,
         &gate.confirmed,
