@@ -341,6 +341,26 @@ These are *proxies*: a commit that touches a file is not proof the finding
 was fixed, and a merge that leaves it alone is not proof it was wrong. The
 output says so; do not overclaim when relaying it.
 
+`tribunal audit --candidates` adds a `candidates` list to the JSON and a
+section to the text: one entry per posted finding, counted once as above, with
+its PR, `title`, `file`, `line`, `severity`, whether it was blocking, its
+outcome and `firstTouch`. `firstTouch` names the first non-merge commit after
+the review that changed the finding's file, and `hunkCoversLine` says whether
+that commit's hunk covers the finding's `line`. It is a lead for a person who
+decides whether the finding was real and belongs in a labelled corpus. It
+labels nothing, and the corpus itself stays where its owner keeps it.
+
+- The commit comes from `gh api repos/<repo>/commits/<sha>`, read oldest first
+  for each commit of the compare range, up to 40 per reviewed head, until
+  every wanted file has a first touch. That is one call per commit read, on
+  top of the two above.
+- A merge commit is read but never named. When one changed the file before the
+  named commit, or a commit could not be read, or GitHub cut a commit's file
+  list at 300, `exact` is `false` and `hunkCoversLine` is `null`, since the
+  hunk is then not in the coordinates of the reviewed head.
+- `firstTouch` is `null` when the finding's file was not touched, the commit
+  was not reached within the cap, or `gh` failed.
+
 Neither mode posts anything or writes to `metrics.jsonl`.
 
 ## Legacy rows — the pre-2026-07-21 log is not directly aggregatable

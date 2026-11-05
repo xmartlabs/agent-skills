@@ -10,6 +10,12 @@
 //! changed after that review with its hunks. A finding whose file is among
 //! them counts as fixed. One whose file is not, on a merged PR or under a
 //! dismissed review at that commit, counts as a false-positive proxy.
+//!
+//! With `candidates` set it also lists each posted finding on its own: the PR,
+//! title, file, line, outcome and the first commit after the review that
+//! touches the file, for a maintainer to confirm before the finding becomes a
+//! labelled corpus entry. That asks `gh` for one commit at a time, up to
+//! [`COMMIT_SCAN_CAP`] per reviewed head.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
@@ -28,8 +34,13 @@ const CONCURRENCY: usize = 6;
 /// PRs over the limit the text names; `--json` lists them all.
 const SKIPPED_SHOWN: usize = 10;
 
+/// Commits per reviewed head that `candidates` fetches one by one.
+const COMMIT_SCAN_CAP: usize = 40;
+
 /// GitHub's compare API lists at most this many files.
 const COMPARE_FILE_CAP: usize = 300;
+
+pub const CANDIDATES_NOTE: &str = "A candidate is a lead, not a label: a person has to confirm the finding was real before it joins a corpus. The commit is the first non-merge commit after the review that touches the finding's file, and its hunk is compared with the line only when no merge commit changed the file before it and every earlier commit could be read. A finding with no commit was not located within the first 40 commits, or gh failed.";
 
 pub const PROXY_NOTE: &str = "These are proxies, not ground truth: a commit after the review that touches a finding's file is not proof the finding was fixed, and a merge that leaves the file alone is not proof the finding was wrong.";
 
@@ -37,6 +48,8 @@ pub const PROXY_NOTE: &str = "These are proxies, not ground truth: a commit afte
 pub struct AuditArgs {
     pub filter: RowFilter,
     pub limit: usize,
+    /// List each posted finding with the commit that first touched its file.
+    pub candidates: bool,
 }
 
 impl Default for AuditArgs {
@@ -44,6 +57,7 @@ impl Default for AuditArgs {
         Self {
             filter: RowFilter::default(),
             limit: DEFAULT_LIMIT,
+            candidates: false,
         }
     }
 }
@@ -54,6 +68,25 @@ impl Default for AuditArgs {
 #[derive(Debug, Clone, Default)]
 struct Changed {
     files: HashMap<String, Option<Vec<(u64, u64)>>>,
+    /// The commits of the range, oldest first.
+    commits: Vec<RangeCommit>,
+    /// Per file, the first commit of the range that touched it.
+    first_touch: HashMap<String, FirstTouch>,
+}
+
+#[derive(Debug, Clone)]
+struct RangeCommit {
+    sha: String,
+    merge: bool,
+}
+
+#[derive(Debug, Clone)]
+struct FirstTouch {
+    sha: String,
+    ranges: Option<Vec<(u64, u64)>>,
+    /// No earlier commit changed the file and every earlier commit was read,
+    /// so its hunks are in the coordinates of the reviewed head.
+    exact: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -101,7 +134,25 @@ fn parse_compare(text: &str) -> Result<Changed, String> {
             files.len()
         ));
     }
-    let mut changed = Changed::default();
+    let commits = v
+        .get("commits")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|c| {
+            Some(RangeCommit {
+                sha: c.get("sha").and_then(Value::as_str)?.to_owned(),
+                merge: c
+                    .get("parents")
+                    .and_then(Value::as_array)
+                    .is_some_and(|p| p.len() > 1),
+            })
+        })
+        .collect();
+    let mut changed = Changed {
+        commits,
+        ..Changed::default()
+    };
     for f in files {
         let ranges = f.get("patch").and_then(Value::as_str).map(hunks);
         for key in ["filename", "previous_filename"] {
@@ -148,12 +199,81 @@ fn failure(what: &str, out: &crate::exec::Output) -> String {
     format!("{what} exited {:?}: {why}", out.code)
 }
 
-/// The calls for one PR, and how many were made.
+/// Fills `first_touch` for the `wanted` files the range changed, reading the
+/// commits oldest first until each has one. Returns the calls made. A merge
+/// commit is read but never taken as the first touch, since what it brings in
+/// is not the author's change; if it changed a wanted file, that file's first
+/// touch is inexact, and so is every one after a commit gh could not answer
+/// for or whose file list GitHub cut short.
+async fn locate_first_touch(
+    tools: &Tools,
+    repo: &str,
+    changed: &mut Changed,
+    wanted: &BTreeSet<String>,
+) -> usize {
+    let mut pending: BTreeSet<String> = wanted
+        .iter()
+        .filter(|f| changed.files.contains_key(*f))
+        .cloned()
+        .collect();
+    let commits = changed.commits.clone();
+    let (mut calls, mut unsure) = (0, false);
+    let mut by_merge: BTreeSet<String> = BTreeSet::new();
+    for c in commits.iter().take(COMMIT_SCAN_CAP) {
+        if pending.is_empty() {
+            break;
+        }
+        calls += 1;
+        let path = format!("repos/{repo}/commits/{}", c.sha);
+        let answer = match tools.gh(&["api", &path], None).await {
+            Ok(out) if out.ok() => serde_json::from_str::<Value>(&out.stdout).ok(),
+            _ => None,
+        };
+        let Some(v) = answer else {
+            unsure = true;
+            continue;
+        };
+        let files = v
+            .get("files")
+            .and_then(Value::as_array)
+            .map_or(&[][..], Vec::as_slice);
+        unsure |= files.len() >= COMPARE_FILE_CAP;
+        for f in files {
+            let ranges = f.get("patch").and_then(Value::as_str).map(hunks);
+            for key in ["filename", "previous_filename"] {
+                let Some(name) = f.get(key).and_then(Value::as_str) else {
+                    continue;
+                };
+                if !pending.contains(name) {
+                    continue;
+                }
+                if c.merge {
+                    by_merge.insert(name.to_owned());
+                    continue;
+                }
+                pending.remove(name);
+                changed.first_touch.insert(
+                    name.to_owned(),
+                    FirstTouch {
+                        sha: c.sha.clone(),
+                        ranges: ranges.clone(),
+                        exact: !unsure && !by_merge.contains(name),
+                    },
+                );
+            }
+        }
+    }
+    calls
+}
+
+/// The calls for one PR, and how many were made. `wanted` is the files whose
+/// first touching commit is wanted, when candidates were asked for.
 async fn fetch_pr(
     tools: Tools,
     repo: String,
     pr: u64,
     shas: Vec<String>,
+    wanted: Option<BTreeSet<String>>,
 ) -> (Result<PrState, String>, usize) {
     let n = pr.to_string();
     let view = [
@@ -190,6 +310,13 @@ async fn fetch_pr(
             Ok(o) if o.ok() => parse_compare(&o.stdout),
             Ok(o) => Err(failure(&format!("gh api {path}"), &o)),
             Err(e) => Err(format!("cannot run gh: {e}")),
+        };
+        let r = match (r, &wanted) {
+            (Ok(mut changed), Some(files)) => {
+                calls += locate_first_touch(&tools, &repo, &mut changed, files).await;
+                Ok(changed)
+            }
+            (r, _) => r,
         };
         st.after.insert(sha, r);
     }
@@ -355,6 +482,47 @@ fn pr_number(row: &Value) -> Option<u64> {
     }
 }
 
+/// One posted finding as a lead for a labelled corpus.
+fn candidate(
+    p: &Pr,
+    st: &Result<PrState, String>,
+    engine: &str,
+    f: &Value,
+    sha: &str,
+    outcome: Outcome,
+    hit: Option<bool>,
+) -> Value {
+    let s = st.as_ref().ok();
+    let file = f.get("file").and_then(Value::as_str).unwrap_or("");
+    let line = f.get("line").and_then(Value::as_u64);
+    let touch = s
+        .and_then(|s| s.after.get(sha))
+        .and_then(|r| r.as_ref().ok())
+        .and_then(|c| c.first_touch.get(file));
+    let first = touch.map(|t| {
+        let covers = match (line, &t.ranges) {
+            (Some(l), Some(r)) if t.exact => Some(r.iter().any(|(a, b)| (*a..=*b).contains(&l))),
+            _ => None,
+        };
+        json!({"commit": t.sha, "hunkCoversLine": covers, "exact": t.exact})
+    });
+    json!({
+        "repo": p.repo,
+        "pr": p.pr,
+        "state": s.map(|s| s.state.clone()),
+        "engine": engine,
+        "reviewedHead": sha,
+        "title": f.get("title"),
+        "file": f.get("file"),
+        "line": f.get("line"),
+        "severity": f.get("severity"),
+        "blocking": f.get("blocking") == Some(&Value::Bool(true)),
+        "outcome": OUTCOMES.iter().find(|(o, _)| *o == outcome).map(|(_, k)| *k),
+        "lineInChangedHunk": hit,
+        "firstTouch": first,
+    })
+}
+
 fn posted(row: &Value) -> impl Iterator<Item = &Value> {
     row.get("findings")
         .and_then(Value::as_array)
@@ -438,10 +606,19 @@ pub async fn audit(tools: &Tools, rows: &[Value], unreadable: usize, args: &Audi
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .collect();
+            let wanted = args.candidates.then(|| {
+                p.rows
+                    .iter()
+                    .flat_map(|r| posted(r))
+                    .filter_map(|f| f.get("file").and_then(Value::as_str))
+                    .filter(|f| !f.is_empty())
+                    .map(str::to_owned)
+                    .collect::<BTreeSet<_>>()
+            });
             let (tools, repo, pr, sem) = (tools.clone(), p.repo.clone(), p.pr, sem.clone());
             tokio::spawn(async move {
                 let _permit = sem.acquire_owned().await;
-                fetch_pr(tools, repo, pr, shas).await
+                fetch_pr(tools, repo, pr, shas, wanted).await
             })
         })
         .collect();
@@ -457,6 +634,7 @@ pub async fn audit(tools: &Tools, rows: &[Value], unreadable: usize, args: &Audi
 
     let mut per_engine: BTreeMap<usize, (BTreeMap<&str, Tally>, usize, Tally)> = BTreeMap::new();
     let mut per_pr = Vec::new();
+    let mut leads = Vec::new();
     let mut gh_failures = 0;
     for (p, st) in prs.iter().zip(&states) {
         let mut seen = BTreeSet::new();
@@ -498,6 +676,9 @@ pub async fn audit(tools: &Tools, rows: &[Value], unreadable: usize, args: &Audi
                     continue;
                 }
                 if is_posted {
+                    if args.candidates {
+                        leads.push(candidate(p, st, engine, f, sha, outcome, hit));
+                    }
                     pr_tally.add(outcome, hit);
                     for b in buckets_of(f) {
                         slot.0.entry(b).or_default().add(outcome, hit);
@@ -547,7 +728,7 @@ pub async fn audit(tools: &Tools, rows: &[Value], unreadable: usize, args: &Audi
         })
         .collect();
 
-    json!({
+    let mut report = json!({
         "note": PROXY_NOTE,
         "rows": sel.counts(),
         "headline": sel.headline(),
@@ -563,7 +744,12 @@ pub async fn audit(tools: &Tools, rows: &[Value], unreadable: usize, args: &Audi
         },
         "perPr": per_pr,
         "groups": groups,
-    })
+    });
+    if args.candidates {
+        report["candidatesNote"] = json!(CANDIDATES_NOTE);
+        report["candidates"] = json!(leads);
+    }
+    report
 }
 
 fn u(v: &Value) -> usize {
@@ -727,6 +913,68 @@ pub fn render(report: &Value) -> String {
         }
     }
     s += "\nfixed: a commit after the review touched the finding's file (true-positive proxy). dismissed: untouched, and a review at that commit was dismissed. merged: the PR merged without touching the file (false-positive proxy, as is dismissed). open and closed: untouched on a PR still open, or closed without merging. unknown: gh failed, the branch was rewritten after the review, or the finding names no file.\n";
+    if let Some(list) = report["candidates"].as_array() {
+        s += &render_candidates(list, report["candidatesNote"].as_str().unwrap_or(""));
+    }
+    s
+}
+
+/// How strongly a candidate points at a real finding, for ordering: a fix
+/// whose first commit changed the finding's own line comes first.
+fn lead_rank(c: &Value) -> u8 {
+    match (
+        c["outcome"].as_str(),
+        c["firstTouch"]["hunkCoversLine"].as_bool(),
+    ) {
+        (Some("fixed"), Some(true)) => 0,
+        (Some("fixed"), _) => 1,
+        (Some("dismissed" | "mergedUntouched"), _) => 2,
+        _ => 3,
+    }
+}
+
+fn render_candidates(list: &[Value], note: &str) -> String {
+    let mut s = format!(
+        "
+Candidates for a labelled corpus: {} posted findings.\n{note}\n",
+        list.len()
+    );
+    let mut sorted: Vec<&Value> = list.iter().collect();
+    sorted.sort_by_key(|c| lead_rank(c));
+    for c in sorted {
+        let outcome = c["outcome"].as_str().unwrap_or("unknown");
+        let label = LABELS
+            .iter()
+            .find(|(k, _)| *k == outcome)
+            .map_or(outcome, |(_, l)| *l);
+        let how = match (outcome, c["firstTouch"]["commit"].as_str()) {
+            ("fixed", Some(sha)) => {
+                let sha = &sha[..sha.len().min(8)];
+                match c["firstTouch"]["hunkCoversLine"].as_bool() {
+                    Some(true) => format!("fixed by {sha}, its hunk covers the line"),
+                    Some(false) => format!("fixed by {sha}, line outside its hunk"),
+                    None => format!("fixed by {sha}, line not comparable"),
+                }
+            }
+            ("fixed", None) => "fixed, first commit not located".to_owned(),
+            _ => label.to_owned(),
+        };
+        s += &format!(
+            "  {}#{} {}:{} [{}] {:?}: {how}\n",
+            c["repo"].as_str().unwrap_or("?"),
+            c["pr"],
+            c["file"].as_str().unwrap_or("?"),
+            c["line"]
+                .as_u64()
+                .map_or_else(|| "?".to_owned(), |l| l.to_string()),
+            if c["blocking"] == true {
+                "blocking"
+            } else {
+                "not blocking"
+            },
+            c["title"].as_str().unwrap_or(""),
+        );
+    }
     s
 }
 

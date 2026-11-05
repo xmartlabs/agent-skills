@@ -34,7 +34,7 @@ fn usage() -> ExitCode {
     eprintln!("usage: tribunal cost [--repo <owner/name>] [--since <iso date>] [--json]");
     eprintln!("usage: tribunal metrics [--repo <owner/name>] [--since <iso date>] [--json]");
     eprintln!(
-        "usage: tribunal audit [--repo <owner/name>] [--since <iso date>] [--limit <n>] [--json]"
+        "usage: tribunal audit [--repo <owner/name>] [--since <iso date>] [--limit <n>] [--candidates] [--json]"
     );
     eprintln!("usage: tribunal compare --a <file.json> --b <file.json> [--resamples <n>] [--seed <n>] [--json]");
     eprintln!("usage: tribunal lost-runs [--recent <days>]");
@@ -877,7 +877,13 @@ fn compare_main(argv: &[String]) -> ExitCode {
 async fn audit_main(argv: &[String]) -> ExitCode {
     use tribunal_context::outcome_audit::{audit, render, AuditArgs, DEFAULT_LIMIT};
     let mut limit = DEFAULT_LIMIT;
-    let (filter, as_json) = match parse_ledger_flags(argv, Some(&mut limit)) {
+    let candidates = argv.iter().any(|a| a == "--candidates");
+    let rest: Vec<String> = argv
+        .iter()
+        .filter(|a| *a != "--candidates")
+        .cloned()
+        .collect();
+    let (filter, as_json) = match parse_ledger_flags(&rest, Some(&mut limit)) {
         Ok(f) => f,
         Err(e) => {
             eprintln!("tribunal: {e}");
@@ -889,7 +895,17 @@ async fn audit_main(argv: &[String]) -> ExitCode {
         Err(code) => return code,
     };
     let rt = runtime();
-    let report = audit(&rt.tools, &rows, unreadable, &AuditArgs { filter, limit }).await;
+    let report = audit(
+        &rt.tools,
+        &rows,
+        unreadable,
+        &AuditArgs {
+            filter,
+            limit,
+            candidates,
+        },
+    )
+    .await;
     if as_json {
         println!("{report}");
     } else {
