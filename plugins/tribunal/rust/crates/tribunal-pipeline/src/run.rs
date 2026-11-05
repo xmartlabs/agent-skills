@@ -13,11 +13,14 @@ use tribunal_context::head_worktree::{
     build_head_worktree, mktemp_then_rmdir, parse_head_worktree,
 };
 use tribunal_context::heads::{self, HeadSetup};
+use tribunal_context::repo_locator::{self, RepoCwd, ENV_REPO_DIR};
 use tribunal_context::{resolve_evidence_line, resolve_verified_anchors};
 use tribunal_core::evidence::line_correction::apply_line_correction;
 use tribunal_core::js;
 use tribunal_core::lens::coverage_gaps::{coverage_banner, unread_risk_files};
+use tribunal_core::lens::diff_usable::diff_is_usable;
 use tribunal_core::lens::js_ext::{to_js_string, utf16_prefix_lossy};
+use tribunal_core::profile::high_risk_surface::with_risk_path_surface;
 use tribunal_core::profile::lens_foci::foci_label_for;
 use tribunal_core::profile::lens_routing::lens_agent_for;
 use tribunal_core::profile::profile_lookup::risk_path_rules;
@@ -28,18 +31,21 @@ use crate::agent_def::{self, AgentDef};
 use crate::context::{
     context_phase, prepare, reviewer_cwd, ContextOutcome, Prepared, ReviewContext, RunArgs, Runtime,
 };
+use crate::coverage_report;
 use crate::decisions::is_retest_target;
 use crate::live::{LiveIo, PanelAgents};
 use crate::panel::{
     panel_phase, CriticGap, PanelEnv, PanelFlags, PanelOutcome, OUTPUT_CEILING_DEFAULT,
 };
+use crate::plan::LensSlot;
 use crate::prompts::{
-    lens_dispatch_prompt, lens_system_prompt, DiffExposure, LensPromptInput, LensReference,
-    SHARED_REFERENCE_NOTICE,
+    lens_dispatch_prompt, lens_system_prompt, DiffDelivery, DiffExposure, LensPromptInput,
+    LensReference, SHARED_REFERENCE_NOTICE,
 };
 use crate::review::{
     answer_of, bot_task, bot_vetting_prompt, check_lenses_returned, collect_candidates,
-    dispatch_all, dispatch_lenses, lens_labels, lens_task, Candidates, ReviewerSetup, ReviewerTask,
+    dispatch_all, dispatch_lenses, lens_labels, lens_task, relabel_unchanged_drops, Candidates,
+    ReviewerSetup, ReviewerTask,
 };
 use crate::schemas;
 use crate::synthesize::{
@@ -47,7 +53,9 @@ use crate::synthesize::{
     missing_identifiers, prior_check, prior_re_examined, ref_evidence, ref_evidence_targets,
     side_payloads, surviving_for_synthesis, synthesis_prompt, verdict, verified_anchors,
     verify_prior_prompt, with_banners, PriorCheck, Relay, Report, SynthesisInput, Verdict,
+    PRIOR_VERIFY_CEILING,
 };
+use crate::verdict_basis::{verdict_basis, with_verdict_basis};
 use crate::verify::{
     apply_dedup, apply_typecheck_result, dedup_prompt, grounded_gate, partition_results, Dedup,
     Grounded, GroundedGate, Verdicts, MAX_AGENTS_DEFAULT, MAX_PANELS_DEFAULT,
@@ -116,6 +124,33 @@ pub fn apply_evidence(
     s
 }
 
+/// The evidence resolver over the candidates, before the Verify phase: it
+/// locates each finding's quote in the diff and corrects a patch line number
+/// to the file line. Nothing to do without candidates or a diff on disk.
+pub fn resolve_evidence(
+    candidates: &mut [Value],
+    diff_path: Option<&str>,
+    logs: &mut Vec<String>,
+) -> EvidenceStats {
+    let Some(diff_path) = diff_path.filter(|_| !candidates.is_empty()) else {
+        return EvidenceStats::default();
+    };
+    let wire: Vec<Value> = candidates
+        .iter()
+        .enumerate()
+        .map(|(i, c)| json!({"id": i, "file": js::get(c, "file"), "line": js::get(c, "line"), "evidence": js::get(c, "evidence")}))
+        .collect();
+    let parsed = resolve_evidence_line::run(
+        std::path::Path::new(diff_path),
+        &Value::from(wire).to_string(),
+    );
+    let (parsed, reason) = match parsed {
+        Ok(p) => (Some(p), None),
+        Err(e) => (None, Some(e)),
+    };
+    apply_evidence(candidates, parsed.as_ref(), reason.as_deref(), logs)
+}
+
 /// How the run's reviewers are dispatched, beyond what the profile decides.
 #[derive(Debug, Clone)]
 pub struct DispatchPolicy {
@@ -124,6 +159,8 @@ pub struct DispatchPolicy {
     /// `--max-panels` and `--max-agents` after the workflow's defaulting.
     pub max_panels: f64,
     pub max_agents: f64,
+    /// `--prior-verify`: how many prior findings get a verification dispatch.
+    pub prior_verify: usize,
     /// See [`ReviewerSetup::effort`].
     pub effort: Option<String>,
     /// The cost breaker's output-token ceiling.
@@ -137,6 +174,7 @@ impl Default for DispatchPolicy {
             concurrency: 8,
             max_panels: MAX_PANELS_DEFAULT,
             max_agents: MAX_AGENTS_DEFAULT,
+            prior_verify: PRIOR_VERIFY_CEILING,
             effort: None,
             output_ceiling: OUTPUT_CEILING_DEFAULT,
         }
@@ -202,6 +240,56 @@ fn shared_reference(
     Some((methodology, conventions))
 }
 
+/// The largest diff the lenses' shared system prompt carries, in bytes. A
+/// bigger one stays on disk for each lens to page through, because a system
+/// prompt cannot be read in parts and the model's context has a limit.
+const SHARED_DIFF_MAX_BYTES: usize = 80_000;
+
+/// The PR diff as text, for the lenses' shared system prompt. `None`, with a
+/// log line, when the diff is not on disk, cannot be read, is not a usable
+/// diff or is over [`SHARED_DIFF_MAX_BYTES`]: the lenses then read it by path.
+fn shared_diff(delivery: &DiffDelivery, logs: &mut Vec<String>) -> Option<String> {
+    let path = delivery.diff_path.as_deref()?;
+    let Ok(text) = std::fs::read_to_string(path) else {
+        logs.push("Lenses read the diff by path: its file could not be read for the shared system prompt.".into());
+        return None;
+    };
+    if text.len() > SHARED_DIFF_MAX_BYTES {
+        logs.push(format!(
+            "Lenses read the diff by path: it is {} bytes, over the {SHARED_DIFF_MAX_BYTES} the shared system prompt takes.",
+            text.len()
+        ));
+        return None;
+    }
+    if !diff_is_usable(Some(&text), None, None) {
+        logs.push("Lenses read the diff by path: the file is not a usable diff.".into());
+        return None;
+    }
+    logs.push(format!(
+        "The lenses carry the diff in their shared system prompt ({} bytes).",
+        text.len()
+    ));
+    Some(text)
+}
+
+/// The most independent samples one lens may get from `--lens-samples`.
+pub const MAX_LENS_SAMPLES: u32 = 4;
+
+/// Each planned lens repeated `samples` times, one full round of the plan
+/// after another, so the first sample of every focus starts before any second
+/// one does. One sample returns the plan unchanged.
+#[must_use]
+pub fn sampled_lens_plan(slots: &[LensSlot], samples: u32) -> Vec<LensSlot> {
+    let rounds = samples.clamp(1, MAX_LENS_SAMPLES) as usize;
+    (0..rounds).flat_map(|_| slots.iter().cloned()).collect()
+}
+
+/// How many samples each lens gets on this run: `--lens-samples`, or one.
+#[must_use]
+pub fn effective_lens_samples(args: &RunArgs) -> u32 {
+    args.lens_samples.unwrap_or(1).clamp(1, MAX_LENS_SAMPLES)
+}
+
 /// The run up to the end of the Review phase. `logs` receives every line the
 /// workflow would `log`, in order.
 ///
@@ -217,13 +305,22 @@ pub async fn run_review<A: Agent>(
     let context_started = std::time::Instant::now();
     let prepared = prepare(rt, args).await?;
     logs.extend(prepared.logs.iter().cloned());
-    let rc = match context_phase(agent, rt, args, &prepared, logs).await? {
+    let mut rc = match context_phase(agent, rt, args, &prepared, logs).await? {
         ContextOutcome::Skipped { reason } => return Ok(RunOutcome::Skipped { reason }),
         ContextOutcome::Preflight { summary } => return Ok(RunOutcome::Preflight { summary }),
         ContextOutcome::Ready(rc) => rc,
     };
     let context_seconds = context_started.elapsed().as_secs_f64();
     let lenses_started = std::time::Instant::now();
+    let samples = effective_lens_samples(args);
+    if samples > 1 {
+        let planned = rc.plan.lens_plan.len();
+        rc.plan.lens_plan = sampled_lens_plan(&rc.plan.lens_plan, samples);
+        logs.push(format!(
+            "Lens samples: {samples} independent dispatches of each of the {planned} planned lenses ({} in all); the pre-panel dedup merges the claims they share.",
+            rc.plan.lens_plan.len()
+        ));
+    }
     let profile = &prepared.profile;
     let lens_agent = lens_agent_for(profile)?.to_owned();
     let mut definition = agent_def::load(&rt.plugin_root, &lens_agent)?;
@@ -232,8 +329,16 @@ pub async fn run_review<A: Agent>(
         prepared.conventions.file_path(),
         logs,
     );
+    let diff = shared
+        .as_ref()
+        .and_then(|_| shared_diff(&rc.delivery, logs));
     if let Some((methodology, conventions)) = &shared {
-        definition.body = lens_system_prompt(&definition.body, methodology, conventions.as_deref());
+        definition.body = lens_system_prompt(
+            &definition.body,
+            methodology,
+            conventions.as_deref(),
+            diff.as_deref(),
+        );
     }
     let label_map = foci_label_for(profile)?;
     let foci: Vec<Value> = rc.plan.lens_plan.iter().map(|s| s.focus.clone()).collect();
@@ -244,7 +349,11 @@ pub async fn run_review<A: Agent>(
     let high_risk = js::get(profile, "highRiskSurface");
     let mut tasks = Vec::new();
     let reference = if shared.is_some() {
-        LensReference::Shared
+        if diff.is_some() {
+            LensReference::SharedWithDiff
+        } else {
+            LensReference::Shared
+        }
     } else {
         LensReference::Paths {
             methodology_line: &rc.methodology_line,
@@ -319,32 +428,11 @@ pub async fn run_review<A: Agent>(
         check_lenses_returned(&plan_files, &answers, &labels)?;
     logs.extend(unreturned_log);
 
-    let mut evidence = EvidenceStats::default();
-    if let (false, Some(diff_path)) = (
-        candidates.all_candidates.is_empty(),
+    let evidence = resolve_evidence(
+        &mut candidates.all_candidates,
         rc.delivery.diff_path.as_deref(),
-    ) {
-        let wire: Vec<Value> = candidates
-            .all_candidates
-            .iter()
-            .enumerate()
-            .map(|(i, c)| json!({"id": i, "file": js::get(c, "file"), "line": js::get(c, "line"), "evidence": js::get(c, "evidence")}))
-            .collect();
-        let parsed = resolve_evidence_line::run(
-            std::path::Path::new(diff_path),
-            &Value::from(wire).to_string(),
-        );
-        let (parsed, reason) = match parsed {
-            Ok(p) => (Some(p), None),
-            Err(e) => (None, Some(e)),
-        };
-        evidence = apply_evidence(
-            &mut candidates.all_candidates,
-            parsed.as_ref(),
-            reason.as_deref(),
-            logs,
-        );
-    }
+        logs,
+    );
     Ok(RunOutcome::Reviewed(Box::new(ReviewOutcome {
         context_seconds,
         lenses_seconds: lenses_started.elapsed().as_secs_f64(),
@@ -392,6 +480,13 @@ pub struct VerifyOutcome {
     pub panel_seconds: f64,
     pub dedup: Dedup,
     pub typecheck: Option<TypecheckRun>,
+    /// Which directory stood for the reviewed repo when the typecheck ran.
+    pub repo_cwd: RepoCwd,
+    /// Whether the reviewed tree had anything for a typecheck to check.
+    pub typecheck_applies: bool,
+    /// The manifests that differ between the checkout that supplied the
+    /// installed packages and the reviewed commit. Empty when none ran.
+    pub deps_drift: Vec<String>,
     pub grounded: Grounded,
     pub gate: GroundedGate,
     pub panel: PanelOutcome,
@@ -434,7 +529,9 @@ pub async fn verify_phase<A: Agent>(
     let all = &review.candidates.all_candidates;
     let mut dispatches = Vec::new();
     let dedup_started = std::time::Instant::now();
-    let dedup = if all.len() >= 2 {
+    // `tribunal panel` judges each given claim on its own: a merge would
+    // fold two labelled claims into one verdict.
+    let dedup = if all.len() >= 2 && !args.panel_only {
         let scribe = agent_def::load(&rt.plugin_root, "tribunal-scribe")?;
         let res = dispatch_one(
             agent,
@@ -460,17 +557,49 @@ pub async fn verify_phase<A: Agent>(
     let panel_started = std::time::Instant::now();
     let rc = &review.context;
     let pr_files = &rc.plan.files;
-    let eligible = dedup.panel_candidates.iter().any(|c| {
-        js::truthy(js::get(c, "mechanicalClaim"))
-            || js::get(c, "file")
-                .and_then(Value::as_str)
-                .is_some_and(|f| f.ends_with(".ts") || f.ends_with(".tsx") || f.ends_with(".py"))
-    });
+    // The grounded gate settles a finding without a panel, so `tribunal
+    // panel` does not run it.
+    let eligible = !args.panel_only
+        && dedup.panel_candidates.iter().any(|c| {
+            js::truthy(js::get(c, "mechanicalClaim"))
+                || js::get(c, "file").and_then(Value::as_str).is_some_and(|f| {
+                    f.ends_with(".ts") || f.ends_with(".tsx") || f.ends_with(".py")
+                })
+        });
     let head = js::get(&rc.pr_context, "headRefOid");
     let pin_ok = js::truthy(js::get(&rc.head_pin, "ok"));
     let pinned = js::get(&rc.head_pin, "path")
         .and_then(Value::as_str)
         .filter(|_| pin_ok);
+    let repo_cwd = repo_locator::resolve(
+        &rt.tools,
+        &review.prepared.repo,
+        &rt.operator.cwd,
+        std::env::var(ENV_REPO_DIR).ok().as_deref(),
+    )
+    .await;
+    match &repo_cwd {
+        RepoCwd::Ambient => {}
+        RepoCwd::Resolved {
+            dir,
+            how,
+            branch,
+            head,
+        } => logs.push(format!(
+            "The working directory is not {}: the typecheck runs in {} ({how}; on {} at {}). Its dependencies and tsconfig come from that checkout, so a clone left on an old branch can skew the result",
+            review.prepared.repo,
+            dir.display(),
+            branch.as_deref().unwrap_or("an unknown branch"),
+            head.as_deref().unwrap_or("an unknown commit")
+        )),
+        RepoCwd::Unresolved { cwd_origin, .. } => logs.push(format!(
+            "WARNING: the working directory is {}, not {}, and no local checkout of {} was found, so the typecheck cannot run. Run from a checkout of it or set {ENV_REPO_DIR}",
+            cwd_origin.as_deref().unwrap_or("not a GitHub checkout"),
+            review.prepared.repo,
+            review.prepared.repo
+        )),
+    }
+    let typecheck_cwd = repo_cwd.dir(&rt.operator.cwd).to_path_buf();
     let mut grounded = Grounded::default();
     let mut typecheck = None;
     if eligible && js::truthy(head) {
@@ -481,12 +610,35 @@ pub async fn verify_phase<A: Agent>(
             &to_js_string(head),
             pr_files,
             pinned,
-            &rt.operator.cwd,
+            &typecheck_cwd,
             &rt.tmpdir,
         )
         .await;
         grounded = apply_typecheck_result(&run.text, pr_files, logs)?;
         typecheck = Some(run);
+    }
+    let pinned_tree = pinned.map(std::path::Path::new);
+    let typecheck_applies = coverage_report::typecheck_applies(pinned_tree, pr_files);
+    let mut deps_drift: Vec<String> = Vec::new();
+    if let (Some(t), Some(tree)) = (&typecheck, pinned_tree) {
+        if coverage_report::typecheck_ran(&t.text) {
+            let top = match rt
+                .tools
+                .git(&["rev-parse", "--show-toplevel"], Some(&typecheck_cwd))
+                .await
+            {
+                Ok(o) if o.ok() => PathBuf::from(o.stdout.trim_end_matches('\n')),
+                _ => typecheck_cwd.clone(),
+            };
+            deps_drift = coverage_report::deps_drift(&top, tree);
+            if !deps_drift.is_empty() {
+                logs.push(format!(
+                    "The typecheck ran on packages installed from {}, whose {} differ from the reviewed commit's",
+                    top.display(),
+                    deps_drift.join(", ")
+                ));
+            }
+        }
     }
     let gate = grounded_gate(&dedup.panel_candidates, &grounded, pr_files, logs)?;
 
@@ -498,6 +650,7 @@ pub async fn verify_phase<A: Agent>(
         no_gemini: args.gemini == Some(false),
         force_batch: args.batch_panels == Some(true),
         no_batch: args.batch_panels == Some(false),
+        lone_refuter: true,
     };
     let any_candidate = !dedup.panel_candidates.is_empty();
     let probe = if any_candidate {
@@ -622,9 +775,15 @@ pub async fn verify_phase<A: Agent>(
     let diff_block = rc.delivery.refuter_diff_block(&mut exposure)?;
     let not_reached = &review.candidates.lens_not_reached;
     let uncovered = uncovered_files(pr_files, all);
-    let siblings = critic_siblings(rt, rc, pinned).await;
+    let siblings = if args.panel_only {
+        Vec::new()
+    } else {
+        critic_siblings(rt, rc, pinned).await
+    };
     let claims = &rc.decisions.retest_claims;
-    let retest = |f: &Value| is_retest_target(claims, f);
+    // In `tribunal panel` every given finding is a retest target, so a nit
+    // opens a panel and every finding ranks the same for the budget.
+    let retest = |f: &Value| args.panel_only || is_retest_target(claims, f);
     let spent = || io.spent();
     let before: Vec<&DispatchResult> = review
         .dispatches
@@ -649,6 +808,7 @@ pub async fn verify_phase<A: Agent>(
         }),
         blast_radius: rc.blast_radius.as_ref(),
         file_count: rc.plan.file_count,
+        critic: !args.panel_only,
         flags,
         codex_installed,
         gemini_installed,
@@ -659,7 +819,7 @@ pub async fn verify_phase<A: Agent>(
         spent: &spent,
         spent_before: output_of(&before),
     };
-    let panel = panel_phase(
+    let mut panel = panel_phase(
         &io,
         &env,
         gate.panel_input.clone(),
@@ -667,8 +827,38 @@ pub async fn verify_phase<A: Agent>(
         logs,
     )
     .await?;
+    relabel_unchanged_drops(
+        &mut panel.dropped_pre_panel,
+        &rc.plan.files,
+        &rc.plan.all_pr_files,
+        rc.plan
+            .prior_review
+            .as_ref()
+            .and_then(|p| js::get(p, "sha"))
+            .and_then(Value::as_str),
+    );
     let panel_seconds = (panel_started.elapsed().as_secs_f64() - panel.critic_seconds).max(0.0);
     dispatches.extend(io.dispatches.into_inner().expect("lock"));
+    let anchored = crate::anchor_repair::anchor_from_evidence(&mut panel.verified);
+    if anchored > 0 {
+        logs.push(format!(
+            "verifiedBy: anchored {anchored} finding(s) written without one from their located evidence"
+        ));
+    }
+    if let Some(head) = js::get(&review.context.pr_context, "headRefOid")
+        .and_then(Value::as_str)
+        .filter(|h| !h.is_empty())
+    {
+        crate::anchor_repair::repair_anchor_lines(
+            &rt.tools,
+            head,
+            &review.prepared.repo,
+            &cross_repo_flags(&review.prepared.profile),
+            &mut panel.verified,
+            logs,
+        )
+        .await;
+    }
     let verdicts = partition_results(
         &panel.verified,
         &gate.confirmed,
@@ -680,6 +870,9 @@ pub async fn verify_phase<A: Agent>(
         panel_seconds,
         dedup,
         typecheck,
+        repo_cwd,
+        typecheck_applies,
+        deps_drift,
         grounded,
         gate,
         panel,
@@ -708,6 +901,9 @@ pub struct SynthesisOutcome {
     /// The `riskPaths` files every lens that held them left unread for
     /// budget, which keep the verdict from APPROVE.
     pub unread_risk_files: Vec<String>,
+    /// What the dispatches read outside the reviewed repo, and the critic's
+    /// "not checked" list set against the lenses' commands.
+    pub coverage: coverage_report::CoverageFacts,
     pub dispatches: Vec<(String, DispatchResult)>,
 }
 
@@ -803,6 +999,7 @@ pub async fn synthesize_phase<A: Agent>(
         plan.prior_review.as_ref(),
         &current,
         &plan.import_adjacency,
+        policy.prior_verify,
         logs,
     )?;
     let mut verified = Vec::new();
@@ -990,6 +1187,59 @@ pub async fn synthesize_phase<A: Agent>(
         report,
         &coverage_banner(&review.candidates.lens_gaps, &unread_risk),
     );
+    let lens_calls: Vec<(String, Vec<coverage_report::Call>)> = review
+        .labels
+        .iter()
+        .zip(&review.dispatches)
+        .map(|(label, d)| (label.clone(), transcript_calls(d)))
+        .collect();
+    let other_calls: Vec<(String, String, Vec<coverage_report::Call>)> = verify
+        .dispatches
+        .iter()
+        .map(|(label, d)| {
+            (
+                label.clone(),
+                dispatch_kind(label).to_owned(),
+                transcript_calls(d),
+            )
+        })
+        .collect();
+    let coverage = coverage_report::facts(
+        &review.prepared.repo,
+        &lens_calls,
+        &other_calls,
+        &verify.panel.critic_output,
+    );
+    let report = with_coverage(
+        report,
+        &coverage_report::typecheck_banner(
+            verify.typecheck.as_ref().map(|t| t.text.as_str()),
+            &review.prepared.repo,
+            &verify.repo_cwd,
+            verify.typecheck_applies,
+        ),
+    );
+    let report = with_coverage(
+        report,
+        &coverage_report::deps_drift_banner(&verify.deps_drift, &verify.repo_cwd),
+    );
+    let report = with_coverage(report, &coverage.banner());
+    let anchor_format = coverage_report::anchor_format(&anchors);
+    if let Some(first) = anchor_format["files"].get(0).and_then(Value::as_str) {
+        logs.push(format!(
+            "{} verifiedBy anchor(s) name a file with a note after the path, such as `{first}`, so they were looked up in the reviewed repo and not found. A file in another repo is written `<repo-name>/<path>`.",
+            anchor_format["annotatedUnresolved"]
+        ));
+    }
+    let report = match (verdict.guess, risk_path_rules(profile)) {
+        ("REQUEST CHANGES", Ok(rules)) => {
+            match verdict_basis(&with_risk_path_surface(Some(&surviving), Some(&rules))) {
+                Some(basis) => with_verdict_basis(report, &basis),
+                None => report,
+            }
+        }
+        _ => report,
+    };
     Ok(SynthesisOutcome {
         synthesize_seconds: synthesize_started.elapsed().as_secs_f64(),
         prior,
@@ -1001,8 +1251,26 @@ pub async fn synthesize_phase<A: Agent>(
         prompt,
         report,
         unread_risk_files: unread_risk,
+        coverage,
         dispatches,
     })
+}
+
+fn transcript_calls(d: &DispatchResult) -> Vec<coverage_report::Call> {
+    d.transcript
+        .as_deref()
+        .map(coverage_report::calls_in_transcript)
+        .unwrap_or_default()
+}
+
+fn dispatch_kind(label: &str) -> &'static str {
+    if label.starts_with("completeness-critic") {
+        "critic"
+    } else if label.starts_with("refute") {
+        "refuter"
+    } else {
+        "other"
+    }
 }
 
 /// APPROVE becomes COMMENT when a `riskPaths` file went unread for budget,
@@ -1052,7 +1320,7 @@ pub enum FullOutcome {
 
 /// Removes the trees the run made: the pinned checkout and the typecheck's
 /// own worktree. Best effort, as the workflow's teardown.
-async fn teardown(rt: &Runtime, review: &ReviewOutcome, verify: Option<&VerifyOutcome>) {
+pub(crate) async fn teardown(rt: &Runtime, review: &ReviewOutcome, verify: Option<&VerifyOutcome>) {
     let pin = &review.context.head_pin;
     if js::truthy(js::get(pin, "ok")) {
         if let Some(path) = js::get(pin, "path").and_then(Value::as_str) {
@@ -1064,7 +1332,10 @@ async fn teardown(rt: &Runtime, review: &ReviewOutcome, verify: Option<&VerifyOu
         .and_then(|v| v.typecheck.as_ref())
         .and_then(|t| t.created_worktree.as_deref())
     {
-        remove_tree(&rt.tools, wt, false, &rt.operator.cwd).await;
+        let tc_cwd = verify.map_or(rt.operator.cwd.as_path(), |v| {
+            v.repo_cwd.dir(&rt.operator.cwd)
+        });
+        remove_tree(&rt.tools, wt, false, tc_cwd).await;
     }
     if let Some((tree, clone)) = verify.and_then(|v| v.external_tree.as_ref()) {
         remove_tree(&rt.tools, tree, *clone, &rt.operator.cwd).await;
@@ -1232,5 +1503,80 @@ mod shared_reference_tests {
         assert_eq!(shared_reference(&m, Some(&gone), &mut logs), None);
         assert_eq!(logs.len(), 3);
         assert!(logs[2].contains("conventions"));
+    }
+}
+
+#[cfg(test)]
+mod shared_diff_tests {
+    use super::{shared_diff, SHARED_DIFF_MAX_BYTES};
+    use crate::prompts::DiffDelivery;
+    use serde_json::json;
+
+    // `diff_is_usable` takes nothing under 200 characters for a real diff.
+    const DIFF: &str = "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1,6 +1,8 @@\n line one of the file\n line two of the file\n+const added = compute(input);\n+const other = compute(output);\n line three of the file\n line four of the file\n line five of the file\n line six of the file\n";
+
+    fn delivery(path: Option<String>) -> DiffDelivery {
+        DiffDelivery {
+            diff_path: path,
+            diff_bytes: None,
+            head_pin: json!({}),
+            head_sha: None,
+        }
+    }
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "tribunal-shared-diff-{name}-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_usable_diff_that_fits_is_read_whole() {
+        assert!(DIFF.len() >= 200);
+        let dir = scratch("ok");
+        let path = dir.join("pr.diff");
+        std::fs::write(&path, DIFF).unwrap();
+        let mut logs = Vec::new();
+        let d = delivery(Some(path.to_string_lossy().into_owned()));
+        assert_eq!(shared_diff(&d, &mut logs).as_deref(), Some(DIFF));
+        assert_eq!(logs.len(), 1);
+        assert!(logs[0].contains("shared system prompt"));
+    }
+
+    #[test]
+    fn a_diff_over_the_cap_stays_on_disk() {
+        let dir = scratch("big");
+        let path = dir.join("pr.diff");
+        let big = format!("{DIFF}{}", "+x\n".repeat(SHARED_DIFF_MAX_BYTES));
+        std::fs::write(&path, &big).unwrap();
+        let mut logs = Vec::new();
+        let d = delivery(Some(path.to_string_lossy().into_owned()));
+        assert_eq!(shared_diff(&d, &mut logs), None);
+        assert!(logs[0].contains("over the 80000"));
+    }
+
+    #[test]
+    fn a_missing_unreadable_or_unusable_diff_stays_on_disk() {
+        let dir = scratch("bad");
+        let banner = dir.join("banner.diff");
+        std::fs::write(
+            &banner,
+            "Output too large (81KB). Full output saved to: /x\n",
+        )
+        .unwrap();
+        let gone = dir.join("gone.diff");
+        let mut logs = Vec::new();
+        assert_eq!(shared_diff(&delivery(None), &mut logs), None);
+        assert!(logs.is_empty());
+        let d = delivery(Some(gone.to_string_lossy().into_owned()));
+        assert_eq!(shared_diff(&d, &mut logs), None);
+        let d = delivery(Some(banner.to_string_lossy().into_owned()));
+        assert_eq!(shared_diff(&d, &mut logs), None);
+        assert_eq!(logs.len(), 2);
+        assert!(logs[0].contains("could not be read"));
+        assert!(logs[1].contains("not a usable diff"));
     }
 }

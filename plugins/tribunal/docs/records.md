@@ -36,9 +36,15 @@ and no one could say whether they were any good. With it:
   guessed.
 - **Cost is measured, not estimated.** The figures above come from these rows.
 
-`tribunal cost` prints where the money went, from these rows. `tribunal override`
+`tribunal cost` prints where the money went, from these rows, `tribunal metrics`
+the refutation panel's scorecard, and `tribunal audit` what happened to posted
+findings after the review. `tribunal override`
 records your own call on one finding of a run (a panel error, or a real finding
-at a lower severity), with the reason. Both need the Rust binary.
+at a lower severity), with the reason. All four need the Rust binary.
+
+`tribunal compare` is for the A/B of an edit: it takes two files of observations
+you produce and says whether the difference is outside the run-to-run noise
+([format and reading](compare.md)).
 
 Two consequences for you:
 
@@ -47,4 +53,4 @@ updates replace wholesale; this file is the one thing here that can't be
 reconstructed. Never delete `~/.claude/tribunal-data/`.
 
 **A run that dies before persisting is a run you paid for and lost.**
-`node eval/lost-runs.mjs` lists them: a killed run is otherwise silent.
+`tribunal-engine run -- lost-runs` lists them: a killed run is otherwise silent.

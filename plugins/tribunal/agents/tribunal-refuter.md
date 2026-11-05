@@ -1,6 +1,6 @@
 ---
 name: tribunal-refuter
-description: Adversarial refuter for one panel slot in tribunal's PR review (`workflows/tribunal.js`). Not a general code reviewer — its only job is to try to kill ONE already-raised finding by finding the input, code path, or schema fact that proves it is NOT real.
+description: Adversarial refuter for one panel slot in tribunal's PR review (the Rust engine). Not a general code reviewer: its only job is to try to kill ONE already-raised finding by finding the input, code path, or schema fact that proves it is NOT real.
 model: claude-sonnet-5-5
 tools: Read, Bash
 ---

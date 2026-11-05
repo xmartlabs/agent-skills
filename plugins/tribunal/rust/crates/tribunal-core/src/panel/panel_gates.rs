@@ -504,12 +504,19 @@ pub fn lower_severity_votes(votes: &[Value], finding: &Value) -> (usize, usize) 
 }
 
 /// `placeSurvivor`, except that a lower severity needs two judging votes, as
-/// a placement already did. The Workflow records one vote's proposal as the
-/// panel's; `diff_panel.rs` declares the difference.
+/// a placement already did, unless the one judging vote is the whole panel.
+/// A Codex vote never fills `introducedByPr`, so a lone Claude vote beside it
+/// would otherwise stand for the panel. The Workflow records one vote's
+/// proposal as the panel's; `diff_panel.rs` declares the difference.
 pub fn place_survivor(votes: &[Value], finding: &Value, line_added: bool) -> Placement {
     let live = judging_votes(votes);
     let mut kept = Placement::default();
-    if live.len() < 2 {
+    let present = votes
+        .iter()
+        .filter(|v| js::truthy(Some(v)) && !is_str(js::get(v, "slotStatus"), "UNAVAILABLE"))
+        .count();
+    let sole_voter = live.len() == 1 && present == 1;
+    if live.len() < 2 && !sole_voter {
         return kept;
     }
     // `x > live.length / 2` on whole numbers.
@@ -517,6 +524,9 @@ pub fn place_survivor(votes: &[Value], finding: &Value, line_added: bool) -> Pla
     let lower = lower_proposals(&live, finding);
     if majority(lower.len()) {
         kept.proposed_severity = lower.iter().max().map(|&top| SEVERITIES[top]);
+    }
+    if live.len() < 2 {
+        return kept;
     }
     let intended_by = |v: &Value| js::get(v, "intendedBy").cloned();
     let intended: Vec<&Value> = live
@@ -612,6 +622,26 @@ mod tests {
         assert_eq!(
             lower_severity_votes(&[judging("claude", "nit"), codex], &f),
             (1, 1)
+        );
+    }
+
+    #[test]
+    fn a_panel_of_one_vote_records_its_lower_severity() {
+        let f = json!({"severity": "important"});
+        let lone = [judging("claude", "nit")];
+        let p = place_survivor(&lone, &f, false);
+        assert_eq!(p.proposed_severity, Some("nit"));
+        assert_eq!(p.placement, None);
+        assert_eq!(lower_severity_votes(&lone, &f), (1, 1));
+        let same = [judging("claude", "important")];
+        assert_eq!(place_survivor(&same, &f, false).proposed_severity, None);
+        let gone = [
+            judging("claude", "nit"),
+            json!({"source": "codex", "verdict": "NOT_REFUTED", "slotStatus": "UNAVAILABLE"}),
+        ];
+        assert_eq!(
+            place_survivor(&gone, &f, false).proposed_severity,
+            Some("nit")
         );
     }
 

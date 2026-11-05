@@ -62,6 +62,8 @@ pub struct MetricsScope {
     pub review_results: Value,
     pub lens_findings: Value,
     pub lenses_override: Value,
+    #[serde(default = "one_lens_sample")]
+    pub lens_samples: u32,
     pub file_partition_mode: Value,
     pub per_group_churn: Value,
     pub use_codex_head: bool,
@@ -127,6 +129,10 @@ pub struct MetricsScope {
     pub refines_skipped_for_budget: Value,
     pub external_slots: f64,
     pub artifact_dir: String,
+}
+
+fn one_lens_sample() -> u32 {
+    1
 }
 
 fn n(x: f64) -> Value {
@@ -263,6 +269,83 @@ fn verified_gate_note(v: &Value) -> Option<Value> {
         .and_then(|d| get(&d, "verifiedByGateNote").cloned())
 }
 
+/// The row's `votes`: each vote the tally counted, in the row's shape.
+#[must_use]
+pub fn vote_rows(v: &Value) -> Value {
+    let refined = js::truthy(get(v, "refined"));
+    Value::Array(
+        votes(v)
+            .iter()
+            .map(|vote| {
+                let g = |k: &str| get(vote, k);
+                let pre = g("refutationType") == Some(&json!("PRE_DECIDED"));
+                let mut o = Map::new();
+                o.insert("source".into(), or(g("source"), json!("claude")));
+                o.insert(
+                    "verdict".into(),
+                    g("verdict").cloned().unwrap_or(Value::Null),
+                );
+                o.insert(
+                    "confidence".into(),
+                    g("confidence").cloned().unwrap_or(Value::Null),
+                );
+                o.insert(
+                    "confidenceDeclared".into(),
+                    or_null(g("confidenceDeclared")),
+                );
+                o.insert("coreStands".into(), json!(js::truthy(g("coreStands"))));
+                o.insert("reason".into(), or(g("reason"), json!("")));
+                o.insert(
+                    "refutationType".into(),
+                    or(g("refutationType"), Value::Null),
+                );
+                o.insert("round".into(), json!(if refined { 1 } else { 0 }));
+                o.insert(
+                    "fromEscalation".into(),
+                    json!(js::truthy(g("fromEscalation"))),
+                );
+                o.insert("killReason".into(), or(g("killReason"), Value::Null));
+                o.insert(
+                    "introducedByPr".into(),
+                    or(g("introducedByPr"), Value::Null),
+                );
+                o.insert("contradiction".into(), or(g("contradiction"), Value::Null));
+                o.insert(
+                    "quoteFound".into(),
+                    match g("quoteFound") {
+                        Some(Value::Bool(b)) => json!(b),
+                        _ => Value::Null,
+                    },
+                );
+                o.insert(
+                    "proposedSeverity".into(),
+                    or(g("proposedSeverity"), Value::Null),
+                );
+                o.insert("intendedBy".into(), or(g("intendedBy"), Value::Null));
+                o.insert(
+                    "decisionQuestioned".into(),
+                    if pre {
+                        or(g("decisionQuestioned"), json!(""))
+                    } else {
+                        Value::Null
+                    },
+                );
+                Value::Object(o)
+            })
+            .collect(),
+    )
+}
+
+/// The row's `debate`: whether it fired, its outcome and the rationale.
+#[must_use]
+pub fn debate_row(v: &Value) -> Value {
+    json!({
+        "fired": get(v, "debateFired"),
+        "outcome": get(v, "debateOutcome"),
+        "rationale": or(get(v, "debateRationale"), Value::Null),
+    })
+}
+
 fn finding_row(v: &Value, s: &MetricsScope) -> Result<Value, String> {
     let f = get(v, "finding").cloned().unwrap_or(Value::Null);
     let fg = |k: &str| get(&f, k);
@@ -278,7 +361,6 @@ fn finding_row(v: &Value, s: &MetricsScope) -> Result<Value, String> {
         .find(|vote| get(vote, "verdict") == Some(&json!("REFUTED")));
     let line_corrected_from = fg("lineCorrectedFrom").filter(|x| js::is_integer(Some(x)));
     let resolution = fg("evidenceResolution").filter(|r| js::truthy(Some(r)));
-    let refined = js::truthy(get(v, "refined"));
     let mut m = Map::new();
     let mut put = |k: &str, x: Value| {
         m.insert(k.to_owned(), x);
@@ -429,78 +511,8 @@ fn finding_row(v: &Value, s: &MetricsScope) -> Result<Value, String> {
     );
     put("placement", or(get(v, "placement"), Value::Null));
     put("discardedVotes", or(get(v, "discardedVotes"), json!([])));
-    put(
-        "votes",
-        Value::Array(
-            votes(v)
-                .iter()
-                .map(|vote| {
-                    let g = |k: &str| get(vote, k);
-                    let pre = g("refutationType") == Some(&json!("PRE_DECIDED"));
-                    let mut o = Map::new();
-                    o.insert("source".into(), or(g("source"), json!("claude")));
-                    o.insert(
-                        "verdict".into(),
-                        g("verdict").cloned().unwrap_or(Value::Null),
-                    );
-                    o.insert(
-                        "confidence".into(),
-                        g("confidence").cloned().unwrap_or(Value::Null),
-                    );
-                    o.insert(
-                        "confidenceDeclared".into(),
-                        or_null(g("confidenceDeclared")),
-                    );
-                    o.insert("coreStands".into(), json!(js::truthy(g("coreStands"))));
-                    o.insert("reason".into(), or(g("reason"), json!("")));
-                    o.insert(
-                        "refutationType".into(),
-                        or(g("refutationType"), Value::Null),
-                    );
-                    o.insert("round".into(), json!(if refined { 1 } else { 0 }));
-                    o.insert(
-                        "fromEscalation".into(),
-                        json!(js::truthy(g("fromEscalation"))),
-                    );
-                    o.insert("killReason".into(), or(g("killReason"), Value::Null));
-                    o.insert(
-                        "introducedByPr".into(),
-                        or(g("introducedByPr"), Value::Null),
-                    );
-                    o.insert("contradiction".into(), or(g("contradiction"), Value::Null));
-                    o.insert(
-                        "quoteFound".into(),
-                        match g("quoteFound") {
-                            Some(Value::Bool(b)) => json!(b),
-                            _ => Value::Null,
-                        },
-                    );
-                    o.insert(
-                        "proposedSeverity".into(),
-                        or(g("proposedSeverity"), Value::Null),
-                    );
-                    o.insert("intendedBy".into(), or(g("intendedBy"), Value::Null));
-                    o.insert(
-                        "decisionQuestioned".into(),
-                        if pre {
-                            or(g("decisionQuestioned"), json!(""))
-                        } else {
-                            Value::Null
-                        },
-                    );
-                    Value::Object(o)
-                })
-                .collect(),
-        ),
-    );
-    put(
-        "debate",
-        json!({
-            "fired": get(v, "debateFired"),
-            "outcome": get(v, "debateOutcome"),
-            "rationale": or(get(v, "debateRationale"), Value::Null),
-        }),
-    );
+    put("votes", vote_rows(v));
+    put("debate", debate_row(v));
     Ok(Value::Object(m))
 }
 
@@ -698,6 +710,7 @@ pub fn metrics_row(s: &MetricsScope) -> Result<Value, String> {
         serde_json::to_value(lens_yield).map_err(|e| e.to_string())?,
     );
     put("lensCountOverride", s.lenses_override.clone());
+    put("lensSamples", json!(s.lens_samples));
     put("filePartitionMode", s.file_partition_mode.clone());
     put("perGroupChurn", s.per_group_churn.clone());
     put("codexEnabled", json!(s.use_codex_head));

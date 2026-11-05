@@ -1,0 +1,4605 @@
+{
+  "numberToString": {
+    "recordedWith": {
+      "node": "v24.22.1",
+      "driver": "4f5a1dc4a91cbdcf0922d89728f164b4fb98772df221b97bcfb8cf85256909d7"
+    },
+    "cases": 200011,
+    "inputsSha256": "f5a48ac7d4ab45855d8658e83358eeacb9e1ef733eeda8388025886a826710ea",
+    "sample": [
+      {
+        "case": 0,
+        "input": "447d867020ee0dd4",
+        "js": "8.714285714285716e+21"
+      },
+      {
+        "case": 1,
+        "input": "447a23138611afe9",
+        "js": "7.714285714285715e+21"
+      },
+      {
+        "case": 2,
+        "input": "412c9b21e6819844",
+        "js": "937360.9502074798"
+      },
+      {
+        "case": 3,
+        "input": "40840ac083126e98",
+        "js": "641.344"
+      },
+      {
+        "case": 4,
+        "input": "3d719799812dea11",
+        "js": "1e-12"
+      },
+      {
+        "case": 5,
+        "input": "c124321d5dd6b9ed",
+        "js": "-661774.6832788564"
+      },
+      {
+        "case": 6,
+        "input": "447d0a8778856e1f",
+        "js": "8.571428571428572e+21"
+      },
+      {
+        "case": 7,
+        "input": "407f59db22d0e560",
+        "js": "501.616"
+      },
+      {
+        "case": 8,
+        "input": "580eff489629a960",
+        "js": "1.526689898752501e+116"
+      },
+      {
+        "case": 9,
+        "input": "4472e071a7f05461",
+        "js": "5.571428571428572e+21"
+      },
+      {
+        "case": 10,
+        "input": "39e95a5efea6b348",
+        "js": "1.0000000000000001e-29"
+      },
+      {
+        "case": 11,
+        "input": "c110085637ab29e1",
+        "js": "-262677.5543638748"
+      },
+      {
+        "case": 12,
+        "input": "c1052aa4596ca679",
+        "js": "-173396.54366426522"
+      },
+      {
+        "case": 13,
+        "input": "3c32725dd1d243ac",
+        "js": "1e-18"
+      },
+      {
+        "case": 14,
+        "input": "430c6bf526340000",
+        "js": "1000000000000000"
+      },
+      {
+        "case": 15,
+        "input": "c11153d8c69da0a4",
+        "js": "-283894.1939606762"
+      },
+      {
+        "case": 16,
+        "input": "c12117a5c6b536b3",
+        "js": "-560082.8881013006"
+      },
+      {
+        "case": 17,
+        "input": "41289ec2d1d3e8db",
+        "js": "806753.4098198669"
+      },
+      {
+        "case": 18,
+        "input": "444b1ae4d6e2ef50",
+        "js": "1e+21"
+      },
+      {
+        "case": 19,
+        "input": "444b1ae4d6e2ef50",
+        "js": "1e+21"
+      },
+      {
+        "case": 20,
+        "input": "444b1ae4d6e2ef50",
+        "js": "1e+21"
+      },
+      {
+        "case": 21,
+        "input": "407f1a353f7ced91",
+        "js": "497.638"
+      },
+      {
+        "case": 22,
+        "input": "d29f5ef9da68e721",
+        "js": "-9.984977425845852e+89"
+      },
+      {
+        "case": 23,
+        "input": "408f400000000000",
+        "js": "1000"
+      },
+      {
+        "case": 24,
+        "input": "40f345239f12d3d4",
+        "js": "78930.22633631463"
+      },
+      {
+        "case": 25,
+        "input": "c0e109822d519024",
+        "js": "-34892.068032056355"
+      },
+      {
+        "case": 26,
+        "input": "74f7b406a900d597",
+        "js": "2.7805058248831174e+255"
+      },
+      {
+        "case": 27,
+        "input": "412201a31d87facb",
+        "js": "590033.5576780675"
+      },
+      {
+        "case": 28,
+        "input": "4474d0144992d330",
+        "js": "6.142857142857143e+21"
+      },
+      {
+        "case": 29,
+        "input": "4084b0020c49ba5e",
+        "js": "662.001"
+      },
+      {
+        "case": 30,
+        "input": "4079532f1a9fbe77",
+        "js": "405.199"
+      },
+      {
+        "case": 31,
+        "input": "3e45798ee2308c3a",
+        "js": "1e-8"
+      },
+      {
+        "case": 32,
+        "input": "6e9b266b80950879",
+        "js": "6.280986529070265e+224"
+      },
+      {
+        "case": 33,
+        "input": "3d719799812dea11",
+        "js": "1e-12"
+      },
+      {
+        "case": 34,
+        "input": "3bc79ca10c924223",
+        "js": "1e-20"
+      },
+      {
+        "case": 35,
+        "input": "4073131a9fbe76c9",
+        "js": "305.194"
+      },
+      {
+        "case": 36,
+        "input": "4084a57ef9db22d1",
+        "js": "660.687"
+      },
+      {
+        "case": 37,
+        "input": "4079a31a9fbe76c9",
+        "js": "410.194"
+      },
+      {
+        "case": 38,
+        "input": "85a111d8791be65e",
+        "js": "-1.4693328546108212e-281"
+      },
+      {
+        "case": 39,
+        "input": "4082bfe560418937",
+        "js": "599.987"
+      },
+      {
+        "case": 40,
+        "input": "4024bb645a1cac08",
+        "js": "10.366"
+      },
+      {
+        "case": 41,
+        "input": "c12d9703fbb29377",
+        "js": "-969601.991596802"
+      },
+      {
+        "case": 42,
+        "input": "446d0a8778856e1f",
+        "js": "4.285714285714286e+21"
+      },
+      {
+        "case": 43,
+        "input": "03254c071c67573c",
+        "js": "1.6672945509133103e-293"
+      },
+      {
+        "case": 44,
+        "input": "447643ce42ccb24b",
+        "js": "6.571428571428572e+21"
+      },
+      {
+        "case": 45,
+        "input": "2e465189edf52f49",
+        "js": "8.975454695665489e-86"
+      },
+      {
+        "case": 46,
+        "input": "3f1a36e2eb1c432d",
+        "js": "0.0001"
+      },
+      {
+        "case": 47,
+        "input": "3d06849b86a12b9b",
+        "js": "1e-14"
+      },
+      {
+        "case": 48,
+        "input": "c12896817fce0d24",
+        "js": "-805696.7496189219"
+      },
+      {
+        "case": 49,
+        "input": "4475c7e59a641297",
+        "js": "6.428571428571428e+21"
+      },
+      {
+        "case": 50,
+        "input": "411de11b6d3d8b78",
+        "js": "489542.8566800873"
+      },
+      {
+        "case": 51,
+        "input": "40807416872b020c",
+        "js": "526.511"
+      },
+      {
+        "case": 52,
+        "input": "3f1a36e2eb1c432d",
+        "js": "0.0001"
+      },
+      {
+        "case": 53,
+        "input": "41130d3ac6750668",
+        "js": "312142.69380579004"
+      },
+      {
+        "case": 54,
+        "input": "c1275dbdf399f5db",
+        "js": "-765662.9757839994"
+      },
+      {
+        "case": 55,
+        "input": "4088821eb851eb85",
+        "js": "784.265"
+      },
+      {
+        "case": 56,
+        "input": "c11bb9252a7cd4a8",
+        "js": "-454217.2914918163"
+      },
+      {
+        "case": 57,
+        "input": "c11e6c3115e80626",
+        "js": "-498444.2713929139"
+      },
+      {
+        "case": 58,
+        "input": "d11e1334e2cae19b",
+        "js": "-5.705646182488931e+82"
+      },
+      {
+        "case": 59,
+        "input": "44716cb7aeb67546",
+        "js": "5.142857142857143e+21"
+      },
+      {
+        "case": 60,
+        "input": "44839a4ea48d43ee",
+        "js": "1.157142857142857e+22"
+      },
+      {
+        "case": 61,
+        "input": "6300aa9f7e270279",
+        "js": "7.862341285833354e+168"
+      },
+      {
+        "case": 62,
+        "input": "41262dc635259a3e",
+        "js": "726755.1038025094"
+      },
+      {
+        "case": 63,
+        "input": "3da5fd7fe1796495",
+        "js": "1e-11"
+      },
+      {
+        "case": 64,
+        "input": "3d719799812dea11",
+        "js": "1e-12"
+      },
+      {
+        "case": 65,
+        "input": "412ba7a1ae0ddff7",
+        "js": "906192.8399496068"
+      },
+      {
+        "case": 66,
+        "input": "406903020c49ba5e",
+        "js": "200.094"
+      },
+      {
+        "case": 67,
+        "input": "c0e0c14d30dc87b6",
+        "js": "-34314.412214531956"
+      },
+      {
+        "case": 68,
+        "input": "406a3b7ced916873",
+        "js": "209.859"
+      },
+      {
+        "case": 69,
+        "input": "47e94cd0ec641ea8",
+        "js": "2.6903641540720815e+38"
+      },
+      {
+        "case": 70,
+        "input": "3e45798ee2308c3a",
+        "js": "1e-8"
+      },
+      {
+        "case": 71,
+        "input": "408b164189374bc7",
+        "js": "866.782"
+      },
+      {
+        "case": 72,
+        "input": "c1171bf0a7bd462a",
+        "js": "-378620.1638079608"
+      },
+      {
+        "case": 73,
+        "input": "ea5c5c9769098a4e",
+        "js": "-2.2230493914199148e+204"
+      },
+      {
+        "case": 74,
+        "input": "4197d78400000000",
+        "js": "100000000"
+      },
+      {
+        "case": 75,
+        "input": "411ff0c33514ed20",
+        "js": "523312.8018376399"
+      },
+      {
+        "case": 76,
+        "input": "41166bf72b0f005f",
+        "js": "367357.7920494135"
+      },
+      {
+        "case": 77,
+        "input": "4464542ba12a337c",
+        "js": "3e+21"
+      },
+      {
+        "case": 78,
+        "input": "408517a9fbe76c8b",
+        "js": "674.958"
+      },
+      {
+        "case": 79,
+        "input": "4482a27d53bc0487",
+        "js": "1.1e+22"
+      },
+      {
+        "case": 80,
+        "input": "214f36977d4d7f17",
+        "js": "3.0513436650528e-148"
+      },
+      {
+        "case": 81,
+        "input": "4081e51eb851eb85",
+        "js": "572.64"
+      },
+      {
+        "case": 82,
+        "input": "c0f3e3ffbf90b03b",
+        "js": "-81471.98426884499"
+      },
+      {
+        "case": 83,
+        "input": "4104fe0fec6f8247",
+        "js": "171969.99044706134"
+      },
+      {
+        "case": 84,
+        "input": "c1299a1e2c722357",
+        "js": "-838927.0868083042"
+      },
+      {
+        "case": 85,
+        "input": "408f400000000000",
+        "js": "1000"
+      },
+      {
+        "case": 86,
+        "input": "4086939374bc6a7f",
+        "js": "722.447"
+      },
+      {
+        "case": 87,
+        "input": "447a9efc2e7a4f9c",
+        "js": "7.857142857142857e+21"
+      },
+      {
+        "case": 88,
+        "input": "43e158e460913d00",
+        "js": "10000000000000000000"
+      },
+      {
+        "case": 89,
+        "input": "3d3c25c268497682",
+        "js": "1e-13"
+      },
+      {
+        "case": 90,
+        "input": "448589f1462fc2bd",
+        "js": "1.2714285714285714e+22"
+      },
+      {
+        "case": 91,
+        "input": "447ff1fb6af92c55",
+        "js": "9.428571428571428e+21"
+      },
+      {
+        "case": 92,
+        "input": "412d74ccece275ef",
+        "js": "965222.4626652579"
+      },
+      {
+        "case": 93,
+        "input": "3ee4f8b588e368f1",
+        "js": "0.00001"
+      },
+      {
+        "case": 94,
+        "input": "4480b2dab21985b8",
+        "js": "9.857142857142857e+21"
+      },
+      {
+        "case": 95,
+        "input": "4554adf4b7320335",
+        "js": "1e+26"
+      },
+      {
+        "case": 96,
+        "input": "4341c37937e08000",
+        "js": "10000000000000000"
+      },
+      {
+        "case": 97,
+        "input": "411f2eb1b33b0775",
+        "js": "510892.42502986576"
+      },
+      {
+        "case": 98,
+        "input": "3f1a36e2eb1c432d",
+        "js": "0.0001"
+      },
+      {
+        "case": 99,
+        "input": "44516cb7aeb67545",
+        "js": "1.2857142857142855e+21"
+      },
+      {
+        "case": 100,
+        "input": "40850feb851eb852",
+        "js": "673.99"
+      },
+      {
+        "case": 101,
+        "input": "44626488ff87b4ad",
+        "js": "2.714285714285714e+21"
+      },
+      {
+        "case": 102,
+        "input": "4072353f7ced9168",
+        "js": "291.328"
+      },
+      {
+        "case": 103,
+        "input": "4479a72adda91035",
+        "js": "7.571428571428572e+21"
+      },
+      {
+        "case": 104,
+        "input": "446d0a8778856e1f",
+        "js": "4.285714285714286e+21"
+      },
+      {
+        "case": 105,
+        "input": "4341c37937e08000",
+        "js": "10000000000000000"
+      },
+      {
+        "case": 106,
+        "input": "c11115fd61af8666",
+        "js": "-279935.3453961372"
+      },
+      {
+        "case": 107,
+        "input": "3d06849b86a12b9b",
+        "js": "1e-14"
+      },
+      {
+        "case": 108,
+        "input": "b2a383d59dffe5e5",
+        "js": "-9.26528992028714e-65"
+      },
+      {
+        "case": 109,
+        "input": "4088c23b645a1cac",
+        "js": "792.279"
+      },
+      {
+        "case": 110,
+        "input": "3c670ef54646d497",
+        "js": "1e-17"
+      },
+      {
+        "case": 111,
+        "input": "c121955638d0d9b2",
+        "js": "-576171.1109684019"
+      },
+      {
+        "case": 112,
+        "input": "4341c37937e08000",
+        "js": "10000000000000000"
+      },
+      {
+        "case": 113,
+        "input": "4048ab645a1cac08",
+        "js": "49.339"
+      },
+      {
+        "case": 114,
+        "input": "40789c76c8b43958",
+        "js": "393.779"
+      },
+      {
+        "case": 115,
+        "input": "405637be76c8b439",
+        "js": "88.871"
+      },
+      {
+        "case": 116,
+        "input": "4197d78400000000",
+        "js": "100000000"
+      },
+      {
+        "case": 117,
+        "input": "41104f8fe2d47c92",
+        "js": "267235.97151369706"
+      },
+      {
+        "case": 118,
+        "input": "4484921ff55e8356",
+        "js": "1.2142857142857143e+22"
+      },
+      {
+        "case": 119,
+        "input": "347b55b08216c638",
+        "js": "6.967476571981354e-56"
+      },
+      {
+        "case": 120,
+        "input": "3af357c299a88ea8",
+        "js": "1.0000000000000001e-24"
+      },
+      {
+        "case": 121,
+        "input": "e6daa1c9522bade1",
+        "js": "-2.8969483114401888e+187"
+      },
+      {
+        "case": 122,
+        "input": "c127edcf73e5bd17",
+        "js": "-784103.7263621417"
+      },
+      {
+        "case": 123,
+        "input": "408c224395810625",
+        "js": "900.283"
+      },
+      {
+        "case": 124,
+        "input": "41290dc22a655f80",
+        "js": "820961.082804665"
+      },
+      {
+        "case": 125,
+        "input": "4059000000000000",
+        "js": "100"
+      },
+      {
+        "case": 126,
+        "input": "4479a72adda91035",
+        "js": "7.571428571428572e+21"
+      },
+      {
+        "case": 127,
+        "input": "2f8f682e32ef9061",
+        "js": "1.3243933430993506e-79"
+      },
+      {
+        "case": 128,
+        "input": "4050c7ced916872b",
+        "js": "67.122"
+      },
+      {
+        "case": 129,
+        "input": "444b1ae4d6e2ef50",
+        "js": "1e+21"
+      },
+      {
+        "case": 130,
+        "input": "408143b439581062",
+        "js": "552.463"
+      },
+      {
+        "case": 131,
+        "input": "408c4fb851eb851f",
+        "js": "905.965"
+      },
+      {
+        "case": 132,
+        "input": "610328fe6a642e9e",
+        "js": "2.1044868772526097e+159"
+      },
+      {
+        "case": 133,
+        "input": "4341c37937e08000",
+        "js": "10000000000000000"
+      },
+      {
+        "case": 134,
+        "input": "b8d745506b1807c9",
+        "js": "-7.002789110735064e-35"
+      },
+      {
+        "case": 135,
+        "input": "408ab18d4fdf3b64",
+        "js": "854.194"
+      },
+      {
+        "case": 136,
+        "input": "3c32725dd1d243ac",
+        "js": "1e-18"
+      },
+      {
+        "case": 137,
+        "input": "4482e071a7f05461",
+        "js": "1.1142857142857143e+22"
+      },
+      {
+        "case": 138,
+        "input": "448643ce42ccb24b",
+        "js": "1.3142857142857143e+22"
+      },
+      {
+        "case": 139,
+        "input": "c35723dbfd29bcd3",
+        "js": "-26053408866104140"
+      },
+      {
+        "case": 140,
+        "input": "e3ddb47ca52d449a",
+        "js": "-1.1479619121312517e+173"
+      },
+      {
+        "case": 141,
+        "input": "9ad3d7c1140dce82",
+        "js": "-1.9127813415528515e-179"
+      },
+      {
+        "case": 142,
+        "input": "44626488ff87b4ad",
+        "js": "2.714285714285714e+21"
+      },
+      {
+        "case": 143,
+        "input": "412a52903239e370",
+        "js": "862536.0980979037"
+      },
+      {
+        "case": 144,
+        "input": "40c3880000000000",
+        "js": "10000"
+      },
+      {
+        "case": 145,
+        "input": "91c2394d652380b5",
+        "js": "-3.93870132212878e-223"
+      },
+      {
+        "case": 146,
+        "input": "4128e10ea7ec7612",
+        "js": "815239.3279759309"
+      },
+      {
+        "case": 147,
+        "input": "44673b9f939df1b2",
+        "js": "3.4285714285714284e+21"
+      },
+      {
+        "case": 148,
+        "input": "412bb94c217030ca",
+        "js": "908454.0653090712"
+      },
+      {
+        "case": 149,
+        "input": "379eb8a224f57295",
+        "js": "8.816558938313434e-41"
+      },
+      {
+        "case": 150,
+        "input": "408a22147ae147ae",
+        "js": "836.26"
+      },
+      {
+        "case": 151,
+        "input": "78532749c888ea56",
+        "js": "4.047469295599727e+271"
+      },
+      {
+        "case": 152,
+        "input": "4486fdab3f69a1d8",
+        "js": "1.357142857142857e+22"
+      },
+      {
+        "case": 153,
+        "input": "447ff1fb6af92c55",
+        "js": "9.428571428571428e+21"
+      },
+      {
+        "case": 154,
+        "input": "430c6bf526340000",
+        "js": "1000000000000000"
+      },
+      {
+        "case": 155,
+        "input": "445b1ae4d6e2ef50",
+        "js": "2e+21"
+      },
+      {
+        "case": 156,
+        "input": "4477b7883c069166",
+        "js": "7e+21"
+      },
+      {
+        "case": 157,
+        "input": "4477b7883c069166",
+        "js": "7e+21"
+      },
+      {
+        "case": 158,
+        "input": "44535c5a5058f415",
+        "js": "1.4285714285714287e+21"
+      },
+      {
+        "case": 159,
+        "input": "408e01f7ced91687",
+        "js": "960.246"
+      },
+      {
+        "case": 160,
+        "input": "4119e9f69ebcdab1",
+        "js": "424573.65501729684"
+      },
+      {
+        "case": 161,
+        "input": "3a88c240c4aecb13",
+        "js": "9.999999999999999e-27"
+      },
+      {
+        "case": 162,
+        "input": "447e0258c956ad87",
+        "js": "8.857142857142858e+21"
+      },
+      {
+        "case": 163,
+        "input": "448681c297010225",
+        "js": "1.3285714285714286e+22"
+      },
+      {
+        "case": 164,
+        "input": "412e848000000000",
+        "js": "1000000"
+      },
+      {
+        "case": 165,
+        "input": "e6b20af09a3290e9",
+        "js": "-4.906588884786822e+186"
+      },
+      {
+        "case": 166,
+        "input": "45208b2a2c280291",
+        "js": "1e+25"
+      },
+      {
+        "case": 167,
+        "input": "4589d971e4fe8402",
+        "js": "1e+27"
+      },
+      {
+        "case": 168,
+        "input": "406f60395810624e",
+        "js": "251.007"
+      },
+      {
+        "case": 169,
+        "input": "4059000000000000",
+        "js": "100"
+      },
+      {
+        "case": 170,
+        "input": "40e620c673b9bc44",
+        "js": "45318.201626651484"
+      },
+      {
+        "case": 171,
+        "input": "4056c45a1cac0831",
+        "js": "91.068"
+      },
+      {
+        "case": 172,
+        "input": "408688db22d0e560",
+        "js": "721.107"
+      },
+      {
+        "case": 173,
+        "input": "45a0849d466cd07a",
+        "js": "2.5560405379907245e+27"
+      },
+      {
+        "case": 174,
+        "input": "deea13a81c6037e9",
+        "js": "-1.6671777258002954e+149"
+      },
+      {
+        "case": 175,
+        "input": "4069c395810624dd",
+        "js": "206.112"
+      },
+      {
+        "case": 176,
+        "input": "407b9b0a3d70a3d7",
+        "js": "441.69"
+      },
+      {
+        "case": 177,
+        "input": "412ba44f330c8b5d",
+        "js": "905767.5997050811"
+      },
+      {
+        "case": 178,
+        "input": "3b92e3b40a0e9b4f",
+        "js": "1e-21"
+      },
+      {
+        "case": 179,
+        "input": "4481e8a0571f14f9",
+        "js": "1.057142857142857e+22"
+      },
+      {
+        "case": 180,
+        "input": "448589f1462fc2bd",
+        "js": "1.2714285714285714e+22"
+      },
+      {
+        "case": 181,
+        "input": "430c6bf526340000",
+        "js": "1000000000000000"
+      },
+      {
+        "case": 182,
+        "input": "404aca3d70a3d70a",
+        "js": "53.58"
+      },
+      {
+        "case": 183,
+        "input": "45f431e0fae6d721",
+        "js": "1e+29"
+      },
+      {
+        "case": 184,
+        "input": "c502d85c08f01fb1",
+        "js": "-2.8477992072334427e+24"
+      },
+      {
+        "case": 185,
+        "input": "407a73be76c8b439",
+        "js": "423.234"
+      },
+      {
+        "case": 186,
+        "input": "4480f0cf064dd592",
+        "js": "1e+22"
+      },
+      {
+        "case": 187,
+        "input": "a559b4ff7557e284",
+        "js": "-9.271577873096813e-129"
+      },
+      {
+        "case": 188,
+        "input": "d498bd33a0b65d62",
+        "js": "-3.3819091662960653e+99"
+      },
+      {
+        "case": 189,
+        "input": "c10c909bb55a0c57",
+        "js": "-234003.46355065957"
+      },
+      {
+        "case": 190,
+        "input": "40f49c45b27c21a7",
+        "js": "84420.35607541223"
+      },
+      {
+        "case": 191,
+        "input": "44635c5a5058f415",
+        "js": "2.8571428571428574e+21"
+      },
+      {
+        "case": 192,
+        "input": "412aeeb2b4903eb5",
+        "js": "882521.3526630016"
+      },
+      {
+        "case": 193,
+        "input": "44783370e46f311a",
+        "js": "7.142857142857143e+21"
+      },
+      {
+        "case": 194,
+        "input": "4481aaac02eac520",
+        "js": "1.042857142857143e+22"
+      },
+      {
+        "case": 195,
+        "input": "681552387e251a70",
+        "js": "2.43191481511125e+193"
+      },
+      {
+        "case": 196,
+        "input": "3eb0c6f7a0b5ed8d",
+        "js": "0.000001"
+      },
+      {
+        "case": 197,
+        "input": "448036f209b0e604",
+        "js": "9.57142857142857e+21"
+      },
+      {
+        "case": 198,
+        "input": "4082922b020c49ba",
+        "js": "594.271"
+      },
+      {
+        "case": 199,
+        "input": "d8dc176298d95577",
+        "js": "-1.1334200081427061e+120"
+      },
+      {
+        "case": 200000,
+        "input": "0000000000000000",
+        "js": "0"
+      },
+      {
+        "case": 200001,
+        "input": "8000000000000000",
+        "js": "0"
+      },
+      {
+        "case": 200002,
+        "input": "7ff8000000000000",
+        "js": "NaN"
+      },
+      {
+        "case": 200003,
+        "input": "7ff0000000000000",
+        "js": "Infinity"
+      },
+      {
+        "case": 200004,
+        "input": "fff0000000000000",
+        "js": "-Infinity"
+      },
+      {
+        "case": 200005,
+        "input": "444b1ae4d6e2ef50",
+        "js": "1e+21"
+      },
+      {
+        "case": 200006,
+        "input": "3e7ad7f29abcaf48",
+        "js": "1e-7"
+      },
+      {
+        "case": 200007,
+        "input": "3c36b082c2148b8e",
+        "js": "1.23e-18"
+      },
+      {
+        "case": 200008,
+        "input": "0000000000000001",
+        "js": "5e-324"
+      },
+      {
+        "case": 200009,
+        "input": "7fefffffffffffff",
+        "js": "1.7976931348623157e+308"
+      },
+      {
+        "case": 200010,
+        "input": "4139f09fe6666667",
+        "js": "1699999.9000000001"
+      }
+    ],
+    "chunkSize": 1000,
+    "chunks": [
+      "ab830fc0b54c647741620f961e6cd08dba425291cec1a08806edf5cae0d53f5d",
+      "497a6371665e9db8b3771c1bcc96abe4dfc8a0c397ae4c51ef550388337d50f9",
+      "d2fb3706ddc99bb506212d54de6756c3630b3f351e2e415d79644d5dd8fba51b",
+      "cd0fa88b8b861605a8dc956a32bebecf3d186aa1526d6b1c869454ec309f3397",
+      "9663c63947689f9ba563c9849f8a6951908dbde0d93c5dfec9a6f0fd2954a8cd",
+      "fab06912d2ee1372e6caa2118827dc245368893869a560f7b9476fc3ec6bf7fd",
+      "e6b7f588d35a8ca57fc20cbc3a849f95b631fe538b4a19a818279c5e39e8024c",
+      "7b3478687ce31f188c6e358b5cffc167eaea49c5c2b865ad6adae33d24bfc40d",
+      "6ae98b44499039f127ba3a59018fd81b1f23bf8e133bdcbc7d1296e1a963da50",
+      "01bf4a8d6e11aa0b5b5ff5d8598caa7a6c9036c97c8dc1ba879229004590e400",
+      "f75042dc934843fe04d5a63b37e5c7a7e723d6e2555b66fc29649174030b9e58",
+      "6d3d98bcca46aa682c5b258ebc293841af1155b920918def64f77ad9e0b48be8",
+      "12eb1bd68dd1cc8c1531182df1778098eee49c7fde27235d6cf05bcf1274e418",
+      "43ca39e950c3c70a7bef3838092d4ab89d77880915e0956804878fdcdcee55b6",
+      "1d5762c96f27d922c5b21b5f21c72af26e2dfac043b0861742e8c3d0ac27d00d",
+      "0699587b6fe50297c2f214ed2e0422b231a999e99035b76729d4f39ae7e7e271",
+      "e9a7e873cb9e54a3ce27d0e2011c6712484c73316eb944d946f24d7a950e6559",
+      "5df402a588df0dba0bedbc1c16fc0a569113d941b23c187c587e844c2f35a4c3",
+      "45eae59a6177cbebe1d38d65e63fc0d56f587051dcae288fc8733e3acbdbe0a4",
+      "3a1ef2ffa836c8f685dacb28008398d428ee372d503ce945928cc87c8027ee4c",
+      "c14d851244191d0e9b6027413b18042a1d56254d36367fd4ad42817065388118",
+      "374d09ff04bf0516e14646ab69053e4b8fc7da0c238089686b7640394452c904",
+      "38ba8702ae67f69f85666202c834c8dff9fefebca67ffe383c72a4b9e8dbb1ea",
+      "6e611e0aa5c223a64e723d483db986b54de4a11761661947f20bb989cf34acab",
+      "9b65dccbe1d8364804d6e65eced1fe0555c7dc0bbe368d729520df63e532dad3",
+      "2ca07c13091490a3fa2f199c505a270c1a4ebd5344360058f1356615a9d21be1",
+      "cd2d6bd534975403198872429bdde899f8f67d258037be0a2667dcdde3ab146c",
+      "63a21d17c7cf12058c1dd60b01014ab7ab26b9ea4f60257feb0a03c2c920946b",
+      "e9d82494a3d6743f347df8c8a0412299c211ad9ee04ebb81fc45b4bcbb187c81",
+      "176cebd7411264458647d926988303c0d7baf1957446014e923a25301529c6b5",
+      "c34eae546a14e6806db39d8400dabb1985cd6a41dcc02851f6133f498319da03",
+      "1174c39e223a74760e46a2a4d1296c225e2b074508bb355f3e59b6414122f7f4",
+      "0261952b651f979111c9c3a85d926a0f1391e6ada6fb88033d5c5e39fdf0bc73",
+      "be49f6a041ed1ca3ab5363c28e2dd63637b530d141246ec5e316241e04d234b5",
+      "12dc20606afc3e8a478a130ef8103c977fb1cd371a939acc8863a687e9c97710",
+      "c5d209fbecf42a1c8020388cc3ceef096a0de0af54ff6f786ed11f7f4165ec66",
+      "61ae5e51550dd87370cd2115a57b79626334d28aa77335898bb53b5cc627d781",
+      "68b7899b4b960d7b58a5a87f525295171c9dc165ba2266fba470430d8765225e",
+      "7ced955f3bd383320b3796a91519aff398118db900e2a6e6ad76fe6c48ff4ee7",
+      "61e7926ff32eb00db069005230c4b04a8c1995a03cb309b517c6b4740978c3e8",
+      "47d8f61aeaaef0577a8f3dc7d5e164bd9bc85314fb49590a612ec02f3273c99a",
+      "37227bcce49413c8f6a8d257e3666865fb3c5709cc634fc4c6cd0babcba52378",
+      "4f84e26de92d7fccae0a998859dbe5479f8759d125c71f3905c7b04d8005e685",
+      "267850d2b58b36934263cca741568f7db32a5268a55b96a4325bbe85c5a7407b",
+      "ca2ae3fd3c276a0b3b9c3b964afdc3ac0654f240a5422829f10f0aced897a3d5",
+      "ccdf9473caf71eae1d5c0509f5b047c3afa42d8b3dec9bb24f09f5a9f79bdd64",
+      "7b3d40952fe26eefbc10c45d61c245450a713578f979444ae02842765d480d73",
+      "dc5647e29dcb75193efcf3c72cc89d5115bd916d3f1ee41fac3c9043acded341",
+      "23a5a271ce6898480b5e844bc151a54a9a72153574c8266f452123a488e1f7ec",
+      "fb3fde9dfd34141c4d1c9b3e8603cb659da1ee12ea97da171d6aac2f9d02af53",
+      "d5dffcccfd9a6d70e65229c29a7cffa31867ceb6bfdb48a3e4a45824cbf9b4f3",
+      "158dfa87076dd2d9eb434379a27fc392c3094ff523270c9a051dd564d00df495",
+      "779937fca9de954cdcb3e101cbc7eb40e514d42567d869eaf0c5565aa640f3af",
+      "75c4eaac904e6943c5f43caecd869f0f20e4410725528b8e81ceee1e840f134a",
+      "741a2121f724f3aad962f1e37dc2a6b0b6f43b73c2863c04d79cfa347e79a86f",
+      "3c76d41532aabeff8d16d0439133bad4042276e69035b2a4c20c3c6f452d8ce6",
+      "a3be2c2175fc8644e79c8fa46d1766bacd9135dc3a7da30170ebd2cf4cf557d3",
+      "80a26a737b085dbb1b8c7fece2e97b503954ac43945c4909a9823a847c8b58df",
+      "0706a821d35c98097410b16d5d3aeeec8cda573b5b79600cb3f241dc47cdfd95",
+      "e317b88669676caf4d978a9f83eb4e41c67f499ecb52e0cb0d56b75f9b117c7e",
+      "e453631115da78fd72f66001f67b1fa735854360f5ebd29f6ea609c3bb6622f7",
+      "e7acb4c4fc525c490124cd9d2c8a81668b3324361844833d78e0b70cb5f7f8c7",
+      "28fb83127d0689945ff02b74ed0adbdb9f9a74c626ba02b391634e76b505d858",
+      "8cb7c5568c447c21f149c0737c851a3bd949065b00bf62bf6e93cacc8bc2a402",
+      "4692a7c368f4fc2165b7d0c7b49fc5109223354d089ef11d26cd27eb49f14658",
+      "65e76af2eeb86fdd8d91f7ced129377b0c67c7513fdacc3caf1bd02fa420832f",
+      "91b1a3bd989ccafe119791bab643ebbf76dd4dff85743dbf34f32c99104cc8c8",
+      "790f664487c4fbd57808d951f9784cdd1d9c42cde442046709e6b1e5218365fa",
+      "bfb2bfed2dddcfea4cbe5adbfc5e12ddfe66c02441504ad6fdcb7dbf3f424819",
+      "41443f9b80e47e5fe52c236ae5051d3c90b3fd09f6e6cfcdceb721f135d17be1",
+      "482d1f1d98e63f98520d5f3d985fd737d44ef482d1571dd5c8f222cc16722872",
+      "fb2993149f7be0f2231496475ccc9e67a1f24b6f65e0cdefce91578a73306bbf",
+      "f6811fe19ca5453296db7f277b72372aaee18472035c0d99c5bb05cf07dca3ea",
+      "33958ff6492ad433c726bc72a3d05696146d65cdd8f570a0a365b27e6d5aa598",
+      "312262d5a885f55d5764e30fc536eacc05dd247d943a2a187eb28c3702c0d482",
+      "bcfb79f3a78fa9b5f9fa97111fd1db4e6aa97451d681ab8975cc42e9562ab4ea",
+      "33cbd41d0b7a613b9c15fa01ec9e103c9a8b5141f1a8f8b3a8eccbf31502361b",
+      "e8f2a6f44da7e70604388e6f2be357870ecd1e012bf89ab1d96d5db33a376c95",
+      "c47501ec6d5dc33d6e3e162394071cb8884546044e663a7cdefdd315827f9481",
+      "82b664b11c306879ac7855b9742e82c006706cc7bab7c98d12077497f67b0fc3",
+      "0c6520e822d036ef4f03f574feec433cc5691e3e4871fc74026639e5466011a4",
+      "a31763013c6895aa6e8acf7f348818e717586ef92eb540fd507e7cd346c266a1",
+      "8f88ca01178172891981667d35abfd52a6f96cb8ca24108be4d2315853b16421",
+      "29b839afa93cd3bc06ed37d778ca9dcf591cba71c6d069a9ca7c84663d238db3",
+      "7c3190fa610d89ad4b1a2b38d1faeb065394a79d2c5b8be3997c69db0d334980",
+      "048a1f2d9fb24f1d52b6d0db61c3e0d4561d8c6d87beb2596d5d8bd89f735dc3",
+      "bee74b7e424a95595f8386e181a53af82661e19dd5b5fcf8f788f40400fc333c",
+      "7320a738f0052498e181132131362802af6941cde1b9ecfe3f1a48f1b13fa186",
+      "3a69953020b6404a782ebf7763f34af18bc864919f61ded720483172945924ea",
+      "f287883bf46c10a0c20a1ed8fa263095df9e7dd67f011f70c90c831271b4f7c7",
+      "0f71f9524421d1ed30eb4857f3f7825a4043e01bcd5929c0d413e54dbbe85dc3",
+      "64f5949e15ba5d76f0ce1acc12a0a1c1695dc0fe12357d51b61dd0f4b9939ec3",
+      "cf7b126cbb90400506caefdc216e6399b84b7a0fcbfef770709eb8c0952d24fb",
+      "2f0e44728f27fb6a618f3541cc4ba0460cb333ba7a075fef5f4ba8013be596ce",
+      "52bedd1c26483ebb393ee8c72934a57ef764b098c2c8340456f16bea9e5b037e",
+      "da9738bfd12f44eadd1807ac28214563f46fa45e702b4ba789e28d56f6d4a638",
+      "6aa982febe715454f1cb6dad927712c4615867e3c020da0d545dcb7be78abf14",
+      "51d386bf7e09aab2ad8c9c256e4c9787b994f3278a5fe6adb9c1c8db3562923e",
+      "892fe394851005438299003a1c801a3a0fc112dc4a64491a2ed05efe9120ad39",
+      "7a914edb8066ebfe2d8da1a2c906df1f27c7c6c17e27eb067ce50c4178a53254",
+      "c4461b3d8144fda691c46be9b61c9e12afe75458922b90579584fbeeb15103cd",
+      "ffa6679574b8ab5a39a45fac2a2453fca6995c340c1db50b9d7a1e4d11279a05",
+      "752ffa6f8c9ccbc6769f86e80a22a529179777a1299117bd94446e3a3b26010c",
+      "baf62d1b447deac08851d113ba47d33bbcba5241ce3a55dba1612c53338ab9af",
+      "da2d539102ab2f1dac79e0bc5731f2d54793415e29233312edb5d6effe648e00",
+      "e07fad424b49ec8fa62c5c0ce854e9bb16620e967f292384a1f92055073038af",
+      "dc62a33be882d3278a3ad97d1468d0ba6fbb5eec79d3f82331f3b6e854d71280",
+      "602ff461ab8ee454ad9fc8e71417ce97b2d8b8c0a1a673506007134d300f0f29",
+      "8c487a9f223929209518d12aed077e1e37e02cc81d678deb5b902b9c356bd4e6",
+      "6df1f7f0b83fa720554bef1231cccd06d0be207caa14e1ea8ee892f7d3f6a65f",
+      "3b0a2a3e74bb28fe629d76524238923e88a635b4eb7c67cef52cefee9299da22",
+      "2039c167754753cbad153b076bc8cfeb0cae522074d3c362edeecab3087ab04d",
+      "7e2277093bcbb6eafca9fbbe65b06ac2e5b66fb3ef25b34df8554b9a732b8d5d",
+      "987a203acb9d8e5a8847dd14d2b28843acd73455c7fba6dd6c425a80630b2a87",
+      "8e68213ef79431c8bd331cc6e6893d0f24274118258d344d7480e1e001cf2109",
+      "31e0a18c92c2ff5af278402006284e6b1b83bfb874d6b317ba36357c3d146abb",
+      "2becc397664e6481217293eee1b2f3421d373d843373b898798c438f1d475a03",
+      "5403b638c440a72ea8fd38fa77deeb4cae5eb16722ff8175ad06538cdc9371d9",
+      "de5e61d7cc37cb356b918a47eeca512dbc0bfd28d3e22b00d9fba5acafbdcc72",
+      "1705778a9b8581bab159e0d40c8cdf2b1f1858940ca29cbeaeb88947aedd78e7",
+      "eb3981476b4eb9eb00f15447f05f1e383a2f93c01c03db5b50179daf67dda631",
+      "0e2c58301c553ebcfa5f3c7f5f5234cdea3924bdc4830bcfc8fc64e37d630d6f",
+      "d747eaa5f1fe2971349f0bab45545120791f4052704ba331462fd6de9334bf94",
+      "5885a38f80c2ea64e175d8ef29fffe2d41510891381e0c572dd9eb4919c119b5",
+      "a5aa1113e5bb1fe4238dee1f2bc90103659f82760d47b4c805478e1820ae82d4",
+      "aa5a7a98bca7cf9a5e06b956fc4c220ee39bff1e0cd68f3ce76690f2f98efcd3",
+      "f2889c70f4f4a8aaabd39159556330d2513ad82e539c57f33a78e498a151a9c0",
+      "ad901bbf90ec365d3092a5c3b37b17d3a82b1b42bd1c66e6c37a95a4e39b3706",
+      "0684d336ea3c22b0f5edfa294e83235b110766156da3abfb147a519c6b3e10f9",
+      "e09e24dad863aa9dbd7d9525bd18c3db22c949e95d0366e75adfbd6051176905",
+      "844c12359e4e70b9879982db2f5983bd1d155d4d2cef7252385cc399ac29f7f3",
+      "475800b323a7de00303bd0f8567084ac3faa560b41691db61d195f2bd0565c77",
+      "cf95fcf93f58285a5bc310c20989f5a7ae7e3e0137034a7e9afe5eed2b644a7e",
+      "d1d5b552610b32cb290f425e40e6b924b42244fb977a19303ab351f9e57dbdd7",
+      "7490887739deb73325cb30011bb483e6ad058d057d42feff0256f24ca163d7ef",
+      "4b36f3c29689d51f835a62d502dc647d1fa492bdc7bcefc7bc45b25013c58224",
+      "2bd09f183c885037f2b040b3f54be3819a6587af8a45072993ec42053d6ca882",
+      "dda5edadbc58c9d6176538b2ea1095419f66d45d4317992b4867aeb2c9ef9832",
+      "f275405f5158916dfe555b4493b887f78c1a1c9e50f6855ed465841d8a0bde1c",
+      "42d8514639d60f0f116ccd77b30ff0185225d03a1ebaa3fff251966beefb1e8a",
+      "c340291aa8a7c1a9523da78326c25e6f1ea56af3179b353270d6caba8d5be585",
+      "b1a8bce17e51e41f7beed0315ea142d31cef373c449ca8d9a0ffc17dba9ab353",
+      "5debc09a12278bf14acee235f0361343c33084756d086afc30ff3a4156a7d29a",
+      "5c65fe66d5901dbaf936dd9818b8b564ec671d79927f4c1d6db262856814c9a8",
+      "7bb1e15ec4b8849f53b5e35b857da6fc1db780e6cfc580c2edf3878e6a278019",
+      "b8bbdd08d37cd0411ec0a3eaf9aa07ad692c4da6e27be7dfaa123cef36467825",
+      "47a83631738b2297c7efafcd1d9f1eac03de1e427df27749d3e7378873d9a7d9",
+      "28ef2f8d8fedf636f6d640822287864b469447c251ca678a02777af97c5be3f4",
+      "7b84f3d2ac00fefa8535f01420cc63839b1fe8d553f9eea28293ca9275a79c52",
+      "1b39befdb3e858a0c44a37a386b3d018e7af1641061d3a494dcba800840b9935",
+      "2e68bf7201bc2f751cd0da6c010901dab7ae409581132e7a204f2c8894ef95d7",
+      "48606b02b5e55095b40471311d1273c1287a98a1b406ed165617d331bbb13004",
+      "cd6ee0b2cc10719b7fc58c3a4c47df5ecff1edc2917e8d38012aa5b5c6090e1f",
+      "ca095d54afad9c67c31c5ef88757114bc80e81d0ffb37bb479ff8b483c8e3568",
+      "dffdb6accf594c267fc1516ee86eb2bd017b9d81c2ec3d9b2cc2a337b8a832ea",
+      "79a9a61b6ff7aba5b242f4b345b2f10c9f258ebb5066b3a9f3e5f496bcc1d1bc",
+      "18414c1a15d4b962f4fcab55eaeef81d0f938831bb7df2593c0e4bee35753972",
+      "a2713ee5ec06536746e382d94811d482722e32d2051c473876f7cf4edd5112c8",
+      "90b485f0c5e820c1354b15b637795d7847bf833ec6ee5c5ee95fcf6ee99509b1",
+      "0379bfeb9ed91927bf2873116cd53776bbcc6f5d13152a7cbec356d24b63e54b",
+      "b87eed423ef0e74582758650f79923a14e991dbf98e0ef8ccfbee79a738917f9",
+      "d18c45ab91180770733016bb3e94dd723bebee98441f7f5c57fe8b3badbd5554",
+      "d264de1ecbe045e2b4e0867f04a73c6edda59a2c13b2b9a90d9df525f416dff1",
+      "4fb1f26ebbefe4ba386a4d83d388968208df54860b90150bf4748b4110aa1472",
+      "38b8e1bfc5b25a4ab9d41c13c4106f0c2530239abb1ea70dc64c4b85d1dbe112",
+      "5be7aa588c912cc75edfc5f092f72be1a11b50e7d0b45eb0d144a1ada4d9d91f",
+      "a77de535bf8cb4af239d51b47811951e3e7070e8ca98ed1fe58d05d2993a4cc8",
+      "977c755916e0fccfd3fc12fb079aeefe68519e5f2a4bcc047469081783848bf6",
+      "271e6776489e01cb29b455259278e5e479241699a9622cf2e2075111a957a461",
+      "d824c63cf59f55310ed4b1574be4d986e77030fafda1e8b19f43f52c5ac615c4",
+      "fc0329b855ff71e3315c610b6531eb75604c31b5608cc4351c31c48c684b5bb9",
+      "9061f23933e3bfa76a4fcbc2ccf58efab5d601768b3bb2eb2fc00937dda5c139",
+      "dbbebad87ccef267529bda8181ac6b8ff9b6016eac690d030e271658f51ec49f",
+      "198b0b1f5913e44b0faf37d8886d0a88e80e76e7b10b387159b6a652054eadcc",
+      "f9785b82dfc378f9bc8c5877af6b77eb7c8dea5d22e96875975e6ab15ebe9fe2",
+      "61589227459422be806dc2455b497c07a6a4d2a3fa799d12ebbff0fe9b833d89",
+      "af0eb28ceb05ba59888f75559a9a1b0745777c9779fe7bddb33092dbc96311d2",
+      "2539ee0ed229f0d2bee76958498c571446befbeaa6be3045189c40e206cd165d",
+      "dc626d4ad443b711ddecd2e82a032d73ec5519f8abbe0e6b5fd45dcb85944a18",
+      "e0ab72a019119da5c13deb0f0cfcc46feb571836384889101f5e767b96efbd1d",
+      "e0afaa1325efb2123ac003835f0ff6e1f1e461c977cec3486f53332ec2d27fec",
+      "a3dc2ce1c05fc1abac82dabf061324e3e559d01683767887eacec91f7f618ffa",
+      "0afaba059c067351442f287bb585306e9477216e4a95dabcce0fe5d115460678",
+      "28f1aa5d88690f4f077dfaf0d6ebddbc3378ea886623210221049aed6152fb70",
+      "aa6d6083715d541676d26da93b7d1e017a30771a12f38353a75588a7d15882a0",
+      "04ca09529630ba88b35b8087b42b0eb02690a3cc8c670e0f425bacc21f51e28f",
+      "5934b6fdc3cd1ef1071723cef440e60f0a9a3e375cb634167b8754d3a45e3f94",
+      "19f51ec8eba9fc7e51a1db402f99d59614642e6a9f26eb4bdb185fd6ae9f3028",
+      "5b97d08b9baeed00084681ce14d641f19806e557c84fc1b26cd53f6dc0330b14",
+      "0bd6ad7bccc7706890a2527379c04e5adc668f8b1cc5b297ea9a72db348981f8",
+      "4c0cb3aff7063a62803557bd01504394dcebe64bcda3b39f40ce0532bb335e74",
+      "34ecb94056a07d46d7c8cef74e3797d732d5de852cd4af7da1c54efe0888022c",
+      "750262ca9e1c6ee5898a42bac863db2c03bb163e7a0a0f90d6cdf61f68f85af2",
+      "37bd8af75aaafc4fee83058f5c6f50365ec11dc28e421c065cbd158bd95b756d",
+      "725d31e3bc200742b9c9f88e63a0cef4ec4dde29724e56defbcf392d9d84ca8c",
+      "5dc971f94fe8883ae1e6fba2d88211d087be25a66c0f6270e91842899efcf0e0",
+      "425f2a0d456f99127195850b6382397a1a688bc238afc6663cd085f223ede849",
+      "d5f8dfa8b2dcc14bb8377cd157296426cb65f2ffac631c2b79667b7d6cecaf2a",
+      "87d76b153ee1d90d5046b9a91d3fe3e21b147c8e12bea55ef07d3ab52a41149a",
+      "8b80ae0140293cd55e7f9d9ca43296e6633a2c85503cf3a0b49768f673e5f7d5",
+      "d20818e7e9fd429179f28401142c9130543f4d7a893e2a12572dce0ef8f2c1ba"
+    ]
+  },
+  "stringToNumber": {
+    "recordedWith": {
+      "node": "v24.22.1",
+      "driver": "4f5a1dc4a91cbdcf0922d89728f164b4fb98772df221b97bcfb8cf85256909d7"
+    },
+    "cases": 2014,
+    "inputsSha256": "d127cbb6d30fc6b8a39f0e667733f77672dc3186c14a8a245443c932e0776cb3",
+    "sample": [
+      {
+        "case": 0,
+        "input": "j",
+        "js": "NaN"
+      },
+      {
+        "case": 1,
+        "input": "0XED3E4F3a64aDE",
+        "js": "432da7c9e74c95bc"
+      },
+      {
+        "case": 2,
+        "input": "-1.4E-792",
+        "js": "8000000000000000"
+      },
+      {
+        "case": 3,
+        "input": "0x63742642e0eb3b6bbcd8cfdda51ffedb",
+        "js": "47d8dd0990b83acf"
+      },
+      {
+        "case": 4,
+        "input": "",
+        "js": "0000000000000000"
+      },
+      {
+        "case": 5,
+        "input": "+2853.1042E+48",
+        "js": "4a9e80b1445ab96b"
+      },
+      {
+        "case": 6,
+        "input": "+Infinity",
+        "js": "7ff0000000000000"
+      },
+      {
+        "case": 7,
+        "input": "0BddCa",
+        "js": "NaN"
+      },
+      {
+        "case": 8,
+        "input": "0x",
+        "js": "NaN"
+      },
+      {
+        "case": 9,
+        "input": "0x1dfcbfb225c7b98afde5d33d8da9686adfcbaeb4c30ded0484df0fa3ecb6c3a0d",
+        "js": "4ffdfcbfb225c7ba"
+      },
+      {
+        "case": 10,
+        "input": "0xda45b79fa839f351290addbeaf47ddaabc666cdaefdfafc00ff2cb9a00a72f4",
+        "js": "4fab48b6f3f5073e"
+      },
+      {
+        "case": 11,
+        "input": "infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 12,
+        "input": "0x3Cc",
+        "js": "408e600000000000"
+      },
+      {
+        "case": 13,
+        "input": "+NaN",
+        "js": "NaN"
+      },
+      {
+        "case": 14,
+        "input": "0x71fde456e7bc5b55cdc1e3f0dd0cac2ada7fbd8",
+        "js": "499c7f7915b9ef17"
+      },
+      {
+        "case": 15,
+        "input": " -0.056　　",
+        "js": "NaN"
+      },
+      {
+        "case": 16,
+        "input": "infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 17,
+        "input": "0B7eFA4FfA",
+        "js": "NaN"
+      },
+      {
+        "case": 18,
+        "input": "0b02f03BF74",
+        "js": "NaN"
+      },
+      {
+        "case": 19,
+        "input": "0BaEeACE",
+        "js": "NaN"
+      },
+      {
+        "case": 20,
+        "input": "0x2b835af3eaf05bbf3d9cc6c0ef3cd2949da872f22bde84",
+        "js": "4b45c1ad79f5782e"
+      },
+      {
+        "case": 21,
+        "input": "0B8aaB0FAd1e4b6aCbca0dF1A1E35Ac43Dd",
+        "js": "NaN"
+      },
+      {
+        "case": 22,
+        "input": " -3.E-201　",
+        "js": "964d64af4cc52935"
+      },
+      {
+        "case": 23,
+        "input": " _j.",
+        "js": "NaN"
+      },
+      {
+        "case": 24,
+        "input": "+Infinity",
+        "js": "7ff0000000000000"
+      },
+      {
+        "case": 25,
+        "input": "0x2b9eb12f85d8f5d0e3c6dca85d84f43fc3bdfb53a8e1cea",
+        "js": "4b85cf5897c2ec7b"
+      },
+      {
+        "case": 26,
+        "input": "",
+        "js": "0000000000000000"
+      },
+      {
+        "case": 27,
+        "input": "0x43ca7f5f573cf817baecaa9af59f8d363",
+        "js": "4810f29fd7d5cf3e"
+      },
+      {
+        "case": 28,
+        "input": " .9133 　",
+        "js": "3fed39c0ebedfa44"
+      },
+      {
+        "case": 29,
+        "input": "0xa39c8a26bde0ea1eaae47120ad576faa909be3bf31252d2de6c40ff92637fcc",
+        "js": "4fa4739144d7bc1d"
+      },
+      {
+        "case": 30,
+        "input": "0xfca50a64f16b44c35077bde5cf91959cce90fdf77910c2b2e50d3f66342c9adae37cfc4e",
+        "js": "51ef94a14c9e2d69"
+      },
+      {
+        "case": 31,
+        "input": "NaN",
+        "js": "NaN"
+      },
+      {
+        "case": 32,
+        "input": "0x1d2a451c6c634cf0fbbe46c9097f8cf31fa38cd75d731e",
+        "js": "4b3d2a451c6c634d"
+      },
+      {
+        "case": 33,
+        "input": "0-fl6r",
+        "js": "NaN"
+      },
+      {
+        "case": 34,
+        "input": "infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 35,
+        "input": "0x550d7E91eE7Ff8A4BdeeBfdc35eBAb34d",
+        "js": "4815435fa47b9ffe"
+      },
+      {
+        "case": 36,
+        "input": "infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 37,
+        "input": "",
+        "js": "0000000000000000"
+      },
+      {
+        "case": 38,
+        "input": "7",
+        "js": "401c000000000000"
+      },
+      {
+        "case": 39,
+        "input": "0b77B6E3aEbBB5",
+        "js": "NaN"
+      },
+      {
+        "case": 40,
+        "input": "0x238d750b813c43ceed2de95e46d2a459e0eededbc5d97ca8f42d409a785f87fc5f5eda",
+        "js": "5141c6ba85c09e22"
+      },
+      {
+        "case": 41,
+        "input": "-74255E4 　",
+        "js": "c1c62134f8000000"
+      },
+      {
+        "case": 42,
+        "input": "+NaN",
+        "js": "NaN"
+      },
+      {
+        "case": 43,
+        "input": "f782",
+        "js": "NaN"
+      },
+      {
+        "case": 44,
+        "input": "0o37CdF7ADB5B43AaBfab0deafebe9d",
+        "js": "NaN"
+      },
+      {
+        "case": 45,
+        "input": "0Oa68Fb23C6",
+        "js": "NaN"
+      },
+      {
+        "case": 46,
+        "input": "9o vt-",
+        "js": "NaN"
+      },
+      {
+        "case": 47,
+        "input": "1.1",
+        "js": "3ff199999999999a"
+      },
+      {
+        "case": 48,
+        "input": "0xd5c78cfa2e0ef6c00d3d5aa5f989b5749e0afeebf2b187e1e3f409aa7e9542f91d7c2bfee",
+        "js": "522ab8f19f45c1df"
+      },
+      {
+        "case": 49,
+        "input": " 　",
+        "js": "0000000000000000"
+      },
+      {
+        "case": 50,
+        "input": "0XeaFaddA05A96efFFc05eDCF1",
+        "js": "45ed5f5bb40b52de"
+      },
+      {
+        "case": 51,
+        "input": "_ 7",
+        "js": "NaN"
+      },
+      {
+        "case": 52,
+        "input": "-698340.1476E+222  ",
+        "js": "NaN"
+      },
+      {
+        "case": 53,
+        "input": "0x0EC2da120E2182c1ca",
+        "js": "442d85b4241c4306"
+      },
+      {
+        "case": 54,
+        "input": "_-.7",
+        "js": "NaN"
+      },
+      {
+        "case": 55,
+        "input": "0xbef63ad2a81e7a9cc4cc001caed923edc5a9f696cf98063ff79f",
+        "js": "4ce7dec75a5503cf"
+      },
+      {
+        "case": 56,
+        "input": "0bAe1bb3F89B2A",
+        "js": "NaN"
+      },
+      {
+        "case": 57,
+        "input": "-infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 58,
+        "input": "NaN",
+        "js": "NaN"
+      },
+      {
+        "case": 59,
+        "input": "0xfdb757b1dc32edfa2b929c7cc31edbedac7ff6d731bf771a3512b2a1cb4f771fb5fbaf8eebf9b9a7ea5816c60",
+        "js": "562fb6eaf63b865e"
+      },
+      {
+        "case": 60,
+        "input": "0BDB0BDaA3dbBAad711Afebc38",
+        "js": "NaN"
+      },
+      {
+        "case": 61,
+        "input": "Infinity",
+        "js": "7ff0000000000000"
+      },
+      {
+        "case": 62,
+        "input": "0o6e2ACBCbBaBbddD63da9CAAE8c1cBEddabc",
+        "js": "NaN"
+      },
+      {
+        "case": 63,
+        "input": ".0.",
+        "js": "NaN"
+      },
+      {
+        "case": 64,
+        "input": "-infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 65,
+        "input": ".e2　　",
+        "js": "NaN"
+      },
+      {
+        "case": 66,
+        "input": " 714E+7　　",
+        "js": "41fa993c10000000"
+      },
+      {
+        "case": 67,
+        "input": "+infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 68,
+        "input": "82148.69e+54",
+        "js": "4c2a2c90af397fdd"
+      },
+      {
+        "case": 69,
+        "input": " 6.2177 ",
+        "js": "4018deecbfb15b57"
+      },
+      {
+        "case": 70,
+        "input": "0BC5F9C1798F9f9EBa7",
+        "js": "NaN"
+      },
+      {
+        "case": 71,
+        "input": "1",
+        "js": "3ff0000000000000"
+      },
+      {
+        "case": 72,
+        "input": "NaN",
+        "js": "NaN"
+      },
+      {
+        "case": 73,
+        "input": "0xc9f053dae2ff83a8db7f5e5da3c668a7cf683b5eafdee0",
+        "js": "4b693e0a7b5c5ff0"
+      },
+      {
+        "case": 74,
+        "input": "53.907E073　",
+        "js": "NaN"
+      },
+      {
+        "case": 75,
+        "input": "0xd7dd4dcfaabddcd8d40eb0e1b82cc1a11eb62cde2135677560a6293d",
+        "js": "4deafba9b9f557bc"
+      },
+      {
+        "case": 76,
+        "input": "﻿ 80328e+3",
+        "js": "419326d500000000"
+      },
+      {
+        "case": 77,
+        "input": "0OC",
+        "js": "NaN"
+      },
+      {
+        "case": 78,
+        "input": "infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 79,
+        "input": "775085.9061 ",
+        "js": "4127a75bcfec56d6"
+      },
+      {
+        "case": 80,
+        "input": "infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 81,
+        "input": "-8 7c",
+        "js": "NaN"
+      },
+      {
+        "case": 82,
+        "input": "0o5aCAF9Bbf79e1EBABaFCacde1a8e51B8f",
+        "js": "NaN"
+      },
+      {
+        "case": 83,
+        "input": "0bfAeccee6B6e1ccCd157Cb913CFcdA76BBa0B3",
+        "js": "NaN"
+      },
+      {
+        "case": 84,
+        "input": "  _6q8",
+        "js": "NaN"
+      },
+      {
+        "case": 85,
+        "input": "-infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 86,
+        "input": "-NaN",
+        "js": "NaN"
+      },
+      {
+        "case": 87,
+        "input": "NaN",
+        "js": "NaN"
+      },
+      {
+        "case": 88,
+        "input": "0x0c1cb4040a7baf6c175d3e84dd1c67c4d8f68",
+        "js": "48e839680814f75f"
+      },
+      {
+        "case": 89,
+        "input": "-infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 90,
+        "input": "0O5",
+        "js": "4014000000000000"
+      },
+      {
+        "case": 91,
+        "input": "",
+        "js": "0000000000000000"
+      },
+      {
+        "case": 92,
+        "input": "infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 93,
+        "input": "﻿43.8293e+959 　",
+        "js": "7ff0000000000000"
+      },
+      {
+        "case": 94,
+        "input": ".e.-_",
+        "js": "NaN"
+      },
+      {
+        "case": 95,
+        "input": ". _8_",
+        "js": "NaN"
+      },
+      {
+        "case": 96,
+        "input": "+NaN",
+        "js": "NaN"
+      },
+      {
+        "case": 97,
+        "input": "0Xcca4B7fdcBB5Fa4Fe1db75f2572C439AD64aeB4",
+        "js": "49a99496ffb976bf"
+      },
+      {
+        "case": 98,
+        "input": "0XfFea",
+        "js": "40effd4000000000"
+      },
+      {
+        "case": 99,
+        "input": " 74598　　",
+        "js": "NaN"
+      },
+      {
+        "case": 100,
+        "input": "0xf6f75bba2e57ddcdb1f484dbda5b8ad2ebcd8efa7daf5203c7aea3b62",
+        "js": "4e2edeeb7745cafc"
+      },
+      {
+        "case": 101,
+        "input": "0o32Eb1dC2280BaFC9",
+        "js": "NaN"
+      },
+      {
+        "case": 102,
+        "input": "0x175bba74b82ad0beea0c935e29dba3f9eec1a1cbb5dba8db2a6eafaf1e04f5fffd23849cf16c0285946",
+        "js": "54775bba74b82ad1"
+      },
+      {
+        "case": 103,
+        "input": " .8e9",
+        "js": "41c7d78400000000"
+      },
+      {
+        "case": 104,
+        "input": "infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 105,
+        "input": "_5  ",
+        "js": "NaN"
+      },
+      {
+        "case": 106,
+        "input": "0B3b4CbEdDECe0ECE27BEdda22",
+        "js": "NaN"
+      },
+      {
+        "case": 107,
+        "input": "\n+.72E+814",
+        "js": "NaN"
+      },
+      {
+        "case": 108,
+        "input": "0BCbECf4bebFaD4CDAAcEdabA3F0cca",
+        "js": "NaN"
+      },
+      {
+        "case": 109,
+        "input": "0x01839b3b710efab226b2ed7513a6a2eb4ce74",
+        "js": "48b839b3b710efab"
+      },
+      {
+        "case": 110,
+        "input": "-59652　",
+        "js": "NaN"
+      },
+      {
+        "case": 111,
+        "input": "0oA",
+        "js": "NaN"
+      },
+      {
+        "case": 112,
+        "input": "0x0fee01da5d17a9ebee9c9ceeaef8c2cc125ffddde2",
+        "js": "4a2fdc03b4ba2f54"
+      },
+      {
+        "case": 113,
+        "input": "0X1E58efd8aD",
+        "js": "423e58efd8ad0000"
+      },
+      {
+        "case": 114,
+        "input": "0x6c1Ce8CF9F8Cf",
+        "js": "431b073a33e7e33c"
+      },
+      {
+        "case": 115,
+        "input": " \t3797 ",
+        "js": "40adaa0000000000"
+      },
+      {
+        "case": 116,
+        "input": "+NaN",
+        "js": "NaN"
+      },
+      {
+        "case": 117,
+        "input": "﻿-　 ",
+        "js": "NaN"
+      },
+      {
+        "case": 118,
+        "input": "0oaEb8B",
+        "js": "NaN"
+      },
+      {
+        "case": 119,
+        "input": "-infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 120,
+        "input": "infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 121,
+        "input": "0bADF04edaE1bAADAde25D8EeBECFEE3",
+        "js": "NaN"
+      },
+      {
+        "case": 122,
+        "input": "0x9faab7cc2fd4ee75abce81e586a7325af38a3c67aa06c6db6b5d",
+        "js": "4ce3f556f985fa9e"
+      },
+      {
+        "case": 123,
+        "input": "01 ",
+        "js": "3ff0000000000000"
+      },
+      {
+        "case": 124,
+        "input": "NaN",
+        "js": "NaN"
+      },
+      {
+        "case": 125,
+        "input": "-NaN",
+        "js": "NaN"
+      },
+      {
+        "case": 126,
+        "input": "infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 127,
+        "input": "0x71c0bd7a8c230bffdde53689076eb5a4f61951018942c12d1cbc",
+        "js": "4cdc702f5ea308c3"
+      },
+      {
+        "case": 128,
+        "input": "0bb9A696E4CE3bEBAADAfEc2cBdfBC06c",
+        "js": "NaN"
+      },
+      {
+        "case": 129,
+        "input": "_9 6_-",
+        "js": "NaN"
+      },
+      {
+        "case": 130,
+        "input": " ﻿364228.03E101  ",
+        "js": "560fc3043aad5ea2"
+      },
+      {
+        "case": 131,
+        "input": "0O9efbBA4F9D9fBd1e6eCdBdE3BEDBd6EF",
+        "js": "NaN"
+      },
+      {
+        "case": 132,
+        "input": "- 8x 5",
+        "js": "NaN"
+      },
+      {
+        "case": 133,
+        "input": "z_p",
+        "js": "NaN"
+      },
+      {
+        "case": 134,
+        "input": "",
+        "js": "0000000000000000"
+      },
+      {
+        "case": 135,
+        "input": "-4",
+        "js": "c010000000000000"
+      },
+      {
+        "case": 136,
+        "input": "+infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 137,
+        "input": "Infinity",
+        "js": "7ff0000000000000"
+      },
+      {
+        "case": 138,
+        "input": "infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 139,
+        "input": "+NaN",
+        "js": "NaN"
+      },
+      {
+        "case": 140,
+        "input": "-",
+        "js": "NaN"
+      },
+      {
+        "case": 141,
+        "input": "-6965e-24　",
+        "js": "bbc072158bf4b78a"
+      },
+      {
+        "case": 142,
+        "input": ".6_ ",
+        "js": "NaN"
+      },
+      {
+        "case": 143,
+        "input": "+NaN",
+        "js": "NaN"
+      },
+      {
+        "case": 144,
+        "input": "\t +95",
+        "js": "4057c00000000000"
+      },
+      {
+        "case": 145,
+        "input": ".",
+        "js": "NaN"
+      },
+      {
+        "case": 146,
+        "input": "0Baa2eEfbBB1EE6f73Bd5CBAbeAdab0F2c5A3A",
+        "js": "NaN"
+      },
+      {
+        "case": 147,
+        "input": "Infinity",
+        "js": "7ff0000000000000"
+      },
+      {
+        "case": 148,
+        "input": "+infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 149,
+        "input": "+Infinity",
+        "js": "7ff0000000000000"
+      },
+      {
+        "case": 150,
+        "input": "0OefEEe70BbF93F2F8efB6f9bDCd7d1A275Fa9",
+        "js": "NaN"
+      },
+      {
+        "case": 151,
+        "input": "-NaN",
+        "js": "NaN"
+      },
+      {
+        "case": 152,
+        "input": "\t-668773e799　",
+        "js": "fff0000000000000"
+      },
+      {
+        "case": 153,
+        "input": "+8.92e30 ",
+        "js": "465c2584c418223d"
+      },
+      {
+        "case": 154,
+        "input": "0x89f1ac3f3cdddd7a315bca4bbf8efaff30f1eff890bf138a19b57bf37faa2c0827ad5e128",
+        "js": "52213e3587e79bbc"
+      },
+      {
+        "case": 155,
+        "input": "Infinity",
+        "js": "7ff0000000000000"
+      },
+      {
+        "case": 156,
+        "input": "0x6fee944c9694c376b0fde6da136f674a2d61c25012a200a2a86d559e5533de6",
+        "js": "4f9bfba51325a531"
+      },
+      {
+        "case": 157,
+        "input": "+.0e-1  ",
+        "js": "NaN"
+      },
+      {
+        "case": 158,
+        "input": "infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 159,
+        "input": " - ",
+        "js": "NaN"
+      },
+      {
+        "case": 160,
+        "input": "Infinity",
+        "js": "7ff0000000000000"
+      },
+      {
+        "case": 161,
+        "input": "y ",
+        "js": "NaN"
+      },
+      {
+        "case": 162,
+        "input": "0xae3f2e8fe265edb336dbaa94a7bf1ea4a3e9fb19fadb3f587c89580b0d77dfddb9f78e9ca15fed4ade5f3704",
+        "js": "55e5c7e5d1fc4cbe"
+      },
+      {
+        "case": 163,
+        "input": "+623e+0 ",
+        "js": "4083780000000000"
+      },
+      {
+        "case": 164,
+        "input": "0o",
+        "js": "NaN"
+      },
+      {
+        "case": 165,
+        "input": "f2v",
+        "js": "NaN"
+      },
+      {
+        "case": 166,
+        "input": "nnv21 ",
+        "js": "NaN"
+      },
+      {
+        "case": 167,
+        "input": "0xd017fef2afedc0dfac9bee8f7a54b7178e6c918bee8db5de1e174dae0ca39d5",
+        "js": "4faa02ffde55fdb8"
+      },
+      {
+        "case": 168,
+        "input": "0xfdcaf305dfde5eb19e7a6eaece624042f1beb30b3f18ac390f2c54e0a39b1c",
+        "js": "4f6fb95e60bbfbcc"
+      },
+      {
+        "case": 169,
+        "input": "0XA0c4D",
+        "js": "4124189a00000000"
+      },
+      {
+        "case": 170,
+        "input": "0xb209fc3e0af68eede2b8b687aef2a0cb",
+        "js": "47e6413f87c15ed2"
+      },
+      {
+        "case": 171,
+        "input": "0x38546789c851fd2196c2a6abea83ed16a3ec879f8c0dc657a8b5c414ab4e21d6c3faef156",
+        "js": "520c2a33c4e428ff"
+      },
+      {
+        "case": 172,
+        "input": "0xdcc91365c776ebefbaff633a4b9960",
+        "js": "476b99226cb8eedd"
+      },
+      {
+        "case": 173,
+        "input": " 30e-321  ",
+        "js": "00000000000017b8"
+      },
+      {
+        "case": 174,
+        "input": "0xf859cc665f0a7d21c4e9d4c0efe6a4bcabd68",
+        "js": "492f0b398ccbe150"
+      },
+      {
+        "case": 175,
+        "input": "NaN",
+        "js": "NaN"
+      },
+      {
+        "case": 176,
+        "input": "0Oa127F16B18Df5B28EACE1",
+        "js": "NaN"
+      },
+      {
+        "case": 177,
+        "input": "5r -f",
+        "js": "NaN"
+      },
+      {
+        "case": 178,
+        "input": "﻿﻿-657729　",
+        "js": "c124128200000000"
+      },
+      {
+        "case": 179,
+        "input": "3d ",
+        "js": "NaN"
+      },
+      {
+        "case": 180,
+        "input": "0BAcEeeEA0fbfEdDbddeF9a7",
+        "js": "NaN"
+      },
+      {
+        "case": 181,
+        "input": "+Infinity",
+        "js": "7ff0000000000000"
+      },
+      {
+        "case": 182,
+        "input": "﻿ +.5e139",
+        "js": "5cbadf1aea12525b"
+      },
+      {
+        "case": 183,
+        "input": "+infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 184,
+        "input": "+Infinity",
+        "js": "7ff0000000000000"
+      },
+      {
+        "case": 185,
+        "input": "7036.7095 ",
+        "js": "NaN"
+      },
+      {
+        "case": 186,
+        "input": "-infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 187,
+        "input": "0x23ab068b664ec1bdf32ed36d5ee4c13c8daffb34",
+        "js": "49c1d58345b32761"
+      },
+      {
+        "case": 188,
+        "input": "0xfe7a1ab988eba4ad2daac3f323369f9fddac6cce5889dfe81eaec82073f39e9319b8ba6f67e00dc11dcbfabfba",
+        "js": "566fcf4357311d75"
+      },
+      {
+        "case": 189,
+        "input": "0x7089d1f14FD84fbeE37Ad42",
+        "js": "459c22747c53f614"
+      },
+      {
+        "case": 190,
+        "input": "u5mh.",
+        "js": "NaN"
+      },
+      {
+        "case": 191,
+        "input": "+NaN",
+        "js": "NaN"
+      },
+      {
+        "case": 192,
+        "input": "",
+        "js": "0000000000000000"
+      },
+      {
+        "case": 193,
+        "input": "f_ z9",
+        "js": "NaN"
+      },
+      {
+        "case": 194,
+        "input": "\t﻿3609.4　",
+        "js": "40ac32cccccccccd"
+      },
+      {
+        "case": 195,
+        "input": "Infinity",
+        "js": "7ff0000000000000"
+      },
+      {
+        "case": 196,
+        "input": "-infinity",
+        "js": "NaN"
+      },
+      {
+        "case": 197,
+        "input": "0xadf67fd4aacafc5f992df3e6cfbf1cddf0854a0bbbe5ef0ada27f4eec9e588bd1ab345c48abaea5f1bfed3bf90",
+        "js": "5665becffa955960"
+      },
+      {
+        "case": 198,
+        "input": "0xdaaa36f5f3dc077359d9aeb1eec98074ada66ccbfabcaae5abcb2cd6b3a0abe",
+        "js": "4fab5546debe7b81"
+      },
+      {
+        "case": 199,
+        "input": "0x98fc8fe4c1a1bbab3ead5211bfbc68f9cc2a5adff8c7af862fd9bce711b1d9a9a4720463b",
+        "js": "52231f91fc983437"
+      },
+      {
+        "case": 2000,
+        "input": "",
+        "js": "0000000000000000"
+      },
+      {
+        "case": 2001,
+        "input": " ",
+        "js": "0000000000000000"
+      },
+      {
+        "case": 2002,
+        "input": "-0",
+        "js": "8000000000000000"
+      },
+      {
+        "case": 2003,
+        "input": "+0",
+        "js": "0000000000000000"
+      },
+      {
+        "case": 2004,
+        "input": ".5",
+        "js": "3fe0000000000000"
+      },
+      {
+        "case": 2005,
+        "input": "5.",
+        "js": "4014000000000000"
+      },
+      {
+        "case": 2006,
+        "input": "+.5",
+        "js": "3fe0000000000000"
+      },
+      {
+        "case": 2007,
+        "input": "1e400",
+        "js": "7ff0000000000000"
+      },
+      {
+        "case": 2008,
+        "input": "-1e400",
+        "js": "fff0000000000000"
+      },
+      {
+        "case": 2009,
+        "input": "0x",
+        "js": "NaN"
+      },
+      {
+        "case": 2010,
+        "input": "0b2",
+        "js": "NaN"
+      },
+      {
+        "case": 2011,
+        "input": "1_000",
+        "js": "NaN"
+      },
+      {
+        "case": 2012,
+        "input": "0x1fffffffffffff",
+        "js": "433fffffffffffff"
+      },
+      {
+        "case": 2013,
+        "input": "0x20000000000001",
+        "js": "4340000000000000"
+      }
+    ],
+    "chunkSize": 1000,
+    "chunks": [
+      "e907907781933025c8f9ebf1fbf2cade059adf95d8d424a52f5c09358244f4cb",
+      "ef7f27959510b2e4af68b03542e9ef10339dfe79990f8461800ad172e8d41734",
+      "5f9dc11d5b9bcbfca0a5897b2ab519456651c6ab0a656ab90de5d21e60261311"
+    ]
+  },
+  "stringify": {
+    "recordedWith": {
+      "node": "v24.22.1",
+      "driver": "897b4fa5c2936ef6004eef199d1f832d44b17685775a4e8476d9e052b3ca51e6"
+    },
+    "cases": 6000,
+    "inputsSha256": "4d1219cf438a4449eca93625c8b4a6b2a6701ff597e2b12e792b56c306c34302",
+    "sample": [
+      {
+        "case": 0,
+        "input": [
+          {
+            "10": [
+              true,
+              " bw",
+              "\u0000\b\f\u001f\t\n\r"
+            ]
+          },
+          ""
+        ],
+        "js": "{\"10\":[true,\" bw\",\"\\u0000\\b\\f\\u001f\\t\\n\\r\"]}"
+      },
+      {
+        "case": 1,
+        "input": [
+          {
+            "10": [
+              true,
+              " bw",
+              "\u0000\b\f\u001f\t\n\r"
+            ]
+          },
+          "  "
+        ],
+        "js": "{\n  \"10\": [\n    true,\n    \" bw\",\n    \"\\u0000\\b\\f\\u001f\\t\\n\\r\"\n  ]\n}"
+      },
+      {
+        "case": 2,
+        "input": [
+          {
+            "10": [
+              true,
+              " bw",
+              "\u0000\b\f\u001f\t\n\r"
+            ]
+          },
+          " "
+        ],
+        "js": "{\n \"10\": [\n  true,\n  \" bw\",\n  \"\\u0000\\b\\f\\u001f\\t\\n\\r\"\n ]\n}"
+      },
+      {
+        "case": 3,
+        "input": [
+          [
+            [
+              "\u0000\b\f\u001f\t\n\r",
+              " z\"\\e"
+            ],
+            "",
+            1e+21
+          ],
+          ""
+        ],
+        "js": "[[\"\\u0000\\b\\f\\u001f\\t\\n\\r\",\" z\\\"\\\\e\"],\"\",1e+21]"
+      },
+      {
+        "case": 4,
+        "input": [
+          [
+            [
+              "\u0000\b\f\u001f\t\n\r",
+              " z\"\\e"
+            ],
+            "",
+            1e+21
+          ],
+          "  "
+        ],
+        "js": "[\n  [\n    \"\\u0000\\b\\f\\u001f\\t\\n\\r\",\n    \" z\\\"\\\\e\"\n  ],\n  \"\",\n  1e+21\n]"
+      },
+      {
+        "case": 5,
+        "input": [
+          [
+            [
+              "\u0000\b\f\u001f\t\n\r",
+              " z\"\\e"
+            ],
+            "",
+            1e+21
+          ],
+          " "
+        ],
+        "js": "[\n [\n  \"\\u0000\\b\\f\\u001f\\t\\n\\r\",\n  \" z\\\"\\\\e\"\n ],\n \"\",\n 1e+21\n]"
+      },
+      {
+        "case": 6,
+        "input": [
+          [],
+          ""
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 7,
+        "input": [
+          [],
+          "  "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 8,
+        "input": [
+          [],
+          " "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 9,
+        "input": [
+          {
+            "2": {
+              "iax": " \\\\\\ ",
+              "2": ""
+            },
+            "10": {}
+          },
+          ""
+        ],
+        "js": "{\"2\":{\"2\":\"\",\"iax\":\" \\\\\\\\\\\\ \"},\"10\":{}}"
+      },
+      {
+        "case": 10,
+        "input": [
+          {
+            "2": {
+              "iax": " \\\\\\ ",
+              "2": ""
+            },
+            "10": {}
+          },
+          "  "
+        ],
+        "js": "{\n  \"2\": {\n    \"2\": \"\",\n    \"iax\": \" \\\\\\\\\\\\ \"\n  },\n  \"10\": {}\n}"
+      },
+      {
+        "case": 11,
+        "input": [
+          {
+            "2": {
+              "iax": " \\\\\\ ",
+              "2": ""
+            },
+            "10": {}
+          },
+          " "
+        ],
+        "js": "{\n \"2\": {\n  \"2\": \"\",\n  \"iax\": \" \\\\\\\\\\\\ \"\n },\n \"10\": {}\n}"
+      },
+      {
+        "case": 12,
+        "input": [
+          [
+            true
+          ],
+          ""
+        ],
+        "js": "[true]"
+      },
+      {
+        "case": 13,
+        "input": [
+          [
+            true
+          ],
+          "  "
+        ],
+        "js": "[\n  true\n]"
+      },
+      {
+        "case": 14,
+        "input": [
+          [
+            true
+          ],
+          " "
+        ],
+        "js": "[\n true\n]"
+      },
+      {
+        "case": 15,
+        "input": [
+          {
+            "01": {
+              "10": 1e+21
+            }
+          },
+          ""
+        ],
+        "js": "{\"01\":{\"10\":1e+21}}"
+      },
+      {
+        "case": 16,
+        "input": [
+          {
+            "01": {
+              "10": 1e+21
+            }
+          },
+          "  "
+        ],
+        "js": "{\n  \"01\": {\n    \"10\": 1e+21\n  }\n}"
+      },
+      {
+        "case": 17,
+        "input": [
+          {
+            "01": {
+              "10": 1e+21
+            }
+          },
+          " "
+        ],
+        "js": "{\n \"01\": {\n  \"10\": 1e+21\n }\n}"
+      },
+      {
+        "case": 18,
+        "input": [
+          [],
+          ""
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 19,
+        "input": [
+          [],
+          "  "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 20,
+        "input": [
+          [],
+          " "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 21,
+        "input": [
+          true,
+          ""
+        ],
+        "js": "true"
+      },
+      {
+        "case": 22,
+        "input": [
+          true,
+          "  "
+        ],
+        "js": "true"
+      },
+      {
+        "case": 23,
+        "input": [
+          true,
+          " "
+        ],
+        "js": "true"
+      },
+      {
+        "case": 24,
+        "input": [
+          0.1,
+          ""
+        ],
+        "js": "0.1"
+      },
+      {
+        "case": 25,
+        "input": [
+          0.1,
+          "  "
+        ],
+        "js": "0.1"
+      },
+      {
+        "case": 26,
+        "input": [
+          0.1,
+          " "
+        ],
+        "js": "0.1"
+      },
+      {
+        "case": 27,
+        "input": [
+          [
+            {
+              "10": ""
+            },
+            1.5e-7
+          ],
+          ""
+        ],
+        "js": "[{\"10\":\"\"},1.5e-7]"
+      },
+      {
+        "case": 28,
+        "input": [
+          [
+            {
+              "10": ""
+            },
+            1.5e-7
+          ],
+          "  "
+        ],
+        "js": "[\n  {\n    \"10\": \"\"\n  },\n  1.5e-7\n]"
+      },
+      {
+        "case": 29,
+        "input": [
+          [
+            {
+              "10": ""
+            },
+            1.5e-7
+          ],
+          " "
+        ],
+        "js": "[\n {\n  \"10\": \"\"\n },\n 1.5e-7\n]"
+      },
+      {
+        "case": 30,
+        "input": [
+          [
+            " k\\\"\\z",
+            "   ü 🎉"
+          ],
+          ""
+        ],
+        "js": "[\" k\\\\\\\"\\\\z\",\"   ü 🎉\"]"
+      },
+      {
+        "case": 31,
+        "input": [
+          [
+            " k\\\"\\z",
+            "   ü 🎉"
+          ],
+          "  "
+        ],
+        "js": "[\n  \" k\\\\\\\"\\\\z\",\n  \"   ü 🎉\"\n]"
+      },
+      {
+        "case": 32,
+        "input": [
+          [
+            " k\\\"\\z",
+            "   ü 🎉"
+          ],
+          " "
+        ],
+        "js": "[\n \" k\\\\\\\"\\\\z\",\n \"   ü 🎉\"\n]"
+      },
+      {
+        "case": 33,
+        "input": [
+          {
+            "2": {},
+            "10": {
+              "c": null
+            }
+          },
+          ""
+        ],
+        "js": "{\"2\":{},\"10\":{\"c\":null}}"
+      },
+      {
+        "case": 34,
+        "input": [
+          {
+            "2": {},
+            "10": {
+              "c": null
+            }
+          },
+          "  "
+        ],
+        "js": "{\n  \"2\": {},\n  \"10\": {\n    \"c\": null\n  }\n}"
+      },
+      {
+        "case": 35,
+        "input": [
+          {
+            "2": {},
+            "10": {
+              "c": null
+            }
+          },
+          " "
+        ],
+        "js": "{\n \"2\": {},\n \"10\": {\n  \"c\": null\n }\n}"
+      },
+      {
+        "case": 36,
+        "input": [
+          {},
+          ""
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 37,
+        "input": [
+          {},
+          "  "
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 38,
+        "input": [
+          {},
+          " "
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 39,
+        "input": [
+          [],
+          ""
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 40,
+        "input": [
+          [],
+          "  "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 41,
+        "input": [
+          [],
+          " "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 42,
+        "input": [
+          18446744073709551615,
+          ""
+        ],
+        "js": "18446744073709552000"
+      },
+      {
+        "case": 43,
+        "input": [
+          18446744073709551615,
+          "  "
+        ],
+        "js": "18446744073709552000"
+      },
+      {
+        "case": 44,
+        "input": [
+          18446744073709551615,
+          " "
+        ],
+        "js": "18446744073709552000"
+      },
+      {
+        "case": 45,
+        "input": [
+          [
+            [
+              false,
+              -0.0,
+              0.1
+            ]
+          ],
+          ""
+        ],
+        "js": "[[false,0,0.1]]"
+      },
+      {
+        "case": 46,
+        "input": [
+          [
+            [
+              false,
+              -0.0,
+              0.1
+            ]
+          ],
+          "  "
+        ],
+        "js": "[\n  [\n    false,\n    0,\n    0.1\n  ]\n]"
+      },
+      {
+        "case": 47,
+        "input": [
+          [
+            [
+              false,
+              -0.0,
+              0.1
+            ]
+          ],
+          " "
+        ],
+        "js": "[\n [\n  false,\n  0,\n  0.1\n ]\n]"
+      },
+      {
+        "case": 48,
+        "input": [
+          {
+            "2": [],
+            "qr": false
+          },
+          ""
+        ],
+        "js": "{\"2\":[],\"qr\":false}"
+      },
+      {
+        "case": 49,
+        "input": [
+          {
+            "2": [],
+            "qr": false
+          },
+          "  "
+        ],
+        "js": "{\n  \"2\": [],\n  \"qr\": false\n}"
+      },
+      {
+        "case": 50,
+        "input": [
+          {
+            "2": [],
+            "qr": false
+          },
+          " "
+        ],
+        "js": "{\n \"2\": [],\n \"qr\": false\n}"
+      },
+      {
+        "case": 51,
+        "input": [
+          [
+            -42
+          ],
+          ""
+        ],
+        "js": "[-42]"
+      },
+      {
+        "case": 52,
+        "input": [
+          [
+            -42
+          ],
+          "  "
+        ],
+        "js": "[\n  -42\n]"
+      },
+      {
+        "case": 53,
+        "input": [
+          [
+            -42
+          ],
+          " "
+        ],
+        "js": "[\n -42\n]"
+      },
+      {
+        "case": 54,
+        "input": [
+          {
+            "b": [
+              -0.0,
+              null
+            ],
+            "10": null
+          },
+          ""
+        ],
+        "js": "{\"10\":null,\"b\":[0,null]}"
+      },
+      {
+        "case": 55,
+        "input": [
+          {
+            "b": [
+              -0.0,
+              null
+            ],
+            "10": null
+          },
+          "  "
+        ],
+        "js": "{\n  \"10\": null,\n  \"b\": [\n    0,\n    null\n  ]\n}"
+      },
+      {
+        "case": 56,
+        "input": [
+          {
+            "b": [
+              -0.0,
+              null
+            ],
+            "10": null
+          },
+          " "
+        ],
+        "js": "{\n \"10\": null,\n \"b\": [\n  0,\n  null\n ]\n}"
+      },
+      {
+        "case": 57,
+        "input": [
+          {
+            "ji": {
+              "yro": null,
+              "2": false
+            },
+            "10": {
+              "01": null,
+              "10": -0.0
+            },
+            "s": {
+              "10": "\u0000\b\f\u001f\t\n\r"
+            }
+          },
+          ""
+        ],
+        "js": "{\"10\":{\"10\":0,\"01\":null},\"ji\":{\"2\":false,\"yro\":null},\"s\":{\"10\":\"\\u0000\\b\\f\\u001f\\t\\n\\r\"}}"
+      },
+      {
+        "case": 58,
+        "input": [
+          {
+            "ji": {
+              "yro": null,
+              "2": false
+            },
+            "10": {
+              "01": null,
+              "10": -0.0
+            },
+            "s": {
+              "10": "\u0000\b\f\u001f\t\n\r"
+            }
+          },
+          "  "
+        ],
+        "js": "{\n  \"10\": {\n    \"10\": 0,\n    \"01\": null\n  },\n  \"ji\": {\n    \"2\": false,\n    \"yro\": null\n  },\n  \"s\": {\n    \"10\": \"\\u0000\\b\\f\\u001f\\t\\n\\r\"\n  }\n}"
+      },
+      {
+        "case": 59,
+        "input": [
+          {
+            "ji": {
+              "yro": null,
+              "2": false
+            },
+            "10": {
+              "01": null,
+              "10": -0.0
+            },
+            "s": {
+              "10": "\u0000\b\f\u001f\t\n\r"
+            }
+          },
+          " "
+        ],
+        "js": "{\n \"10\": {\n  \"10\": 0,\n  \"01\": null\n },\n \"ji\": {\n  \"2\": false,\n  \"yro\": null\n },\n \"s\": {\n  \"10\": \"\\u0000\\b\\f\\u001f\\t\\n\\r\"\n }\n}"
+      },
+      {
+        "case": 60,
+        "input": [
+          {},
+          ""
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 61,
+        "input": [
+          {},
+          "  "
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 62,
+        "input": [
+          {},
+          " "
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 63,
+        "input": [
+          {
+            "01": {
+              "2": true
+            }
+          },
+          ""
+        ],
+        "js": "{\"01\":{\"2\":true}}"
+      },
+      {
+        "case": 64,
+        "input": [
+          {
+            "01": {
+              "2": true
+            }
+          },
+          "  "
+        ],
+        "js": "{\n  \"01\": {\n    \"2\": true\n  }\n}"
+      },
+      {
+        "case": 65,
+        "input": [
+          {
+            "01": {
+              "2": true
+            }
+          },
+          " "
+        ],
+        "js": "{\n \"01\": {\n  \"2\": true\n }\n}"
+      },
+      {
+        "case": 66,
+        "input": [
+          {
+            "01": false,
+            "2": false
+          },
+          ""
+        ],
+        "js": "{\"2\":false,\"01\":false}"
+      },
+      {
+        "case": 67,
+        "input": [
+          {
+            "01": false,
+            "2": false
+          },
+          "  "
+        ],
+        "js": "{\n  \"2\": false,\n  \"01\": false\n}"
+      },
+      {
+        "case": 68,
+        "input": [
+          {
+            "01": false,
+            "2": false
+          },
+          " "
+        ],
+        "js": "{\n \"2\": false,\n \"01\": false\n}"
+      },
+      {
+        "case": 69,
+        "input": [
+          {
+            "10": null
+          },
+          ""
+        ],
+        "js": "{\"10\":null}"
+      },
+      {
+        "case": 70,
+        "input": [
+          {
+            "10": null
+          },
+          "  "
+        ],
+        "js": "{\n  \"10\": null\n}"
+      },
+      {
+        "case": 71,
+        "input": [
+          {
+            "10": null
+          },
+          " "
+        ],
+        "js": "{\n \"10\": null\n}"
+      },
+      {
+        "case": 72,
+        "input": [
+          [
+            false
+          ],
+          ""
+        ],
+        "js": "[false]"
+      },
+      {
+        "case": 73,
+        "input": [
+          [
+            false
+          ],
+          "  "
+        ],
+        "js": "[\n  false\n]"
+      },
+      {
+        "case": 74,
+        "input": [
+          [
+            false
+          ],
+          " "
+        ],
+        "js": "[\n false\n]"
+      },
+      {
+        "case": 75,
+        "input": [
+          "b\" \\",
+          ""
+        ],
+        "js": "\"b\\\" \\\\\""
+      },
+      {
+        "case": 76,
+        "input": [
+          "b\" \\",
+          "  "
+        ],
+        "js": "\"b\\\" \\\\\""
+      },
+      {
+        "case": 77,
+        "input": [
+          "b\" \\",
+          " "
+        ],
+        "js": "\"b\\\" \\\\\""
+      },
+      {
+        "case": 78,
+        "input": [
+          {
+            "2": [],
+            "10": null,
+            "01": {
+              "2": "   ü 🎉",
+              "td": "   ü 🎉"
+            }
+          },
+          ""
+        ],
+        "js": "{\"2\":[],\"10\":null,\"01\":{\"2\":\"   ü 🎉\",\"td\":\"   ü 🎉\"}}"
+      },
+      {
+        "case": 79,
+        "input": [
+          {
+            "2": [],
+            "10": null,
+            "01": {
+              "2": "   ü 🎉",
+              "td": "   ü 🎉"
+            }
+          },
+          "  "
+        ],
+        "js": "{\n  \"2\": [],\n  \"10\": null,\n  \"01\": {\n    \"2\": \"   ü 🎉\",\n    \"td\": \"   ü 🎉\"\n  }\n}"
+      },
+      {
+        "case": 80,
+        "input": [
+          {
+            "2": [],
+            "10": null,
+            "01": {
+              "2": "   ü 🎉",
+              "td": "   ü 🎉"
+            }
+          },
+          " "
+        ],
+        "js": "{\n \"2\": [],\n \"10\": null,\n \"01\": {\n  \"2\": \"   ü 🎉\",\n  \"td\": \"   ü 🎉\"\n }\n}"
+      },
+      {
+        "case": 81,
+        "input": [
+          1e+21,
+          ""
+        ],
+        "js": "1e+21"
+      },
+      {
+        "case": 82,
+        "input": [
+          1e+21,
+          "  "
+        ],
+        "js": "1e+21"
+      },
+      {
+        "case": 83,
+        "input": [
+          1e+21,
+          " "
+        ],
+        "js": "1e+21"
+      },
+      {
+        "case": 84,
+        "input": [
+          {},
+          ""
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 85,
+        "input": [
+          {},
+          "  "
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 86,
+        "input": [
+          {},
+          " "
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 87,
+        "input": [
+          {},
+          ""
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 88,
+        "input": [
+          {},
+          "  "
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 89,
+        "input": [
+          {},
+          " "
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 90,
+        "input": [
+          {
+            "2": null,
+            "01": 1.5e-7
+          },
+          ""
+        ],
+        "js": "{\"2\":null,\"01\":1.5e-7}"
+      },
+      {
+        "case": 91,
+        "input": [
+          {
+            "2": null,
+            "01": 1.5e-7
+          },
+          "  "
+        ],
+        "js": "{\n  \"2\": null,\n  \"01\": 1.5e-7\n}"
+      },
+      {
+        "case": 92,
+        "input": [
+          {
+            "2": null,
+            "01": 1.5e-7
+          },
+          " "
+        ],
+        "js": "{\n \"2\": null,\n \"01\": 1.5e-7\n}"
+      },
+      {
+        "case": 93,
+        "input": [
+          {
+            "10": null,
+            "2": null
+          },
+          ""
+        ],
+        "js": "{\"2\":null,\"10\":null}"
+      },
+      {
+        "case": 94,
+        "input": [
+          {
+            "10": null,
+            "2": null
+          },
+          "  "
+        ],
+        "js": "{\n  \"2\": null,\n  \"10\": null\n}"
+      },
+      {
+        "case": 95,
+        "input": [
+          {
+            "10": null,
+            "2": null
+          },
+          " "
+        ],
+        "js": "{\n \"2\": null,\n \"10\": null\n}"
+      },
+      {
+        "case": 96,
+        "input": [
+          [],
+          ""
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 97,
+        "input": [
+          [],
+          "  "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 98,
+        "input": [
+          [],
+          " "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 99,
+        "input": [
+          [],
+          ""
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 100,
+        "input": [
+          [],
+          "  "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 101,
+        "input": [
+          [],
+          " "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 102,
+        "input": [
+          {
+            "10": [
+              "   ü 🎉"
+            ]
+          },
+          ""
+        ],
+        "js": "{\"10\":[\"   ü 🎉\"]}"
+      },
+      {
+        "case": 103,
+        "input": [
+          {
+            "10": [
+              "   ü 🎉"
+            ]
+          },
+          "  "
+        ],
+        "js": "{\n  \"10\": [\n    \"   ü 🎉\"\n  ]\n}"
+      },
+      {
+        "case": 104,
+        "input": [
+          {
+            "10": [
+              "   ü 🎉"
+            ]
+          },
+          " "
+        ],
+        "js": "{\n \"10\": [\n  \"   ü 🎉\"\n ]\n}"
+      },
+      {
+        "case": 105,
+        "input": [
+          [
+            {
+              "10": null
+            },
+            1e+21
+          ],
+          ""
+        ],
+        "js": "[{\"10\":null},1e+21]"
+      },
+      {
+        "case": 106,
+        "input": [
+          [
+            {
+              "10": null
+            },
+            1e+21
+          ],
+          "  "
+        ],
+        "js": "[\n  {\n    \"10\": null\n  },\n  1e+21\n]"
+      },
+      {
+        "case": 107,
+        "input": [
+          [
+            {
+              "10": null
+            },
+            1e+21
+          ],
+          " "
+        ],
+        "js": "[\n {\n  \"10\": null\n },\n 1e+21\n]"
+      },
+      {
+        "case": 108,
+        "input": [
+          {
+            "01": [
+              -0.0
+            ],
+            "10": {
+              "2": true
+            }
+          },
+          ""
+        ],
+        "js": "{\"10\":{\"2\":true},\"01\":[0]}"
+      },
+      {
+        "case": 109,
+        "input": [
+          {
+            "01": [
+              -0.0
+            ],
+            "10": {
+              "2": true
+            }
+          },
+          "  "
+        ],
+        "js": "{\n  \"10\": {\n    \"2\": true\n  },\n  \"01\": [\n    0\n  ]\n}"
+      },
+      {
+        "case": 110,
+        "input": [
+          {
+            "01": [
+              -0.0
+            ],
+            "10": {
+              "2": true
+            }
+          },
+          " "
+        ],
+        "js": "{\n \"10\": {\n  \"2\": true\n },\n \"01\": [\n  0\n ]\n}"
+      },
+      {
+        "case": 111,
+        "input": [
+          {
+            "01": -42,
+            "10": [
+              []
+            ],
+            "2": {
+              "10": " \" \\ "
+            }
+          },
+          ""
+        ],
+        "js": "{\"2\":{\"10\":\" \\\" \\\\ \"},\"10\":[[]],\"01\":-42}"
+      },
+      {
+        "case": 112,
+        "input": [
+          {
+            "01": -42,
+            "10": [
+              []
+            ],
+            "2": {
+              "10": " \" \\ "
+            }
+          },
+          "  "
+        ],
+        "js": "{\n  \"2\": {\n    \"10\": \" \\\" \\\\ \"\n  },\n  \"10\": [\n    []\n  ],\n  \"01\": -42\n}"
+      },
+      {
+        "case": 113,
+        "input": [
+          {
+            "01": -42,
+            "10": [
+              []
+            ],
+            "2": {
+              "10": " \" \\ "
+            }
+          },
+          " "
+        ],
+        "js": "{\n \"2\": {\n  \"10\": \" \\\" \\\\ \"\n },\n \"10\": [\n  []\n ],\n \"01\": -42\n}"
+      },
+      {
+        "case": 114,
+        "input": [
+          [
+            {
+              "2": -0.0
+            },
+            null,
+            false
+          ],
+          ""
+        ],
+        "js": "[{\"2\":0},null,false]"
+      },
+      {
+        "case": 115,
+        "input": [
+          [
+            {
+              "2": -0.0
+            },
+            null,
+            false
+          ],
+          "  "
+        ],
+        "js": "[\n  {\n    \"2\": 0\n  },\n  null,\n  false\n]"
+      },
+      {
+        "case": 116,
+        "input": [
+          [
+            {
+              "2": -0.0
+            },
+            null,
+            false
+          ],
+          " "
+        ],
+        "js": "[\n {\n  \"2\": 0\n },\n null,\n false\n]"
+      },
+      {
+        "case": 117,
+        "input": [
+          {
+            "2": "\"  \""
+          },
+          ""
+        ],
+        "js": "{\"2\":\"\\\"  \\\"\"}"
+      },
+      {
+        "case": 118,
+        "input": [
+          {
+            "2": "\"  \""
+          },
+          "  "
+        ],
+        "js": "{\n  \"2\": \"\\\"  \\\"\"\n}"
+      },
+      {
+        "case": 119,
+        "input": [
+          {
+            "2": "\"  \""
+          },
+          " "
+        ],
+        "js": "{\n \"2\": \"\\\"  \\\"\"\n}"
+      },
+      {
+        "case": 120,
+        "input": [
+          {},
+          ""
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 121,
+        "input": [
+          {},
+          "  "
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 122,
+        "input": [
+          {},
+          " "
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 123,
+        "input": [
+          [
+            [
+              -42,
+              0.1
+            ],
+            false,
+            false
+          ],
+          ""
+        ],
+        "js": "[[-42,0.1],false,false]"
+      },
+      {
+        "case": 124,
+        "input": [
+          [
+            [
+              -42,
+              0.1
+            ],
+            false,
+            false
+          ],
+          "  "
+        ],
+        "js": "[\n  [\n    -42,\n    0.1\n  ],\n  false,\n  false\n]"
+      },
+      {
+        "case": 125,
+        "input": [
+          [
+            [
+              -42,
+              0.1
+            ],
+            false,
+            false
+          ],
+          " "
+        ],
+        "js": "[\n [\n  -42,\n  0.1\n ],\n false,\n false\n]"
+      },
+      {
+        "case": 126,
+        "input": [
+          {
+            "01": "\" "
+          },
+          ""
+        ],
+        "js": "{\"01\":\"\\\" \"}"
+      },
+      {
+        "case": 127,
+        "input": [
+          {
+            "01": "\" "
+          },
+          "  "
+        ],
+        "js": "{\n  \"01\": \"\\\" \"\n}"
+      },
+      {
+        "case": 128,
+        "input": [
+          {
+            "01": "\" "
+          },
+          " "
+        ],
+        "js": "{\n \"01\": \"\\\" \"\n}"
+      },
+      {
+        "case": 129,
+        "input": [
+          {
+            "nya": -0.0
+          },
+          ""
+        ],
+        "js": "{\"nya\":0}"
+      },
+      {
+        "case": 130,
+        "input": [
+          {
+            "nya": -0.0
+          },
+          "  "
+        ],
+        "js": "{\n  \"nya\": 0\n}"
+      },
+      {
+        "case": 131,
+        "input": [
+          {
+            "nya": -0.0
+          },
+          " "
+        ],
+        "js": "{\n \"nya\": 0\n}"
+      },
+      {
+        "case": 132,
+        "input": [
+          [],
+          ""
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 133,
+        "input": [
+          [],
+          "  "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 134,
+        "input": [
+          [],
+          " "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 135,
+        "input": [
+          [
+            "\u0000\b\f\u001f\t\n\r",
+            -0.0,
+            1.5e-7
+          ],
+          ""
+        ],
+        "js": "[\"\\u0000\\b\\f\\u001f\\t\\n\\r\",0,1.5e-7]"
+      },
+      {
+        "case": 136,
+        "input": [
+          [
+            "\u0000\b\f\u001f\t\n\r",
+            -0.0,
+            1.5e-7
+          ],
+          "  "
+        ],
+        "js": "[\n  \"\\u0000\\b\\f\\u001f\\t\\n\\r\",\n  0,\n  1.5e-7\n]"
+      },
+      {
+        "case": 137,
+        "input": [
+          [
+            "\u0000\b\f\u001f\t\n\r",
+            -0.0,
+            1.5e-7
+          ],
+          " "
+        ],
+        "js": "[\n \"\\u0000\\b\\f\\u001f\\t\\n\\r\",\n 0,\n 1.5e-7\n]"
+      },
+      {
+        "case": 138,
+        "input": [
+          {},
+          ""
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 139,
+        "input": [
+          {},
+          "  "
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 140,
+        "input": [
+          {},
+          " "
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 141,
+        "input": [
+          {
+            "2": [
+              null,
+              false
+            ],
+            "01": false
+          },
+          ""
+        ],
+        "js": "{\"2\":[null,false],\"01\":false}"
+      },
+      {
+        "case": 142,
+        "input": [
+          {
+            "2": [
+              null,
+              false
+            ],
+            "01": false
+          },
+          "  "
+        ],
+        "js": "{\n  \"2\": [\n    null,\n    false\n  ],\n  \"01\": false\n}"
+      },
+      {
+        "case": 143,
+        "input": [
+          {
+            "2": [
+              null,
+              false
+            ],
+            "01": false
+          },
+          " "
+        ],
+        "js": "{\n \"2\": [\n  null,\n  false\n ],\n \"01\": false\n}"
+      },
+      {
+        "case": 144,
+        "input": [
+          [
+            [
+              18446744073709551615
+            ]
+          ],
+          ""
+        ],
+        "js": "[[18446744073709552000]]"
+      },
+      {
+        "case": 145,
+        "input": [
+          [
+            [
+              18446744073709551615
+            ]
+          ],
+          "  "
+        ],
+        "js": "[\n  [\n    18446744073709552000\n  ]\n]"
+      },
+      {
+        "case": 146,
+        "input": [
+          [
+            [
+              18446744073709551615
+            ]
+          ],
+          " "
+        ],
+        "js": "[\n [\n  18446744073709552000\n ]\n]"
+      },
+      {
+        "case": 147,
+        "input": [
+          {
+            "kxs": {
+              "2": "   ü 🎉"
+            },
+            "pob": false
+          },
+          ""
+        ],
+        "js": "{\"kxs\":{\"2\":\"   ü 🎉\"},\"pob\":false}"
+      },
+      {
+        "case": 148,
+        "input": [
+          {
+            "kxs": {
+              "2": "   ü 🎉"
+            },
+            "pob": false
+          },
+          "  "
+        ],
+        "js": "{\n  \"kxs\": {\n    \"2\": \"   ü 🎉\"\n  },\n  \"pob\": false\n}"
+      },
+      {
+        "case": 149,
+        "input": [
+          {
+            "kxs": {
+              "2": "   ü 🎉"
+            },
+            "pob": false
+          },
+          " "
+        ],
+        "js": "{\n \"kxs\": {\n  \"2\": \"   ü 🎉\"\n },\n \"pob\": false\n}"
+      },
+      {
+        "case": 150,
+        "input": [
+          {
+            "d": {}
+          },
+          ""
+        ],
+        "js": "{\"d\":{}}"
+      },
+      {
+        "case": 151,
+        "input": [
+          {
+            "d": {}
+          },
+          "  "
+        ],
+        "js": "{\n  \"d\": {}\n}"
+      },
+      {
+        "case": 152,
+        "input": [
+          {
+            "d": {}
+          },
+          " "
+        ],
+        "js": "{\n \"d\": {}\n}"
+      },
+      {
+        "case": 153,
+        "input": [
+          {
+            "10": true
+          },
+          ""
+        ],
+        "js": "{\"10\":true}"
+      },
+      {
+        "case": 154,
+        "input": [
+          {
+            "10": true
+          },
+          "  "
+        ],
+        "js": "{\n  \"10\": true\n}"
+      },
+      {
+        "case": 155,
+        "input": [
+          {
+            "10": true
+          },
+          " "
+        ],
+        "js": "{\n \"10\": true\n}"
+      },
+      {
+        "case": 156,
+        "input": [
+          {},
+          ""
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 157,
+        "input": [
+          {},
+          "  "
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 158,
+        "input": [
+          {},
+          " "
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 159,
+        "input": [
+          [],
+          ""
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 160,
+        "input": [
+          [],
+          "  "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 161,
+        "input": [
+          [],
+          " "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 162,
+        "input": [
+          [
+            {}
+          ],
+          ""
+        ],
+        "js": "[{}]"
+      },
+      {
+        "case": 163,
+        "input": [
+          [
+            {}
+          ],
+          "  "
+        ],
+        "js": "[\n  {}\n]"
+      },
+      {
+        "case": 164,
+        "input": [
+          [
+            {}
+          ],
+          " "
+        ],
+        "js": "[\n {}\n]"
+      },
+      {
+        "case": 165,
+        "input": [
+          {
+            "10": null
+          },
+          ""
+        ],
+        "js": "{\"10\":null}"
+      },
+      {
+        "case": 166,
+        "input": [
+          {
+            "10": null
+          },
+          "  "
+        ],
+        "js": "{\n  \"10\": null\n}"
+      },
+      {
+        "case": 167,
+        "input": [
+          {
+            "10": null
+          },
+          " "
+        ],
+        "js": "{\n \"10\": null\n}"
+      },
+      {
+        "case": 168,
+        "input": [
+          [
+            null,
+            {
+              "01": "\\v\\",
+              "10": [
+                "   ü 🎉",
+                false
+              ]
+            }
+          ],
+          ""
+        ],
+        "js": "[null,{\"10\":[\"   ü 🎉\",false],\"01\":\"\\\\v\\\\\"}]"
+      },
+      {
+        "case": 169,
+        "input": [
+          [
+            null,
+            {
+              "01": "\\v\\",
+              "10": [
+                "   ü 🎉",
+                false
+              ]
+            }
+          ],
+          "  "
+        ],
+        "js": "[\n  null,\n  {\n    \"10\": [\n      \"   ü 🎉\",\n      false\n    ],\n    \"01\": \"\\\\v\\\\\"\n  }\n]"
+      },
+      {
+        "case": 170,
+        "input": [
+          [
+            null,
+            {
+              "01": "\\v\\",
+              "10": [
+                "   ü 🎉",
+                false
+              ]
+            }
+          ],
+          " "
+        ],
+        "js": "[\n null,\n {\n  \"10\": [\n   \"   ü 🎉\",\n   false\n  ],\n  \"01\": \"\\\\v\\\\\"\n }\n]"
+      },
+      {
+        "case": 171,
+        "input": [
+          [
+            -0.0,
+            0.1
+          ],
+          ""
+        ],
+        "js": "[0,0.1]"
+      },
+      {
+        "case": 172,
+        "input": [
+          [
+            -0.0,
+            0.1
+          ],
+          "  "
+        ],
+        "js": "[\n  0,\n  0.1\n]"
+      },
+      {
+        "case": 173,
+        "input": [
+          [
+            -0.0,
+            0.1
+          ],
+          " "
+        ],
+        "js": "[\n 0,\n 0.1\n]"
+      },
+      {
+        "case": 174,
+        "input": [
+          [
+            [
+              false,
+              null,
+              1.5e-7
+            ],
+            null,
+            null
+          ],
+          ""
+        ],
+        "js": "[[false,null,1.5e-7],null,null]"
+      },
+      {
+        "case": 175,
+        "input": [
+          [
+            [
+              false,
+              null,
+              1.5e-7
+            ],
+            null,
+            null
+          ],
+          "  "
+        ],
+        "js": "[\n  [\n    false,\n    null,\n    1.5e-7\n  ],\n  null,\n  null\n]"
+      },
+      {
+        "case": 176,
+        "input": [
+          [
+            [
+              false,
+              null,
+              1.5e-7
+            ],
+            null,
+            null
+          ],
+          " "
+        ],
+        "js": "[\n [\n  false,\n  null,\n  1.5e-7\n ],\n null,\n null\n]"
+      },
+      {
+        "case": 177,
+        "input": [
+          [],
+          ""
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 178,
+        "input": [
+          [],
+          "  "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 179,
+        "input": [
+          [],
+          " "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 180,
+        "input": [
+          {
+            "01": 0.1,
+            "y": {
+              "01": null
+            },
+            "u": [
+              -0.0
+            ]
+          },
+          ""
+        ],
+        "js": "{\"01\":0.1,\"y\":{\"01\":null},\"u\":[0]}"
+      },
+      {
+        "case": 181,
+        "input": [
+          {
+            "01": 0.1,
+            "y": {
+              "01": null
+            },
+            "u": [
+              -0.0
+            ]
+          },
+          "  "
+        ],
+        "js": "{\n  \"01\": 0.1,\n  \"y\": {\n    \"01\": null\n  },\n  \"u\": [\n    0\n  ]\n}"
+      },
+      {
+        "case": 182,
+        "input": [
+          {
+            "01": 0.1,
+            "y": {
+              "01": null
+            },
+            "u": [
+              -0.0
+            ]
+          },
+          " "
+        ],
+        "js": "{\n \"01\": 0.1,\n \"y\": {\n  \"01\": null\n },\n \"u\": [\n  0\n ]\n}"
+      },
+      {
+        "case": 183,
+        "input": [
+          [],
+          ""
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 184,
+        "input": [
+          [],
+          "  "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 185,
+        "input": [
+          [],
+          " "
+        ],
+        "js": "[]"
+      },
+      {
+        "case": 186,
+        "input": [
+          {},
+          ""
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 187,
+        "input": [
+          {},
+          "  "
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 188,
+        "input": [
+          {},
+          " "
+        ],
+        "js": "{}"
+      },
+      {
+        "case": 189,
+        "input": [
+          {
+            "2": {
+              "10": "  "
+            },
+            "10": null
+          },
+          ""
+        ],
+        "js": "{\"2\":{\"10\":\"  \"},\"10\":null}"
+      },
+      {
+        "case": 190,
+        "input": [
+          {
+            "2": {
+              "10": "  "
+            },
+            "10": null
+          },
+          "  "
+        ],
+        "js": "{\n  \"2\": {\n    \"10\": \"  \"\n  },\n  \"10\": null\n}"
+      },
+      {
+        "case": 191,
+        "input": [
+          {
+            "2": {
+              "10": "  "
+            },
+            "10": null
+          },
+          " "
+        ],
+        "js": "{\n \"2\": {\n  \"10\": \"  \"\n },\n \"10\": null\n}"
+      },
+      {
+        "case": 192,
+        "input": [
+          {
+            "01": {
+              "d": "\u0000\b\f\u001f\t\n\r"
+            },
+            "kk": 18446744073709551615
+          },
+          ""
+        ],
+        "js": "{\"01\":{\"d\":\"\\u0000\\b\\f\\u001f\\t\\n\\r\"},\"kk\":18446744073709552000}"
+      },
+      {
+        "case": 193,
+        "input": [
+          {
+            "01": {
+              "d": "\u0000\b\f\u001f\t\n\r"
+            },
+            "kk": 18446744073709551615
+          },
+          "  "
+        ],
+        "js": "{\n  \"01\": {\n    \"d\": \"\\u0000\\b\\f\\u001f\\t\\n\\r\"\n  },\n  \"kk\": 18446744073709552000\n}"
+      },
+      {
+        "case": 194,
+        "input": [
+          {
+            "01": {
+              "d": "\u0000\b\f\u001f\t\n\r"
+            },
+            "kk": 18446744073709551615
+          },
+          " "
+        ],
+        "js": "{\n \"01\": {\n  \"d\": \"\\u0000\\b\\f\\u001f\\t\\n\\r\"\n },\n \"kk\": 18446744073709552000\n}"
+      },
+      {
+        "case": 195,
+        "input": [
+          [
+            null,
+            true,
+            []
+          ],
+          ""
+        ],
+        "js": "[null,true,[]]"
+      },
+      {
+        "case": 196,
+        "input": [
+          [
+            null,
+            true,
+            []
+          ],
+          "  "
+        ],
+        "js": "[\n  null,\n  true,\n  []\n]"
+      },
+      {
+        "case": 197,
+        "input": [
+          [
+            null,
+            true,
+            []
+          ],
+          " "
+        ],
+        "js": "[\n null,\n true,\n []\n]"
+      },
+      {
+        "case": 198,
+        "input": [
+          [
+            {},
+            {
+              "2": false
+            },
+            [
+              "   ü 🎉",
+              true,
+              false
+            ]
+          ],
+          ""
+        ],
+        "js": "[{},{\"2\":false},[\"   ü 🎉\",true,false]]"
+      },
+      {
+        "case": 199,
+        "input": [
+          [
+            {},
+            {
+              "2": false
+            },
+            [
+              "   ü 🎉",
+              true,
+              false
+            ]
+          ],
+          "  "
+        ],
+        "js": "[\n  {},\n  {\n    \"2\": false\n  },\n  [\n    \"   ü 🎉\",\n    true,\n    false\n  ]\n]"
+      }
+    ],
+    "chunkSize": 1000,
+    "chunks": [
+      "0344dcd620c96f5614f75f05ccab0925e52e5ccbdafc802133d635d6fb9f7f99",
+      "e5777253e594253d2bbe92f5cf997c31b56fc32644b904abbd3fc792541a4eb5",
+      "112a880dc81fe2c1f520c763952b30699270e9d07548d8f4dfd31cbc0093de91",
+      "38779f8839e1cc36ba36153ba698bb00f2a39e46a12e4056693ae27ab957b131",
+      "945ce4de546b566ce531a70c2738adc087b01f05f1318e56f29f2752ccc1e8e1",
+      "13cf296527f9f96e149beb322a199cdc2c5aaaac035e71ba416e132a99142f62"
+    ]
+  }
+}

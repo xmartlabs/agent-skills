@@ -887,41 +887,6 @@ fn resolve_evidence_matches_js_on_unusable_inputs() {
     assert_eq!(rust, json!({"ran": false, "reason": "diff-unreadable"}));
 }
 
-/// The fixtures `replay-evidence-resolver.mjs` replays, one candidate each.
-#[test]
-#[ignore = "needs TRIBUNAL_HARNESS_DATA"]
-fn resolve_evidence_matches_js_on_recorded_fixtures() {
-    let data = std::env::var("TRIBUNAL_HARNESS_DATA").expect("TRIBUNAL_HARNESS_DATA is not set");
-    let dir = PathBuf::from(data).join("tribunal/fixtures/evidence-resolver");
-    let root = scratch("resolve-evidence-recorded");
-    let mut seen = Seen::default();
-    for e in std::fs::read_dir(&dir).unwrap() {
-        let p = e.unwrap().path();
-        if p.extension().is_none_or(|x| x != "json") {
-            continue;
-        }
-        let fixture: Value = serde_json::from_slice(&std::fs::read(&p).unwrap()).unwrap();
-        let cands = match (&fixture["batchFindings"], &fixture["finding"]) {
-            (Value::Array(b), _) => Value::Array(b.clone()),
-            (_, f) => json!([f]),
-        };
-        let name = p.file_stem().unwrap().to_string_lossy().into_owned();
-        let diff = fixture["diff"].as_str().unwrap_or("");
-        check_case(
-            None,
-            &root.join(name),
-            diff.as_bytes(),
-            Candidates::File(&cands.to_string()),
-            &mut seen,
-        );
-    }
-    assert!(
-        !seen.kinds.is_empty() || seen.not_ran > 0,
-        "no fixtures in {}",
-        dir.display()
-    );
-}
-
 // ---------------------------------------------------------------------------
 // The golden's module check
 

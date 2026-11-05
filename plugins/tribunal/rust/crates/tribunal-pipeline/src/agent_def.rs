@@ -117,7 +117,7 @@ mod tests {
     /// definition names in its exception, and the exception comes first.
     #[test]
     fn every_lens_definition_knows_the_shared_system_prompt() {
-        let shared = crate::prompts::lens_system_prompt("B", "m", Some("c"));
+        let shared = crate::prompts::lens_system_prompt("B", "m", Some("c"), Some("d"));
         for name in [
             "code-review-expert",
             "fe-code-review-expert",
@@ -126,7 +126,7 @@ mod tests {
         ] {
             let def = load(&plugin_root(), name).unwrap();
             assert!(def.body.starts_with("**Exception: if this system prompt continues below with a `# METHODOLOGY` section"), "{name}");
-            for heading in ["# METHODOLOGY", "# CONVENTIONS"] {
+            for heading in ["# METHODOLOGY", "# CONVENTIONS", "# DIFF"] {
                 assert!(shared.contains(heading), "{heading}");
                 assert!(
                     def.body.contains(&format!("`{heading}`")),

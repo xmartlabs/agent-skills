@@ -26,7 +26,9 @@ use crate::persist::{
     row_is_this_run, self_audit, wall_clock_fields,
 };
 use crate::review::answer_of;
-use crate::run::{DispatchPolicy, ReviewOutcome, SynthesisOutcome, VerifyOutcome};
+use crate::run::{
+    effective_lens_samples, DispatchPolicy, ReviewOutcome, SynthesisOutcome, VerifyOutcome,
+};
 
 fn output_tokens<'a>(results: impl IntoIterator<Item = &'a DispatchResult>) -> f64 {
     results
@@ -163,6 +165,7 @@ pub fn metrics_scope(
         ),
         lens_findings: Value::Array(review.candidates.lens_findings.clone()),
         lenses_override: plan.lenses_override.map_or(Value::Null, |n| json!(n)),
+        lens_samples: effective_lens_samples(args),
         file_partition_mode: json!(plan.file_partition_mode),
         per_group_churn: json!(plan.per_group_churn),
         use_codex_head: panel.use_codex,
@@ -590,6 +593,14 @@ pub fn persist_phase(
     metrics["stageSeconds"] = stage_seconds(review, verify, synthesis);
     metrics["groundedChecker"] =
         grounded_checker(verify.typecheck.as_ref().map(|t| t.text.as_str()));
+    metrics["repoResolution"] = verify
+        .repo_cwd
+        .to_json(&review.prepared.repo, &rt.operator.cwd);
+    metrics["depsDrift"] = json!(verify.deps_drift);
+    metrics["anchorFormat"] = crate::coverage_report::anchor_format(&synthesis.verified_anchors);
+    metrics["crossRepoReads"] = json!(synthesis.coverage.cross_repo_reads);
+    metrics["criticNotChecked"] = synthesis.coverage.not_checked_json();
+    metrics["coverageContradictions"] = synthesis.coverage.contradictions_json();
     metrics["engine"] = json!("rust");
     metrics["engineVersion"] = json!(ENGINE_VERSION);
     metrics["pluginVersion"] =

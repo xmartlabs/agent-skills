@@ -4,47 +4,53 @@ Back to the [Tribunal README](../README.md).
 
 ## Changing it
 
-**New work goes in the Rust engine only.** The Workflow and its scripts are a
-fallback kept until they are deleted, so a new feature or rule has no
-JavaScript version, no node in its tests, and no user-facing check that runs
-a `.mjs`. A fallback review may lack it, and it ships with a new binary
-release. [`../CLAUDE.md`](../CLAUDE.md) lists the rules.
+Behaviour lives in the Rust crates under `rust/`, the agent definitions under
+`agents/` and the methodology under `methodology/`. The Rust binary is the only
+engine. [`../CLAUDE.md`](../CLAUDE.md) lists the rules for changing it, and
+[`rust/README.md`](../rust/README.md) describes the crates and their tests.
 
 Tribunal is versioned by a hash of its own behavioral surface, and every
-change is expected to clear the offline battery before it ships. The commands
-in this page run from `plugins/tribunal/skills/review-pr` unless a block says
-otherwise. `../../scripts/check-portable.sh` runs every replay that needs no
-private data, from any directory.
+change is expected to clear the offline checks before it ships. The commands
+in this page run from `plugins/tribunal` unless a block says otherwise.
 
 ```bash
-cd plugins/tribunal/skills/review-pr
-node scripts/harness-version.mjs --manifest   # what the hash covers
-node eval/check-mirror.mjs                    # do the Workflow and its copies still agree?
-for f in eval/replay-*.mjs; do node "$f" || echo "FAILED: $f"; done
+bin/tribunal-engine run -- harness-version --manifest   # what the hash covers
 ```
-
-Edit the workflow in `workflow-src/tribunal.js`, never in `workflows/tribunal.js`.
-The Workflow runtime refuses a script over 524,288 bytes, and comments were 45%
-of the file, so the shipped script is a build: the source with its comment lines
-removed. Rebuild after every edit with `node scripts/build-workflow.mjs`.
-`eval/replay-workflow-built.mjs` fails when the build is stale or was edited by
-hand. When TypeScript is installed, it also checks that the build removed nothing
-but comments.
 
 To iterate, start Claude Code with `claude --plugin-dir plugins/tribunal` from
 the repository root: the plugin loads from your clone, and `/reload-plugins`
-picks up each edit.
+picks up each edit. A review still runs the binary pinned in
+`rust/release.json`, so a change under `rust/` reaches a live review only
+through a new binary release (`rust/README.md`, "Building and releasing").
 
 **Run reviews from an interactive session, not from `claude -p`.** Headless mode
 terminates its own background tasks after 600 seconds, which kills a review
 mid-flight and leaves a `started` marker with no `completed`: a lost run, and a
 wasted one. If you must run headless, set `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`
-first. `node eval/lost-runs.mjs` is what tells you afterward that this happened;
+first. `tribunal-engine run -- lost-runs` is what tells you afterward that this happened;
 a killed run is otherwise silent.
 
-`eval/README.md` describes the validation ladder: what each tier of checking can
-and can't tell you, and why "just run it and see" is the most expensive way to
-answer a question here.
+### Validation ladder
+
+Check a change with the cheapest step that can answer the question, in this
+order. Only the last one costs tokens.
+
+1. **The Rust suite**, from `rust/`: `cargo fmt --all --check`,
+   `cargo clippy --workspace --all-targets --locked -- -D warnings` and
+   `cargo test --workspace --locked`.
+2. **The release gate**, `node rust/scripts/release.mjs` (add `--portable`
+   without a test-data directory). It runs the suite and the other checks in
+   "What the gate checks" below, and writes nothing without `--record`.
+3. **A live review**, pinned and not posted:
+   `/tribunal:review-pr <n> --no-post --head-sha <sha>`, with `--thread-before`
+   when it is compared with an earlier run of the same head. One run is not a
+   measurement: candidate generation varies between identical runs.
+
+**`TRIBUNAL_TS_FROM`.** Some Rust tests hand code to the `typescript` package,
+which this plugin does not ship; at review time the reviewed repo's own copy is
+used. Those tests are `#[ignore]`. Run them with `cargo test -- --include-ignored`
+and the variable pointing at any directory whose `node_modules` holds
+`typescript`. Without it they fail and say why.
 
 ## Releasing a version
 
@@ -56,37 +62,45 @@ released reaches no user.** Urgent fixes need a release, not a merge.
 
 A release is one command, run by a maintainer from `plugins/tribunal` on a
 branch (it refuses to run on `main`), because the full gate needs the private
-test data.
+test data and node.
 
-`./release.sh <N>` does the whole sequence, and `--dry-run` shows the plan and
+**Versions.** One semver number names the plugin, its tag and the binary it
+pins. A fix, docs or a template change is a patch (`115.0.1`); a feature, or a
+new binary that breaks nothing, is a minor (`115.1.0`); a removed flag or a
+profile that stops loading is a major (`116.0.0`). A freeze that ships a new
+binary pins the one tagged with its own version (`tribunal-rust-v115.1.0` in
+`tribunal/v115.1.0`); a freeze without one keeps the previous pin. Versions
+only go up, because `/plugin update` keys off `plugin.json`. `release.sh`
+refuses a version that is not higher than the current one, and a new pin
+whose version is not the freeze's. Freezes up to 115 took the next integer as
+`N.0.0`, and their binaries had a `0.x` numbering of their own.
+
+`./release.sh <version>` does the whole sequence, and `--dry-run` shows the plan and
 runs the gate without writing anything. It opens `$EDITOR` for the row's notes
 before anything is written, then prompts before the commit and again before the
 push.
 
 ```bash
-./release.sh 31 --dry-run              # plan + gate only, no notes asked
-./release.sh 31                        # freeze as tribunal/v31, version 31.0.0
-./release.sh 31 --notes-file <path>    # non-interactive: take the notes from a file
-./release.sh 31 --portable             # no test-data directory on this machine
+./release.sh 115.1.0 --dry-run              # plan + gate only, no notes asked
+./release.sh 115.1.0                        # freeze as tribunal/v115.1.0
+./release.sh 115.1.0 --notes-file <path>    # non-interactive: take the notes from a file
+./release.sh 115.1.0 --portable             # no test-data directory on this machine
 ```
 
-**What the gate checks.** The binary is the default engine, so the gate tests the
-binary, from `rust/`: `cargo fmt --check`, `cargo clippy -D warnings` and
-`cargo test --workspace --locked`. It then checks the pin. The tag in
+**What the gate checks.** The gate, `rust/scripts/release.mjs`, runs six checks.
+From `rust/`: `cargo fmt`, `cargo clippy` with `-D warnings` and
+`cargo test --workspace --locked`. Then `rust-pin`: the tag in
 `rust/release.json` has to be in the clone, and nothing that ships in the binary may
 have changed since that tag. That means everything under `rust/` except Markdown,
 `crates/*/tests/`, `scripts/` and `release.json`, plus the files outside `rust/` that the crates
 compile in with `include_str!`. The pinned archive is then downloaded into an empty
 directory, checked against its sha256, and has to print the tag's version. A Rust
 change merged without a release turns the gate red with the list of files, so cut a
-binary first (`rust/README.md`, "A release"). Last come the two replays of
-JavaScript the Rust path still runs: `rust/scripts/replay-rust-engine.mjs` (the
-launcher) and `rust/scripts/replay-frontier.mjs` (the client-name ratchet). The
-gate itself, `rust/scripts/release.mjs`, lives next to them, outside the Workflow's
-files. The Workflow's own replays are not in the gate. Run them by hand, as above,
-when a change touches the Workflow or its scripts. The corpus score
-(`eval/score.mjs`) is no longer part of the gate: it imports `eval/` helpers, which
-cannot be reached from the gate, and it only reported.
+binary and pin it first (`rust/README.md`, "Building and releasing"). Last come
+the two replays of the JavaScript the review path still runs:
+`rust/scripts/replay-rust-engine.mjs` (the launcher, `bin/tribunal-engine`) and
+`rust/scripts/replay-frontier.mjs` (the client-name ratchet). The harness id in
+the row comes from the pinned binary's `harness-version --manifest`.
 
 **Which gate runs.** With `TRIBUNAL_HARNESS_DATA` set, the full gate. Without it,
 `release.sh` refuses unless you pass `--portable`: then the client-name scan cannot
@@ -94,23 +108,6 @@ run, and the row says `portable (client-name scan not run)` instead of `full`. T
 log is the plugin's own `RELEASES.md`, and its notes stay generic. Rows recorded
 since the gate moved to the Rust suite name a `rust-battery-` id, and the older ones
 a `pr-battery-` id.
-
-**`TRIBUNAL_TS_FROM`.** `replay-attention-facts.mjs` and `replay-binding-graph.mjs` parse their fixtures with the
-`typescript` package, which this plugin does not ship; at review time the reviewed
-repo's own copy is used. Point the variable at any TypeScript repo with its
-`node_modules` installed. Without it those replays fail instead of passing on nothing
-parsed.
-
-**Relays on Windows.** Relays reach the workflow as a file that
-`lib/relay-file.mjs` writes under the reviewed repo's `.git`, on every platform.
-No run has loaded a Windows path yet, so each workflow turns the channel off
-for the rest of a run the first time a path is refused or does not load, and
-the remaining relays are copied as before: where it cannot work, a run pays one
-sonnet retry instead of one per relay. The row shows it: `relays[].fileError`
-names the cause on the relay that tripped it and `off after <label>` on the
-ones after. `windows-sim/windows-probe.mjs` has a `relay-file` case that checks
-the whole chain on a Windows machine in one short call
-(`--only relay-file`).
 
 **Write the notes as prose, and say what the hash cannot.** What changed and
 where to find it again, what was measured versus reasoned, what stayed open.
@@ -126,28 +123,28 @@ The order it enforces, and why each step sits where it does:
 # 0. Notes FIRST, because step 1 writes them into the row and step 3 commits it
 #    with no chance to intervene between the two.
 
-# 1. Record — the row it appends to RELEASES.md is part of what the commit
+# 1. Record: the row it appends to RELEASES.md is part of what the commit
 #    freezes. Commit first and the commit lacks its own record. Refuses outright
 #    if the gate is red, if --notes-file is missing, or if that file
 #    is empty. --tag is passed in because the tag does not exist until step 4,
 #    so release.mjs cannot derive it without naming the PREVIOUS release.
-node rust/scripts/release.mjs --record --tag tribunal/v31 --notes-file <path>   # from plugins/tribunal
+node rust/scripts/release.mjs --record --tag tribunal/v115.1.0 --notes-file <path>   # from plugins/tribunal
 
 # 2. Bump `version` in .claude-plugin/plugin.json to match the tag. This is the
-#    cache key /plugin update keys off — leave it and users are told they
+#    cache key /plugin update keys off. Leave it and users are told they
 #    are "already at the latest version" and never receive the freeze.
 
 # 3. Commit, from plugins/tribunal: only this plugin's files
-git add -- . && git commit -m "chore(tribunal): freeze tribunal/v31"
+git add -- . && git commit -m "chore(tribunal): freeze tribunal/v115.1.0"
 
 # 4. Tag
-git tag -a tribunal/v31 -m "..."
+git tag -a tribunal/v115.1.0 -m "..."
 
-# 5. Push — TWO commands. `git push` does not carry tags unless
+# 5. Push: TWO commands. `git push` does not carry tags unless
 #    push.followTags is set, and it is not set in this repo. A tag left behind
 #    looks published locally and is unreachable to everyone else.
 git push -u origin <branch>
-git push origin tribunal/v31
+git push origin tribunal/v115.1.0
 ```
 
 **Keep merge commits enabled for this repo.** A squash merge replaces the branch's

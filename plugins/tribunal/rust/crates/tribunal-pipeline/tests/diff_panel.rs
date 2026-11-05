@@ -445,6 +445,7 @@ fn rust_panel(c: &Value, rt: &tokio::runtime::Runtime) -> Value {
         critic_gap: None,
         blast_radius: None,
         file_count: c["fileCount"].as_f64().unwrap(),
+        critic: true,
         flags: PanelFlags {
             force_codex: c["forceCodex"] == true,
             no_codex: c["noCodex"] == true,

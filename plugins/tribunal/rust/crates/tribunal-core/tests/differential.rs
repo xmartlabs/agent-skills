@@ -23,7 +23,6 @@ mod common;
 use common::*;
 use proptest::prelude::*;
 use serde_json::{json, Value};
-use std::path::PathBuf;
 
 use tribunal_core::{artifact_key, report_verdict, verified_gate};
 
@@ -229,34 +228,6 @@ fn report_verdict_matches_js() {
         .collect();
     let js = oracle("REPORT-VERDICT", &["pinReportVerdict"], &[], &calls);
     assert_same("pinReportVerdict", &calls, &rust, &js);
-}
-
-/// The recorded reports in the harness data directory, which lives outside
-/// this repository. Run with `TRIBUNAL_HARNESS_DATA=<dir> cargo test -- --ignored`.
-#[test]
-#[ignore = "needs TRIBUNAL_HARNESS_DATA"]
-fn report_verdict_matches_js_on_recorded_reports() {
-    let root = std::env::var("TRIBUNAL_HARNESS_DATA").expect("TRIBUNAL_HARNESS_DATA is not set");
-    let dir = PathBuf::from(root).join("tribunal/fixtures/report-verdict");
-    let bodies: Vec<String> = std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
-        .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap())
-        .collect();
-    assert!(
-        !bodies.is_empty(),
-        "no recorded reports in {}",
-        dir.display()
-    );
-    let mut calls = Vec::new();
-    let mut rust = Vec::new();
-    for body in &bodies {
-        for v in ["APPROVE", "COMMENT", "REQUEST CHANGES"] {
-            calls.push(json!({"fn": "pinReportVerdict", "args": [body, v]}));
-            rust.push(json!(report_verdict::pin_report_verdict(Some(body), v)));
-        }
-    }
-    let js = oracle("REPORT-VERDICT", &["pinReportVerdict"], &[], &calls);
-    assert_same("pinReportVerdict (recorded)", &calls, &rust, &js);
 }
 
 #[test]

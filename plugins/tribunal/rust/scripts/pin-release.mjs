@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // pin-release.mjs: pins a published `tribunal-rust-v*` release in
-// rust/release.json, the file skills/review-pr/scripts/rust-engine.mjs
-// trusts. It reads the release's own .sha256 assets, so run it after the
-// release workflow has finished, and commit release.json with the plugin
-// version that should start using that binary.
+// rust/release.json, the file bin/tribunal-engine trusts. It reads the
+// release's own .sha256 assets, so run it after the release workflow has
+// finished, and commit release.json with the plugin version that should start
+// using that binary.
 //
 //   node rust/scripts/pin-release.mjs <tag> [--repo owner/name] [--write]
 //

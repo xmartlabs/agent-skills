@@ -131,6 +131,25 @@ impl DiffDelivery {
         Ok(self.scoped_diff_body(&tail, exposure))
     }
 
+    /// The diff block of a lens whose system prompt carries the diff
+    /// (`lens_system_prompt` with a diff), counted like any full-diff
+    /// receiver.
+    ///
+    /// # Errors
+    /// As [`DiffDelivery::pinned_block`].
+    pub fn lens_diff_block_in_system_prompt(
+        &self,
+        exposure: &mut DiffExposure,
+    ) -> Result<String, String> {
+        exposure.lens_receivers += 1;
+        exposure.full_diff_receivers += 1;
+        exposure.delivered_bytes += self.full_diff_bytes();
+        Ok(format!(
+            "The full PR diff is part of your system prompt, under the `# DIFF` heading. It is the authoritative copy of this PR's changes: do not fetch it again with gh pr view / gh pr diff and do not look for it in a file.\n{} Any read BEYOND the diff \u{2014} surrounding code, call sites, sibling surfaces \u{2014} belongs there.",
+            self.pinned_block()?
+        ))
+    }
+
     /// `refuterDiffBlockFor(findings)`.
     ///
     /// # Errors
@@ -168,6 +187,9 @@ pub enum LensReference<'a> {
     /// Both are already in the lens's system prompt (`lens_system_prompt`),
     /// which every lens of a run shares, so the model cache is written once.
     Shared,
+    /// As `Shared`, and the PR diff is in the system prompt too, under a
+    /// `# DIFF` heading, so the lens does not read it from a file.
+    SharedWithDiff,
 }
 
 /// The line a lens carries instead of the two file lines when the reference
@@ -175,17 +197,22 @@ pub enum LensReference<'a> {
 pub const SHARED_REFERENCE_NOTICE: &str = "REFERENCE: the review methodology, and the repo's conventions when it has any, are part of your system prompt. Do not read the methodology or conventions files.";
 
 /// The system prompt every lens of a run shares: the agent's own text, then
-/// the methodology, then the conventions when the repo has them. It must be
-/// the same bytes for each lens, because the model cache is keyed on it.
+/// the methodology, then the conventions when the repo has them, then the PR
+/// diff when it fits. It must be the same bytes for each lens, because the
+/// model cache is keyed on it.
 #[must_use]
 pub fn lens_system_prompt(
     agent_body: &str,
     methodology: &str,
     conventions: Option<&str>,
+    diff: Option<&str>,
 ) -> String {
     let mut out = format!("{agent_body}\n\n# METHODOLOGY\n\n{methodology}\n");
     if let Some(c) = conventions {
         out.push_str(&format!("\n# CONVENTIONS\n\n{c}\n"));
+    }
+    if let Some(d) = diff {
+        out.push_str(&format!("\n# DIFF\n\n{d}\n"));
     }
     out
 }
@@ -204,7 +231,10 @@ pub fn lens_dispatch_prompt(
     let mut p = json!({
         "prNumber": input.pr_number,
         "repo": input.repo,
-        "diffBlock": delivery.lens_diff_block(exposure)?,
+        "diffBlock": match reference {
+            LensReference::SharedWithDiff => delivery.lens_diff_block_in_system_prompt(exposure)?,
+            _ => delivery.lens_diff_block(exposure)?,
+        },
         "contextBlock": input.context_block,
         "dependents": input.dependents,
         "focus": input.focus,
@@ -222,7 +252,9 @@ pub fn lens_dispatch_prompt(
             methodology_line,
             conventions,
         } => conventions.reviewer_prompt(methodology_line, &body),
-        LensReference::Shared => format!("{SHARED_REFERENCE_NOTICE}\n\n{body}"),
+        LensReference::Shared | LensReference::SharedWithDiff => {
+            format!("{SHARED_REFERENCE_NOTICE}\n\n{body}")
+        }
     })
 }
 
@@ -266,12 +298,79 @@ mod tests {
     #[test]
     fn the_shared_system_prompt_is_the_body_then_the_reference_text() {
         assert_eq!(
-            lens_system_prompt("BODY", "M", Some("C")),
+            lens_system_prompt("BODY", "M", Some("C"), None),
             "BODY\n\n# METHODOLOGY\n\nM\n\n# CONVENTIONS\n\nC\n"
         );
         assert_eq!(
-            lens_system_prompt("BODY", "M", None),
+            lens_system_prompt("BODY", "M", None, None),
             "BODY\n\n# METHODOLOGY\n\nM\n"
         );
+    }
+
+    #[test]
+    fn the_diff_comes_last_so_the_prefix_before_it_is_the_same_with_or_without_it() {
+        let without = lens_system_prompt("BODY", "M", Some("C"), None);
+        let with = lens_system_prompt("BODY", "M", Some("C"), Some("D"));
+        assert_eq!(with, format!("{without}\n# DIFF\n\nD\n"));
+        assert_eq!(
+            lens_system_prompt("BODY", "M", None, Some("D")),
+            "BODY\n\n# METHODOLOGY\n\nM\n\n# DIFF\n\nD\n"
+        );
+    }
+
+    fn delivery() -> DiffDelivery {
+        DiffDelivery {
+            diff_path: Some("/tmp/pr.diff".into()),
+            diff_bytes: Some(1234.0),
+            head_pin: json!({"path": "/tmp/head", "kind": "worktree", "ok": true}),
+            head_sha: Some(json!("abc1234")),
+        }
+    }
+
+    fn dispatch_prompt(reference: &LensReference) -> String {
+        let focus = json!("Check correctness.");
+        lens_dispatch_prompt(
+            &LensPromptInput {
+                pr_number: &json!(12),
+                repo: "acme/widgets-api",
+                jira_ticket: None,
+                context_block: "",
+                dependents: "",
+                high_risk_surface: None,
+                focus: &focus,
+                files: None,
+            },
+            &delivery(),
+            reference,
+            &mut DiffExposure::default(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn the_lens_prompt_names_the_file_only_when_the_diff_is_not_in_the_system_prompt() {
+        let with_diff = dispatch_prompt(&LensReference::SharedWithDiff);
+        assert!(with_diff.starts_with(SHARED_REFERENCE_NOTICE));
+        assert!(with_diff.contains("`# DIFF`"));
+        assert!(!with_diff.contains("/tmp/pr.diff"));
+        let shared = dispatch_prompt(&LensReference::Shared);
+        assert!(shared.starts_with(SHARED_REFERENCE_NOTICE));
+        assert!(shared.contains("/tmp/pr.diff"));
+        assert!(!shared.contains("`# DIFF`"));
+    }
+
+    #[test]
+    fn a_lens_that_has_the_diff_in_its_system_prompt_is_not_pointed_at_a_file() {
+        let d = delivery();
+        let mut exposure = DiffExposure::default();
+        let block = d.lens_diff_block_in_system_prompt(&mut exposure).unwrap();
+        assert!(block.contains("`# DIFF`"));
+        assert!(!block.contains("/tmp/pr.diff"));
+        assert!(block.contains("BEYOND the diff"));
+        let path_block = d.lens_diff_block(&mut DiffExposure::default()).unwrap();
+        assert!(path_block.contains("/tmp/pr.diff"));
+        assert_eq!(exposure.lens_receivers, 1);
+        assert_eq!(exposure.full_diff_receivers, 1);
+        assert_eq!(exposure.delivered_bytes, 1234.0);
     }
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fails a pull request that adds a script under plugins/tribunal outside rust/, or makes
-# workflow-src/tribunal.js or templates/check.sh longer. plugins/tribunal/CLAUDE.md says why.
+# templates/check.sh longer. plugins/tribunal/CLAUDE.md says why.
 #
 #   BASE=<base sha> HEAD=<head sha> [EXCEPTION=true] .github/scripts/tribunal-guard.sh
 #
@@ -17,7 +17,7 @@ while IFS= read -r f; do
   esac
 done < <(git diff --diff-filter=A --name-only "$BASE...$HEAD" -- "$P" ":(exclude)$P/rust")
 
-for f in "$P/workflow-src/tribunal.js" "$P/templates/check.sh"; do
+for f in "$P/templates/check.sh"; do
   read -r added deleted _ < <(git diff --numstat "$BASE...$HEAD" -- "$f") || continue
   if [ "$added" -gt "$deleted" ]; then problems+=("grows $f by $((added - deleted)) lines"); fi
 done

@@ -1,6 +1,6 @@
 ---
 name: tribunal-strengthener
-description: "Refine step of tribunal's PR review (`workflows/tribunal.js`): strengthens ONE finding whose refutation panel came close to killing it although its core looked real, by reading the code at the PR head and tightening the claim, the repro and the severity, or by saying it cannot be made stronger. It raises nothing new. The workflow passes the model on every dispatch, so the definition pins none. Not a reviewer and not a refuter; those are `code-review-expert`, `fe-code-review-expert` and `tribunal-refuter`."
+description: "Refine step of tribunal's PR review (the Rust engine): strengthens ONE finding whose refutation panel came close to killing it although its core looked real, by reading the code at the PR head and tightening the claim, the repro and the severity, or by saying it cannot be made stronger. It raises nothing new. The engine passes the model on every dispatch, so the definition pins none. Not a reviewer and not a refuter; those are `code-review-expert`, `fe-code-review-expert` and `tribunal-refuter`."
 tools: Read, Bash
 ---
 

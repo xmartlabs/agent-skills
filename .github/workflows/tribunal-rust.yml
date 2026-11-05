@@ -10,11 +10,11 @@
 # repository, for a manual run and for a release tag, all of which need write
 # access. A pull request from a fork runs on GitHub's hosted runners, which are
 # free for public repositories, so code nobody reviewed never reaches a company
-# machine. Unset variables fall back to the hosted runners too. The differential tests compare the port against the
-# JavaScript and bash it replaces, run on the same machine, except the
-# classifier comparisons in diff_classify_heads.rs: their oracle is macOS's
-# BSD userland, so they read what the scripts printed there from
-# tests/goldens/ and run on Linux too. The `macos` job runs the whole suite
+# machine. Unset variables fall back to the hosted runners too. The differential tests compare the port with what the
+# JavaScript and bash it replaced printed, recorded under tests/goldens/; the
+# stand-in gh is a compiled test binary, and node's own number conversions,
+# JSON.stringify and node:path answers are goldens too, so the linux job
+# installs no node. The `macos` job runs the whole suite
 # on the platform most of the team runs, on every pull request, as `linux`
 # and `windows` do. The release's macOS archives are built on GitHub's
 # macos-15 runner. A `tribunal-rust-v*` tag builds the four release binaries
@@ -32,7 +32,10 @@ on:
     paths:
       - "plugins/tribunal/rust/**"
       - "!plugins/tribunal/rust/**/*.md"
-      - "plugins/tribunal/lib/**"
+      - "plugins/tribunal/agents/**"
+      - "plugins/tribunal/methodology/**"
+      - "plugins/tribunal/templates/**"
+      - "plugins/tribunal/bin/**"
       - ".github/workflows/tribunal-rust.yml"
   # A merge to main runs the linux job once more, so main holds a warm cargo
   # cache: a pull request can restore the cache of main but not that of
@@ -43,7 +46,10 @@ on:
     paths:
       - "plugins/tribunal/rust/**"
       - "!plugins/tribunal/rust/**/*.md"
-      - "plugins/tribunal/lib/**"
+      - "plugins/tribunal/agents/**"
+      - "plugins/tribunal/methodology/**"
+      - "plugins/tribunal/templates/**"
+      - "plugins/tribunal/bin/**"
       - ".github/workflows/tribunal-rust.yml"
     tags: ["tribunal-rust-v*"]
   workflow_dispatch:
@@ -85,11 +91,8 @@ jobs:
           : > "$RUNNER_TEMP/gitconfig"
           echo "GIT_CONFIG_GLOBAL=$RUNNER_TEMP/gitconfig" >> "$GITHUB_ENV"
           echo "GIT_CONFIG_NOSYSTEM=1" >> "$GITHUB_ENV"
-      # Node 23 and later compile regexp modifiers such as (?-i:...), which the
-      # profile checks are measured against.
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version: 24
+      # No setup-node: no test starts node outside a regeneration
+      # (TRIBUNAL_REGEN_GOLDENS=1), which is never run here.
       # The differential tests run the bash with LC_ALL=en_US.UTF-8; without
       # that locale bash falls back to C and every comparison over non-ASCII
       # text fails for a reason that has nothing to do with the port.
@@ -217,10 +220,9 @@ jobs:
         working-directory: .
 
   # The release's Windows target, x86_64-pc-windows-msvc, built and tested on
-  # a real Windows machine: clippy, the unit tests, the release build and the
-  # binary starting. Unlike the Wine check in rust/docker/Dockerfile, it shows
-  # process-tree cleanup and PATHEXT resolution (finding a `.cmd`) as users get
-  # them. GitHub's Windows runners are free for a public repository. A merge to
+  # a real Windows machine: clippy, the unit tests, the subcommand tests, the
+  # panel test, the release build and the binary starting. It shows
+  # process-tree cleanup and PATHEXT resolution (finding a `.cmd`) as users get them. GitHub's Windows runners are free for a public repository. A merge to
   # main runs it too, to keep its cargo cache warm, as the linux job does.
   windows:
     if: github.event_name != 'push' || github.ref == 'refs/heads/main'
@@ -229,7 +231,7 @@ jobs:
     env:
       TARGET: x86_64-pc-windows-msvc
     steps:
-      # The unit tests read agents/ and lib/, which no .gitattributes pins to
+      # The unit tests read agents/ and methodology/, which no .gitattributes pins to
       # LF, and the runner's git checks text out with CRLF by default.
       - name: git config
         working-directory: .
@@ -250,30 +252,58 @@ jobs:
           workspaces: plugins/tribunal/rust
       - run: cargo clippy --target "$TARGET" --workspace --lib --bins --locked -- -D warnings
       - run: cargo test --target "$TARGET" --workspace --lib --bins --locked
+      # The subcommands users run outside a review, such as the loaders
+      # templates/check.sh calls, end to end through the binary.
+      - run: cargo test --target "$TARGET" -p tribunal-cli --test subcommands --locked
+      # `tribunal panel` end to end over a local repo and the compiled stand-in
+      # `gh`. The test finds tribunal-test-gh next to its deps/ directory, and
+      # only tribunal-context's own tests make Cargo build it.
+      - run: cargo build --target "$TARGET" -p tribunal-context --bin tribunal-test-gh --locked
+      - run: cargo test --target "$TARGET" -p tribunal-pipeline --test panel_only --locked
       # Claude Code installed with npm is a claude.cmd launcher the binary
       # reads to find the claude.exe it starts (tribunal-agent's launch.rs).
+      # The latest release on purpose: a change to how the package installs
+      # turns this job red on the next run instead of reaching users first.
+      # The package's postinstall runs here with a read-only token and no
+      # secrets, and a tag never runs this job, so it cannot reach a release.
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 24
-      - run: npm install -g @anthropic-ai/claude-code@2.1.316
+      - run: npm install -g @anthropic-ai/claude-code@latest
       - run: cargo test --target "$TARGET" -p tribunal-agent --lib --locked launch -- --ignored
       - run: cargo build --release --locked --target "$TARGET" -p tribunal-cli
       # rust/.cargo/config.toml puts target/ at the repository root.
       - run: '"../../../target/$TARGET/release/tribunal.exe" --version'
+      # The launcher a review starts the binary with, in Git Bash as Claude
+      # Code's Bash tool runs it: it downloads the pinned release into the
+      # default data directory, checks its sha256, unpacks the .zip and starts
+      # it, then reuses the cache. The built binary then shows the plugin root
+      # reaches a native program in a form it can open.
+      - name: the launcher starts the pinned binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          out=$(../bin/tribunal-engine resolve)
+          echo "$out"
+          case "$out" in '{"ok":true,'*'"source":"download"'*'"target":"x86_64-pc-windows-msvc"}') ;; *) exit 1 ;; esac
+          want=$(sed -n 's/.*"tag": *"tribunal-rust-v\([^"]*\)".*/\1/p' release.json)
+          got=$(../bin/tribunal-engine run -- --version)
+          echo "$got"
+          case "$got" in "tribunal $want "*) ;; *) exit 1 ;; esac
+          case "$(../bin/tribunal-engine resolve)" in *'"source":"cache"'*) ;; *) exit 1 ;; esac
+          export TRIBUNAL_BIN="../../../target/$TARGET/release/tribunal.exe" TRIBUNAL_DATA_DIR="$RUNNER_TEMP\\tribunal-data"
+          ../bin/tribunal-engine run -- harness-version --short | grep -E '^pr-harness-[0-9a-f]{12}$'
+          [ -z "$(../bin/tribunal-engine run -- lost-runs --recent 7)" ]
 
-  # The jobs a tag runs (build, build-darwin, release) take the runner the
-  # RELEASE_RUNNER variable names, else RUNNER: a runner that never builds pull
-  # requests keeps their code away from the release and its write token.
-  #
-  # The Linux and Windows release binaries, built on the Linux runner in the
-  # containers of rust/docker/Dockerfile: a static musl binary, and the msvc
-  # one cross-built with cargo-xwin after its clippy and unit tests pass
-  # under Wine.
+  # The jobs a tag runs build every release binary on GitHub's own runners,
+  # each a fresh machine that builds no pull request's code: Linux on
+  # ubuntu-24.04 (rust/scripts/build-linux.sh, a static musl binary), macOS on
+  # macos-15 (rust/scripts/build-darwin.sh) and Windows on windows-2025. The
+  # `linux-release-build` job runs the Linux script on every pull request.
   # While the repository is private, GitHub-hosted runners bill the
   # organization's Actions minutes, macOS at ten times the Linux rate, and a
   # release builds four binaries from scratch. A tag pushed then builds
-  # nothing: release-guard fails and says why. Build locally meanwhile with
-  # rust/docker/check.sh and rust/scripts/build-darwin.sh.
+  # nothing: release-guard fails and says why.
   release-guard:
     if: startsWith(github.ref, 'refs/tags/tribunal-rust-v') && github.event.repository.private
     runs-on: ubuntu-24.04
@@ -284,13 +314,7 @@ jobs:
 
   build:
     if: startsWith(github.ref, 'refs/tags/tribunal-rust-v') && !github.event.repository.private
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - { target: x86_64-unknown-linux-musl, stage: linux-bin, bin: tribunal, archive: tar.gz }
-          - { target: x86_64-pc-windows-msvc, stage: windows-msvc-bin, bin: tribunal.exe, archive: zip }
-    runs-on: ${{ vars.RELEASE_RUNNER || vars.RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write
@@ -311,53 +335,24 @@ jobs:
           fi
           git fetch --no-tags -q origin main
           git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD || { echo "the tag's commit is not on main"; exit 1; }
-      # A builder of its own and no cache: the runner also builds pull
-      # requests, whose BuildKit cache mounts a release must not reuse.
+      - name: musl-tools
+        run: sudo apt-get update -q && sudo apt-get install -y --no-install-recommends musl-tools
       - name: build
-        working-directory: plugins/tribunal
-        run: |
-          builder="tribunal-release-$GITHUB_RUN_ID-${{ strategy.job-index }}"
-          docker buildx create --name "$builder" --driver docker-container >/dev/null
-          trap 'docker buildx rm "$builder" >/dev/null' EXIT
-          # A tar, not type=local: that exporter keeps root as the owner, which
-          # a runner that is not root cannot set.
-          docker buildx build --builder "$builder" --no-cache \
-            -f rust/docker/Dockerfile --target ${{ matrix.stage }} \
-            --output "type=tar,dest=$RUNNER_TEMP/bin.tar" --progress plain .
-          mkdir -p "$RUNNER_TEMP/bin"
-          tar -xf "$RUNNER_TEMP/bin.tar" -C "$RUNNER_TEMP/bin" --no-same-owner
-      - name: package
-        run: |
-          # tribunal-v0.1.0-<target>: rust/scripts/pin-release.mjs and the
-          # launcher (skills/review-pr/scripts/rust-engine.mjs) read this shape.
-          name="tribunal-${GITHUB_REF_NAME#tribunal-rust-}-${{ matrix.target }}"
-          mkdir -p "$RUNNER_TEMP/$name"
-          cp "$RUNNER_TEMP/bin/${{ matrix.bin }}" "$RUNNER_TEMP/$name/"
-          cd "$RUNNER_TEMP"
-          if [ "${{ matrix.archive }}" = zip ]; then
-            python3 -m zipfile -c "$name.zip" "$name"
-          else
-            tar -czf "$name.tar.gz" "$name"
-          fi
-          asset="$name.${{ matrix.archive }}"
-          sha256sum "$asset" > "$asset.sha256"
-          echo "ASSET=$asset" >> "$GITHUB_ENV"
-      # The musl binary starts here before it ships; the Windows one already
-      # started under Wine in its container.
-      - if: matrix.archive == 'tar.gz'
-        run: '"$RUNNER_TEMP/bin/${{ matrix.bin }}" --version'
+        working-directory: .
+        env:
+          OUT_DIR: ${{ runner.temp }}/linux
+        run: bash plugins/tribunal/rust/scripts/build-linux.sh
       # A signed statement that this workflow, at this commit, built the
       # archive: `gh attestation verify <archive> --repo xmartlabs/agent-skills`
       # checks it before pinning.
       - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
-          subject-path: ${{ runner.temp }}/${{ env.ASSET }}
+          subject-path: ${{ runner.temp }}/linux/*.tar.gz
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: ${{ matrix.target }}
-          path: |
-            ${{ runner.temp }}/${{ env.ASSET }}
-            ${{ runner.temp }}/${{ env.ASSET }}.sha256
+          name: x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/linux/*-x86_64-unknown-linux-musl.tar.gz*
+          if-no-files-found: error
           retention-days: 1
 
   # rust/scripts/build-darwin.sh builds both macOS archives at this commit,
@@ -403,9 +398,82 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # The Windows archive, built and tested on a real Windows runner with the
+  # steps of the `windows` job, which GitHub provides free for a public
+  # repository. A manual run builds the archive without attesting it, to try
+  # the build before a tag; `release` needs `build`, which a manual run skips,
+  # so nothing is published.
+  build-windows:
+    if: >-
+      (startsWith(github.ref, 'refs/tags/tribunal-rust-v') && !github.event.repository.private) ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: windows-2025
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      TARGET: x86_64-pc-windows-msvc
+    steps:
+      # The binary embeds files the runner's git would check out with CRLF.
+      - name: git config
+        working-directory: .
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: tag matches the version and main
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          want="tribunal-rust-v$(sed -n 's/^version = "\(.*\)"/\1/p' crates/tribunal-cli/Cargo.toml | head -1)"
+          if [ "$GITHUB_REF_NAME" != "$want" ]; then
+            echo "the tag $GITHUB_REF_NAME is not the CLI version $want"; exit 1
+          fi
+          git fetch --no-tags -q origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD || { echo "the tag's commit is not on main"; exit 1; }
+      - name: toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add "$TARGET"
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+      - run: cargo clippy --target "$TARGET" --workspace --lib --bins --locked -- -D warnings
+      - run: cargo test --target "$TARGET" --workspace --lib --bins --locked
+      - run: cargo build --release --locked --target "$TARGET" -p tribunal-cli
+      # rust/.cargo/config.toml puts target/ at the repository root.
+      - run: '"../../../target/$TARGET/release/tribunal.exe" --version'
+      - name: package
+        run: |
+          # tribunal-v<version>-<target>, the shape rust/scripts/pin-release.mjs
+          # and the launcher (bin/tribunal-engine) read.
+          ver=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/tribunal-cli/Cargo.toml | head -1)
+          name="tribunal-v$ver-$TARGET"
+          mkdir -p "$RUNNER_TEMP/$name"
+          cp "../../../target/$TARGET/release/tribunal.exe" "$RUNNER_TEMP/$name/"
+          cd "$RUNNER_TEMP"
+          python -m zipfile -c "$name.zip" "$name"
+          sha256sum "$name.zip" > "$name.zip.sha256"
+          echo "ASSET=$name.zip" >> "$GITHUB_ENV"
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: ${{ runner.temp }}/${{ env.ASSET }}
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: x86_64-pc-windows-msvc
+          path: |
+            ${{ runner.temp }}/${{ env.ASSET }}
+            ${{ runner.temp }}/${{ env.ASSET }}.sha256
+          if-no-files-found: error
+          retention-days: 1
+
   release:
-    needs: [build, build-darwin]
-    runs-on: ${{ vars.RELEASE_RUNNER || vars.RUNNER || 'ubuntu-24.04' }}
+    needs: [build, build-darwin, build-windows]
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
@@ -436,8 +504,25 @@ jobs:
 
   # `macos` is skipped only in a private repository without MAC_RUNNER, and
   # that passes; it failing does not.
+  # The Linux release build, exactly as a tag runs it, so a change that
+  # breaks it fails here and not on the tag.
+  linux-release-build:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: musl-tools
+        run: sudo apt-get update -q && sudo apt-get install -y --no-install-recommends musl-tools
+      - name: build
+        working-directory: .
+        env:
+          OUT_DIR: ${{ runner.temp }}/linux
+        run: bash plugins/tribunal/rust/scripts/build-linux.sh
+
   gate:
-    needs: [macos, linux, windows]
+    needs: [macos, linux, windows, linux-release-build]
     if: always() && github.event_name != 'push'
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.RUNNER || 'ubuntu-24.04' }}
     steps:
@@ -445,8 +530,9 @@ jobs:
           MACOS: ${{ needs.macos.result }}
           LINUX: ${{ needs.linux.result }}
           WINDOWS: ${{ needs.windows.result }}
+          LINUX_RELEASE: ${{ needs.linux-release-build.result }}
         working-directory: .
         run: |
-          echo "macos: $MACOS, linux: $LINUX, windows: $WINDOWS"
+          echo "macos: $MACOS, linux: $LINUX, windows: $WINDOWS, linux-release-build: $LINUX_RELEASE"
           { [ "$MACOS" = success ] || [ "$MACOS" = skipped ]; } &&
-            [ "$LINUX" = success ] && [ "$WINDOWS" = success ]
+            [ "$LINUX" = success ] && [ "$WINDOWS" = success ] && [ "$LINUX_RELEASE" = success ]

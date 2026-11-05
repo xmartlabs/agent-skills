@@ -18,7 +18,7 @@
 //
 // Usage:
 //   node rust/scripts/release.mjs             # run the gate, print the verdict
-//   node rust/scripts/release.mjs --record --tag tribunal/v44 --notes-file <path>
+//   node rust/scripts/release.mjs --record --tag tribunal/v115.1.0 --notes-file <path>
 //
 // Exits non-zero if anything in the battery is red. `--record` on a red gate is
 // refused: a RELEASES.md row is a claim that the battery passed.
@@ -44,8 +44,6 @@ import { appendFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmS
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { harnessVersion } from "../../skills/review-pr/scripts/harness-version.mjs";
-import { resolveBinary } from "../../skills/review-pr/scripts/rust-engine.mjs";
 import { HARNESS_DATA, RELEASES_PATH } from "./gate-paths.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -89,7 +87,7 @@ if (record && !notesFileArg) {
       "  The notes cell is what makes a freeze row worth keeping — what changed, what was\n" +
       "  measured, what stayed open. It cannot be defaulted and then fixed later, because\n" +
       "  release.sh commits immediately after this step.\n" +
-      "  Use ./release.sh <N>, which collects it in $EDITOR and passes it here.",
+      "  Use ./release.sh <version>, which collects it in $EDITOR and passes it here.",
   );
   process.exit(2);
 }
@@ -217,7 +215,7 @@ function pinCheck() {
     return fail(
       `the pinned binary ${tag} was built without these changes:\n` +
         changed.map((p) => `  ${p}`).join("\n") +
-        '\n  Release a new tribunal-rust binary and pin it (rust/README.md, "A release").',
+        '\n  Release a new tribunal-rust binary and pin it (rust/README.md, "Building and releasing").',
     );
   }
   // A fresh data directory, so the archive is downloaded and checked against the
@@ -227,7 +225,8 @@ function pinCheck() {
     const env = { ...process.env, TRIBUNAL_DATA_DIR: scratch };
     delete env.TRIBUNAL_BIN;
     delete env.TRIBUNAL_RUST_MANIFEST;
-    const r = resolveBinary({ env });
+    // The launcher users run, so the gate also proves it reads this pin.
+    const r = JSON.parse(execFileSync("bash", [join(CLAUDE, "bin", "tribunal-engine"), "resolve"], { env, encoding: "utf8" }));
     if (!r.ok) return fail(`the pinned binary does not resolve: ${r.error}`);
     const printed = execFileSync(r.bin, ["--version"], { encoding: "utf8" }).trim();
     const want = tag.replace(/^tribunal-rust-v/, "");
@@ -240,7 +239,17 @@ function pinCheck() {
   }
 }
 
-const { id, entries } = harnessVersion();
+// The plugin's harness id, from the binary's `harness-version --manifest`: the
+// id on the first line, then one `<sha>  <path>` line per file.
+const { id, entries } = (() => {
+  const [first, ...rest] = execFileSync("bash", [join(CLAUDE, "bin", "tribunal-engine"), "run", "--", "harness-version", "--manifest"], {
+    env: { ...process.env, TRIBUNAL_PLUGIN_ROOT: CLAUDE },
+    encoding: "utf8",
+  })
+    .trim()
+    .split("\n");
+  return { id: first.trim(), entries: rest.map((l) => ({ path: l.trim().split(/\s+/)[1] })) };
+})();
 // The battery has its own id because the row's central claim is about the
 // battery, and the harness hash never covered it: `pr-harness-4af7ff70ff8e` is
 // the same id `main` carried while `replay-embedded-bash` was red, so "green at
@@ -252,6 +261,7 @@ const battery = (() => {
   const files = [
     ...walk(join(RUST, "crates")).filter((f) => /[/\\]tests[/\\]/.test(f)),
     ...RUST_PATH_REPLAYS.map((f) => join(HERE, f)),
+    join(CLAUDE, "bin", "tribunal-engine"),
     join(HERE, "gate-paths.mjs"),
     join(HERE, "frontier.json"),
     fileURLToPath(import.meta.url),

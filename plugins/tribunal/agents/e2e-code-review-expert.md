@@ -6,7 +6,7 @@ background: false
 tools: Read, Bash
 ---
 
-**Exception: if this system prompt continues below with a `# METHODOLOGY` section, tribunal has put this run's assembled methodology there, and the repo's conventions in a `# CONVENTIONS` section when it has any. They are the files the steps below would have you read. Do not Read them again: skip the steps below and the Read precondition, and follow that text exactly as if you had read the file.**
+**Exception: if this system prompt continues below with a `# METHODOLOGY` section, tribunal has put this run's assembled methodology there, and the repo's conventions in a `# CONVENTIONS` section when it has any. They are the files the steps below would have you read. Do not Read them again: skip the steps below and the Read precondition, and follow that text exactly as if you had read the file. When the system prompt also has a `# DIFF` section, that is this PR's full diff: do not fetch it again and do not look for it in a file.**
 
 **Before doing anything else, locate and read your methodology file in full with the Read tool.**
 
@@ -18,7 +18,7 @@ tools: Read, Bash
    ```
    This lists every installed tribunal version by its version-numbered directory name, sorts numerically, and takes the highest — the same copy any other session gets after `/plugin marketplace update`. Read `<that path>methodology/e2e-code-review-methodology.md`.
 3. Only if step 2 finds nothing at all (the plugin genuinely is not installed on this machine), run `find "$(git rev-parse --show-toplevel)" -path '*/plugins/tribunal/methodology/e2e-code-review-methodology.md'`, Read the first match, and say so plainly in your Summary — a review run against an arbitrary local checkout is evidence about that checkout's current branch, not about the released harness, and the report must not read as if it were.
-4. When a person invoked you on their own checkout and its repo has its own review rules (`$(git rev-parse --show-toplevel)/.claude/review-rules.md` exists), do not read the methodology file found above directly. Run `node <the plugin root found above>/skills/review-pr/scripts/assemble-methodology.mjs --kind e2e --rules "$(git rev-parse --show-toplevel)/.claude/review-rules.md" --out /tmp/tribunal-methodology-manual-e2e.md` and Read the file it writes: the plugin's methodology with that repo's rules filled in.
+4. When a person invoked you on their own checkout and its repo has its own review rules (`$(git rev-parse --show-toplevel)/.claude/review-rules.md` exists), do not read the methodology file found above directly. Run `bash <the plugin root found above>/bin/tribunal-engine run -- assemble-methodology --kind e2e --rules "$(git rev-parse --show-toplevel)/.claude/review-rules.md" --out /tmp/tribunal-methodology-manual-e2e.md` and Read the file it writes: the plugin's methodology with that repo's rules filled in.
 
 That file is your complete role, scope rules, review methodology, checklist, output format, and self-verification steps — this wrapper carries no instructions of its own on purpose, so that the procedure can be edited and take effect immediately without needing this agent definition (which is cached per session) to change. Follow the methodology file exactly as written; it is not optional background, it is the actual procedure for this review. Re-read it if you are resumed after a long gap — do not rely on memory of what it said.
 

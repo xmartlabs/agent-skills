@@ -3,10 +3,17 @@
 //! both; it posts nothing.
 //!
 //!   tribunal review --pr <n> [--repo <owner/name>] [--head-sha <sha>]
-//!     [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>]
+//!     [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>]
 //!     [--context <text>] [--bot-comments] [--model <id>] [--preflight]
-//!     [--max-panels <n>] [--max-agents <n>] [--concurrency <n>]
+//!     [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>]
 //!     [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]
+//!
+//!   tribunal panel --pr <n> --repo <owner/name> --head-sha <sha> --findings <file.json>
+//!     [--thread-before <iso>] [--codex|--no-codex] [--gemini|--no-gemini]
+//!     [--batch-panels|--no-batch-panels] [--model <id>] [--effort <level>] [--out <file>]
+//!
+//! `panel` runs only the refutation panel on the given findings, to measure
+//! the refuters on labelled claims. It writes no metrics row.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -18,18 +25,167 @@ use tribunal_context::fetch_pr_context::default_tmpdir;
 use tribunal_context::operator::OperatorEnv;
 use tribunal_pipeline::context::{RunArgs, Runtime};
 use tribunal_pipeline::post::PostMode;
-use tribunal_pipeline::run::{run_full, DispatchPolicy, FullOutcome};
+use tribunal_pipeline::run::{run_full, DispatchPolicy, FullOutcome, MAX_LENS_SAMPLES};
 
 const DEFAULT_MODEL: &str = "claude-sonnet-5-5";
 
 fn usage() -> ExitCode {
     eprintln!("usage: tribunal --version");
     eprintln!("usage: tribunal cost [--repo <owner/name>] [--since <iso date>] [--json]");
+    eprintln!("usage: tribunal metrics [--repo <owner/name>] [--since <iso date>] [--json]");
+    eprintln!(
+        "usage: tribunal audit [--repo <owner/name>] [--since <iso date>] [--limit <n>] [--candidates] [--json]"
+    );
+    eprintln!("usage: tribunal compare --a <file.json> --b <file.json> [--resamples <n>] [--seed <n>] [--json]");
+    eprintln!("usage: tribunal lost-runs [--recent <days>]");
+    eprintln!("usage: tribunal harness-version [--short|--manifest]");
+    eprintln!("usage: tribunal load-profile [--repo <owner/name>] [--pr <n> | --ref <branch> | --profile <path>] [--rules <path>] [--save <file>] [--save-rules <file>]");
+    eprintln!("usage: tribunal assemble-methodology --kind <reviewer> --out <file> [--rules <path> [--rules-sha256 <hex>]]");
     eprintln!("usage: tribunal override --ts <row ts> --title <finding title prefix> (--direction reinstated|rejected|withdrawn | --severity nit|important) --reason <how it was checked> [--by <login>] [--verified-at <sha>] [--dry-run]");
     eprintln!("usage: tribunal selfcheck [--apply] [--no-battery] [--model <id>] [--effort <level>] [--out <file>]");
     eprintln!("usage: tribunal post --from <run.json> [--verdict approve|request-changes|comment] [--delta|--edit-existing] [--over-own-review] [--over-standing-review] [--model <id>] [--effort <level>]");
-    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--context <text>] [--bot-comments] [--model <id>] [--preflight] [--max-panels <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
+    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>] [--context <text>] [--bot-comments] [--model <id>] [--preflight] [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
+    eprintln!("usage: tribunal panel --pr <n> --repo <owner/name> --head-sha <sha> --findings <file.json> [--thread-before <iso>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--model <id>] [--effort <level>] [--out <file>]");
     ExitCode::from(2)
+}
+
+/// `tribunal panel`'s arguments: the review's own, the findings read and
+/// checked, and where the result goes.
+struct PanelCli {
+    args: RunArgs,
+    policy: DispatchPolicy,
+    findings: Vec<Value>,
+    out: Option<String>,
+}
+
+/// `Err((message, usage))`: `usage` is true for a malformed command line,
+/// false for a findings file that cannot be read or is not findings.
+fn parse_panel(argv: &[String]) -> Result<PanelCli, (String, bool)> {
+    let mut args = RunArgs {
+        review_model: DEFAULT_MODEL.to_owned(),
+        panel_only: true,
+        ..RunArgs::default()
+    };
+    let mut policy = DispatchPolicy::default();
+    let mut out = None;
+    let mut findings_path = String::new();
+    let mut it = argv.iter();
+    let usage_err = |e: String| (e, true);
+    while let Some(a) = it.next() {
+        let mut value = || {
+            it.next()
+                .filter(|v| !v.starts_with("--"))
+                .cloned()
+                .ok_or_else(|| usage_err(format!("{a} needs a value")))
+        };
+        match a.as_str() {
+            "--pr" => args.pr = value()?,
+            "--repo" => args.repo = value()?,
+            "--head-sha" => args.head_sha = value()?,
+            "--findings" => findings_path = value()?,
+            "--thread-before" => args.thread_before = value()?,
+            "--model" => args.review_model = value()?,
+            "--effort" => policy.effort = Some(value()?),
+            "--out" => out = Some(value()?),
+            "--codex" => args.codex = Some(true),
+            "--no-codex" => args.codex = Some(false),
+            "--gemini" => args.gemini = Some(true),
+            "--no-gemini" => args.gemini = Some(false),
+            "--batch-panels" => args.batch_panels = Some(true),
+            "--no-batch-panels" => args.batch_panels = Some(false),
+            other => return Err(usage_err(format!("unknown argument {other}"))),
+        }
+    }
+    if args.pr.is_empty() || !args.pr.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(usage_err("--pr <n> is required".into()));
+    }
+    for (flag, v) in [
+        ("--repo <owner/name>", &args.repo),
+        ("--head-sha <sha>", &args.head_sha),
+        ("--findings <file.json>", &findings_path),
+    ] {
+        if v.is_empty() {
+            return Err(usage_err(format!("{flag} is required")));
+        }
+    }
+    if !args.thread_before.is_empty() && !is_utc_instant(&args.thread_before) {
+        return Err(usage_err(format!(
+            "--thread-before must be an ISO 8601 UTC instant, got {:?}",
+            args.thread_before
+        )));
+    }
+    let text = std::fs::read_to_string(&findings_path).map_err(|e| {
+        (
+            format!("cannot read --findings {findings_path}: {e}"),
+            false,
+        )
+    })?;
+    let findings = tribunal_pipeline::panel_only::parse_findings(&text)
+        .map_err(|e| (format!("{findings_path}: {e}"), false))?;
+    if policy.effort.is_none() {
+        policy.effort = operator_effort();
+    }
+    Ok(PanelCli {
+        args,
+        policy,
+        findings,
+        out,
+    })
+}
+
+/// `tribunal panel`: the refutation panel alone over the given findings at a
+/// pinned commit. Prints one JSON object; writes no metrics row.
+async fn panel_main(argv: &[String]) -> ExitCode {
+    use tribunal_pipeline::panel_only::{panel_only, report};
+    let cli = match parse_panel(argv) {
+        Ok(c) => c,
+        Err((e, show_usage)) => {
+            eprintln!("tribunal: {e}");
+            return if show_usage {
+                usage()
+            } else {
+                ExitCode::FAILURE
+            };
+        }
+    };
+    let rt = runtime();
+    let agent = Progress {
+        inner: match claude_agent() {
+            Ok(a) => a,
+            Err(code) => return code,
+        },
+        started: std::time::Instant::now(),
+    };
+    let mut logs = Vec::new();
+    let run = panel_only(&agent, &rt, &cli.args, &cli.policy, cli.findings, &mut logs).await;
+    for l in &logs {
+        eprintln!("{l}");
+    }
+    let run = match run {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("tribunal: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let out = report(&run, &cli.args, &logs);
+    let t = &out["summary"];
+    eprintln!(
+        "tribunal panel: {} given, {} paneled, {} killed, {} unverified. No metrics row written, nothing posted.",
+        t["given"], t["paneled"], t["killed"], t["unverified"]
+    );
+    let text = format!("{}\n", serde_json::to_string_pretty(&out).expect("JSON"));
+    match cli.out {
+        Some(path) => {
+            if let Err(e) = std::fs::write(&path, text) {
+                eprintln!("tribunal: cannot write {path}: {e}");
+                return ExitCode::FAILURE;
+            }
+            eprintln!("wrote {path}");
+        }
+        None => print!("{text}"),
+    }
+    ExitCode::SUCCESS
 }
 
 struct Cli {
@@ -67,6 +223,15 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
                     .map_err(|_| "--lenses takes a number")?;
                 args.lenses = Some(json!(n));
             }
+            "--lens-samples" => {
+                let n: u32 = value(&mut it, a)?
+                    .parse()
+                    .map_err(|_| "--lens-samples takes a whole number from 1 to 4")?;
+                if !(1..=MAX_LENS_SAMPLES).contains(&n) {
+                    return Err("--lens-samples takes a whole number from 1 to 4".into());
+                }
+                args.lens_samples = Some(n);
+            }
             "--context" => args.context = Some(value(&mut it, a)?),
             "--model" => args.review_model = value(&mut it, a)?,
             "--concurrency" => {
@@ -85,6 +250,15 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
                         policy.max_agents = n.floor();
                     }
                 }
+            }
+            "--prior-verify" => {
+                let n: usize = value(&mut it, a)?
+                    .parse()
+                    .map_err(|_| "--prior-verify takes a whole number")?;
+                if n == 0 {
+                    return Err("--prior-verify takes a whole number of at least 1".into());
+                }
+                policy.prior_verify = n;
             }
             "--post" => args.post = true,
             "--no-post" => args.post = false,
@@ -162,9 +336,16 @@ fn operator_effort() -> Option<String> {
 }
 
 fn plugin_root() -> PathBuf {
-    std::env::var_os("TRIBUNAL_PLUGIN_ROOT")
+    let root = std::env::var_os("TRIBUNAL_PLUGIN_ROOT")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.."))
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.."));
+    // The plugin's paths are joined and normalized on `/` only, so a Windows
+    // root written with `\` and `..` would collapse wrongly; Windows takes `/`.
+    if cfg!(windows) {
+        PathBuf::from(root.to_string_lossy().replace('\\', "/"))
+    } else {
+        root
+    }
 }
 
 /// The agent every subcommand dispatches with. When the `claude` it would
@@ -567,6 +748,268 @@ fn cost_main(argv: &[String]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// The flags `metrics` and `audit` share, plus `--limit` when `limit` is given.
+fn parse_ledger_flags(
+    argv: &[String],
+    mut limit: Option<&mut usize>,
+) -> Result<(tribunal_context::metrics_report::RowFilter, bool), String> {
+    let mut filter = tribunal_context::metrics_report::RowFilter::default();
+    let mut as_json = false;
+    let mut it = argv.iter();
+    while let Some(a) = it.next() {
+        let mut value = || {
+            it.next()
+                .filter(|v| !v.starts_with("--"))
+                .cloned()
+                .ok_or_else(|| format!("{a} needs a value"))
+        };
+        match a.as_str() {
+            "--repo" => filter.repo = Some(value()?),
+            "--since" => filter.since = Some(value()?),
+            "--json" => as_json = true,
+            "--limit" if limit.is_some() => {
+                let n: usize = value()?
+                    .parse()
+                    .ok()
+                    .filter(|n| *n > 0)
+                    .ok_or("--limit takes a whole number of 1 or more")?;
+                if let Some(l) = limit.as_deref_mut() {
+                    *l = n;
+                }
+            }
+            other => return Err(format!("unknown argument {other}")),
+        }
+    }
+    Ok((filter, as_json))
+}
+
+/// The rows of `metrics.jsonl` and how many lines did not parse.
+fn read_ledger() -> Result<(Vec<Value>, usize), ExitCode> {
+    let path = runtime().data_dir.join("metrics.jsonl");
+    match std::fs::read_to_string(&path) {
+        Ok(t) => Ok(tribunal_context::metrics_report::parse_ledger(&t)),
+        Err(e) => {
+            eprintln!("tribunal: cannot read {}: {e}", path.display());
+            Err(ExitCode::FAILURE)
+        }
+    }
+}
+
+/// `tribunal metrics`: the refutation panel's scorecard from `metrics.jsonl`.
+/// Reads only; dispatches nothing.
+fn metrics_main(argv: &[String]) -> ExitCode {
+    let (filter, as_json) = match parse_ledger_flags(argv, None) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("tribunal: {e}");
+            return usage();
+        }
+    };
+    let (rows, unreadable) = match read_ledger() {
+        Ok(r) => r,
+        Err(code) => return code,
+    };
+    use tribunal_context::metrics_report::{metrics_report, render};
+    let report = metrics_report(&rows, unreadable, &filter);
+    if as_json {
+        println!("{report}");
+    } else {
+        print!("{}", render(&report));
+    }
+    ExitCode::SUCCESS
+}
+
+/// `tribunal compare`: whether arm B of an A/B run did better than arm A, or
+/// the difference is inside the run-to-run noise. Reads two observation
+/// files and writes nothing.
+fn compare_main(argv: &[String]) -> ExitCode {
+    use tribunal_context::compare::{compare, render, CompareArgs};
+    let (mut a, mut b, mut as_json) = (None, None, false);
+    let mut args = CompareArgs::default();
+    let mut it = argv.iter();
+    while let Some(flag) = it.next() {
+        match flag.as_str() {
+            "--a" => a = it.next().cloned(),
+            "--b" => b = it.next().cloned(),
+            "--resamples" => match it.next().and_then(|v| v.parse().ok()) {
+                Some(n) => args.resamples = n,
+                None => {
+                    eprintln!("tribunal: --resamples takes a whole number");
+                    return usage();
+                }
+            },
+            "--seed" => match it.next().and_then(|v| v.parse().ok()) {
+                Some(n) => args.seed = n,
+                None => {
+                    eprintln!("tribunal: --seed takes a whole number");
+                    return usage();
+                }
+            },
+            "--json" => as_json = true,
+            other => {
+                eprintln!("tribunal: unknown argument {other}");
+                return usage();
+            }
+        }
+    }
+    let (Some(a), Some(b)) = (a, b) else {
+        eprintln!("tribunal: compare needs --a and --b");
+        return usage();
+    };
+    let read = |path: &str| -> Result<Value, String> {
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
+        serde_json::from_str(&text).map_err(|e| format!("{path}: not JSON ({e})"))
+    };
+    let report = read(&a).and_then(|va| read(&b).and_then(|vb| compare(&va, &vb, &args)));
+    match report {
+        Ok(report) if as_json => println!("{report}"),
+        Ok(report) => print!("{}", render(&report)),
+        Err(e) => {
+            eprintln!("tribunal: {e}");
+            return ExitCode::FAILURE;
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+/// `tribunal audit`: what happened to posted findings after the review, from
+/// `metrics.jsonl` and `gh`. Reads only; posts and writes nothing.
+async fn audit_main(argv: &[String]) -> ExitCode {
+    use tribunal_context::outcome_audit::{audit, render, AuditArgs, DEFAULT_LIMIT};
+    let mut limit = DEFAULT_LIMIT;
+    let candidates = argv.iter().any(|a| a == "--candidates");
+    let rest: Vec<String> = argv
+        .iter()
+        .filter(|a| *a != "--candidates")
+        .cloned()
+        .collect();
+    let (filter, as_json) = match parse_ledger_flags(&rest, Some(&mut limit)) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("tribunal: {e}");
+            return usage();
+        }
+    };
+    let (rows, unreadable) = match read_ledger() {
+        Ok(r) => r,
+        Err(code) => return code,
+    };
+    let rt = runtime();
+    let report = audit(
+        &rt.tools,
+        &rows,
+        unreadable,
+        &AuditArgs {
+            filter,
+            limit,
+            candidates,
+        },
+    )
+    .await;
+    if as_json {
+        println!("{report}");
+    } else {
+        print!("{}", render(&report));
+    }
+    ExitCode::SUCCESS
+}
+
+/// `tribunal lost-runs`: the runs that started and never wrote their metrics
+/// row, from `inflight-runs.jsonl`. `--recent <days>` prints one warning line
+/// when the persist step looks broken, and nothing otherwise.
+fn lost_runs_main(argv: &[String]) -> ExitCode {
+    let mut recent = None;
+    let mut it = argv.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            // `Number(v) > 0 ? Number(v) : 7`, as the script read it.
+            "--recent" => {
+                let days = it
+                    .next()
+                    .and_then(|v| v.trim().parse::<f64>().ok())
+                    .filter(|d| *d > 0.0);
+                recent = Some(days.unwrap_or(7.0));
+            }
+            other => {
+                eprintln!("tribunal: unknown argument {other}");
+                return usage();
+            }
+        }
+    }
+    let path = runtime().data_dir.join("inflight-runs.jsonl");
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if recent.is_none() {
+                println!("no {}: nothing to check", path.display());
+            }
+            return ExitCode::SUCCESS;
+        }
+        Err(e) => {
+            eprintln!("tribunal: cannot read {}: {e}", path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    let lines: Vec<&str> = text.split('\n').collect();
+    let now_ms = tribunal_context::inflight::now_epoch() as f64 * 1000.0;
+    use tribunal_context::lost_runs::{recent_warning, render};
+    match recent {
+        Some(days) => {
+            if let Some(w) = recent_warning(&lines, now_ms, days) {
+                println!("{w}");
+            }
+        }
+        None => print!("{}", render(&lines, now_ms)),
+    }
+    ExitCode::SUCCESS
+}
+
+/// `tribunal harness-version`: the content hash of the plugin's behavioural
+/// surface that every metrics row records.
+fn harness_version_main(argv: &[String]) -> ExitCode {
+    if let Some(other) = argv
+        .iter()
+        .find(|a| !matches!(a.as_str(), "--short" | "--manifest"))
+    {
+        eprintln!("tribunal: unknown argument {other}");
+        return usage();
+    }
+    let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+    let root = plugin_root();
+    match tribunal_context::harness_version::run(&args, &root.to_string_lossy()) {
+        Ok(out) => {
+            print!("{out}");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("tribunal: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn emit(out: tribunal_context::operator::CliOutput) -> ExitCode {
+    print!("{}", out.stdout);
+    eprint!("{}", out.stderr);
+    ExitCode::from(u8::try_from(out.code).unwrap_or(1))
+}
+
+/// `tribunal load-profile`: resolves and validates a review profile and its
+/// rules file, as a review loads them, and prints the result as one JSON line.
+async fn load_profile_main(argv: &[String]) -> ExitCode {
+    let rt = runtime();
+    emit(tribunal_context::load_profile::main(&rt.tools, &rt.operator, argv).await)
+}
+
+/// `tribunal assemble-methodology`: fills a methodology template's slots from
+/// a rules file and writes the result to `--out`.
+fn assemble_methodology_main(argv: &[String]) -> ExitCode {
+    emit(tribunal_context::assemble_methodology::main(
+        &plugin_root().to_string_lossy(),
+        argv,
+    ))
+}
+
 /// `tribunal override`: writes a person's verdict on one finding into its
 /// ledger row, under the ledger lock a run takes to append.
 fn override_main(argv: &[String]) -> ExitCode {
@@ -660,9 +1103,17 @@ async fn main() -> ExitCode {
     match argv.first().map(String::as_str) {
         Some("review") => {}
         Some("post") => return post_main(&argv[1..]).await,
+        Some("panel") => return panel_main(&argv[1..]).await,
         Some("selfcheck") => return selfcheck_main(&argv[1..]).await,
         Some("cost") => return cost_main(&argv[1..]),
+        Some("metrics") => return metrics_main(&argv[1..]),
+        Some("audit") => return audit_main(&argv[1..]).await,
+        Some("compare") => return compare_main(&argv[1..]),
         Some("override") => return override_main(&argv[1..]),
+        Some("lost-runs") => return lost_runs_main(&argv[1..]),
+        Some("harness-version") => return harness_version_main(&argv[1..]),
+        Some("load-profile") => return load_profile_main(&argv[1..]).await,
+        Some("assemble-methodology") => return assemble_methodology_main(&argv[1..]),
         Some("--version" | "version") => {
             println!(
                 "tribunal {} ({})",
@@ -749,6 +1200,24 @@ mod tests {
         assert!(!is_utc_instant("2026-10-14T18:02:11.Z"));
         assert!(!is_utc_instant("2026-10-14 18:02:11Z"));
         assert!(!is_utc_instant("2026-10-14T18:02:11+00:00"));
+    }
+
+    #[test]
+    fn lens_samples_takes_a_whole_number_from_one_to_four() {
+        let parse_with = |v: &str| {
+            let a: Vec<String> = ["--pr", "12", "--lens-samples", v]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            parse(&a)
+        };
+        assert_eq!(parse_with("3").unwrap().args.lens_samples, Some(3));
+        assert_eq!(parse_with("1").unwrap().args.lens_samples, Some(1));
+        for bad in ["0", "5", "-1", "2.5", "many"] {
+            assert!(parse_with(bad).is_err(), "{bad} must be refused");
+        }
+        let none: Vec<String> = ["--pr", "12"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(parse(&none).unwrap().args.lens_samples, None);
     }
 
     #[test]

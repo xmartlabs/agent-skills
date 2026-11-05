@@ -1294,15 +1294,15 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="200" y="108" class="t-external" font-size="7" text-anchor="middle">with --engine rust</text>
         </g>
 
-        <g id="node-launcher" data-node-id="launcher" data-node-label="rust-engine.mjs" tabindex="0" role="button" aria-label="Focus rust-engine.mjs, DETERMINISTIC · node script, Launch" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · node script" data-node-tag="finds the binary for this machine" data-node-context="Launch">
-          <title>rust-engine.mjs · DETERMINISTIC · node script · Launch · finds the binary for this machine</title>
+        <g id="node-launcher" data-node-id="launcher" data-node-label="tribunal-engine" tabindex="0" role="button" aria-label="Focus tribunal-engine, DETERMINISTIC · bash script, Launch" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · bash script" data-node-tag="finds the binary for this machine" data-node-context="Launch">
+          <title>tribunal-engine · DETERMINISTIC · bash script · Launch · finds the binary for this machine</title>
           <rect x="380" y="40" width="280" height="76" rx="8" class="c-mask"/>
           <rect x="380" y="40" width="280" height="76" rx="8" class="c-backend" data-animate="node" style="--step: 1; --flow-node-name: archify-relay-node-7;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(386 46) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" x="520" y="76" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">rust-engine.mjs</text>
-        <text x="520" y="92" class="t-muted" font-size="9" text-anchor="middle">DETERMINISTIC · node script</text>
+          <text data-node-label="" x="520" y="76" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">tribunal-engine</text>
+        <text x="520" y="92" class="t-muted" font-size="9" text-anchor="middle">DETERMINISTIC · bash script</text>
         <text x="520" y="108" class="t-backend" font-size="7" text-anchor="middle">finds the binary for this machine</text>
         </g>
 

@@ -18,7 +18,7 @@ that live in that repo, not in the plugin:
 | [`review-profile.python.json`](review-profile.python.json) | `.claude/review-profile.json` in a Python repo (the Rust engine only) |
 | [`review-rules.md`](review-rules.md) | `.claude/review-rules.md` |
 | [`review-harness.json`](review-harness.json) | `~/.claude/review-harness.json`, on your machine only |
-| [`check.sh`](check.sh) | nothing, run it where it is (needs `node` and `python3`) |
+| [`check.sh`](check.sh) | nothing, run it where it is (needs `python3` and the tribunal binary, which it downloads) |
 | [`convention-manifest.schema.json`](convention-manifest.schema.json) | nothing: the JSON Schema of a `conventionSources` manifest, for editors, generators and the docs repo's CI |
 
 ## Steps
@@ -61,8 +61,9 @@ that live in that repo, not in the plugin:
    Without a clone, the installed plugin has the same script at
    `~/.claude/plugins/cache/xmartlabs/tribunal/<version>/templates/check.sh`.
    It runs tribunal's real loader and methodology assembler, and fails on a
-   profile tribunal would refuse or on a rules block that names no slot. It reads
-   nothing from the network, and needs `node` and `python3`.
+   profile tribunal would refuse or on a rules block that names no slot. It needs
+   `python3` and the tribunal binary, which it downloads on first use; past that
+   it reads nothing from the network.
 5. **Commit both files to the repo's base branch.** Tribunal reads them at the
    PR's base branch, so a PR cannot change the rules it is reviewed under. If
    the base branch predates the files, as an older release branch does, they
@@ -98,7 +99,4 @@ methodology template in tribunal, not a profile. The profile loader refuses
 any `reviewer` other than `backend`, `frontend`, `e2e` and `python`, so this
 fails loudly instead of borrowing another stack's reviewer.
 
-The `python` kind is read by the Rust engine only. The Workflow fallback
-refuses `reviewer: "python"`, and `templates/check.sh`, which runs the
-Workflow's loader, refuses a Python profile too. Skip step 4 for it and rely
-on the `--preflight` run of step 7, which uses the Rust loader.
+`templates/check.sh` checks a Python profile like the others.

@@ -125,6 +125,7 @@ pub struct PriorCheck {
     pub genuine: Vec<Value>,
     pub heuristic: Vec<Value>,
     pub to_verify: Vec<Value>,
+    pub ceiling: usize,
 }
 
 /// From `classifyPriorFindings` to the two ceiling logs.
@@ -136,6 +137,7 @@ pub fn prior_check(
     prior_review: Option<&Value>,
     current: &[Value],
     import_adjacency: &Value,
+    ceiling: usize,
     logs: &mut Vec<String>,
 ) -> Result<PriorCheck, String> {
     let empty = json!([]);
@@ -161,13 +163,13 @@ pub fn prior_check(
         .collect();
     let to_verify: Vec<Value> = genuine
         .iter()
-        .take(PRIOR_VERIFY_CEILING)
+        .take(ceiling)
         .chain(heuristic.iter().take(IMPORT_ESCALATION_CEILING))
         .cloned()
         .collect();
-    if genuine.len() > PRIOR_VERIFY_CEILING {
+    if genuine.len() > ceiling {
         logs.push(format!(
-            "Prior-finding verification capped at {PRIOR_VERIFY_CEILING} of {} — the rest are reported as unverified, not as fixed.",
+            "Prior-finding verification capped at {ceiling} of {} — the rest are reported as unverified, not as fixed.",
             genuine.len()
         ));
     }
@@ -182,6 +184,7 @@ pub fn prior_check(
         genuine,
         heuristic,
         to_verify,
+        ceiling,
     })
 }
 
@@ -250,8 +253,17 @@ pub fn prior_re_examined(
     logs: &mut Vec<String>,
 ) -> Vec<Value> {
     let mut out: Vec<Value> = verified.to_vec();
-    out.extend(check.genuine.iter().skip(PRIOR_VERIFY_CEILING).map(|p| {
-        spread_with(p, &[("verification", cannot_tell(&format!("not verified — this run's prior-finding verification ceiling ({PRIOR_VERIFY_CEILING}) was reached")))])
+    out.extend(check.genuine.iter().skip(check.ceiling).map(|p| {
+        spread_with(
+            p,
+            &[(
+                "verification",
+                cannot_tell(&format!(
+                    "not verified — this run's prior-finding verification ceiling ({}) was reached",
+                    check.ceiling
+                )),
+            )],
+        )
     }));
     out.extend(check.heuristic.iter().skip(IMPORT_ESCALATION_CEILING).map(|p| {
         spread_with(p, &[("verification", cannot_tell(&format!("not verified — this run's import-heuristic escalation ceiling ({IMPORT_ESCALATION_CEILING}) was reached")))])

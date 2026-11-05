@@ -1,23 +1,22 @@
 # Metrics — canonical record schema and measurement modes
 
-Read this file when: persisting the measurement record at the end of Step 4, or
-running `/tribunal:review-pr --metrics` / `--audit`. Nothing here is needed during the
-review itself.
+Read this file when: reading a metrics row, or explaining what `tribunal metrics` /
+`tribunal audit` count. Nothing here is needed during the review itself.
 
-> **Since v101 only the Workflow and the Rust binary write rows.** The binary's
-> rows carry `engine: "rust"`, and it is the default engine; a reader comparing
-> engines filters on that field, since both rows say `mode: "workflow"`. The
-> in-context path was removed in v101. Everything below that describes "in-context rows" or "both paths" is kept
-> for reading the rows that path wrote before v101 (`reviewMode` and the null
-> fields it documents tell them apart); no new row has that shape.
+> **Since v115 only the Rust binary writes rows**, with `engine: "rust"`. The
+> Workflow wrote rows until v114 (no `engine` field) and the in-context path until
+> v101. Everything below that describes Workflow rows, "in-context rows" or "both
+> paths", and the scripts and `lib/` files it names, is kept for reading the rows
+> those paths wrote; the scripts were removed from the plugin in v115. A reader
+> comparing engines filters on `engine`, since Workflow and Rust rows both say
+> `mode: "workflow"`.
 
-> **Single source of truth.** This file IS the spec for the metrics record.
-> `${CLAUDE_PLUGIN_ROOT}/workflows/tribunal.js` builds the same shape (its comment points
-> here); the in-context path builds it from this file. Both paths append to one
-> log — `metrics.jsonl` in `${TRIBUNAL_DATA_DIR:-~/.claude/tribunal-data}` — and the log is only
-> aggregatable if they agree. They diverged once (the skill said "build the
-> same shape" without saying what the shape was), and every `jq` over the mixed
-> log silently read `null` on half the rows.
+> **Single source of truth.** This file IS the spec for the metrics record, and
+> the binary writes rows of this shape to `metrics.jsonl` in
+> `${TRIBUNAL_DATA_DIR:-~/.claude/tribunal-data}`. The log is only aggregatable
+> if every writer agrees: the Workflow and the in-context path once diverged
+> (the skill said "build the same shape" without saying what the shape was),
+> and every `jq` over the mixed log silently read `null` on half the rows.
 
 ## The canonical record — emit exactly this shape
 
@@ -163,7 +162,7 @@ All required, never omitted. Rationale for each is in
 | `droppedPrePanelItems` | v81 on. `[{title, file}]` for each candidate the pre-panel gate dropped as out of the diff, `[{title, file, severity}]` from 2026-10-21; `droppedPrePanel` stays the count. Since 2026-10-21 a candidate outside the diff is first re-anchored onto a changed file its `verifiedBy` or a `<dependents>` entry names (`findings[].reanchored`), so only one tied to nothing lands here. **Workflow only.** |
 | `inThreadDecisions` | v81 on. The decisions harvested from the PR's thread, `[{category, summary, source, files}]`, exactly as the PRE_DECIDED gate checked citations against them. `eval/replay-gates.mjs` needs them to reproduce a `citation-does-not-cover-finding` discard. |
 | `findings[].possiblyPreDecided` | v81 on. `{voteSource, decisionSource, summary, files}` when a vote the tally set aside as `citation-does-not-cover-finding` matched a decision whose files, like the finding's, are all in this PR (BE #2167-B4, 2026-10-18). `survived` stays true, because the panel kept it, but the finding is reported under "Pre-decided" as POSSIBLY PRE-DECIDED and is not counted toward the verdict. `null` otherwise. |
-| `findings[].placement` | v91 on. `{placement, intendedBy, proposedSeverity}` from placeSurvivor for a finding the panel kept, `null` for one it killed. `placement` is `"pre-existing"` (a strict majority of the v91 votes said `introducedByPr: "no"` and the diff does not add the finding's line), `"intended"` (a majority quoted a conventions rule, kept in `intendedBy`), or `null`. A placed finding keeps `survived: true`, is reported in its own section and is not counted toward the verdict. `proposedSeverity` is a majority's lower severity, recorded and never applied. Only votes that filled `introducedByPr` count, and Codex never does, so on the Workflow a Claude-plus-Codex panel recorded one Claude vote's proposal as the panel's. Rust rows from the release after `tribunal-rust-v0.1.4` record it only with two or more such votes. Absent on earlier rows. |
+| `findings[].placement` | v91 on. `{placement, intendedBy, proposedSeverity}` from placeSurvivor for a finding the panel kept, `null` for one it killed. `placement` is `"pre-existing"` (a strict majority of the v91 votes said `introducedByPr: "no"` and the diff does not add the finding's line), `"intended"` (a majority quoted a conventions rule, kept in `intendedBy`), or `null`. A placed finding keeps `survived: true`, is reported in its own section and is not counted toward the verdict. `proposedSeverity` is a majority's lower severity, recorded and never applied. Only votes that filled `introducedByPr` count, and Codex never does, so on the Workflow a Claude-plus-Codex panel recorded one Claude vote's proposal as the panel's. Rust rows from the release after `tribunal-rust-v0.1.4` record it only with two or more such votes, or when the one judging vote is the whole panel (a finding with a single Claude vote and no external head; Rust rows from the release after `tribunal-rust-v0.1.7`). Absent on earlier rows. |
 | `placedAside` | v91 on. How many kept findings placeSurvivor moved out of the verdict. Absent on earlier rows. |
 | `persistRelayFirstModel` | `"haiku"` or `"sonnet"`: the model the first persist relay ran on. The workflow picks it from the total bytes of the heredoc bodies the relay has to copy, sonnet above `PERSIST_HAIKU_MAX_BYTES` (32,000 since v77; 16,000 in v76). Read it with `persistRelayRetries` to see whether the threshold is in the right place: retries on `"haiku"` rows near the threshold say it is too high. Absent before v76 and again from v81, where every part is written on haiku first. **Workflow only.** |
 | `reportVerdictCorrected` | `null` when the report's "Verdict suggestion" line already named the row's `verdict`. Otherwise `{from, to, reason}`: the workflow rewrote the line to `to` (the row's `verdict`), `from` is what the report had said (`null` when unreadable or missing), and `reason` is `"mismatch"`, `"unreadable"` (no single verdict on the line, such as the unfilled template), `"multiple"` or `"missing"`. A non-null value fails the self-audit (`report-verdict-corrected`), because the prose around the line was written for the other verdict. Since v79 the verdict is decided before the report is written and printed into its template; this field measures how often the writer still disagrees. Absent before v79. **Workflow only.** |
@@ -171,6 +170,7 @@ All required, never omitted. Rationale for each is in
 | `lensGroups` | How many file partitions the lenses were split across (`1` = unpartitioned). |
 | `lensYield` | Array of `{ lens, dispatches, files, candidates, survivedToReport, crashed, notReached }`, **one entry per planned lens including the ones that produced nothing** — that inclusion is the field's whole reason to exist. `lensCount: 2` with `findings: 0` cannot distinguish a lens that looked and found nothing from a lens that never answered, and the only way to tell used to be reopening 250 KB of transcripts. `crashed` is a COUNT of dispatches whose result was null (agent died/skipped), never the same as returning an empty `findings` array. `files` is `null` on an unpartitioned run (every lens sees the whole diff) and a file count when scoped — `0` means an empty scope, which is a real claim. Entries are grouped by lens LABEL, so a focus dispatched twice (when `lensCount` exceeds the focus list) is one entry with `dispatches: 2` rather than two entries each claiming the other's candidates. **`survivedToReport` is a per-lens attribution, not a total**: a merged finding credits every lens in its `mergedFrom` so a cluster does not zero its contributors, which means the column can sum to MORE than `findings.length` — comparing the two is a category error. Findings whose `lens` is not in the plan (`bot-comments`, carried-forward) credit nobody and create no entry. Computed by the `LENS-YIELD` marked region, guarded by `eval/replay-lens-yield.mjs`. **In-context: `null`.** |
 | `lensCost` | Field added 2026-10-30, Rust engine only. Array of `{ lens, why, overBudget, costUsd, toolUses, turns, outputTokens }`, one entry per lens dispatch in plan order. `lens` is the focus key (`unknown` when the focus is not one of the profile's sentences). `why` is `forced` when a `riskPaths` rule the PR touches forces that focus, else `default`. `overBudget` is `true` when the lens sits past the size-based `lensBudget`, so it exists only because forced foci needed more lenses (never on a `--lenses` run). `costUsd` follows `agentCost.costUsd`. Join it with `lensYield` by `lens` for cost per surviving finding, as `tribunal cost` does. A Workflow row never has it. |
+| `lensSamples` | Field added 2026-11-03, Rust engine only. How many independent samples each planned lens got: the run's `--lens-samples` (1 to 4), or `1` when the flag was not passed. An integer, always written from that version on, right after `lensCountOverride`. Older rows have no key, Workflow rows included, and a reader must treat a missing key as unknown; an older Rust row from a `--lens-samples` run can only be recognized by each focus repeating in `lensPlan`. `lensCount` and `lensPlan` count every dispatch, so a run with `lensSamples: 3` over 2 planned lenses has `lensCount: 6`. A row with `lensSamples` above 1 is one arm of an experiment, like a row with `lensCountOverride`: never fold it into an aggregate with normal runs. The posted footer prints it after the review mode (`1 lens sample`, `3 lens samples`). |
 | `stageSeconds` | Field added 2026-10-31, Rust engine only. Optional object of wall-clock seconds per stage, rounded to a tenth: `{ context, lenses, dedup, panel, critic, synthesize }`. `context` covers preflight and context building, `lenses` the lens dispatches plus candidate collection, `dedup` the dedup call, `critic` the completeness critic (0 when it did not run), `panel` the rest of the verification phase after dedup (the grounded typecheck, the external-head setup and the refutation panel, without the critic), and `synthesize` the report. There is no `post` key: the row is written before the post phase, which builds its footer from the row, so post time cannot be in it. The stages run one after another. Their sum is not `wallClockSeconds`: `context` starts before the `started` marker that `wallClockSeconds` counts from (profile load and the PR fetch), so the sum can exceed it (75.4 s against 70 s on the first real row), and teardown falls outside every stage. As a rule of thumb, `wallClockSeconds` is the sum minus `context`, plus about a second of teardown and gaps between stages (the difference was between -0.1 and 1.3 s on 16 runs of two PRs, with and without the critic). Compare stages with each other, and use the sum when two runs must be compared end to end. A Workflow row never has it, and a reader must treat a missing key as unknown. |
 | `groundedChecker` | Rust engine only, optional. What the grounded typecheck was: `"tsc"`, `"mypy"` or `"pyright"` when that checker ran, the marker that says why none did (`NO_TSCONFIG`, `PY_NO_CONFIG`, `DEGRADED_PY_NOT_INSTALLED`, `DEGRADED_PY_TIMEOUT`, `DEGRADED_PY_CHECKER_FAILED`, `DEGRADED_WRONG_REPO`, `DEGRADED_SCHEMA_DRIFT` and the other `DEGRADED_*` markers), or `null` when the review had no typecheck to run (no panel candidate eligible for it, or no head commit). `groundedChecked` alone cannot tell a missing `mypy` from a repo with no configuration. A Workflow row never has it, and a reader must treat a missing key as unknown. |
 | `churn` | `additions + deletions`. Half of the lens-budget decision; without it `lensCount` is uninterpretable. |
@@ -208,73 +208,160 @@ signal than it was before the latch existed. Report the two separately.
 
 ## Appending the record
 
-**Workflow mode writes its own row** (`persist-metrics`, last step of the
-Synthesize phase) so a run cannot end without leaving evidence — that is exactly
-what happened to PR #1911 when this was the orchestrator's job. Step 4 only
-*updates* that row if it posts.
+The binary writes its own row before it returns, so a run cannot end without
+leaving evidence; that is what happened to PR #1911 when this was the
+orchestrator's job. Its post step only *updates* that row when it posts.
+Append-only: never rewrite the file by hand. `tribunal override` is the one
+other writer, and it takes the same lock.
 
-In-context mode still appends:
+## Measurement modes: whether the mechanisms earn their cost
 
-```bash
-TS=$(date -u +%FT%TZ)
-# metrics is one JSON object per review; write it as a single compact line (jsonl)
-jq -c --arg ts "$TS" '.ts=$ts' <<'EOF' >> "${TRIBUNAL_DATA_DIR:-$HOME/.claude/tribunal-data}/metrics.jsonl"
-<the metrics JSON, ts will be overwritten by jq>
-EOF
-```
-
-Append-only; never rewrite the file except for the Step 4 `posted` update on a
-row this same run wrote. This is what makes the measurement modes below work —
-without it, there's no data to evaluate whether decorrelation / weighting / the
-debate are earning their cost.
-
-## Measurement modes — evaluate whether the mechanisms earn their cost
-
-Two read-only sub-modes that **review nothing** — they turn the accumulated
+Two read-only modes that **review nothing**: they turn the accumulated
 `metrics.jsonl` into evidence for tuning `T_KILL`/`DELTA`, keeping or dropping
-the Codex slot, and keeping or dropping the debate. Both stop after printing.
+the Codex slot, and keeping or dropping the debate. Each is a subcommand of
+the binary, so the numbers come out the same on every run and cost no tokens:
 
-**`/tribunal:review-pr --metrics`** — aggregate scorecard over the whole log:
+- `/tribunal:review-pr --metrics` runs `tribunal-engine run -- metrics [--repo <owner/name>] [--since <iso date>] [--json]`.
+- `/tribunal:review-pr --audit` runs `tribunal-engine run -- audit [--repo <owner/name>] [--since <iso date>] [--limit <n>] [--json]`.
 
-- refutation kill rate (findings killed / findings paneled);
-- % of candidates that reached a panel (vs dropped by the early gate);
-- **debate fire rate** and **flip rate** (of debates fired, how many changed the verdict);
-- cross-model disagreement rate — external vote vs Claude majority, reported **per external family** (Codex-vs-Claude and, on high-risk findings, Gemini-vs-Claude and Codex-vs-Gemini) so each family's contribution is visible separately. Compute it over findings where `hadExternalVoter` is true — a panel whose external head timed out never produced a cross-model comparison, and counting it as agreement would understate disagreement;
-- **panel degradation rate** — findings with a non-empty `failedSlots`, and findings marked `unverified` (no head voted at all). A rising rate means the decorrelation the design pays for is not actually being delivered, and it invalidates the disagreement rate above before it invalidates anything else;
-- **panel degradation by cause** — break `failedSlotsDetail` down by `reason` (`crashed` / `timeout` / `error` / `quota` / `auth` / `refused` / `unparseable`). A rate dominated by `unparseable` means the verdict classifier has drifted from what the heads actually emit — run `node eval/replay-verdicts.mjs` before believing any other number in this report. A degradation rate dominated by `timeout` says the retry-once-then-sticky-route logic is undersized (worth revisiting the retry/health-flag design); dominated by `error` points at a broken credential, not a design gap;
-- **refutation rate by `killReason`** — once there's enough corpus volume, break the refutation kill rate down by category (`out-of-scope` / `pre-existing` / `not-triggered` / `incorrect-premise` / `style-not-bug` / `other`) instead of reading only the aggregate. This is what would eventually justify a per-category `T_KILL` instead of one global threshold — not implemented yet, this is the data collection step;
-- `refuteFraction` distribution around `T_KILL` (are decisions clustered at the threshold?).
+Show the output as printed. The rest of this section defines what each
+figure counts.
 
-**Before any of the above: split the log by `schemaVersion` and drop rows with a non-null `rerunOf`.** Report both counts (`N rows aggregated, M legacy skipped, K re-runs excluded`). Averaging a v2 row against a legacy row, or counting one commit four times, produces a confident number that means nothing — which is the failure this instrumentation exists to prevent.
+**Row selection, both modes.** Before anything is counted, rows with no
+`schemaVersion` (the legacy log) and rows with a non-null `rerunOf` are left
+out, and the first line says how many (`N rows aggregated, M legacy skipped, K
+re-runs excluded`). A row with no `rerunOf` key at all counts as a first run,
+and a note says how many there were. Averaging a v2 row against a legacy row,
+or counting one commit four times, produces a confident number that means
+nothing, which is the failure this instrumentation exists to prevent. The
+remaining rows are grouped by engine (`rust` for `engine: "rust"`,
+`in-context` for `mode: "in-context"`, `workflow` for the rest), by harness
+era and by `schemaVersion`, and each group is reported on its own. Two groups
+are never averaged together. `--repo` and `--since` (compared with `ts` as
+text) narrow the rows first.
 
-Read the file with `jq` and print the summary; do not dispatch any review agents.
+**Harness era.** Since v91 a `REFUTED` vote has to quote the code that
+contradicts the finding, and kill rates fell by an order of magnitude, so a
+kill rate means something only within one era. A row is `v91+` or `pre-v91`
+by its `pluginVersion` when it has one (only Rust rows do). Otherwise its
+votes decide: a vote with a `contradiction` or `quoteFound` key makes it
+`v91+`, and votes without either make it `pre-v91`. A row with neither falls
+back to its `ts`, against the earliest row in the ledger that is `v91+` by
+its own fields; a note says how many rows were placed that way, and with no
+such row they count as `pre-v91`. On the maintainers' ledger the votes and
+the dates agree on every row.
 
-**`/tribunal:review-pr --audit`** — ground-truth proxies from later PR state (closes the loop):
+**Missing fields.** Each figure is computed over the items that carry its
+field. When the field is missing on more than half of them, the group prints a
+note saying how many carry it, and when none do, the figure reads "not
+recorded" instead of 0.
 
-For each logged PR, look at what happened *after* the review:
+**`--metrics`**, per group:
 
-- PR merged / closed? (`gh pr view <n> --json state,mergedAt`)
-- A posted-blocking finding **fixed in commits after the review** touching that file/line → **true-positive proxy**;
-- Review **dismissed**, or PR merged without touching the finding → **false-positive proxy**.
-- Cross `debate.outcome` against fix-outcome: **do debate *flips* correlate with findings that were later fixed?** That is the metric that decides whether the debate stays or gets turned off.
+- **Refutation kill rate:** paneled findings (`panelRan: true`) with
+  `survived: false`, over paneled findings.
+- **Candidates reaching a panel:** the sum of the row-level `paneled` over the
+  sum of `candidates`, over the rows that carry both.
+- **Debate fire rate and flip rate:** paneled findings whose `debate.fired` is
+  true, over paneled findings with a `debate` object; flips are the fired
+  debates with `outcome: "flipped"`, over the fired ones. The other outcomes
+  are listed, including the in-context `preempted-by-fact` (never fired).
+- **Cross-model disagreement per external family:** computed only over
+  paneled findings with `hadExternalVoter: true`. A panel whose external head
+  timed out never produced a comparison, and counting it as agreement would
+  understate disagreement. Each side's verdict is the majority of that
+  family's votes in `votes` (`REFUTED` against `NOT_REFUTED`); a tie or no vote
+  makes the pair not comparable, and the output counts those apart. Pairs:
+  Codex against the Claude majority, Gemini against the Claude majority, and
+  Codex against Gemini. The row-level `crossModelDisagreement` booleans are not
+  used: they say only whether any finding of the run disagreed.
+- **Panel degradation:** paneled findings with a non-empty `failedSlots`, and
+  paneled findings with `unverified: true` (no head voted). A rising rate
+  means the decorrelation the design pays for is not being delivered, and it
+  invalidates the disagreement rate above before anything else.
+- **Panel degradation by cause:** every `failedSlotsDetail` entry of a paneled
+  finding, counted by `reason` and, within it, by `source`. The reasons are
+  printed as found (`crashed`, `timeout`, `error`, `quota`, `auth`, `refused`,
+  `unparseable`, and on newer rows `confined` and `harness`). A rate dominated
+  by `unparseable` means the verdict classifier has drifted from what the
+  heads emit; check that before believing any other number. One dominated by
+  `timeout` says the retry-once-then-sticky-route logic is undersized; one
+  dominated by `error` points at a broken credential, not a design gap.
+- **Kills by `killReason`:** each killed finding is put under the
+  `killReason` most of its `REFUTED` votes gave (`mixed` on a tie,
+  `uncategorized` when none gave one), as a share of paneled findings, so the
+  shares add up to the kill rate. The `REFUTED` votes of paneled findings are
+  also counted by `killReason`. This is the data a per-category `T_KILL` would
+  need; nothing computes a per-category threshold yet.
+- **`refuteFraction` around the threshold:** for each paneled finding with
+  both `refuteFraction` and `threshold`, the difference between them, in bins
+  (below -0.25, -0.25 to -0.10, -0.10 to -0.05, -0.05 to 0, 0 to 0.05, 0.05 to
+  0.10, 0.10 to 0.25, 0.25 and above), and how many fall within 0.05 of the
+  threshold. A null `refuteFraction` (an unverified finding) is counted apart.
 
-Emit a short report of FP/FN proxies per mechanism (with vs without debate, correlated vs decorrelated panel). These are *proxies* (the commit-touch heuristic isn't ground truth) — say so; don't overclaim.
+**`--audit`** looks at what happened after the review, for each logged PR
+with posted findings (`findings[].posted: true`). It keeps a re-run row that
+posted findings, since what it posted is what the author saw, and says how
+many it kept. Rows with no `repo`, `pr` or `headSha` cannot be joined with a
+PR and are skipped and counted. The PRs with the most recent reviews are
+queried first, up to `--limit` (default 20), and the rest are named as not
+queried. Per PR it calls `gh` twice or so:
 
-**`/tribunal:review-pr --review-health`** — is the harness still earning what it costs? Added 2026-07-29, after the harness's own eval battery grew from 20 to 33 checks across 26 freezes while the corpus's labelled/unknown split never moved once — proof that having the instruments (`--metrics`, `--audit`, `eval/score.mjs`) is not the same as anyone running them and deciding. This mode reads, compares, and recommends; it never edits the harness itself.
+- `gh pr view <n> --repo <repo> --json state,mergedAt,headRefOid,reviews`;
+- `gh api repos/<repo>/compare/<reviewed headSha>...<headRefOid>` once per
+  reviewed head, which lists every file changed after that review with its
+  hunks. No call is made when the reviewed head is still the PR's head.
 
-Four signals, every run:
+Each posted finding gets one outcome. A finding repeated across re-reviews of
+one PR (same `file` and `title`) is counted once, at its first review.
 
-1. **Is the routing rule actually being followed?** Filter `metrics.jsonl` for rows since the small-PR routing change (`SKILL.md` → Dispatch decision): high-risk PRs at ≤ 6 product files must show `mode: "in-context"`. Compare their `claudeOutputTokens.total` against pre-change Workflow rows on equivalent PRs — expect roughly 3× less. If recent small high-risk rows still show `mode: "workflow"`, the rule isn't being applied; say so plainly, don't average it away.
-2. **Is in-context's panel as trustworthy as the Workflow's?** Compare the `voteReconciliation.mismatches` rate between `mode: "in-context"` and `mode: "workflow"` rows. This is the one measurement that can show the small-PR routing change degraded panel integrity — the guarantee it exists to watch is instructed-in-prose vs enforced-in-code (see `SKILL.md` → "Why risk still overrides size"). A materially higher in-context mismatch rate is the signal that reopens the routing threshold — with data this time, not argument.
-3. **Is the corpus still stuck?** Run `eval/score.mjs`; report the `unknown` count and whether it moved since the last check. A harness that never gets its findings judged is unfalsifiable — no change to it can be shown to help. 22 unresolved as of 2026-07-29.
-4. **Is "Known open" still honest?** Skim `RELEASES.md`'s Known-open list for items already resolved elsewhere in the file, or old enough to need a second look.
-5. **Are debates being preempted?** Count in-context rows whose findings carry `debate.outcome: "preempted-by-fact"` (field rule above; procedure in `in-context-review.md` → "Auto-gated debate"). Each one is a borderline finding that never faced the defense/adjudicator pair because the orchestrator settled a factual contradiction by reading. Report the count and check every entry carries its `evidence` quote — one without a quote is a judgment call wearing instrumentation's clothes. A rising count is either the case for a first-class fact-arbitration gate (build it from this data) or drift back toward ungated inline verdicts (stop it); the count is what distinguishes those, which is why the value exists. Baseline: 1 as of 2026-08-14 (PR #1994).
-6. **Is the in-context path following its own dispatch plan?** Over in-context rows carrying `lensPlan` (field rule above), compare `lensCount` vs `lensPlan.lensCount` and `completenessCritic` vs `lensPlan.critic`. Any mismatch with `lensPlanDeviation: null` is an UNDECLARED deviation — the exact failure the plan script exists to prevent; name the row. Declared deviations are legitimate but counted: a rising declared-deviation rate means the plan rules have drifted from what reviews actually need, and the fix is re-tuning `in-context-plan.mjs` (with its replay) rather than eroding the contract one exception at a time. Rows without `lensPlan` predate 2026-08-14 and are skipped, with the skip count reported.
-7. **Is the clean-verdict sweep earning its cost?** Over rows carrying `cleanSweep` (both modes, post-2026-08-14): report the sweep **hit rate** — rows where `candidatesRaised > 0`, i.e. a second model family found what every lens missed on a "clean" run. Each hit is simultaneously a defect rescued from a green-lit merge AND a measured lens miss, so a non-trivial hit rate argues for more lens budget on small PRs, not just for the sweep. Also report: `unparseable` count (the sweep's own health — rising means the FINDING-format prompt has drifted from what Codex emits), and `skippedReason` breakdown (a run skipped for `codex-unhealthy` is a clean verdict that went unchecked — say so). Zero hits over a large sample is the case for demoting the sweep to opt-in; that decision comes from this signal, not from any single run.
+- **fixed** (true-positive proxy): a commit after the review touched the
+  finding's file, or renamed it. The output also says how many of those had
+  their `line` inside a changed hunk.
+- **dismissed** (false-positive proxy): the file was not touched and a review
+  at the reviewed commit was dismissed.
+- **merged untouched** (false-positive proxy): the PR merged without touching
+  the file.
+- **open untouched** and **closed unmerged**: no verdict yet, or none to have.
+- **unknown**: `gh` failed, the finding names no file, more files changed
+  than the compare API lists (300), or the branch was rewritten after the
+  review (compare status `diverged`), since a rebase makes every file of the
+  PR look changed.
 
-Report only what moved since the last run; a clean report is one line, not silence disguised as thoroughness. Recommend explicitly when a signal crosses a threshold (e.g. "in-context mismatch rate is now above the Workflow's — worth auditing the last N in-context panels by hand") — this mode's whole purpose is to be the thing that decides, not another instrument nobody reads.
+The outcomes are reported per engine and per mechanism: all posted, blocking
+or not, not paneled, paneled with an external voter or with Claude only, and
+paneled with no debate, a debate fired, flipped or held. The figure to read
+is fixed over decided (fixed, dismissed and merged untouched). Whether debate
+flips line up with findings that were later fixed is what decides whether the
+debate stays. A false-negative proxy comes with it: killed findings
+(`panelRan: true`, `survived: false`) in the same reviews whose file changed
+after the review.
 
-None of the three modes above posts anything or writes to `metrics.jsonl`.
+These are *proxies*: a commit that touches a file is not proof the finding
+was fixed, and a merge that leaves it alone is not proof it was wrong. The
+output says so; do not overclaim when relaying it.
+
+`tribunal audit --candidates` adds a `candidates` list to the JSON and a
+section to the text: one entry per posted finding, counted once as above, with
+its PR, `title`, `file`, `line`, `severity`, whether it was blocking, its
+outcome and `firstTouch`. `firstTouch` names the first non-merge commit after
+the review that changed the finding's file, and `hunkCoversLine` says whether
+that commit's hunk covers the finding's `line`. It is a lead for a person who
+decides whether the finding was real and belongs in a labelled corpus. It
+labels nothing, and the corpus itself stays where its owner keeps it.
+
+- The commit comes from `gh api repos/<repo>/commits/<sha>`, read oldest first
+  for each commit of the compare range, up to 40 per reviewed head, until
+  every wanted file has a first touch. That is one call per commit read, on
+  top of the two above.
+- A merge commit is read but never named. When one changed the file before the
+  named commit, or a commit could not be read, or GitHub cut a commit's file
+  list at 300, `exact` is `false` and `hunkCoversLine` is `null`, since the
+  hunk is then not in the coordinates of the reviewed head.
+- `firstTouch` is `null` when the finding's file was not touched, the commit
+  was not reached within the cap, or `gh` failed.
+
+Neither mode posts anything or writes to `metrics.jsonl`.
 
 ## Legacy rows — the pre-2026-07-21 log is not directly aggregatable
 
@@ -387,7 +474,7 @@ anchors on values already named on both sides, not on schema completeness.
 | `engine`, `engineVersion`, `pluginVersion` | Which engine ran the review. Written only by the Rust binary (`plugins/tribunal/rust`): `engine: "rust"`, `engineVersion: "rust-<12 hex>"` (a hash of the workspace's sources, taken at build time) and `pluginVersion` (the `version` in the plugin's `plugin.json`). The Workflow writes none of the three, so a row without `engine` was written by the skill. `build-post-footer.mjs` prints them as the footer's first segment: `tribunal v105 (skill)` for a Workflow row, using its own `plugin.json` version, and `tribunal v105 (rust rust-<hash>)` for a Rust one. |
 | `agentsActual` | **Not set by the script — `peer-review.js` always writes `null` here, on purpose.** The script cannot see its own total dispatch count from inside its own execution; a script-derived guess would defeat the point of comparing against a real number. The `Workflow` tool's own return carries a top-level `agentCount` (sibling to `report`/`metrics`) once the run finishes — the orchestrator captures it immediately on return (SKILL.md, right after validating the return shape, before the post/no-post decision) and patches it into the persisted row unconditionally, whether or not the review is posted. A row with `agentsActual: null` on disk means that capture didn't complete (an aborted run, an older skill version, or a session cutoff between capture and patch — cross-check `~/.claude/tribunal-data/agent-counts.jsonl`, an independent side-log of every captured `agentCount`), not that the run made zero agents. |
 | `artifactDir` | The `mktemp -d` artifact directory for this run (`peer-review-votes-<pr>-<random>`) — where Codex/Gemini CLI artifacts, vote-reconciliation/self-audit intermediates and `report.md` live, useful for post-hoc debugging a specific row. Named for external votes because that is what first went in it; since v64 a review with no external slots creates one anyway, holding `report.md` alone, so a `fidelity-critic-flagged` violation can be read against the text it judged. |
-| `selfAudit` | `{passed, checked, violations[], notes[]}` from `${CLAUDE_PLUGIN_ROOT}/lib/audit-run.mjs`, run against this row's own `findings`/`voteReconciliation`/etc. right before the row is appended. **A non-empty `violations` is a defect in the HARNESS or in this run's own row, never a finding about the PR** — same rule `voteReconciliation.mismatches` follows. Each violation names the invariant it failed (`no-external-voter`, `orphan-artifacts`, `reconciliation-incomplete`, `blocking-without-adjudication`, `stale-artifacts`, `cost-model-drift`, `merged-locations-dropped`, `kill-reason-not-cited`, `merged-from-annotation-dropped`, `grounded-diagnostic-not-cited`, `gate-demoted-called-unexamined`) and every one names the real run it was written to catch — see the script's own header. Stamped by `lib/persist-run.sh`'s PYAUDIT step in Workflow mode; run by the orchestrator in in-context mode (SKILL.md, "Run the self-audit before you append the row"), which is why every row before that instruction existed carries no `selfAudit` at all rather than a passing one — an absent key there means "never checked", not "checked and clean", and must not be read as the latter. `passed: null` with a single `audit-unreadable` violation means the script itself could not be run (missing, non-zero exit, unparseable output) — recorded as a failed check, never as silence. **`notes[]` is a second channel that records without failing**, added 2026-09-09: `passed` is a function of `violations` alone, so a check whose signal is real but whose accuracy is not yet established stays visible on the row and to `--metrics`/`--review-health` without costing a correct run its audit. Its only current occupant is `fidelity-critic-flagged`, moved there because over the 127 rows stored at that date the critic's vote-reasoning rule had raised five findings and all five were false positives caused by the critic's own payload lacking the field the report cited (PRs #1518, #1532, #2049, #1538, #2083). Zero true positives. It moves back to `violations` once the rule catches real drift once. A row written before that date carries no `notes` key at all; absent means the channel did not exist, not that it was empty. |
+| `selfAudit` | `{passed, checked, violations[], notes[]}` from `${CLAUDE_PLUGIN_ROOT}/lib/audit-run.mjs`, run against this row's own `findings`/`voteReconciliation`/etc. right before the row is appended. **A non-empty `violations` is a defect in the HARNESS or in this run's own row, never a finding about the PR** — same rule `voteReconciliation.mismatches` follows. Each violation names the invariant it failed (`no-external-voter`, `orphan-artifacts`, `reconciliation-incomplete`, `blocking-without-adjudication`, `stale-artifacts`, `cost-model-drift`, `merged-locations-dropped`, `kill-reason-not-cited`, `merged-from-annotation-dropped`, `grounded-diagnostic-not-cited`, `gate-demoted-called-unexamined`) and every one names the real run it was written to catch — see the script's own header. Stamped by `lib/persist-run.sh`'s PYAUDIT step in Workflow mode; run by the orchestrator in in-context mode (SKILL.md, "Run the self-audit before you append the row"), which is why every row before that instruction existed carries no `selfAudit` at all rather than a passing one — an absent key there means "never checked", not "checked and clean", and must not be read as the latter. `passed: null` with a single `audit-unreadable` violation means the script itself could not be run (missing, non-zero exit, unparseable output) — recorded as a failed check, never as silence. **`notes[]` is a second channel that records without failing**, added 2026-09-09: `passed` is a function of `violations` alone, so a check whose signal is real but whose accuracy is not yet established stays visible on the row and to `--metrics` without costing a correct run its audit. Its only current occupant is `fidelity-critic-flagged`, moved there because over the 127 rows stored at that date the critic's vote-reasoning rule had raised five findings and all five were false positives caused by the critic's own payload lacking the field the report cited (PRs #1518, #1532, #2049, #1538, #2083). Zero true positives. It moves back to `violations` once the rule catches real drift once. A row written before that date carries no `notes` key at all; absent means the channel did not exist, not that it was empty. |
 
 ## Fields added 2026-08-18 (report fidelity — does the printed report say what the data already knows)
 
@@ -399,7 +486,7 @@ The synthesis prompt's "grounding rules" tell the synthesizer what to print abou
 | `findings[].killReasonMissingFromReport` | The refuted vote's `killReason` category (or the literal string `"uncategorized"` when it's null) that never appeared in the report for that finding. `[]` on a finding that was never refuted. |
 | `findings[].mergedFromAnnotationMissingFromReport` | For a finding with 2+ contributing lenses (`mergedFrom.length >= 2`): the `"(found by:"` marker and/or contributing lens name(s) that never appeared. `[]` when `mergedFrom.length < 2` (no annotation required). |
 | `findings[].groundedDiagnosticMissingFromReport` | The finding's exact `grounded.diagnostic` string that never appeared verbatim in the report, checked only when `grounded.verdict === "confirmed"`. `[]` otherwise. |
-| `findings[].unexaminedWordingInReport` | Added 2026-10-27. The inverse of the four above: the unexamined marker (`"NOT ADJUDICATED"`, `"no refuter examined"`) the report printed on a finding that `verifiedByGateNote` demoted after its panel voted (issue #46). Only the finding's own block is searched, the block whose first three lines carry its `file:line`, because the same marker is correct on a finding no panel ran on. `[]` when the report kept the marker off it, when the gate left it alone, or when it has no votes. Absent on rows written before this field. |
+| `findings[].unexaminedWordingInReport` | Added 2026-10-27. The inverse of the four above: the unexamined marker (`"NOT ADJUDICATED"`, `"no refuter examined"`) the report printed on a finding that `verifiedByGateNote` demoted after its panel voted (issue #46). Only the finding's own block is searched, the block whose first three lines carry its `file:line`, because the same marker is correct on a finding no panel ran on. `[]` when the report kept the marker off it, when the gate left it alone, or when it has no votes. Absent on rows written before this field. The post step reads the same check on the composed body: it asks for the marker to be removed from that finding, and holds the post when a patch round does not remove it. |
 | `fidelityCritic` | `{ran, violations[]}`, always present. `ran:false` when there was nothing to check (no prior open reviews and no votes anywhere). Each violation is `{rule: "prior-review-match"\|"vote-reasoning-fidelity", findingTitle, detail}` from a dedicated agent comparing the final report's prose against the panel's own vote reasoning and the still-open prior reviews — a semantic check no string comparison can make, run right after synthesis. **Audit-only**: a violation never revises the report or blocks anything, though since v63 it does fail the run's `selfAudit`. **Both paths since v64** — Workflow mode dispatches it inline; in-context mode builds the identical prompt with `lib/build-fidelity-critic.mjs`, which slices it out of the same `FIDELITY-CRITIC-DISPATCH` region, and dispatches one agent. `null` is not a valid value on either path: it means the step was skipped. A fourth key, `error`, appears only when the builder failed for a reason its three documented exit codes do not cover — `{ran: false, violations: [], error: "..."}` says the report was not graded, which the ledger must not confuse with a report that was graded and came back clean. |
 
 ## Field added 2026-08-18 (panel-ceiling boundary tie-break)
@@ -429,7 +516,7 @@ the only signal carry-forward had.
 |---|---|
 | `findings[].adjudicated` | Whether anything actually contested this finding: a panel ran on it, or a typecheck diagnostic confirmed it. **`survived` is not this claim** — a finding no panel ran on survives by arithmetic. On the pinned PR #1911 run, three `important` findings fell through every branch of `needsPanel`, faced no adversarial slot, and were recorded blocking on exactly that basis. |
 | `findings[].blocking` | Now requires `adjudicated` as well as `survived` and a non-`nit` severity. An unexamined finding is reported under "Non-blocking / nits" with `— NOT ADJUDICATED`, whatever its severity reads like. Since 2026-10-27 it is also `false` for a finding the evidence gate demoted (`verifiedByGateNote` set), which the report lists as an open question. |
-| `findings[].verifiedByGateNote` | Added 2026-10-27 (issue #46). The note the evidence gate (`lib/verified.mjs`, the VERIFIED-GATE region) put on a surviving finding it demoted from Blocking for lacking a well-formed `verifiedBy`, as the report quotes it; `null` when the gate left the finding alone. Before this field the row kept `blocking: true` for such a finding while the posted report had demoted it, so `--metrics`, `--audit` and the scorer counted it as an adjudicated blocker. `adjudicated` stays the panel's answer: a demoted finding whose panel ran is still `adjudicated: true`. Absent on older rows. |
+| `findings[].verifiedByGateNote` | Added 2026-10-27 (issue #46). The note the evidence gate (`lib/verified.mjs`, the VERIFIED-GATE region) put on a surviving finding it demoted from Blocking for lacking a well-formed `verifiedBy`, as the report quotes it; `null` when the gate left the finding alone. Before this field the row kept `blocking: true` for such a finding while the posted report had demoted it, so `--metrics`, `--audit` and the scorer counted it as an adjudicated blocker. `adjudicated` stays the panel's answer: a demoted finding whose panel ran is still `adjudicated: true`. Absent on older rows. On the Rust engine an anchor with `line` below 1 first gets the line its `quote` has in the file at the head (`anchor_repair`), so the gate demotes only a finding whose quote it cannot find. |
 | `panelCeiling` | The run's `maxPanels` (default 40). Panels are the only cost term that scales with PR size, so the ceiling is expressed in panels rather than in total agents — a limitation stated rather than hidden. |
 | `panelSkippedForBudget` | Findings that earned a panel and did not get one because the ceiling bit: `{title, file, severity}`. Ranking drops the least-contested first (operator-named → critical → high-risk → rest). Each one is `adjudicated: false`, so a truncated run cannot read as full coverage. |
 
@@ -1145,14 +1232,30 @@ fixture (`fixtures/vote-reconciliation-model/`) with three codex slots split
 across two models plus a gemini slot that writes no `MODEL:` line, asserting
 `codexModelsUsed` dedupes, sorts, and never picks up the gemini slot.
 
+## Fields added for coverage visibility — `repoResolution`, `crossRepoReads`, `criticNotChecked`, `coverageContradictions`, `anchorFormat`
+
+Added so a reader can tell what a run verified without opening its transcripts.
+None changes what is reviewed or the verdict. `groundedChecker` already held the
+typecheck's state; what was missing was why it was skipped and a mention in the
+report.
+
+| Field | Meaning |
+|---|---|
+| `repoResolution` | Which directory stood for the reviewed repo when the grounded typecheck ran. `{state: "ambient"}` when the working directory is a checkout of it. `{state: "resolved", dir, how}` when it is not and the engine found one: `how` is `TRIBUNAL_REPO_DIR` or `sibling` (a git directory one or two levels above the working directory whose `origin` is the repo). `{state: "unresolved", cwdOrigin, searched}` when none was found, and the typecheck then prints `DEGRADED_WRONG_REPO`. Always carries `repo` and `cwd`. |
+| `crossRepoReads` | One entry per dispatch that read a repo other than the reviewed one: `{label, kind, reads}`, `kind` one of `lens`, `critic`, `refuter`, `other`, and `reads` mapping `owner/name@ref` to a count. A read with no ref in its command is `@(default)`, a code search `@(search)`. Read off the saved transcripts, so it is what ran. An empty list means no dispatch read another repo, or no transcript was saved. |
+| `criticNotChecked` | The sentences of the completeness critic's answer that say it did not check something and cite a file or endpoint in backticks: `{text, tokens}`. Taken from prose, so a sentence with no backticked name is not listed. |
+| `coverageContradictions` | The names in `criticNotChecked` that some lens's commands contain: `{claim, token, lenses}`. A match by name (the full path, its last two segments, or its last segment when it is at least six characters), so it shows a lens looked, not what it concluded. Also printed in the report. |
+| `depsDrift` | The manifests that differ between the checkout that supplied the typecheck's installed packages and the reviewed commit: the lockfiles (`package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`) compared as bytes, or, with none, the dependency maps of `package.json`. Empty when they match or when no typecheck ran. A non-empty list also prints a warning in the report: module and type errors may come from the packages, and a clean result may not hold with the PR's versions. |
+| `anchorFormat` | `{annotatedUnresolved, files}`: `verifiedBy` anchors that came back unresolved and whose `file` ends in a note such as `src/a.ts (BE staging)`. The resolver reads a file of another repo only as `<repo-name>/<path>`; the lens prompt says so since this field was added. |
+
 ## The posted-comment footer reads this row, it does not extend it
 
 Every posted GitHub comment ends with one `<sub>...</sub>` metadata line —
 `skills/review-pr/scripts/build-post-footer.mjs`, invoked from SKILL.md Step 4
 after the homosapiens pass. **This is a presentation layer, not a new schema
 field**: the footer reads `harnessVersion`, `reviewMode`, `codexModelUsed`,
-`agentCost.{inputTokens,outputTokens}` and `wallClockSeconds` straight off the
-row those fields are already documented above — in Workflow mode from the
+`agentCost.{inputTokens,outputTokens}`, `wallClockSeconds` and (Rust engine)
+`lensSamples` straight off the row those fields are already documented above — in Workflow mode from the
 just-persisted row itself, in in-context mode from values the orchestrator
 already holds from its own earlier Step 1/2.5 calls, since in-context's own
 row is not appended until AFTER posting.
@@ -1169,6 +1272,13 @@ timing) — the footer omits the segment rather than printing a fabricated
 not dollars. Since 2026-10-17 the output count prints as a lower bound,
 `48.1M in / ≥349.0K out tokens`, because `agentCost.outputTokens` is one (see the
 `agentCost` section); the input count is exact and carries no mark.
+
+Since 2026-11-03 the segment after the review mode names the row's
+`lensSamples`: `full review · 1 lens sample · ...` on a normal run,
+`full review · 3 lens samples · ...` on a `--lens-samples 3` run. It is printed
+whenever the row has the field, so a sampled review is visible on GitHub. A row
+without it (any row written before the field) prints no segment, since the
+value is unknown.
 
 `agentCount` for the in-context invocation comes from
 `scripts/count-in-context-agents.mjs`, a **derivation** (lens count + votes +

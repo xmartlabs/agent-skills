@@ -572,32 +572,6 @@ fn section_diff_matches_js_on_repo_history() {
     assert!(seen.usable >= 1, "{seen:?}");
 }
 
-/// Recorded patches in the harness data, as `replay-verified-relay.mjs`
-/// cuts them.
-#[test]
-#[ignore = "needs TRIBUNAL_HARNESS_DATA"]
-fn section_diff_matches_js_on_recorded_patches() {
-    let data = std::env::var("TRIBUNAL_HARNESS_DATA").expect("TRIBUNAL_HARNESS_DATA is not set");
-    let dir = PathBuf::from(data).join("tribunal/fixtures/incremental-scope");
-    let root = scratch("section-diff-recorded");
-    let mut seen = Seen::default();
-    for e in std::fs::read_dir(&dir).unwrap() {
-        let p = e.unwrap().path();
-        if p.extension().is_some_and(|x| x == "patch") {
-            let name = p.file_name().unwrap().to_string_lossy().replace('.', "_");
-            check_case(
-                None,
-                &root.join(name),
-                &std::fs::read(&p).unwrap(),
-                &["0".into(), "0".into()],
-                "out",
-                &mut seen,
-            );
-        }
-    }
-    assert!(seen.cases > 0, "no patches in {}", dir.display());
-}
-
 #[test]
 fn section_diff_fails_where_the_script_does() {
     let dir = scratch("section-diff-failures");

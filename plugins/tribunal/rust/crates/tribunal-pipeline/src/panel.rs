@@ -20,7 +20,7 @@ use tribunal_core::panel::cost_breaker::{cost_breaker_state, CostInputs};
 use tribunal_core::panel::debate_degrade::debate_ruling;
 use tribunal_core::panel::panel_gates::{
     contested_pre_decision, needs_refine, place_survivor, should_debate, should_escalate,
-    tally_votes, Tally,
+    tally_votes, Tally, ESCALATE_CONFIDENCE_FLOOR,
 };
 use tribunal_core::panel::strengthen_merge::apply_strengthen;
 use tribunal_core::profile::high_risk_surface::risk_path_touched;
@@ -105,6 +105,11 @@ pub struct PanelFlags {
     pub no_gemini: bool,
     pub force_batch: bool,
     pub no_batch: bool,
+    /// Set by the Rust engine: a finding with no external head starts with one
+    /// Claude vote, and a second one only when that vote is a `REFUTED`, is
+    /// under-confident or is missing. Off keeps the Workflow's two Claude
+    /// votes, which the differential tests compare against.
+    pub lone_refuter: bool,
 }
 
 /// The run's facts the panel reads.
@@ -133,6 +138,9 @@ pub struct PanelEnv<'a> {
     pub critic_gap: Option<CriticGap<'a>>,
     pub blast_radius: Option<&'a Value>,
     pub file_count: f64,
+    /// Whether the completeness critic may run. Off in `tribunal panel`,
+    /// which judges only the findings it was given.
+    pub critic: bool,
     pub flags: PanelFlags,
     pub codex_installed: bool,
     pub gemini_installed: bool,
@@ -360,6 +368,24 @@ impl Health {
 struct Slot {
     source: &'static str,
     lens: Option<usize>,
+}
+
+/// Whether a panel of one Claude vote and no external head needs a second
+/// Claude vote: the vote is missing, it is a `REFUTED` that would kill the
+/// finding alone, or its confidence is under the escalation floor.
+fn lone_vote_needs_second(tally: &Tally, panel: &[Slot]) -> bool {
+    if panel.len() != 1 || panel[0].source != "claude" {
+        return false;
+    }
+    match tally.valid.as_slice() {
+        [] => true,
+        [vote] => {
+            js::get(vote, "verdict") == Some(&json!("REFUTED"))
+                || matches!(js::get(vote, "confidence"), Some(Value::Number(n))
+                    if n.as_f64().is_some_and(|c| c < ESCALATE_CONFIDENCE_FLOOR))
+        }
+        _ => false,
+    }
 }
 
 fn slots_value(panel: &[Slot]) -> Vec<Value> {
@@ -671,7 +697,7 @@ pub async fn panel_phase<I: PanelIo>(
     }
 
     // --- Completeness critic ---
-    if env.file_count > 2.0 {
+    if env.critic && env.file_count > 2.0 {
         let critic_started = std::time::Instant::now();
         let critic_text = match (env.critic_gap, env.diff_path) {
             (Some(gap), Some(diff_path)) => critic_gap_prompt(
@@ -976,7 +1002,7 @@ pub async fn panel_phase<I: PanelIo>(
     // --- Round 0 ---
     let build_panel = |f: &Value, health: &Health| -> Vec<Slot> {
         let externals = health.sources_for(f);
-        let claudes = if externals.is_empty() || flags.force_codex {
+        let claudes = if flags.force_codex || (externals.is_empty() && !flags.lone_refuter) {
             2
         } else {
             1
@@ -1271,7 +1297,9 @@ pub async fn panel_phase<I: PanelIo>(
     };
     let wants_escalation = |st: &State| {
         let claude_r0 = st.panel.iter().filter(|p| p.source == "claude").count();
-        js::truthy(should_escalate(st.tally.as_ref().unwrap(), &st.finding, claude_r0).as_ref())
+        let tally = st.tally.as_ref().unwrap();
+        js::truthy(should_escalate(tally, &st.finding, claude_r0).as_ref())
+            || (flags.lone_refuter && lone_vote_needs_second(tally, &st.panel))
     };
     if batch {
         for st in states.iter_mut().flatten() {

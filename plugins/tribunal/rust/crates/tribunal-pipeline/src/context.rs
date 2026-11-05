@@ -52,12 +52,19 @@ pub struct RunArgs {
     pub codex: Option<bool>,
     pub gemini: Option<bool>,
     pub batch_panels: Option<bool>,
+    /// `--lens-samples`: how many independent dispatches each planned lens
+    /// gets. `None` is one, which is what the Workflow does.
+    pub lens_samples: Option<u32>,
     /// `--post`: post the review when the duplicate-review gate is clear.
     pub post: bool,
     /// `--profile` / `--rules`: a profile and review rules read from disk
     /// instead of the repo's base branch, to try them before they land.
     pub profile: String,
     pub rules: String,
+    /// Set by `tribunal panel` (`crate::panel_only`): no inflight marker, and
+    /// the Verify phase takes the candidates as given, with no dedup, no
+    /// grounded gate and no completeness critic, each one a retest target.
+    pub panel_only: bool,
 }
 
 /// Where the run executes.
@@ -689,7 +696,9 @@ pub async fn context_phase<A: Agent>(
 
     let wants_probe = !args.full && args.head_sha.is_empty();
     let head_sha = to_js_string(js::get(&pr_context, "headRefOid"));
-    let started = if args.preflight {
+    // A panel-only run writes no metrics row, so a started marker would be
+    // reported as a lost run.
+    let started = if args.preflight || args.panel_only {
         Value::Null
     } else {
         let deploy: Vec<String> = js::get(&prepared.profile, "deployBranches")

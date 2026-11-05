@@ -132,15 +132,23 @@ pub fn gate_hold(metrics: &Value) -> Option<String> {
     }
 }
 
+/// Appended to the steps that check a claim against code: a claim that
+/// depends on another repo is read there, not reported as out of reach.
+const CROSS_REPO_READ: &str = "When a claim depends on another repo, read it before saying it cannot be checked. The review profile (`.claude/review-profile.json` in this checkout) lists those repos as `crossRepoAnchors`, each with a `repo` and a `ref`: read the file with `gh api repos/<repo>/contents/<path>?ref=<ref>` (quote the URL), or search it with `gh search code`. Only say a claim is unchecked when that read failed or the repo is not listed.";
+
+/// The last sentence of the template step: what the body says about its own
+/// limits, in plain prose and in the review's voice.
+const CLOSING_NOTE: &str = "Close the body with one short paragraph in plain prose, with no label or heading, saying what you read to check it (name any other repo and its ref) and what you did not check.";
+
 /// The compose step's prompt.
 #[must_use]
 pub fn compose_prompt(pr: &str, repo: &str, head: &str, report: &Path, out: &Path) -> String {
     format!(
-        "You are writing the GitHub-facing body of a code review of PR #{pr} in {repo}, reviewed at commit {head}. The harness report is the file {report}. Work through these steps in order and skip none.
+        "You are writing the GitHub-facing body of a code review of PR #{pr} in {repo}, reviewed at commit {head}. The tribunal report is the file {report}. Work through these steps in order and skip none.
 
-1. Continuity. Run `gh pr view {pr} --repo {repo} --json reviews` and `gh api --paginate repos/{repo}/issues/{pr}/comments`. If either holds content, open the body with a short status section naming each earlier review or comment (author and date) and, for each of its Blocking or should-fix items, whether it is fixed, still open or disputed. Decide that from the code at {head} in this checkout, not from GitHub's review state and not from a commit message.
-2. Author refutations. For every reply by the PR author that dismisses or explains away a standing finding, check the claim against the code and say whether it is confirmed, refuted or narrower than claimed. Skip a claim an earlier review by the same reviewer already answered.
-3. Template. Put what this review contributes under `### 🔴 Blocking`, `### 🟡 Should fix, not blocking` and `### 🔵 Nits` (say when a nit did not go through the panel). Each item: a short bold title, the exact `file:line`, then the explanation. Move out of Blocking anything whose own verified text calls it non-blocking.
+1. Continuity. Run `gh pr view {pr} --repo {repo} --json reviews` and `gh api --paginate repos/{repo}/issues/{pr}/comments`. If either holds content, open the body with a short status section naming each earlier review or comment (author and date) and, for each of its Blocking or should-fix items, whether it is fixed, still open or disputed. Decide that from the code at {head} in this checkout, not from GitHub's review state and not from a commit message. {cross_repo}
+2. Author refutations. For every reply by the PR author that dismisses or explains away a standing finding, check the claim against the code and say whether it is confirmed, refuted or narrower than claimed. Skip a claim an earlier review by the same reviewer already answered. The same rule on other repos applies here.
+3. Template. Put what this review contributes under `### 🔴 Blocking`, `### 🟡 Should fix, not blocking` and `### 🔵 Nits` (say when a nit did not go through the panel). Each item: a short bold title, the exact `file:line`, then the explanation. Move out of Blocking anything whose own verified text calls it non-blocking. {closing}
 4. Mentions. Use `@handle` only to address someone; a passing reference uses the bare handle.
 5. Keep, exactly as in the report: every `(found by: ...)` annotation, every `also at:` location, every kill-reason category, every typecheck diagnostic, the `Verdict suggestion:` line and the whole `### Draft comments` section.
 6. Run the homosapiens skill over the body in embedded mode (`homosapiens:homosapiens` when that plugin is installed, else `homosapiens`). If neither skill exists, write nothing and answer exactly NO-HOMOSAPIENS.
@@ -148,6 +156,8 @@ pub fn compose_prompt(pr: &str, repo: &str, head: &str, report: &Path, out: &Pat
 Write the final body to {out} with the Write tool, then answer with the single word DONE.",
         report = report.display(),
         out = out.display(),
+        cross_repo = CROSS_REPO_READ,
+        closing = CLOSING_NOTE,
     )
 }
 
@@ -167,12 +177,12 @@ pub fn edit_prompt(pr: &str, repo: &str, head: &str, report: &Path, out: &Path) 
 #[must_use]
 pub fn delta_prompt(pr: &str, repo: &str, head: &str, report: &Path, out: &Path) -> String {
     format!(
-        "You are writing a GitHub comment on PR #{pr} in {repo}, reviewed at commit {head}, that adds to a review the operator already has standing on it. The harness report is the file {report}. Work through these steps in order and skip none.
+        "You are writing a GitHub comment on PR #{pr} in {repo}, reviewed at commit {head}, that adds to a review the operator already has standing on it. The tribunal report is the file {report}. Work through these steps in order and skip none.
 
 1. The standing review. Run `gh api user --jq .login` for the operator's login, then `gh pr view {pr} --repo {repo} --json reviews`, and take that login's most recent review. Open the comment with one line naming it, its state and its date, and saying this comment covers what is new since.
-2. What is new. Compare the report's findings with that review, reading the code at {head} in this checkout. Keep a finding only when the review does not carry it, or carries it in a form this run changes: a new location, another severity, or now fixed. Say which of those applies to each finding you keep. When nothing is new, write the opening line and one sentence saying so.
-3. Author refutations. For every reply by the PR author since that review that dismisses or explains away one of its findings, check the claim against the code and say whether it is confirmed, refuted or narrower than claimed.
-4. Template. Put the findings you keep under `### 🔴 Blocking`, `### 🟡 Should fix, not blocking` and `### 🔵 Nits` (say when a nit did not go through the panel). Each item: its bold title exactly as the report words it, the exact `file:line`, then the explanation.
+2. What is new. Compare the report's findings with that review, reading the code at {head} in this checkout. Keep a finding only when the review does not carry it, or carries it in a form this run changes: a new location, another severity, or now fixed. Say which of those applies to each finding you keep. When nothing is new, write the opening line and one sentence saying so. {cross_repo}
+3. Author refutations. For every reply by the PR author since that review that dismisses or explains away one of its findings, check the claim against the code and say whether it is confirmed, refuted or narrower than claimed. The same rule on other repos applies here.
+4. Template. Put the findings you keep under `### 🔴 Blocking`, `### 🟡 Should fix, not blocking` and `### 🔵 Nits` (say when a nit did not go through the panel). Each item: its bold title exactly as the report words it, the exact `file:line`, then the explanation. {closing}
 5. Mentions. Use `@handle` only to address someone; a passing reference uses the bare handle.
 6. Keep, exactly as in the report, for every finding you keep: its `(found by: ...)` annotation, its `also at:` locations, its kill-reason category and its typecheck diagnostic. Keep the whole `### Draft comments` section.
 7. Run the homosapiens skill over the body in embedded mode (`homosapiens:homosapiens` when that plugin is installed, else `homosapiens`). If neither skill exists, write nothing and answer exactly NO-HOMOSAPIENS.
@@ -180,6 +190,8 @@ pub fn delta_prompt(pr: &str, repo: &str, head: &str, report: &Path, out: &Path)
 Write the final body to {out} with the Write tool, then answer with the single word DONE.",
         report = report.display(),
         out = out.display(),
+        cross_repo = CROSS_REPO_READ,
+        closing = CLOSING_NOTE,
     )
 }
 
@@ -200,29 +212,102 @@ pub fn findings_in_body(findings: &[Value], body: &str) -> Vec<Value> {
         .collect()
 }
 
+/// What the fidelity checks find wrong with a posted body.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct FidelityGaps {
+    /// Items the body must carry, one line each.
+    pub missing: Vec<String>,
+    /// Unexamined wording to remove from a named finding, one line each.
+    pub unexamined: Vec<String>,
+}
+
+impl FidelityGaps {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.missing.is_empty() && self.unexamined.is_empty()
+    }
+
+    fn describe(&self) -> String {
+        let mut parts = Vec::new();
+        if !self.missing.is_empty() {
+            parts.push(format!(
+                "misses {} item(s): {}",
+                self.missing.len(),
+                self.missing.join("; ")
+            ));
+        }
+        if !self.unexamined.is_empty() {
+            parts.push(format!(
+                "still calls {} finding(s) unexamined: {}",
+                self.unexamined.len(),
+                self.unexamined.join("; ")
+            ));
+        }
+        parts.join(", and ")
+    }
+}
+
+fn bullets(items: &[String]) -> String {
+    items
+        .iter()
+        .map(|m| format!("- {m}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// The fidelity gate's patch prompt for one round.
 #[must_use]
-pub fn patch_prompt(body: &Path, missing: &[String]) -> String {
+pub fn patch_prompt(body: &Path, gaps: &FidelityGaps) -> String {
+    let mut parts = Vec::new();
+    if !gaps.missing.is_empty() {
+        parts.push(format!(
+            "The review body in {} must carry these items and does not:\n{}\n\nEdit the file so each one appears, in the finding it belongs to.",
+            body.display(),
+            bullets(&gaps.missing)
+        ));
+    }
+    if !gaps.unexamined.is_empty() {
+        let lead = if gaps.missing.is_empty() {
+            format!(
+                "The review body in {} calls findings unexamined that the refutation panel examined:",
+                body.display()
+            )
+        } else {
+            "The body also calls findings unexamined that the refutation panel examined:".into()
+        };
+        parts.push(format!(
+            "{lead}\n{}\n\nThe evidence gate only lowered each one's severity after its panel voted. In each of those findings, remove that wording and any other line saying no refuter examined it. Touch no other finding, and add no claim about the panel's votes that the finding does not already carry.",
+            bullets(&gaps.unexamined)
+        ));
+    }
     format!(
-        "The review body in {} must carry these items and does not:\n{}\n\nEdit the file so each one appears, in the finding it belongs to. Change nothing else, keep the `### Draft comments` section, and do not add a verdict banner or a footer. Answer with the single word DONE.",
-        body.display(),
-        missing.iter().map(|m| format!("- {m}")).collect::<Vec<_>>().join("\n")
+        "{} Change nothing else, keep the `### Draft comments` section, and do not add a verdict banner or a footer. Answer with the single word DONE.",
+        parts.join("\n\n")
     )
 }
 
-/// The items the posted body is missing, one line each, from the four
-/// `*MissingFromReport` arrays the fidelity checks write.
+/// What the posted body gets wrong, from the arrays the fidelity checks
+/// write: the four `*MissingFromReport` ones are items to add, and
+/// `unexaminedWordingInReport` is wording to remove.
 ///
 /// # Errors
 /// The checks' own TypeError on a malformed finding.
-pub fn missing_items(findings: &[Value], body: &str) -> Result<Vec<String>, String> {
+pub fn fidelity_gaps(findings: &[Value], body: &str) -> Result<FidelityGaps, String> {
     let mut list = Value::Array(findings.to_vec());
     apply_fidelity_checks(&mut list, &strip_draft_comments_from_body(body))?;
-    let mut out = Vec::new();
+    let mut out = FidelityGaps::default();
     for f in list.as_array().into_iter().flatten() {
         let title = js::get(f, "title")
             .and_then(Value::as_str)
             .unwrap_or("(untitled)");
+        for m in js::get(f, "unexaminedWordingInReport")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            out.unexamined
+                .push(format!("{title}: \"{}\"", to_js_string(Some(m))));
+        }
         for (key, what) in [
             ("mergedLocationsMissingFromReport", "also at"),
             ("killReasonMissingFromReport", "kill reason"),
@@ -237,7 +322,8 @@ pub fn missing_items(findings: &[Value], body: &str) -> Result<Vec<String>, Stri
                 .into_iter()
                 .flatten()
             {
-                out.push(format!("{title}: {what} {}", to_js_string(Some(m))));
+                out.missing
+                    .push(format!("{title}: {what} {}", to_js_string(Some(m))));
             }
         }
     }
@@ -433,29 +519,33 @@ pub async fn post_phase<A: Agent>(
         } else {
             findings.clone()
         };
-        let missing = match missing_items(&checked, &body) {
-            Ok(m) => m,
+        let gaps = match fidelity_gaps(&checked, &body) {
+            Ok(g) => g,
             Err(e) => return PostOutcome::Held(format!("the fidelity gate failed: {e}")),
         };
-        if missing.is_empty() {
+        if gaps.is_empty() {
             break;
         }
         if round == FIDELITY_ROUNDS {
             return PostOutcome::Held(format!(
-                "the body still misses {} item(s) after {FIDELITY_ROUNDS} patch rounds: {}",
-                missing.len(),
-                missing.join("; ")
+                "after {FIDELITY_ROUNDS} patch rounds the body still {}",
+                gaps.describe()
             ));
         }
         round += 1;
+        let removing = if gaps.unexamined.is_empty() {
+            String::new()
+        } else {
+            format!(" and {} unexamined marker(s)", gaps.unexamined.len())
+        };
         logs.push(format!(
-            "Fidelity gate round {round}: patching {} missing item(s)",
-            missing.len()
+            "Fidelity gate round {round}: patching {} missing item(s){removing}",
+            gaps.missing.len()
         ));
         ask(
             agent,
             &format!("patch-post:{round}"),
-            patch_prompt(&body_file, &missing),
+            patch_prompt(&body_file, &gaps),
             &args.review_model,
             input.effort,
             input.cwd,
@@ -708,5 +798,52 @@ mod tests {
         let step0 = p.find("0. This body replaces").unwrap();
         assert!(step0 < p.find("1. Continuity.").unwrap());
         assert!(p.contains("Write the final body to b.md with the Write tool"));
+    }
+
+    fn prompts() -> [String; 3] {
+        let (r, o) = (Path::new("r.md"), Path::new("b.md"));
+        [
+            compose_prompt("7", "o/r", "abc", r, o),
+            edit_prompt("7", "o/r", "abc", r, o),
+            delta_prompt("7", "o/r", "abc", r, o),
+        ]
+    }
+
+    #[test]
+    fn no_prompt_calls_the_report_a_harness_report() {
+        for p in prompts() {
+            assert!(p.contains("The tribunal report is the file r.md"), "{p}");
+            assert!(!p.contains("harness"), "{p}");
+        }
+    }
+
+    #[test]
+    fn the_prompts_send_the_composer_to_other_repos_before_calling_a_claim_unchecked() {
+        for p in prompts() {
+            assert!(p.contains("`crossRepoAnchors`"), "{p}");
+            assert!(
+                p.contains("gh api repos/<repo>/contents/<path>?ref=<ref>"),
+                "{p}"
+            );
+            assert_eq!(
+                p.matches("read it before saying it cannot be checked")
+                    .count(),
+                1
+            );
+            assert_eq!(
+                p.matches("The same rule on other repos applies here.")
+                    .count(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn the_prompts_ask_for_a_plain_closing_paragraph_and_no_format() {
+        for p in prompts() {
+            assert!(p.contains("with no label or heading"), "{p}");
+            assert!(p.contains("name any other repo and its ref"), "{p}");
+            assert!(!p.contains("Not verified"), "{p}");
+        }
     }
 }
