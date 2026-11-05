@@ -196,6 +196,7 @@ async fn proxies_per_mechanism_from_recorded_answers() {
     let args = AuditArgs {
         filter: RowFilter::default(),
         limit: 4,
+        ..AuditArgs::default()
     };
     let r = audit(&t, &rows, 0, &args).await;
 
@@ -314,4 +315,273 @@ async fn a_ledger_with_nothing_posted_asks_gh_nothing() {
     assert!(!dir.join("calls.log").exists());
     assert_eq!(r["prs"]["withPostedFindings"], 0);
     assert!(render(&r).contains("No PR with posted findings matches.\n"));
+}
+
+fn sha(c: char) -> String {
+    format!("{c}{}", "0".repeat(39))
+}
+
+fn commit_answer(sha: &str, files: Value) -> Value {
+    common::call(
+        &["api", &format!("repos/o/r/commits/{sha}")],
+        &json!({"sha": sha, "files": files}).to_string(),
+        0,
+    )
+}
+
+fn range(commits: Value, files: Value) -> String {
+    json!({"status": "ahead", "commits": commits, "files": files}).to_string()
+}
+
+fn candidate_rows() -> Vec<Value> {
+    let plain = |t: &str, file: &str, line: u64| finding(t, file, line, json!({}));
+    vec![
+        row(
+            20,
+            "aaa",
+            "2026-10-20T10:00:00Z",
+            Some("rust"),
+            vec![
+                plain("Lost write", "src/a.ts", 12),
+                plain("Stale read", "src/b.ts", 50),
+                plain("Untouched", "src/e.ts", 3),
+            ],
+        ),
+        row(
+            21,
+            "ddd",
+            "2026-10-19T10:00:00Z",
+            Some("rust"),
+            vec![plain("After a merge", "src/m.ts", 5)],
+        ),
+        row(
+            22,
+            "fff",
+            "2026-10-18T10:00:00Z",
+            Some("rust"),
+            vec![plain("After a failure", "src/f.ts", 7)],
+        ),
+        row(
+            23,
+            "jjj",
+            "2026-10-17T10:00:00Z",
+            Some("rust"),
+            vec![plain("Unrelated merge", "src/g.ts", 5)],
+        ),
+    ]
+}
+
+fn candidate_recordings() -> Vec<Value> {
+    let view = |n: &str, head: &str| {
+        common::call(
+            &["pr", "view", n, "--repo", "o/r", "--json", VIEW],
+            &json!({"state": "MERGED", "mergedAt": "2026-10-23T09:00:00Z",
+                "headRefOid": head, "reviews": []})
+            .to_string(),
+            0,
+        )
+    };
+    let (c1, c2, c3, c4, c5, c6) = (sha('1'), sha('2'), sha('3'), sha('4'), sha('5'), sha('6'));
+    let (merge, other_merge, c7) = (sha('9'), sha('8'), sha('7'));
+    let one = json!([{"sha": "p"}]);
+    let two = json!([{"sha": "p"}, {"sha": "q"}]);
+    vec![
+        view("20", "ccc"),
+        common::call(
+            &["api", "repos/o/r/compare/aaa...ccc"],
+            &range(
+                json!([
+                    {"sha": c1, "parents": one},
+                    {"sha": c2, "parents": one},
+                    {"sha": c3, "parents": one},
+                ]),
+                json!([
+                    {"filename": "src/a.ts", "patch": "@@ -10,5 +10,6 @@"},
+                    {"filename": "src/b.ts", "patch": "@@ -30,2 +30,2 @@"},
+                ]),
+            ),
+            0,
+        ),
+        commit_answer(
+            &c1,
+            json!([{"filename": "src/b.ts", "patch": "@@ -30,2 +30,2 @@"}]),
+        ),
+        commit_answer(
+            &c2,
+            json!([{"filename": "src/a.ts", "patch": "@@ -10,5 +10,6 @@"}]),
+        ),
+        view("21", "eee"),
+        common::call(
+            &["api", "repos/o/r/compare/ddd...eee"],
+            &range(
+                json!([{"sha": merge, "parents": two}, {"sha": c4, "parents": one}]),
+                json!([{"filename": "src/m.ts", "patch": "@@ -4,3 +4,3 @@"}]),
+            ),
+            0,
+        ),
+        commit_answer(
+            &merge,
+            json!([{"filename": "src/m.ts", "patch": "@@ -1,2 +1,9 @@"}]),
+        ),
+        commit_answer(
+            &c4,
+            json!([{"filename": "src/m.ts", "patch": "@@ -4,3 +4,3 @@"}]),
+        ),
+        view("23", "kkk"),
+        common::call(
+            &["api", "repos/o/r/compare/jjj...kkk"],
+            &range(
+                json!([{"sha": other_merge, "parents": two}, {"sha": c7, "parents": one}]),
+                json!([{"filename": "src/g.ts", "patch": "@@ -4,3 +4,3 @@"}]),
+            ),
+            0,
+        ),
+        commit_answer(
+            &other_merge,
+            json!([{"filename": "src/x.ts", "patch": "@@ -1 +1 @@"}]),
+        ),
+        commit_answer(
+            &c7,
+            json!([{"filename": "src/g.ts", "patch": "@@ -4,3 +4,3 @@"}]),
+        ),
+        view("22", "ggg"),
+        common::call(
+            &["api", "repos/o/r/compare/fff...ggg"],
+            &range(
+                json!([{"sha": c5, "parents": one}, {"sha": c6, "parents": one}]),
+                json!([{"filename": "src/f.ts", "patch": "@@ -6,3 +6,3 @@"}]),
+            ),
+            0,
+        ),
+        json!({"args": ["api", format!("repos/o/r/commits/{c5}")],
+            "stdout": "", "stderr": "HTTP 502\n", "code": 1}),
+        commit_answer(
+            &c6,
+            json!([{"filename": "src/f.ts", "patch": "@@ -6,3 +6,3 @@"}]),
+        ),
+    ]
+}
+
+fn candidate_tools(dir: &std::path::Path) -> Tools {
+    let rec = common::recordings(dir, candidate_recordings());
+    Tools {
+        gh: env!("CARGO_BIN_EXE_tribunal-test-gh").to_owned(),
+        git: "git".to_owned(),
+        env: vec![
+            (OsString::from("GH_RECORDINGS"), rec.into_os_string()),
+            (
+                OsString::from("GH_CALL_LOG"),
+                dir.join("calls.log").into_os_string(),
+            ),
+        ],
+    }
+}
+
+fn lead<'a>(r: &'a Value, title: &str) -> &'a Value {
+    r["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["title"] == title)
+        .unwrap_or_else(|| panic!("no candidate {title} in {r}"))
+}
+
+#[tokio::test]
+async fn candidates_name_the_first_commit_that_touched_the_file() {
+    let dir = common::scratch("outcome-audit-candidates");
+    let t = candidate_tools(&dir);
+    let args = AuditArgs {
+        candidates: true,
+        ..AuditArgs::default()
+    };
+    let r = audit(&t, &candidate_rows(), 0, &args).await;
+
+    let calls = std::fs::read_to_string(dir.join("calls.log")).unwrap();
+    let calls: Vec<&str> = calls.lines().collect();
+    let asked = |what: &str| calls.iter().any(|c| c.contains(what));
+    for c in ['1', '2', '9', '4', '5', '6', '8', '7'] {
+        assert!(asked(&format!("commits/{}", sha(c))), "{calls:?}");
+    }
+    assert!(
+        !asked(&sha('3')),
+        "a commit past the last wanted file: {calls:?}"
+    );
+    assert_eq!(r["prs"]["ghCalls"], 16);
+
+    let a = lead(&r, "Lost write");
+    assert_eq!(a["outcome"], "fixed");
+    assert_eq!(a["lineInChangedHunk"], true);
+    assert_eq!(
+        a["firstTouch"],
+        json!({"commit": sha('2'), "hunkCoversLine": true, "exact": true})
+    );
+    assert_eq!(
+        (&a["repo"], &a["pr"], &a["file"], &a["line"]),
+        (&json!("o/r"), &json!(20), &json!("src/a.ts"), &json!(12))
+    );
+
+    let b = lead(&r, "Stale read");
+    assert_eq!(
+        b["firstTouch"],
+        json!({"commit": sha('1'), "hunkCoversLine": false, "exact": true})
+    );
+
+    let e = lead(&r, "Untouched");
+    assert_eq!(e["outcome"], "mergedUntouched");
+    assert_eq!(e["firstTouch"], Value::Null);
+
+    let m = lead(&r, "After a merge");
+    assert_eq!(
+        m["firstTouch"],
+        json!({"commit": sha('4'), "hunkCoversLine": null, "exact": false})
+    );
+    let g = lead(&r, "Unrelated merge");
+    assert_eq!(
+        g["firstTouch"],
+        json!({"commit": sha('7'), "hunkCoversLine": true, "exact": true})
+    );
+    let f = lead(&r, "After a failure");
+    assert_eq!(
+        f["firstTouch"],
+        json!({"commit": sha('6'), "hunkCoversLine": null, "exact": false})
+    );
+
+    let text = render(&r);
+    assert!(
+        text.contains("A candidate is a lead, not a label"),
+        "{text}"
+    );
+    let at = |needle: &str| {
+        text.find(needle)
+            .unwrap_or_else(|| panic!("{needle} in {text}"))
+    };
+    assert!(
+        text.contains(r#"o/r#20 src/a.ts:12 [not blocking] "Lost write": fixed by 20000000, its hunk covers the line"#),
+        "{text}"
+    );
+    assert!(
+        text.contains("fixed by 10000000, line outside its hunk"),
+        "{text}"
+    );
+    assert!(
+        text.contains("fixed by 40000000, line not comparable"),
+        "{text}"
+    );
+    assert!(
+        at(r#""Lost write""#) < at(r#""Stale read""#)
+            && at(r#""Stale read""#) < at(r#""Untouched""#),
+        "{text}"
+    );
+}
+
+#[tokio::test]
+async fn candidates_are_absent_unless_asked_for() {
+    let dir = common::scratch("outcome-audit-no-candidates");
+    let t = candidate_tools(&dir);
+    let r = audit(&t, &candidate_rows(), 0, &AuditArgs::default()).await;
+    assert!(r.get("candidates").is_none());
+    assert!(!render(&r).contains("Candidates for a labelled corpus"));
+    let calls = std::fs::read_to_string(dir.join("calls.log")).unwrap();
+    assert!(!calls.contains("/commits/"), "{calls}");
+    assert_eq!(r["prs"]["ghCalls"], 8);
 }

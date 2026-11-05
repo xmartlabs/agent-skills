@@ -275,6 +275,10 @@ fn audit_with_nothing_posted_needs_no_gh() {
     assert!(out.contains("0 queried (--limit 5)"), "{out}");
     let j = json_line(&tribunal(&["audit", "--json"], &dir));
     assert_eq!(j["prs"]["limit"], 20);
+    assert!(j.get("candidates").is_none());
+    let j = json_line(&tribunal(&["audit", "--candidates", "--json"], &dir));
+    assert_eq!(j["candidates"], serde_json::json!([]));
+    assert!(j["candidatesNote"].as_str().unwrap().contains("a lead"));
 }
 
 #[test]
@@ -291,6 +295,7 @@ fn an_unreadable_ledger_fails_with_a_tribunal_line() {
     }
     for args in [
         &["metrics", "--limit", "3"][..],
+        &["metrics", "--candidates"][..],
         &["audit", "--limit", "0"][..],
         &["audit", "--repo"][..],
     ] {
