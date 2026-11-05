@@ -7,7 +7,7 @@ echo "action_pr_evidence_setup_test:"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/bin" "$TMP/releases"
 # Restrict PATH so a developer's installed gh cannot accidentally satisfy the tests.
-for cmd in bash dirname mkdir mktemp rm mv ln tar grep awk python3; do
+for cmd in bash dirname mkdir mktemp rm mv ln tar gzip grep awk python3; do
   ln -s "$(command -v "$cmd")" "$TMP/bin/$cmd"
 done
 cat > "$TMP/bin/uname" <<'EOF'
