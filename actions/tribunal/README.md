@@ -346,6 +346,12 @@ same-repository pull requests whose code you would run with those tokens. Transc
 tool output verbatim and workflow artifacts are not masked, which is why `upload-transcripts` is
 off: on a public repository anyone signed in can download a run's artifacts.
 
+With `codex: true`, the OpenAI key is stored as a Codex login in the job's temporary HOME, which
+those same model calls can read, so a pull request that steers them could expose it as it could
+the Claude credential. It is kept out of the environment of dependency installs and removed when
+the job ends. Enable Codex only where you already accept that boundary for the Claude credential,
+and prefer an OpenAI project key with a spending limit.
+
 When neither the base nor the default branch has a profile, the pull request's own copy is used,
 so the pull request that adds it is reviewed under its own rules. Merge the profile first if that
 matters to you.
