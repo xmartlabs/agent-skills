@@ -6,6 +6,9 @@ on:
   pull_request:
     paths:
       - actions/tribunal/**
+      - plugins/tribunal/.claude-plugin/plugin.json
+      - plugins/tribunal/agents/**
+      - plugins/tribunal/methodology/**
       - plugins/tribunal/rust/release.json
       - plugins/tribunal/templates/review-profile.*.json
       - plugins/homosapiens/skills/**
@@ -14,6 +17,9 @@ on:
     branches: [main]
     paths:
       - actions/tribunal/**
+      - plugins/tribunal/.claude-plugin/plugin.json
+      - plugins/tribunal/agents/**
+      - plugins/tribunal/methodology/**
       - plugins/tribunal/rust/release.json
       - plugins/tribunal/templates/review-profile.*.json
       - plugins/homosapiens/skills/**
@@ -32,6 +38,7 @@ jobs:
         run: |
           rc=0
           for t in actions/tribunal/tests/*_test.sh; do bash "$t" || rc=1; done
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s actions/tribunal/tests -p "test_*.py" || rc=1
           exit $rc
 
   lint:

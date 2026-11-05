@@ -73,4 +73,22 @@ for v in GH_TOKEN INPUT_LABEL INPUT_PATHS INPUT_ONCE INPUT_DRAFTS; do
     "$(gate_env "$ACTION" | grep "^$v:")" "$(gate_env "$GATE" | grep "^$v:")"
 done
 
+# Structured settings are supplied only to trusted setup; review uses saved validated args.
+for input in tribunal-version verdict review-mode codex openai-api-key codex-model bot-comments model effort concurrency max-panels max-agents max-output-tokens prior-verify lens-samples; do
+  env_name="INPUT_$(printf '%s' "$input" | tr '[:lower:]-' '[:upper:]_')"
+  assert_ok "the action declares $input" grep -q "^  $input:" "$ACTION"
+  assert_ok "setup receives $input" grep -qF "$env_name: \${{ inputs.$input }}" "$ACTION"
+done
+assert_ok "baseline upload does not depend on diagnostic uploads" grep -qF "if: steps.baseline.outputs.saved == 'true'" "$ACTION"
+assert_ok "baseline filename includes run identity" grep -qF 'name: tribunal-baseline-pr-${{ github.event.pull_request.number }}-${{ github.run_id }}-${{ github.run_attempt }}' "$ACTION"
+assert_ok "baseline upload names only its envelope" grep -qF 'path: ${{ runner.temp }}/tribunal/baseline/baseline.json' "$ACTION"
+assert_ok "baseline restore is wired" grep -qF 'run: bash "$GITHUB_ACTION_PATH/run.sh" restore' "$ACTION"
+assert_ok "baseline save follows successful incremental publication only" grep -qF "if: steps.gate.outputs.run == 'true' && steps.post.outcome == 'success' && inputs.review-mode == 'incremental'" "$ACTION"
+assert_fail "bundled needs no action ref lookup" grep -qF 'github.action_ref' "$ACTION"
+assert_ok "cancelled runs do not post fallback comments" grep -qF '!cancelled()' "$ACTION"
+assert_eq "Codex remains opt-in" "codex='false'" "$(defaults "$ACTION" | grep '^codex=')"
+assert_eq "bundled is the version default" "tribunal-version='bundled'" "$(defaults "$ACTION" | grep '^tribunal-version=')"
+assert_eq "comment is the verdict default" "verdict='comment'" "$(defaults "$ACTION" | grep '^verdict=')"
+assert_eq "full is the review default" "review-mode='full'" "$(defaults "$ACTION" | grep '^review-mode=')"
+
 finish_tests

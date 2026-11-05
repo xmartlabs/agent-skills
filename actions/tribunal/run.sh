@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run.sh gate|node-check|prepare|review|post|fallback|summary|cleanup — the steps of the tribunal action.
+# run.sh gate|node-check|validate|prepare|restore|review|post|baseline|fallback|summary|cleanup — the steps of the tribunal action.
 #
 # Each step is a subcommand so it can be tested on its own. Everything a run writes lives in one
 # job directory under RUNNER_TEMP: HOME (Claude's config and the homosapiens skill), TMPDIR (the
@@ -17,6 +17,13 @@ FIXED_TMP="${TRIBUNAL_FIXED_TMP:-/tmp}"
 PENDING_MARKER='<!-- tribunal:pending -->'
 GH_VERSION="${TRIBUNAL_GH_VERSION:-2.103.3}"
 CLAUDE_CODE_VERSION="${TRIBUNAL_CLAUDE_CODE_VERSION:-2.1.312}"
+CODEX_VERSION=0.165.0
+
+selected_paths() {
+  if [ -f "$JOB/plugin-path" ]; then PLUGIN="$(cat "$JOB/plugin-path")"; fi
+  if [ -f "$JOB/homosapiens-path" ]; then HOMOSAPIENS="$(cat "$JOB/homosapiens-path")"; fi
+}
+selected_paths
 
 log() { echo "tribunal: $*" >&2; }
 out() { echo "$1=$2" >> "${GITHUB_OUTPUT:-/dev/null}"; }
@@ -124,42 +131,7 @@ target() { # TRIBUNAL_TARGET overrides the detection (tests run on other platfor
 # The profile is read at the base branch, then the default branch, so a pull request cannot change
 # the rules it is reviewed under. A repository with neither gets the pull request's own copy (the
 # PR that adds it), and a repository with none at all gets the plugin's template for INPUT_REVIEWER.
-pick_profile() {
-  local base_ref head_sha
-  base_ref="$(event pull_request.base.ref)"; head_sha="$(event pull_request.head.sha)"
-  has_profile() { # REF_QUERY
-    gh api "repos/$GITHUB_REPOSITORY/contents/.claude/review-profile.json$1" --jq .path \
-      > /dev/null 2> "$JOB/profile.err" && return 0
-    grep -q 'HTTP 404' "$JOB/profile.err" && return 1
-    cat "$JOB/profile.err" >&2; exit 1
-  }
-  : > "$JOB/profile-args"
-  if has_profile "?ref=$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1],safe=""))' "$base_ref")" \
-      || has_profile ""; then
-    log "using .claude/review-profile.json from the base or default branch"
-  elif has_profile "?ref=$head_sha"; then
-    log "the base branch has no profile yet; using the pull request's copy"
-    for f in review-profile.json review-rules.md; do
-      gh api -H 'Accept: application/vnd.github.raw' \
-        "repos/$GITHUB_REPOSITORY/contents/.claude/$f?ref=$head_sha" > "$JOB/$f" 2>/dev/null || rm -f "$JOB/$f"
-    done
-    printf '%s\n' --profile "$JOB/review-profile.json" >> "$JOB/profile-args"
-    [ -f "$JOB/review-rules.md" ] && printf '%s\n' --rules "$JOB/review-rules.md" >> "$JOB/profile-args"
-  else
-    case "$INPUT_REVIEWER" in frontend | backend) ;; *) log "reviewer must be frontend or backend, not '$INPUT_REVIEWER'"; exit 1 ;; esac
-    log "the repository has no .claude/review-profile.json; using the default $INPUT_REVIEWER profile"
-    python3 - "$PLUGIN/templates/review-profile.$INPUT_REVIEWER.json" "$JOB/review-profile.json" \
-      "$GITHUB_REPOSITORY" "$base_ref" <<'PY'
-import json, sys
-src, dst, repo, base = sys.argv[1:]
-p = json.load(open(src))
-p.update(project=repo.split("/")[-1], repo=repo, baseBranch=base, crossRepoAnchors=[])
-p.pop("projectRules", None)
-json.dump(p, open(dst, "w"), indent=2)
-PY
-    printf '%s\n' --profile "$JOB/review-profile.json" >> "$JOB/profile-args"
-  fi
-}
+pick_profile() { python3 "$ACTION_DIR/runtime.py" profile; }
 
 gh_at_least() { # MAJOR MINOR
   command -v gh >/dev/null || return 1
@@ -181,6 +153,10 @@ install_tools() {
   # The pinned Claude CLI, whatever the runner has: the binary was tested against it.
   npm install --silent --no-audit --no-fund --prefix "$tools/claude" "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
   ln -sf "$tools/claude/node_modules/.bin/claude" "$tools/bin/claude"
+  if [ "${INPUT_CODEX:-false}" = true ]; then
+    npm install --silent --no-audit --no-fund --prefix "$tools/codex" "@openai/codex@$CODEX_VERSION"
+    ln -sf "$tools/codex/node_modules/.bin/codex" "$tools/bin/codex"
+  fi
 }
 
 # The action installs the Claude CLI with npm. Runners without Node (some self-hosted ones) get it
@@ -191,11 +167,30 @@ cmd_node_check() {
 
 cmd_prepare() {
   set -e
+  python3 "$ACTION_DIR/runtime.py" validate
+  local codex_key="${INPUT_OPENAI_API_KEY:-}"
+  unset INPUT_OPENAI_API_KEY OPENAI_API_KEY CODEX_API_KEY CODEX_HOME
   rm -rf "$JOB"
   mkdir -p "$JOB/home/.claude/skills" "$JOB/tmp" "$JOB/data" "$JOB/work" "$JOB/bin"
   date -u +%Y-%m-%dT%H:%M:%SZ > "$JOB/started-at"
 
-  # The binary pinned by this ref's release.json, checked against its sha256.
+  install_tools
+  python3 "$ACTION_DIR/runtime.py" resolve
+  selected_paths
+  python3 "$ACTION_DIR/runtime.py" args > "$JOB/review-args"
+  printf '%s\n' "${INPUT_VERDICT:-comment}" > "$JOB/verdict"
+  printf '%s\n' "${INPUT_REVIEW_MODE:-full}" > "$JOB/review-mode"
+  if [ "${INPUT_CODEX:-false}" = true ]; then
+    mkdir -p "$JOB/home/.codex"
+    chmod 700 "$JOB/home/.codex"
+    printf '%s' "$codex_key" | HOME="$JOB/home" CODEX_HOME="$JOB/home/.codex" "$JOB/tools/bin/codex" login --with-api-key > /dev/null
+    unset codex_key
+    if [ -n "${INPUT_CODEX_MODEL:-}" ]; then
+      printf 'model = "%s"\n' "$INPUT_CODEX_MODEL" > "$JOB/home/.codex/review.config.toml"
+    fi
+  fi
+
+  # The selected freeze's binary, checked against its sha256.
   local tgt tag repo asset sha
   tgt="$(target)"; tag="$(release_field tag)"; repo="$(release_field repo)"
   asset="$(release_field name "$tgt")"; sha="$(release_field sha256 "$tgt")"
@@ -209,7 +204,6 @@ cmd_prepare() {
 
   # The post step rewrites the report with the homosapiens skill; without it nothing is posted.
   cp -R "$HOMOSAPIENS" "$JOB/home/.claude/skills/homosapiens"
-  install_tools # before pick_profile, which needs gh
   pick_profile
   log "tribunal $tag ($asset)"
 }
@@ -223,25 +217,76 @@ tribunal() {
   [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || unset CLAUDE_CODE_OAUTH_TOKEN
   unset ANTHROPIC_API_KEY
   export HOME="$JOB/home" TMPDIR="$JOB/tmp" TRIBUNAL_DATA_DIR="$JOB/data" TRIBUNAL_PLUGIN_ROOT="$PLUGIN"
+  unset OPENAI_API_KEY CODEX_API_KEY INPUT_OPENAI_API_KEY
+  export CODEX_HOME="$JOB/home/.codex"
   export PATH="$JOB/tools/bin:$PATH"
   cd "$JOB/work" || return 1
   "$(cat "$JOB/bin-path")" "$@"
 }
 
-cmd_review() {
-  local args=()
-  while IFS= read -r a; do args+=("$a"); done < "$JOB/profile-args"
-  # The binary clones the pull request with GH_TOKEN; this lets its git fetches use it too.
-  HOME="$JOB/home" gh auth setup-git >&2
-  tribunal review --pr "$(pr_number)" --repo "$GITHUB_REPOSITORY" --head-sha "$(event pull_request.head.sha)" \
-    --no-codex --no-post --out "$JOB/run.json" ${args[@]+"${args[@]}"} 2>&1 | tee "$JOB/review.log"
+# Never let the engine's human-review fallback stand in for a verified CI baseline.
+cmd_restore() {
+  mkdir -p "$JOB/data"
+  rm -f "$JOB/data/metrics.jsonl"
+  printf '%s\n' full > "$JOB/effective-mode"
+  if [ "$(cat "$JOB/review-mode")" = incremental ]; then
+    if python3 "$ACTION_DIR/runtime.py" restore 2> "$JOB/baseline-reason"; then
+      printf '%s\n' incremental > "$JOB/effective-mode"
+      log "restored a verified incremental baseline"
+    else
+      log "using a full review: $(cat "$JOB/baseline-reason")"
+    fi
+  fi
 }
 
-# GITHUB_TOKEN cannot read `gh api user`, so once a pull request has a review the duplicate-review
-# gate cannot tell whose it is and holds the post. Running the action is a request for a review, so
-# the full review is posted over any standing one, always as a comment.
+cmd_review() {
+  local args=() a expected live rc
+  while IFS= read -r a; do [ -n "$a" ] && args+=("$a"); done < "$JOB/profile-args"
+  while IFS= read -r a; do [ -n "$a" ] && args+=("$a"); done < "$JOB/review-args"
+  : > "$JOB/review.log"
+  expected="$(event pull_request.head.sha)"
+  live="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$(pr_number)" --jq .head.sha)" || {
+    log "cannot verify the current PR head" 2>&1 | tee -a "$JOB/review.log"; return 1;
+  }
+  if [ "$live" != "$expected" ]; then
+    log "PR head moved before review; add the label again" 2>&1 | tee -a "$JOB/review.log"; return 1
+  fi
+  if [ "$(cat "$JOB/effective-mode" 2>/dev/null || echo full)" != incremental ]; then
+    args+=(--head-sha "$expected" --full)
+  fi
+  HOME="$JOB/home" gh auth setup-git >&2 || return 1
+  tribunal review --pr "$(pr_number)" --repo "$GITHUB_REPOSITORY" --no-post --out "$JOB/run.json" "${args[@]}" 2>&1 | tee -a "$JOB/review.log"
+  rc=$?
+  [ "$rc" -eq 0 ] || return "$rc"
+  python3 "$ACTION_DIR/runtime.py" check-head 2>&1 | tee -a "$JOB/review.log"
+}
+
+# Keep existing standing-review behavior. The verdict is opt-in; HEAD checks are not.
 cmd_post() {
-  tribunal post --from "$JOB/run.json" --verdict comment --over-standing-review 2>&1 | tee "$JOB/post.log"
+  python3 "$ACTION_DIR/runtime.py" check-head 2>&1 | tee "$JOB/post.log" || return 1
+  local args=(--from "$JOB/run.json" --over-standing-review)
+  if [ "$(cat "$JOB/verdict")" = comment ]; then args+=(--verdict comment); fi
+  # The same model/effort applies to review and report composition.
+  local name value
+  for name in model effort; do
+    value="$(python3 - "$JOB/review-args" "--$name" <<'PYARG'
+import sys
+args = open(sys.argv[1]).read().splitlines()
+print(args[args.index(sys.argv[2]) + 1] if sys.argv[2] in args else '')
+PYARG
+)"
+    [ -z "$value" ] || args+=("--$name" "$value")
+  done
+  tribunal post "${args[@]}" 2>&1 | tee -a "$JOB/post.log"
+}
+
+cmd_baseline() {
+  out saved false
+  if python3 "$ACTION_DIR/runtime.py" save 2> "$JOB/baseline-save-reason"; then
+    out saved true
+  else
+    log "baseline not saved: $(cat "$JOB/baseline-save-reason")"
+  fi
 }
 
 # Why nothing was posted: the post's own line, else the last line the binary printed, else the
@@ -278,7 +323,7 @@ cmd_summary() {
   [ -n "${GITHUB_STEP_SUMMARY:-}" ] || return 0
   local pr status url skipped reason report
   pr="$(pr_number)"; report="$JOB/tmp/tribunal-report-$pr.md"
-  url="$(grep -m1 -oE '^Posted [A-Za-z_-]+: \S+' "$JOB/post.log" 2>/dev/null | sed -E 's/^Posted [A-Za-z_-]+: //')"
+  url="$(grep -m1 -oE '^Posted [A-Za-z _-]+: \S+' "$JOB/post.log" 2>/dev/null | sed -E 's/^Posted [A-Za-z _-]+: //')"
   [ -f "$JOB/run.json" ] && skipped="$(python3 -c 'import json,sys
 r = json.load(open(sys.argv[1]))
 if r.get("skipped"): print(r.get("reason") or "no reason given")' "$JOB/run.json" 2>/dev/null)"
@@ -292,6 +337,39 @@ if r.get("skipped"): print(r.get("reason") or "no reason given")' "$JOB/run.json
     echo "### Tribunal — PR #$pr · $status"
     [ -n "$url" ] && printf '\n[See the review on the pull request](%s)\n' "$url"
     echo
+    if [ -f "$JOB/selection.json" ]; then
+      python3 - "$JOB/selection.json" <<'PYINFO'
+import json, sys
+s = json.load(open(sys.argv[1]))
+print(f"Tribunal `{s['version']}` · commit `{s['commit']}` · binary `{s['binary']}`")
+PYINFO
+    fi
+    if [ -f "$JOB/run.json" ] || [ -f "$JOB/effective-mode" ]; then
+      python3 - "$JOB" <<'PYMODE'
+import json, pathlib, sys
+job = pathlib.Path(sys.argv[1])
+try:
+    metrics = json.loads((job / 'run.json').read_text()).get('metrics') or {}
+except (OSError, ValueError, AttributeError):
+    metrics = {}
+if not isinstance(metrics, dict):
+    metrics = {}
+mode = metrics.get('reviewMode')
+if mode not in ('full', 'incremental'):
+    try:
+        mode = (job / 'effective-mode').read_text().strip()
+    except OSError:
+        mode = None
+if mode in ('full', 'incremental'):
+    print(f'\nReview mode: `{mode}`')
+fallback = metrics.get('incrementalFallback')
+if fallback:
+    print('Incremental fallback: ' + str(fallback).replace('\n', ' '))
+PYMODE
+    fi
+    [ ! -f "$JOB/baseline-reason" ] || cat "$JOB/baseline-reason"
+    [ ! -f "$JOB/baseline-save-reason" ] || cat "$JOB/baseline-save-reason"
+    echo
     if [ -f "$report" ]; then
       head -c 900000 "$report"
       [ "$(wc -c < "$report")" -gt 900000 ] && printf '\n\n*Report cut to fit the job summary; the full one is in the run artifact.*\n'
@@ -304,7 +382,7 @@ if r.get("skipped"): print(r.get("reason") or "no reason given")' "$JOB/run.json
 
 # The label is a one-shot request: remove it so adding it again starts a new review.
 cmd_cleanup() {
-  local label pr slug head
+  local label pr slug head actual_head
   label="$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1],safe=""))' "$INPUT_LABEL")"
   gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$(pr_number)/labels/$label" >/dev/null 2>&1 \
     || log "label '$INPUT_LABEL' was not on the pull request"
@@ -312,19 +390,32 @@ cmd_cleanup() {
   # vote dir carries the head commit's first 8 characters.
   pr="$(pr_number)"; head="$(event pull_request.head.sha)"
   slug="$(python3 -c 'import re,sys;print(re.sub(r"[^A-Za-z0-9]+","-",sys.argv[1]))' "$GITHUB_REPOSITORY")"
+  actual_head="$(python3 - "$JOB/run.json" <<'PYCLEAN'
+import json, re, sys
+try:
+    head = json.load(open(sys.argv[1])).get('metrics', {}).get('headSha', '')
+    print(head[:8] if isinstance(head, str) and re.fullmatch(r'[0-9a-f]{8,40}', head) else '')
+except (OSError, ValueError, TypeError):
+    print('')
+PYCLEAN
+)"
+  [ -z "$actual_head" ] || rm -rf "$FIXED_TMP/peer-review-votes-$pr-$actual_head"
   rm -rf "$JOB" "$FIXED_TMP/tribunal-methodology-$slug-$pr.md" "$FIXED_TMP/tribunal-conventions-$slug-$pr.md" \
     "$FIXED_TMP/peer-review-votes-$pr-${head:0:8}"
   return 0
 }
 
 case "${1:-}" in
+  validate) python3 "$ACTION_DIR/runtime.py" validate ;;
   gate) cmd_gate ;;
   node-check) cmd_node_check ;;
   prepare) cmd_prepare ;;
+  restore) cmd_restore ;;
+  baseline) cmd_baseline ;;
   review) cmd_review ;;
   post) cmd_post ;;
   fallback) cmd_fallback ;;
   summary) cmd_summary ;;
   cleanup) cmd_cleanup ;;
-  *) echo "usage: run.sh gate|node-check|prepare|review|post|fallback|summary|cleanup" >&2; exit 2 ;;
+  *) echo "usage: run.sh gate|node-check|validate|prepare|restore|review|post|baseline|fallback|summary|cleanup" >&2; exit 2 ;;
 esac
