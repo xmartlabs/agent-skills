@@ -11,6 +11,12 @@
 //!
 //! When every matched item was found in every run of both arms (or in none),
 //! the comparison measured nothing and says so instead of reporting parity.
+//!
+//! When every resample gives nearly the same difference (every arm unanimous
+//! in every run), the percentile interval collapses to a point. Each recall
+//! interval is therefore the wider of the bootstrap's and one computed from the
+//! pooled counts: Wilson for an arm's rate, Newcombe's hybrid score interval for
+//! the difference. Every verdict also carries a strength word by unit count.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -23,9 +29,13 @@ pub const MIN_RESAMPLES: usize = 1_000;
 pub const MAX_RESAMPLES: usize = 1_000_000;
 /// Below this many matched units a percentile interval is too narrow to trust.
 pub const MIN_UNITS: usize = 5;
+/// Below this many units a result describes those PRs, not PRs like them.
+pub const MIN_INDICATIVE_UNITS: usize = 3;
 
 const LOWER: f64 = 0.025;
 const UPPER: f64 = 0.975;
+/// The normal quantile for a two-sided 95% interval.
+const Z95: f64 = 1.959_963_984_540_054;
 
 #[derive(Debug, Clone, Copy)]
 pub struct CompareArgs {
@@ -55,6 +65,9 @@ struct Arm {
     detections: BTreeMap<String, BTreeMap<String, BTreeMap<String, bool>>>,
     /// unit, then run, then cost.
     costs: BTreeMap<String, BTreeMap<String, f64>>,
+    /// unit, then run, then (lens dispatches that returned no answer, surfaces
+    /// a lens left unread for budget).
+    health: BTreeMap<String, BTreeMap<String, (u64, u64)>>,
 }
 
 fn id(v: Option<&Value>, field: &str, at: &str) -> Result<String, String> {
@@ -65,6 +78,40 @@ fn id(v: Option<&Value>, field: &str, at: &str) -> Result<String, String> {
             "{at}: `{field}` must be a non-empty string or an integer"
         )),
     }
+}
+
+fn count(o: &serde_json::Map<String, Value>, field: &str, at: &str) -> Result<u64, String> {
+    match o.get(field) {
+        None => Ok(0),
+        Some(v) => v
+            .as_u64()
+            .ok_or_else(|| format!("{at}: `{field}` must be an integer, zero or more")),
+    }
+}
+
+fn parse_health(arm: &mut Arm, list: &Value, label: &str) -> Result<(), String> {
+    let list = list
+        .as_array()
+        .ok_or_else(|| format!("{label}: `health` must be an array"))?;
+    for (i, row) in list.iter().enumerate() {
+        let at = format!("{label}: health[{i}]");
+        let o = row
+            .as_object()
+            .ok_or_else(|| format!("{at}: expected an object"))?;
+        let unit = id(o.get("unit"), "unit", &at)?;
+        let run = id(o.get("run"), "run", &at)?;
+        let entry = (count(o, "lensFailures", &at)?, count(o, "budgetGaps", &at)?);
+        if arm
+            .health
+            .entry(unit)
+            .or_default()
+            .insert(run, entry)
+            .is_some()
+        {
+            return Err(format!("{at}: this unit and run appear twice"));
+        }
+    }
+    Ok(())
 }
 
 fn parse_arm(v: &Value, label: &str) -> Result<Arm, String> {
@@ -123,10 +170,87 @@ fn parse_arm(v: &Value, label: &str) -> Result<Arm, String> {
             }
         }
     }
+    if let Some(list) = obj.get("health") {
+        parse_health(&mut arm, list, label)?;
+    }
     if arm.detections.is_empty() && arm.costs.is_empty() {
         return Err(format!("{label}: no `detections` and no `runs`"));
     }
     Ok(arm)
+}
+
+/// What the health rows say about the runs that stay in the recall comparison.
+#[derive(Default)]
+struct Health {
+    /// Runs left out because a lens returned no answer.
+    failed: usize,
+    /// Runs kept whose lenses left something unread for budget.
+    budget_gaps: usize,
+    /// Runs kept.
+    kept: usize,
+}
+
+/// Removes from recall every run in which a lens returned no answer: its
+/// misses are the infrastructure's, not the model's. Its cost stays.
+fn drop_failed_runs(arm: &mut Arm) -> Health {
+    let mut h = Health::default();
+    let health = &arm.health;
+    let state = |unit: &str, run: &str| health.get(unit).and_then(|r| r.get(run)).copied();
+    for (unit, runs) in &mut arm.detections {
+        runs.retain(|run, _| {
+            let (failures, gaps) = state(unit, run).unwrap_or((0, 0));
+            if failures > 0 {
+                h.failed += 1;
+                return false;
+            }
+            h.kept += 1;
+            if gaps > 0 {
+                h.budget_gaps += 1;
+            }
+            true
+        });
+    }
+    arm.detections.retain(|_, runs| !runs.is_empty());
+    h
+}
+
+/// Wilson's score interval for `k` successes in `n` trials.
+fn wilson(k: f64, n: f64) -> [f64; 2] {
+    if n <= 0.0 {
+        return [0.0, 1.0];
+    }
+    let p = k / n;
+    let z2 = Z95 * Z95;
+    let centre = (p + z2 / (2.0 * n)) / (1.0 + z2 / n);
+    let half = Z95 * (p * (1.0 - p) / n + z2 / (4.0 * n * n)).sqrt() / (1.0 + z2 / n);
+    [(centre - half).max(0.0), (centre + half).min(1.0)]
+}
+
+/// Newcombe's hybrid score interval for `kb / nb - ka / na`, from each arm's
+/// Wilson interval (method 10 of Newcombe, 1998).
+fn newcombe(ka: f64, na: f64, kb: f64, nb: f64) -> [f64; 2] {
+    let (pa, pb) = (ka / na, kb / nb);
+    let ([la, ua], [lb, ub]) = (wilson(ka, na), wilson(kb, nb));
+    let d = pb - pa;
+    [
+        d - ((pb - lb).powi(2) + (ua - pa).powi(2)).sqrt(),
+        d + ((ub - pb).powi(2) + (pa - la).powi(2)).sqrt(),
+    ]
+}
+
+fn envelope(a: [f64; 2], b: [f64; 2]) -> [f64; 2] {
+    [a[0].min(b[0]), a[1].max(b[1])]
+}
+
+/// How far a result from `units` units may be carried.
+fn strength(units: usize) -> &'static str {
+    if units < MIN_INDICATIVE_UNITS {
+        "exploratory"
+    } else if units < MIN_UNITS {
+        "indicative"
+    } else {
+        "adequate"
+    }
 }
 
 /// splitmix64: small, seedable and the same on every platform.
@@ -356,8 +480,26 @@ fn ci(v: [f64; 2]) -> Value {
     json!([v[0], v[1]])
 }
 
-fn recall_report(r: &Recall, args: &CompareArgs, notes: &mut Vec<String>) -> Value {
+fn recall_report(
+    r: &Recall,
+    health: [&Health; 2],
+    args: &CompareArgs,
+    notes: &mut Vec<String>,
+) -> Value {
     let units = r.units.len();
+    let [ha, hb] = health;
+    if ha.failed + hb.failed > 0 {
+        notes.push(format!(
+            "Left out of recall: {} runs in A and {} in B where a lens returned no answer. Their misses would be the infrastructure's, not the model's; their cost is kept.",
+            ha.failed, hb.failed
+        ));
+    }
+    if ha.budget_gaps + hb.budget_gaps > 0 {
+        notes.push(format!(
+            "{} of {} runs in A and {} of {} in B left something unread for budget: a miss there may be a file no lens read rather than a defect a lens missed.",
+            ha.budget_gaps, ha.kept, hb.budget_gaps, hb.kept
+        ));
+    }
     let all_found = r.found_a == r.seen_a && r.found_b == r.seen_b;
     let none_found = r.found_a == 0.0 && r.found_b == 0.0;
     if units < MIN_UNITS {
@@ -374,6 +516,20 @@ fn recall_report(r: &Recall, args: &CompareArgs, notes: &mut Vec<String>) -> Val
     let Some(an) = analyze(&r.units, args, false) else {
         return json!({"recorded": false});
     };
+    let a_ci = envelope(an.a_ci, wilson(r.found_a, r.seen_a));
+    let b_ci = envelope(an.b_ci, wilson(r.found_b, r.seen_b));
+    let diff_ci = envelope(
+        an.stat_ci,
+        newcombe(r.found_a, r.seen_a, r.found_b, r.seen_b),
+    );
+    let widened = diff_ci != an.stat_ci;
+    if widened && !all_found && !none_found {
+        notes.push(format!(
+            "The bootstrap interval for the difference ({} to {} points) was narrower than Newcombe's from the pooled counts on at least one side; each bound reported is the wider of the two. When the runs agree with each other the bootstrap interval collapses, and this is what keeps it from reading as certain.",
+            points(&json!(an.stat_ci[0])),
+            points(&json!(an.stat_ci[1]))
+        ));
+    }
     let (kind, text) = if all_found {
         (
             "ceiling",
@@ -385,7 +541,7 @@ fn recall_report(r: &Recall, args: &CompareArgs, notes: &mut Vec<String>) -> Val
             "not discriminated: no matched item was found in any run of either arm",
         )
     } else {
-        match direction(an.stat_ci[0], an.stat_ci[1], 0.0) {
+        match direction(diff_ci[0], diff_ci[1], 0.0) {
             Direction::Higher => ("b-higher", "B found more, outside the run-to-run noise"),
             Direction::Lower => ("a-higher", "A found more, outside the run-to-run noise"),
             Direction::Noise => (
@@ -399,11 +555,19 @@ fn recall_report(r: &Recall, args: &CompareArgs, notes: &mut Vec<String>) -> Val
         "units": units,
         "items": r.items,
         "observations": {"a": r.seen_a, "b": r.seen_b},
-        "a": {"rate": an.a, "ci": ci(an.a_ci)},
-        "b": {"rate": an.b, "ci": ci(an.b_ci)},
-        "difference": {"value": an.stat, "ci": ci(an.stat_ci)},
+        "a": {"rate": an.a, "ci": ci(a_ci)},
+        "b": {"rate": an.b, "ci": ci(b_ci)},
+        "difference": {
+            "value": an.stat,
+            "ci": ci(diff_ci),
+            "bootstrapCi": ci(an.stat_ci),
+            "widened": widened,
+        },
         "verdict": kind,
         "verdictText": text,
+        "strength": strength(units),
+        "runsLeftOut": {"a": ha.failed, "b": hb.failed},
+        "runsWithBudgetGaps": {"a": ha.budget_gaps, "b": hb.budget_gaps},
     })
 }
 
@@ -446,6 +610,7 @@ fn cost_report(units: &[UnitRuns], args: &CompareArgs, notes: &mut Vec<String>) 
         "ratio": {"value": an.stat, "ci": ci(an.stat_ci)},
         "verdict": kind,
         "verdictText": text,
+        "strength": strength(units.len()),
     })
 }
 
@@ -457,10 +622,11 @@ pub fn compare(a: &Value, b: &Value, args: &CompareArgs) -> Result<Value, String
             "resamples must be between {MIN_RESAMPLES} and {MAX_RESAMPLES}"
         ));
     }
-    let (arm_a, arm_b) = (parse_arm(a, "A")?, parse_arm(b, "B")?);
+    let (mut arm_a, mut arm_b) = (parse_arm(a, "A")?, parse_arm(b, "B")?);
+    let (health_a, health_b) = (drop_failed_runs(&mut arm_a), drop_failed_runs(&mut arm_b));
     let mut notes = Vec::new();
     let recall = match recall_data(&arm_a, &arm_b) {
-        Some(r) => recall_report(&r, args, &mut notes),
+        Some(r) => recall_report(&r, [&health_a, &health_b], args, &mut notes),
         None => json!({"recorded": false}),
     };
     let cost = cost_report(&cost_data(&arm_a, &arm_b), args, &mut notes);
@@ -513,7 +679,7 @@ pub fn render(report: &Value) -> String {
     );
     let _ = writeln!(
         out,
-        "{} resamples, seed {}, 95% percentile intervals; units are drawn together for both arms and runs are drawn within each unit",
+        "{} resamples, seed {}, 95% intervals; units are drawn together for both arms and runs are drawn within each unit, and a recall interval is never narrower than the score interval from the pooled counts",
         report["resamples"], report["seed"]
     );
     let r = &report["recall"];
@@ -542,8 +708,10 @@ pub fn render(report: &Value) -> String {
         );
         let _ = writeln!(
             out,
-            "  verdict: {}",
-            r["verdictText"].as_str().unwrap_or("")
+            "  verdict: {} ({}, {} units)",
+            r["verdictText"].as_str().unwrap_or(""),
+            r["strength"].as_str().unwrap_or(""),
+            r["units"]
         );
     } else {
         let _ = writeln!(out, "\nrecall: not recorded in both arms");
@@ -574,8 +742,10 @@ pub fn render(report: &Value) -> String {
         );
         let _ = writeln!(
             out,
-            "  verdict: {}",
-            c["verdictText"].as_str().unwrap_or("")
+            "  verdict: {} ({}, {} units)",
+            c["verdictText"].as_str().unwrap_or(""),
+            c["strength"].as_str().unwrap_or(""),
+            c["units"]
         );
     } else {
         let _ = writeln!(out, "\ncost: not recorded in both arms");
@@ -654,7 +824,7 @@ mod tests {
                     r["recall"]["difference"]["value"],
                     first["recall"]["difference"]["value"]
                 );
-                r["recall"]["difference"]["ci"].clone()
+                r["recall"]["difference"]["bootstrapCi"].clone()
             })
             .collect();
         assert!(reports.iter().any(|ci| *ci != reports[0]), "{reports:?}");
@@ -772,6 +942,99 @@ mod tests {
     }
 
     #[test]
+    fn newcombe_matches_the_published_example_and_the_lab_case() {
+        // Newcombe (1998), method 10: 56/70 against 48/80 is 0.0524 to 0.3339.
+        let [lo, hi] = newcombe(48.0, 80.0, 56.0, 70.0);
+        assert!(
+            (lo - 0.0524).abs() < 5e-4 && (hi - 0.3339).abs() < 5e-4,
+            "{lo} {hi}"
+        );
+        // 0 of 5 against 5 of 5 reads as +39 to +100 points, not +100 exactly.
+        let [lo, hi] = newcombe(0.0, 5.0, 5.0, 5.0);
+        assert!(
+            (lo - 0.3855).abs() < 5e-4 && (hi - 1.0).abs() < 1e-9,
+            "{lo} {hi}"
+        );
+    }
+
+    #[test]
+    fn a_unanimous_difference_is_not_reported_as_certain() {
+        // A never finds the two items and B always does, 3 units x 3 runs:
+        // every resample gives +100, so the bootstrap interval is a point.
+        let none = detections(3, 3, 2, |_, _, _| false);
+        let all = detections(3, 3, 2, |_, _, _| true);
+        let report = run(&none, &all);
+        let d = &report["recall"]["difference"];
+        assert_eq!(d["value"], 1.0);
+        assert_eq!(d["bootstrapCi"], json!([1.0, 1.0]));
+        assert_eq!(d["widened"], true);
+        let (lo, hi) = lo_hi(d);
+        assert!((lo - 0.7513).abs() < 5e-4 && hi >= 1.0, "{d}");
+        let (a_lo, a_hi) = lo_hi(&report["recall"]["a"]);
+        assert!(a_lo == 0.0 && a_hi > 0.17, "{}", report["recall"]["a"]);
+        assert!(report["notes"].to_string().contains("Newcombe"));
+    }
+
+    #[test]
+    fn the_verdict_says_how_far_it_can_be_carried() {
+        let words: Vec<String> = [2, 3, 5]
+            .iter()
+            .map(|&units| {
+                let a = detections(units, 3, 2, |u, r, _| (u + r) % 2 == 0);
+                let b = detections(units, 3, 2, |_, _, _| true);
+                let report = run(&a, &b);
+                report["recall"]["strength"].as_str().unwrap().to_owned()
+            })
+            .collect();
+        assert_eq!(words, ["exploratory", "indicative", "adequate"]);
+        let a = detections(2, 3, 1, |_, _, _| false);
+        let mut b = detections(2, 3, 1, |_, _, _| true);
+        b["runs"] = costs(2, 3, |_, _| 1.0)["runs"].clone();
+        let mut a2 = a.clone();
+        a2["runs"] = costs(2, 3, |_, _| 1.0)["runs"].clone();
+        let text = render(&run(&a2, &b));
+        assert!(
+            text.contains(
+                "verdict: B found more, outside the run-to-run noise (exploratory, 2 units)"
+            ),
+            "{text}"
+        );
+        assert_eq!(text.matches("(exploratory, 2 units)").count(), 2, "{text}");
+    }
+
+    #[test]
+    fn a_run_with_a_failed_lens_is_left_out_of_recall() {
+        // Both arms find the item in every run, except run 0 of unit u0 in A,
+        // where a lens returned nothing. Counted, that run makes A look worse.
+        let mut a = detections(6, 3, 1, |u, r, _| !(u == 0 && r == 0));
+        let b = detections(6, 3, 1, |_, _, _| true);
+        a["runs"] = costs(6, 3, |_, _| 1.0)["runs"].clone();
+        a["health"] = json!([
+            {"unit": "u0", "run": 0, "lensFailures": 1},
+            {"unit": "u1", "run": 2, "budgetGaps": 2},
+        ]);
+        let mut b2 = b.clone();
+        b2["runs"] = costs(6, 3, |_, _| 1.0)["runs"].clone();
+        let report = run(&a, &b2);
+        let r = &report["recall"];
+        assert_eq!(r["a"]["rate"], 1.0, "{r}");
+        assert_eq!(r["observations"]["a"], 17.0);
+        assert_eq!(r["verdict"], "ceiling");
+        assert_eq!(r["runsLeftOut"], json!({"a": 1, "b": 0}));
+        assert_eq!(r["runsWithBudgetGaps"], json!({"a": 1, "b": 0}));
+        assert_eq!(report["cost"]["units"], 6);
+        let notes = report["notes"].to_string();
+        assert!(
+            notes.contains("1 runs in A and 0 in B where a lens returned no answer"),
+            "{notes}"
+        );
+        assert!(
+            notes.contains("1 of 17 runs in A and 0 of 18 in B left something unread"),
+            "{notes}"
+        );
+    }
+
+    #[test]
     fn malformed_input_names_the_row() {
         let ok = detections(1, 1, 1, |_, _, _| true);
         let bad = |rows: Value| compare(&ok, &rows, &CompareArgs::default()).unwrap_err();
@@ -788,6 +1051,13 @@ mod tests {
         let e = bad(json!({"runs": [{"unit": "p", "run": 1, "cost": -1.0}]}));
         assert!(e.contains("`cost` must be a number"), "{e}");
         assert_eq!(bad(json!({})), "B: no `detections` and no `runs`");
+        let mut h = ok.clone();
+        h["health"] = json!([{"unit": "p", "run": 1, "lensFailures": -1}]);
+        let e = bad(h);
+        assert_eq!(
+            e,
+            "B: health[0]: `lensFailures` must be an integer, zero or more"
+        );
         assert_eq!(bad(json!([])), "B: expected a JSON object");
         let args = CompareArgs {
             resamples: 5,

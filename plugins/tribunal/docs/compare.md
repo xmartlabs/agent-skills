@@ -16,7 +16,8 @@ tribunal compare --a base.json --b edit.json [--resamples 10000] [--seed 1] [--j
 
 ## The files
 
-One JSON object per arm. Both parts are optional, but an arm needs at least one.
+One JSON object per arm. `detections` and `runs` are both optional, but an arm
+needs at least one of them. `health` is optional.
 
 ```json
 {
@@ -28,6 +29,9 @@ One JSON object per arm. Both parts are optional, but an arm needs at least one.
   "runs": [
     {"unit": "pr-1", "run": 1, "cost": 1.42},
     {"unit": "pr-1", "run": 2, "cost": 1.31}
+  ],
+  "health": [
+    {"unit": "pr-1", "run": 2, "lensFailures": 0, "budgetGaps": 1}
   ]
 }
 ```
@@ -41,6 +45,13 @@ One JSON object per arm. Both parts are optional, but an arm needs at least one.
   reading the findings.
 - `cost` is the cost of one run, in any unit, zero or more. **Both arms must
   price their runs the same way.** The command cannot tell otherwise.
+- `health` says what went wrong in a run outside the model's judgement, from
+  its metrics row: `lensFailures` is how many lens dispatches returned no
+  answer (`lensFailures` in the row), `budgetGaps` how many surfaces a lens
+  left unread for budget (`lensNotReachedKinds.budget`). Both default to 0.
+  A run with a lens failure is left out of recall, because its misses are the
+  infrastructure's; its cost stays. Runs with budget gaps are kept and counted
+  in the notes, since a miss there may be a file no lens read.
 
 Only what both arms saw is compared: units present in both files, and within
 them the items present in both. What was left out is counted in the notes.
@@ -50,13 +61,24 @@ them the items present in both. What was left out is counted in the notes.
 A paired cluster bootstrap. Each resample draws units with replacement, the same
 draw for both arms, then draws runs with replacement inside each drawn unit. A
 run is kept whole, so the items of one run stay together. It reports, with 95%
-percentile intervals:
+intervals:
 
 - **Recall** of each arm (items found over items seen, counted per run) and B
   minus A.
 - **Cost** per run of each arm and B over A, when both arms have `runs`.
 
 The seed defaults to 1, so the same files give the same numbers.
+
+When the runs agree with each other, say A never finds an item and B always
+does, every resample gives the same difference and the percentile interval
+collapses to a point (+100 to +100). So each bound of a recall interval is the
+wider of the bootstrap's and that of a score interval from the pooled counts: Wilson's for an
+arm's rate, Newcombe's hybrid score interval for the difference. 0 of 5
+against 5 of 5 then reads as +39 to +100 points. The score interval treats
+every observation as independent, so it is a floor on the width, not a
+replacement for the bootstrap. The JSON keeps the bootstrap's own interval in
+`difference.bootstrapCi` and says in `difference.widened` whether the score
+interval won.
 
 ## Reading the verdict
 
@@ -74,4 +96,11 @@ and the result should stay out of any conclusion. To measure the difference,
 use units where the baseline sometimes fails.
 
 With fewer than 5 matched units a percentile interval from so few clusters is
-too narrow, and the notes say so. Treat it as indicative.
+too narrow, and the notes say so. Every verdict also carries a strength word,
+`strength` in the JSON:
+
+| Strength | Units | Read it as |
+|---|---|---|
+| `exploratory` | 1 or 2 | Something about these PRs, not about PRs like them |
+| `indicative` | 3 or 4 | A direction worth checking on more PRs |
+| `adequate` | 5 or more | Enough units for the interval to mean what it says |
