@@ -842,7 +842,7 @@ pub async fn verify_phase<A: Agent>(
     let anchored = crate::anchor_repair::anchor_from_evidence(&mut panel.verified);
     if anchored > 0 {
         logs.push(format!(
-            "verifiedBy: anchored {anchored} finding(s) written without one from their located evidence"
+            "verifiedBy: anchored {anchored} finding(s) written without one from their evidence"
         ));
     }
     if let Some(head) = js::get(&review.context.pr_context, "headRefOid")

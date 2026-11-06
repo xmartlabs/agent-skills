@@ -8,7 +8,11 @@
 //! still fails the gate.
 //!
 //! A finding with no `verifiedBy` at all gets one from its own evidence when the
-//! evidence resolver already placed that evidence in the file at the head.
+//! evidence resolver already placed that evidence in the file at the head. When
+//! the resolver did not find it, because it searches only the diff and the quote
+//! is unchanged code of the file, the anchor is written without a line and the
+//! line repair looks the quote up in the whole file at the head. A quote that is
+//! not there either keeps no line, and the gate still demotes the finding.
 
 use serde_json::{json, Value};
 use tribunal_context::exec::Tools;
@@ -17,20 +21,27 @@ use tribunal_core::js;
 use tribunal_core::verified_gate::MIN_QUOTE_CHARS;
 
 const ANCHORED_KINDS: [&str; 2] = ["exact", "shifted"];
+/// The resolver's kind for a quote that is in no line of the diff.
+const NOT_IN_DIFF: &str = "not-found";
 
 /// The anchor a finding's located evidence stands for: its file, the line the
 /// evidence resolver placed it on and the evidence line itself.
 fn evidence_anchor(finding: &Value) -> Option<Value> {
     let resolution = js::get(finding, "evidenceResolution")?;
     let kind = js::get(resolution, "matchKind").and_then(Value::as_str)?;
-    if !ANCHORED_KINDS.contains(&kind)
-        || js::get(resolution, "evidenceLocated") != Some(&json!(true))
+    let line = if kind == NOT_IN_DIFF {
+        None
+    } else if ANCHORED_KINDS.contains(&kind)
+        && js::get(resolution, "evidenceLocated") == Some(&json!(true))
     {
+        Some(
+            js::get(resolution, "resolvedLine")
+                .and_then(Value::as_u64)
+                .filter(|l| *l >= 1)?,
+        )
+    } else {
         return None;
-    }
-    let line = js::get(resolution, "resolvedLine")
-        .and_then(Value::as_u64)
-        .filter(|l| *l >= 1)?;
+    };
     let file = match js::get(finding, "file") {
         Some(Value::String(s)) if !s.is_empty() => s,
         _ => return None,
@@ -49,12 +60,17 @@ fn evidence_anchor(finding: &Value) -> Option<Value> {
     if js::utf16_len(quote) < MIN_QUOTE_CHARS {
         return None;
     }
-    Some(json!({"file": file, "line": line, "quote": quote}))
+    Some(match line {
+        Some(line) => json!({"file": file, "line": line, "quote": quote}),
+        None => json!({"file": file, "quote": quote}),
+    })
 }
 
-/// Gives a finding with an empty `verifiedBy` the anchor its located evidence
-/// stands for, and returns how many it anchored. Nits, evidence the resolver
-/// did not place and findings that already cite code are left as they were.
+/// Gives a finding with an empty `verifiedBy` the anchor its evidence stands
+/// for, and returns how many it anchored. Evidence outside the diff gets an
+/// anchor without a line for `repair_anchor_lines` to complete. Nits, evidence
+/// the resolver found ambiguous, elsewhere or too generic, and findings that
+/// already cite code are left as they were.
 pub fn anchor_from_evidence(verified: &mut [Option<Value>]) -> usize {
     let mut anchored = 0;
     for v in verified.iter_mut().flatten() {
@@ -352,11 +368,11 @@ mod tests {
     }
 
     #[test]
-    fn nothing_changes_for_a_nit_unlocated_evidence_or_an_existing_anchor() {
+    fn nothing_changes_for_a_nit_unplaced_evidence_or_an_existing_anchor() {
         let cited = json!([{"file": "src/a.ts", "line": 3, "quote": "export const a = 1;"}]);
         let mut v = vec![
             evidenced("nit", "exact", json!(41), None),
-            evidenced("important", "not-found", Value::Null, None),
+            evidenced("nit", "not-found", Value::Null, None),
             evidenced("important", "ambiguous", Value::Null, None),
             evidenced("important", "elsewhere", json!(41), None),
             evidenced("important", "exact", Value::Null, None),
@@ -368,6 +384,23 @@ mod tests {
         assert_eq!(anchor_from_evidence(&mut v), 0);
         assert_eq!(v, before);
         assert_eq!(by_of(&v[5]), cited);
+    }
+
+    #[test]
+    fn evidence_outside_the_diff_becomes_an_anchor_without_a_line() {
+        let mut v = vec![
+            evidenced("important", "not-found", Value::Null, None),
+            evidenced("critical", "not-found", Value::Null, Some(json!([]))),
+        ];
+        assert_eq!(anchor_from_evidence(&mut v), 2);
+        for row in &v {
+            assert_eq!(
+                by_of(row),
+                json!([{"file": "src/db.ts", "quote": "const prisma = new PrismaClient({"}])
+            );
+        }
+        let (targets, _) = broken_anchors(&v);
+        assert_eq!(targets.len(), 2, "both go to the line repair");
     }
 
     #[test]
