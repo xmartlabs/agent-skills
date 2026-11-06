@@ -309,6 +309,11 @@ fn the_metrics_row_is_the_workflows() {
                 row.get("lensBudgetSkips"),
                 "lensNotReachedCount on {c}"
             );
+            // Declared difference: `threadBefore`, which the workflow never
+            // wrote. A state without it read the live thread. Witness:
+            // `thread_before.rs`.
+            let before = row.as_object_mut().unwrap().shift_remove("threadBefore");
+            assert_eq!(before, Some(Value::Null), "threadBefore on {c}");
             row
         })
         .collect();
