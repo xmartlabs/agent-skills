@@ -341,11 +341,14 @@ fn usd(x: f64) -> f64 {
 /// otherwise; `overBudget` when the lens sits past the size-based budget, so
 /// it exists only because the forced foci needed more lenses than the PR's
 /// size gave. A lens whose focus is not one of the profile's sentences is
-/// `unknown`.
+/// `unknown`. `files` is the review's scope and decides `forced`;
+/// `filesOpened` counts against `pr_files`, every file the PR changes, since
+/// an incremental re-review's lenses still read files outside its scope.
 #[must_use]
 pub fn lens_cost(
     foci: &[Value],
     files: &[String],
+    pr_files: &[String],
     lens_budget: f64,
     overridden: bool,
     profile: &Value,
@@ -377,7 +380,7 @@ pub fn lens_cost(
                 "toolUses": d.tool_calls.len(),
                 "turns": d.output.as_ref().map_or(0, |o| o.num_turns),
                 "outputTokens": output,
-                "filesOpened": opened_by(d, files).map(|o| o.len()),
+                "filesOpened": opened_by(d, pr_files).map(|o| o.len()),
             })
         })
         .collect();
@@ -622,6 +625,7 @@ pub fn persist_phase(
     metrics["lensCost"] = lens_cost(
         &foci,
         &plan.files,
+        &plan.all_pr_files,
         plan.lens_budget,
         plan.lenses_override.is_some(),
         &review.prepared.profile,
@@ -650,7 +654,7 @@ pub fn persist_phase(
         &review.dispatches[..lenses.min(review.dispatches.len())],
     );
     let lens_dispatches = &review.dispatches[..lenses.min(review.dispatches.len())];
-    metrics["prFilesNotOpened"] = pr_files_not_opened(&plan.files, lens_dispatches);
+    metrics["prFilesNotOpened"] = pr_files_not_opened(&plan.all_pr_files, lens_dispatches);
     metrics["transcriptsDir"] = transcripts_dir(lens_dispatches);
     // `agentsActual` stays null through the self-audit, as the workflow's row
     // does, and is patched in afterwards the way SKILL.md's Step 4 patches it.
@@ -885,7 +889,7 @@ mod tests {
             dispatch(0.2, 5, 50),
             dispatch(0.11119, 21, 70),
         ];
-        let rows = lens_cost(&foci, &files, 2.0, false, &profile(), &lenses);
+        let rows = lens_cost(&foci, &files, &files, 2.0, false, &profile(), &lenses);
         assert_eq!(
             rows,
             json!([
@@ -919,8 +923,10 @@ mod tests {
         read.transcript = Some(transcript);
         let unsaved = dispatch(0.1, 1, 1);
 
+        let in_scope = ["src/b.ts".to_owned()];
         let rows = lens_cost(
             &[json!("c"), json!("s")],
+            &in_scope,
             &files,
             2.0,
             false,
@@ -949,7 +955,7 @@ mod tests {
     fn an_overridden_count_is_never_over_budget() {
         let foci = [json!("c"), json!("x")];
         let lenses = [dispatch(0.1, 1, 1), dispatch(0.1, 1, 1)];
-        let rows = lens_cost(&foci, &[], 1.0, true, &profile(), &lenses);
+        let rows = lens_cost(&foci, &[], &[], 1.0, true, &profile(), &lenses);
         assert_eq!(rows[1]["overBudget"], json!(false));
         assert_eq!(rows[1]["lens"], json!("unknown"));
     }

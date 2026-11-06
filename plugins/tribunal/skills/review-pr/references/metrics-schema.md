@@ -1265,6 +1265,13 @@ verdict.
 | `prFilesNotOpened` | The PR's changed files that no lens named in a tool call. Every lens also receives the diff, so a file here may still have been read in its hunks; the list says no lens opened it beyond them. `null` when no lens left a transcript, `[]` when every file was opened. |
 | `transcriptsDir` | The directory the lenses' transcripts were saved in, or `null` when none was. Copy it before the operating system clears it if the run is to be studied later. |
 
+Both counts are over every file the PR changes, also in an incremental
+re-review. There a file carried forward from the earlier review is outside the
+run's scope, so it is expected in `prFilesNotOpened` unless a lens read it
+anyway. Rows written by 115.3.0 counted only the files in the run's scope, so
+an incremental row from that version can show `filesOpened: 0` and
+`prFilesNotOpened: []` for lenses that did read PR files.
+
 ## The posted-comment footer reads this row, it does not extend it
 
 Every posted GitHub comment ends with one `<sub>...</sub>` metadata line —
