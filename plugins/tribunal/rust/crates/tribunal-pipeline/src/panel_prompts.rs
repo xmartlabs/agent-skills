@@ -5,6 +5,7 @@
 //! literals, each interpolation named `{{name}}`.
 
 use serde_json::{Map, Value};
+use tribunal_core::evidence::tsc_oracle::GROUNDED_LINE_WINDOW;
 use tribunal_core::js;
 use tribunal_core::lens::diff_sectioning::external_scope_lines;
 use tribunal_core::lens::js_ext::to_js_string;
@@ -12,6 +13,7 @@ use tribunal_core::panel::debate_degrade::debate_defense_block;
 
 use crate::decisions::PRECEDENCE_RULE;
 use crate::synthesize::render;
+use crate::verify::GROUNDED_DIAGNOSTIC;
 
 const REFUTE: &str = include_str!("panel/refute.txt");
 const REFUTE_TAIL: &str = include_str!("panel/refute-tail.txt");
@@ -43,6 +45,28 @@ fn s(v: Option<&Value>) -> String {
 
 fn get<'a>(v: &'a Value, k: &str) -> Option<&'a Value> {
     js::get(v, k)
+}
+
+/// The checker diagnostic the grounded gate found near a finding that claims
+/// no compile error, as a paragraph after its description. Empty otherwise,
+/// which leaves every prompt as it was.
+fn diagnostic_note(f: &Value) -> String {
+    get(f, GROUNDED_DIAGNOSTIC)
+        .and_then(Value::as_str)
+        .map_or(String::new(), |d| {
+            format!(
+                "\n\nThe repository's own typecheck reported this within {GROUNDED_LINE_WINDOW} lines of the location: {d}\nIt is evidence about that code, not a verdict on the finding."
+            )
+        })
+}
+
+fn described(f: &Value) -> String {
+    format!("{}{}", s(get(f, "description")), diagnostic_note(f))
+}
+
+fn described_xml(f: &Value) -> String {
+    let note = diagnostic_note(f).replace('<', "&lt;").replace('>', "&gt;");
+    format!("{}{note}", escape_xml(get(f, "description")))
 }
 
 /// `${f.file}${f.line ? ":" + f.line : ""}`.
@@ -122,7 +146,7 @@ pub fn refute_prompt(
             ("title", &s(get(finding, "title"))),
             ("location", &location(finding)),
             ("severity", &s(get(finding, "severity"))),
-            ("description", &s(get(finding, "description"))),
+            ("description", &described(finding)),
         ],
     )
 }
@@ -166,7 +190,7 @@ pub fn batch_prompt(
                     ("title", &escape_xml(get(f, "title"))),
                     ("location", &loc),
                     ("severity", &s(get(f, "severity"))),
-                    ("description", &escape_xml(get(f, "description"))),
+                    ("description", &described_xml(f)),
                 ],
             )
         })
@@ -205,7 +229,7 @@ pub fn strengthen_prompt(
             ("title", &s(get(finding, "title"))),
             ("location", &location(finding)),
             ("severity", &s(get(finding, "severity"))),
-            ("description", &s(get(finding, "description"))),
+            ("description", &described(finding)),
             ("objections", &join_values(&reasons, " | ")),
         ],
     )
@@ -240,7 +264,7 @@ pub fn defense_prompt(
             ("diffBlock", diff_block),
             ("title", &s(get(finding, "title"))),
             ("location", &location(finding)),
-            ("description", &s(get(finding, "description"))),
+            ("description", &described(finding)),
             ("objections", &objections),
         ],
     )
@@ -273,7 +297,7 @@ pub fn judge_prompt(
             ("diffBlock", diff_block),
             ("title", &s(get(finding, "title"))),
             ("location", &location(finding)),
-            ("description", &s(get(finding, "description"))),
+            ("description", &described(finding)),
             ("refutations", &refutations),
             ("defense", &debate_defense_block(defense)),
             ("mechanical", if survived { "SURVIVES" } else { "REFUTED" }),
@@ -440,7 +464,7 @@ pub fn external_prompt(
             ),
             ("title", &s(get(finding, "title"))),
             ("location", &location(finding)),
-            ("description", &s(get(finding, "description"))),
+            ("description", &described(finding)),
             ("externalContext", external_context),
             ("slice", slice.unwrap_or(EXTERNAL_SLICE_MARK)),
         ],
@@ -469,6 +493,67 @@ pub fn sweep_prompt(diff_path: Option<&str>, files: &[String], cwd: &str) -> Str
         }
     };
     render(SWEEP, &[("diffLine", &line), ("cwd", cwd)])
+}
+
+#[cfg(test)]
+mod grounded_diagnostic_tests {
+    use super::*;
+    use serde_json::json;
+
+    const DIAG: &str =
+        "src/a.ts(4): TS2345: Argument of type 'Promise<string>' is not assignable to parameter of type 'string'.";
+
+    fn findings() -> (Value, Value) {
+        let plain = json!({"title": "T", "file": "src/a.ts", "line": 3, "severity": "important", "description": "D"});
+        let mut shown = plain.clone();
+        shown[GROUNDED_DIAGNOSTIC] = json!(DIAG);
+        (plain, shown)
+    }
+
+    fn every_prompt(f: &Value) -> Vec<String> {
+        let pr = json!(7);
+        let repo = "acme/web-app";
+        vec![
+            refute_prompt(&pr, repo, "DIFF", "CTX", f, "L"),
+            strengthen_prompt(&pr, repo, "DIFF", f, &[]),
+            defense_prompt(&pr, repo, "DIFF", f, &[]),
+            judge_prompt("DIFF", f, &[], None, true),
+            external_prompt(f, &["src/a.ts".to_owned()], "CTX", None),
+        ]
+    }
+
+    #[test]
+    fn every_panel_prompt_shows_the_diagnostic_after_the_description() {
+        let (_, shown) = findings();
+        let note = format!(
+            "D\n\nThe repository's own typecheck reported this within 5 lines of the location: {DIAG}\nIt is evidence about that code, not a verdict on the finding."
+        );
+        for p in every_prompt(&shown) {
+            assert!(p.contains(&note), "{p}");
+        }
+    }
+
+    #[test]
+    fn a_finding_without_one_gets_the_prompts_it_always_got() {
+        let (plain, shown) = findings();
+        let mut stripped = shown.clone();
+        stripped
+            .as_object_mut()
+            .unwrap()
+            .remove(GROUNDED_DIAGNOSTIC);
+        assert_eq!(every_prompt(&plain), every_prompt(&stripped));
+        for p in every_prompt(&plain) {
+            assert!(!p.contains("typecheck reported"), "{p}");
+        }
+    }
+
+    #[test]
+    fn the_batch_prompt_escapes_the_diagnostic() {
+        let (_, shown) = findings();
+        let p = batch_prompt(&[shown], "L", &json!(7), "acme/web-app", "DIFF", "CTX");
+        assert!(p.contains("'Promise&lt;string&gt;'"), "{p}");
+        assert!(!p.contains("Promise<string>"), "{p}");
+    }
 }
 
 #[cfg(test)]

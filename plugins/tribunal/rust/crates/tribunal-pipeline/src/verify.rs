@@ -415,9 +415,21 @@ pub struct GroundedGate {
     pub confirmed: Vec<Value>,
     pub refuted: Vec<Value>,
     pub panel_input: Vec<Value>,
+    /// Panel candidates that carry [`GROUNDED_DIAGNOSTIC`].
+    pub diagnostic_to_panel: usize,
 }
 
+/// The field a panel candidate carries when a checker diagnostic sat near it
+/// but the finding claims no compile error: the refuters see the diagnostic.
+pub const GROUNDED_DIAGNOSTIC: &str = "groundedDiagnostic";
+
 /// The grounded gate over the deduped candidates, then the `slotId` stamp.
+///
+/// A diagnostic near a finding settles it only when the finding claims a
+/// compile error (`mechanicalClaim`). Any other finding with a diagnostic
+/// nearby goes to the panel carrying it in [`GROUNDED_DIAGNOSTIC`], instead of
+/// being confirmed without one: a type error a few lines away does not prove a
+/// logic claim.
 ///
 /// # Errors
 /// Where `adjudicateFinding` throws.
@@ -443,9 +455,18 @@ pub fn grounded_gate(
                 }
             }
             let a = adjudicate_finding(&probe, &grounded.diags_by_file, Some(&covered))?;
+            let claims_compile_error = js::truthy(js::get(finding, "mechanicalClaim"));
             let entry = json!({"finding": finding, "grounded": a.to_value()});
             match js::get(&entry["grounded"], "verdict").and_then(Value::as_str) {
-                Some("confirmed") => gate.confirmed.push(entry),
+                Some("confirmed") if claims_compile_error => gate.confirmed.push(entry),
+                Some("confirmed") => {
+                    let mut shown = finding.clone();
+                    if let (Some(m), Some(d)) = (shown.as_object_mut(), a.diagnostic) {
+                        m.insert(GROUNDED_DIAGNOSTIC.into(), json!(d));
+                    }
+                    gate.diagnostic_to_panel += 1;
+                    remaining.push(shown);
+                }
                 Some("refuted") => gate.refuted.push(entry),
                 _ => remaining.push(finding.clone()),
             }
@@ -455,6 +476,12 @@ pub fn grounded_gate(
                 "Grounded gate: {} confirmed (panel skipped), {} refuted pre-panel",
                 gate.confirmed.len(),
                 gate.refuted.len()
+            ));
+        }
+        if gate.diagnostic_to_panel > 0 {
+            logs.push(format!(
+                "Grounded gate: {} finding(s) near a diagnostic claim no compile error, so they go to the panel with it",
+                gate.diagnostic_to_panel
             ));
         }
     } else {
