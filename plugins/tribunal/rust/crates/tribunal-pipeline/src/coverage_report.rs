@@ -152,6 +152,43 @@ pub fn reads_entry(label: &str, kind: &str, calls: &[Call], own_repo: &str) -> O
     Some(json!({ "label": label, "kind": kind, "reads": reads }))
 }
 
+fn names_path(text: &str, path: &str) -> bool {
+    let is_path_char = |c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/');
+    text.match_indices(path).any(|(at, _)| {
+        let starts = text[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|c| c == '/' || !is_path_char(c));
+        // A path ends where a non-path character follows, or a full stop that
+        // ends a sentence rather than starting an extension.
+        let rest = &text[at + path.len()..];
+        let ends = match rest.chars().next() {
+            None => true,
+            Some('.') => !rest[1..].starts_with(|c: char| c.is_ascii_alphanumeric()),
+            Some(c) => !is_path_char(c),
+        };
+        starts && ends
+    })
+}
+
+/// The files of `files` that some tool call names as a whole path: a Read of
+/// `/worktree/src/a.ts`, a `git show sha:src/a.ts`, a `sed -n 1,9p src/a.ts`.
+/// The lens's own answer (`StructuredOutput`) is not a read. A Grep or Glob
+/// over a directory names no file, so it does not count.
+#[must_use]
+pub fn files_opened(calls: &[Call], files: &[String]) -> Vec<String> {
+    files
+        .iter()
+        .filter(|f| {
+            calls
+                .iter()
+                .filter(|c| c.name != "StructuredOutput")
+                .any(|c| names_path(&c.text, f))
+        })
+        .cloned()
+        .collect()
+}
+
 /// A sentence of the critic's answer that says something was not checked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotChecked {
@@ -534,6 +571,40 @@ mod tests {
             name: "Bash".into(),
             text: text.into(),
         }
+    }
+
+    fn call(name: &str, text: &str) -> Call {
+        Call {
+            name: name.into(),
+            text: text.into(),
+        }
+    }
+
+    #[test]
+    fn a_file_counts_as_opened_only_when_a_call_names_its_whole_path() {
+        let files: Vec<String> = [
+            "src/a.ts",
+            "src/b.ts",
+            "src/c.ts",
+            "src/d.ts",
+            "src/e.ts",
+            "api/client.ts",
+        ]
+        .map(String::from)
+        .to_vec();
+        let calls = [
+            call("Read", "/tmp/worktree/src/a.ts"),
+            bash("git show 1a2b3c:src/b.ts | sed -n 1,40p"),
+            bash("grep -n retry src/sub.ts src/c.tsx"),
+            call("Grep", "retry src"),
+            call("StructuredOutput", "src/d.ts"),
+            bash("echo checked src/e.ts."),
+            call("Read", "/tmp/worktree/webapi/client.ts"),
+        ];
+        assert_eq!(
+            files_opened(&calls, &files),
+            ["src/a.ts", "src/b.ts", "src/e.ts"]
+        );
     }
 
     #[test]

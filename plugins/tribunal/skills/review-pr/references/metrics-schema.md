@@ -1248,6 +1248,22 @@ report.
 | `depsDrift` | The manifests that differ between the checkout that supplied the typecheck's installed packages and the reviewed commit: the lockfiles (`package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`) compared as bytes, or, with none, the dependency maps of `package.json`. Empty when they match or when no typecheck ran. A non-empty list also prints a warning in the report: module and type errors may come from the packages, and a clean result may not hold with the PR's versions. |
 | `anchorFormat` | `{annotatedUnresolved, files}`: `verifiedBy` anchors that came back unresolved and whose `file` ends in a note such as `src/a.ts (BE staging)`. The resolver reads a file of another repo only as `<repo-name>/<path>`; the lens prompt says so since this field was added. |
 
+## Fields added 2026-11-06 (what the lenses opened) — `lensCost[].filesOpened`, `prFilesNotOpened`, `transcriptsDir` (Rust rows only)
+
+The engine already saved every dispatch's event stream, tool calls with their
+arguments included, under `$TMPDIR/tribunal-transcripts-<pr>-<start>/`, but
+nothing in the row pointed there and the operating system clears that
+directory. A labelled defect that no run found could not be told apart: a lens
+that never opened its file, or one that read it and missed the defect. These
+fields are read off the same transcripts. None changes what is reviewed or the
+verdict.
+
+| Field | Meaning |
+|---|---|
+| `lensCost[].filesOpened` | How many of the PR's changed files that lens named in a tool call: a Read of the file, a Bash command with its path (`git show <sha>:<path>`, `sed -n ... <path>`). The path has to appear whole, so `src/a.ts` is not counted for `src/a.tsx` or `src/sub/a.ts`. A Grep or Glob over a directory names no file and does not count, and neither does the lens's own answer. `null` when the lens left no transcript. |
+| `prFilesNotOpened` | The PR's changed files that no lens named in a tool call. Every lens also receives the diff, so a file here may still have been read in its hunks; the list says no lens opened it beyond them. `null` when no lens left a transcript, `[]` when every file was opened. |
+| `transcriptsDir` | The directory the lenses' transcripts were saved in, or `null` when none was. Copy it before the operating system clears it if the run is to be studied later. |
+
 ## The posted-comment footer reads this row, it does not extend it
 
 Every posted GitHub comment ends with one `<sub>...</sub>` metadata line —
