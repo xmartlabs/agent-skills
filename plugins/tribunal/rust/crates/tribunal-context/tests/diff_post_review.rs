@@ -241,6 +241,7 @@ fn run_rs(d: &Dirs, case: &Case) -> Side {
         gh: d.fake.join("gh").to_string_lossy().into_owned(),
         git: "git".into(),
         env,
+        ..Tools::default()
     };
     let post_env = PostEnv {
         cwd: d.dir.clone(),

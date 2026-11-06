@@ -96,6 +96,10 @@ Read this before reviewing a pull request you did not write.
   OpenAI, and `--gemini` to Google. Use `--no-codex` if your code may only go
   to Anthropic. Codex runs with `--sandbox read-only` and Gemini with
   `--approval-mode plan`, so neither of those two can run commands.
+- **`TRIBUNAL_CONVENTIONS_TOKEN` is kept from the reviewers' environment, not
+  from your user.** The engine removes it from its own environment at startup,
+  but a reviewer runs as the same user as the shell that set it. Keep it
+  read-only and limited to the repos it needs.
 - **Posting uses your GitHub identity.** The review is published with your
   `gh` login, after you confirm it (or with `--post`).
 

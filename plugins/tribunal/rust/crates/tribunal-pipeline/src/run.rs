@@ -1424,6 +1424,7 @@ pub async fn run_full<A: Agent>(
                 verdict: s.verdict.guess,
                 head_sha: head,
                 repo: &review.prepared.repo,
+                cross_repo_note: &review.prepared.cross_repo_note,
                 cwd: &cwd,
                 effort: policy.effort.as_ref(),
                 choice: crate::post::PostChoice::default(),

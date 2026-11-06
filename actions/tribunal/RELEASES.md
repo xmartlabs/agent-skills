@@ -1,5 +1,17 @@
 # Tribunal action releases
 
+## Unreleased — separate token for other repos
+
+Not tagged yet. Needs a Tribunal freeze with the engine that reads the token, planned as `115.4.0`.
+
+- Add `conventions-token`, a read-only token for the repos a profile's `conventionSources` and
+  `crossRepoAnchors` name. `github-token` keeps the reviewed repo and posting, so reviews post as
+  `github-actions[bot]` while conventions come from a private repo.
+- Model calls do not get the token: docs are written to the job's directory, and each anchor repo is
+  shallow-cloned there.
+- Backward compatible: without the input, reads, prompts and outputs do not change. With it, a run
+  that selects an older Tribunal fails during setup.
+
 ## v1.2.0 — CI parity
 
 Tag `tribunal-action-v1.2.0` (and `tribunal-action-v1`) at `7a3bd5b`. Bundled

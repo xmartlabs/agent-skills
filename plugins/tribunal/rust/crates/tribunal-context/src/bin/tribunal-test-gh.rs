@@ -20,6 +20,10 @@
 //!   `FAKE_GH_STATE`, and answers from the rules in `FAKE_GH_SCRIPT`, where
 //!   `{{BODY}}` is the last body, JSON-escaped.
 //!
+//! In every mode, `GH_TOKEN_LOG`, when set, gets each call as one line of
+//! `{"token": <GH_TOKEN or null>, "args": [...]}`, so a test can see which
+//! credential a call ran with.
+//!
 //! Each mode writes what the node stand-in it replaced wrote, which is what
 //! the goldens hold. Where node threw (an answer that is not a string, an
 //! exit code that is not an integer, unreadable JSON) this exits 1, as node's
@@ -37,6 +41,13 @@ fn main() {
         .skip(1)
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
+    if let Some(log) = env("GH_TOKEN_LOG") {
+        let token = env("GH_TOKEN").map_or_else(|| "null".to_owned(), |t| stringify(&t));
+        append(
+            &log,
+            &format!("{{\"token\":{token},\"args\":{}}}\n", stringify_args(&args)),
+        );
+    }
     match std::env::var("TRIBUNAL_TEST_GH")
         .unwrap_or_default()
         .as_str()

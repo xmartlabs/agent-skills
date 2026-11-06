@@ -99,6 +99,7 @@ pub fn tools(recordings: &Path) -> Tools {
             OsString::from("GH_RECORDINGS"),
             recordings.as_os_str().to_owned(),
         )],
+        ..Tools::default()
     }
 }
 

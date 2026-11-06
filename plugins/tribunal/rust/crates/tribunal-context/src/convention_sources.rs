@@ -4,6 +4,7 @@
 //! this renders to the conventions file.
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use serde_json::{Map, Value};
 use tribunal_core::js;
@@ -920,6 +921,45 @@ struct Failed {
 }
 
 /// `locate({source, index, repo, profileRef, pointerRefs, api})`.
+/// Whether a source's docs live in the reviewed repo, however it names it.
+fn is_own_repo(source: &Value, repo: &str) -> bool {
+    js::get(source, "repo").is_none() || str_of(source, "repo").eq_ignore_ascii_case(repo)
+}
+
+/// The tools that read a source's docs. A `submodule:` pointer is a read of
+/// the reviewed repo and stays on `tools`.
+fn docs_tools(tools: &Tools, source: &Value, repo: &str) -> Tools {
+    if is_own_repo(source, repo) {
+        tools.clone()
+    } else {
+        tools.for_conventions()
+    }
+}
+
+/// Writes the offered docs under `dir`, each at its path in the source, so a
+/// reviewer reads them without a token. A path that would leave `dir` is
+/// refused. Only this user can read `dir`: the docs are private.
+fn write_offered(dir: &Path, picked: &Picked, docs: &[Doc]) -> Result<(), String> {
+    for &d in &picked.offered {
+        let doc = &docs[d];
+        let rel = Path::new(&doc.path);
+        if rel
+            .components()
+            .any(|c| !matches!(c, std::path::Component::Normal(_)))
+        {
+            return Err(format!("{} is not a path inside the source", doc.path));
+        }
+        let file = dir.join(rel);
+        if let Some(parent) = file.parent() {
+            crate::anchor_checkouts::private_dir(parent)
+                .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        }
+        std::fs::write(&file, &doc.text)
+            .map_err(|e| format!("cannot write {}: {e}", file.display()))?;
+    }
+    Ok(())
+}
+
 async fn locate(
     tools: &Tools,
     source: &Value,
@@ -936,6 +976,7 @@ async fn locate(
     };
     let src_ref = str_of(source, "ref");
     let at = format!("conventionSources[{index}] {docs_repo}");
+    let docs_tools = docs_tools(tools, source, repo);
     let mut warnings = Vec::new();
     let mut pointer_from = None;
     let mut pointer_changed = false;
@@ -972,7 +1013,7 @@ async fn locate(
             }
         }
     } else {
-        resolve_commit(tools, docs_repo, src_ref).await
+        resolve_commit(&docs_tools, docs_repo, src_ref).await
     };
     let sha = match got {
         Ok(s) => s,
@@ -990,7 +1031,7 @@ async fn locate(
         .and_then(Value::as_str)
         .unwrap_or_default();
     let md = js::get(source, "select").and_then(Value::as_str) != Some("manifest");
-    match list_blobs(tools, docs_repo, &sha, root, md).await {
+    match list_blobs(&docs_tools, docs_repo, &sha, root, md).await {
         Ok(l) => Ok(Located {
             sha,
             pointer_from,
@@ -1128,6 +1169,8 @@ pub async fn load_source(
         str_of(source, "ref")
     };
     let at = format!("conventionSources[{index}] {src_repo}");
+    let with_token = tools.conventions.is_some() && !is_own_repo(source, repo);
+    let docs_tools = docs_tools(tools, source, repo);
     let budget_v = js::get(source, "budgetBytes")
         .cloned()
         .unwrap_or_else(|| Value::from(30000));
@@ -1163,7 +1206,12 @@ pub async fn load_source(
     entry.insert("missing".into(), Value::Array(Vec::new()));
     let mut warnings = Vec::new();
     let failed = |mut entry: Map<String, Value>, mut warnings: Vec<String>, error: String| {
-        warnings.push(format!("{at}: {error}. Reviewing without it."));
+        let token_note = if with_token {
+            format!(" {src_repo} is read with the conventions token, and a 404 can also mean that token has no access to it.")
+        } else {
+            String::new()
+        };
+        warnings.push(format!("{at}: {error}.{token_note} Reviewing without it."));
         let text = format!("Documentation source {src_repo} ({src_ref}) could not be read: {error}. Reviewers get none of its docs.\n");
         entry.insert("error".into(), Value::String(error));
         Loaded {
@@ -1215,7 +1263,8 @@ pub async fn load_source(
     let mut meta: HashMap<String, ManifestDoc> = HashMap::new();
     let mut stale = Vec::new();
     let blobs: Vec<&Blob> = if select == "manifest" {
-        let got = match manifest_listing(tools, src_repo, &sha, source, &listed.blobs, cache).await
+        let got = match manifest_listing(&docs_tools, src_repo, &sha, source, &listed.blobs, cache)
+            .await
         {
             Ok(g) => g,
             Err(e) => return failed(entry, warnings, e),
@@ -1277,7 +1326,7 @@ pub async fn load_source(
             missing.push(p);
         }
     }
-    if let Err(e) = read_blobs(tools, src_repo, &sha, &pool, cache).await {
+    if let Err(e) = read_blobs(&docs_tools, src_repo, &sha, &pool, cache).await {
         // The paths already found absent stay in the failed entry, as the
         // script's do.
         entry.insert("missing".into(), paths_value(missing));
@@ -1348,6 +1397,20 @@ pub async fn load_source(
         .get("pointerFrom")
         .and_then(Value::as_str)
         .map(str::to_owned);
+    // With a separate token the reviewers cannot `gh api` this repo, so what
+    // the menu offers is already on disk for them.
+    let pulled = tools
+        .conventions_docs_dir
+        .as_ref()
+        .filter(|_| with_token && !picked.offered.is_empty())
+        .map(|dir| dir.join(index.to_string()))
+        .and_then(|dir| match write_offered(&dir, &picked, &docs) {
+            Ok(()) => Some(dir),
+            Err(e) => {
+                warnings.push(format!("{at}: its on-demand docs are not available: {e}"));
+                None
+            }
+        });
     let text = render_source(
         src_repo,
         src_ref,
@@ -1358,6 +1421,7 @@ pub async fn load_source(
         listed.pointer_changed.then_some(profile_ref),
         &picked,
         &docs,
+        pulled.as_deref(),
     );
     Loaded {
         entry,
@@ -1377,6 +1441,7 @@ fn render_source(
     proposed_against: Option<&str>,
     picked: &Picked,
     docs: &[Doc],
+    pulled: Option<&Path>,
 ) -> String {
     let from = match pointer {
         Some("head") => ", the pointer at the PR head",
@@ -1410,7 +1475,10 @@ fn render_source(
     if !picked.offered.is_empty() {
         out.push(format!("## More docs from {repo}, on demand"));
         out.push(String::new());
-        out.push(format!("Pull one only when the diff leads there: gh api \"repos/{repo}/contents/<path>?ref={sha}\" -H \"Accept: application/vnd.github.raw\"."));
+        out.push(match pulled {
+            Some(dir) => format!("Pull one only when the diff leads there: read {}/<path> with the Read tool. `gh` cannot read {repo} on this run.", dir.display()),
+            None => format!("Pull one only when the diff leads there: gh api \"repos/{repo}/contents/<path>?ref={sha}\" -H \"Accept: application/vnd.github.raw\"."),
+        });
         out.push(String::new());
         out.extend(picked.offered.iter().map(|&d| menu_line(&docs[d])));
         if picked.omitted > 0 {
