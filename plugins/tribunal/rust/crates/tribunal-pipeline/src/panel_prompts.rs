@@ -598,4 +598,11 @@ mod gap_prompt_tests {
         assert!(p.contains("Use at most 20 tool calls"));
         assert_eq!(p.matches("(none)").count(), 2);
     }
+
+    #[test]
+    fn the_gap_prompt_says_a_shared_subject_is_not_the_same_defect() {
+        let p = render_gap(&[], &[]);
+        assert!(p.contains("names a defect only when it describes the same failure"));
+        assert!(p.contains("give that finding's title in the summary"));
+    }
 }
