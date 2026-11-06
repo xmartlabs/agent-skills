@@ -18,11 +18,12 @@ use std::path::PathBuf;
 use common::{assert_same, sample, span, span_at, span_raw, Span, LOGS, LOG_FN};
 use proptest::prelude::*;
 use serde_json::{json, Value};
+use tribunal_core::report::carry_forward::{cf_same_finding, cf_same_place};
 use tribunal_pipeline::synthesize::{
     anchored_payload, baseline_description, finish_report, graded, missing_identifiers,
-    prior_check, prior_re_examined, ref_evidence, ref_evidence_targets, side_payloads,
-    surviving_for_synthesis, synthesis_prompt, verdict, verified_anchors, verify_prior_prompt,
-    Relay, SynthesisInput, PRIOR_VERIFY_CEILING,
+    prior_check, prior_check_by, prior_re_examined, ref_evidence, ref_evidence_targets,
+    side_payloads, surviving_for_synthesis, synthesis_prompt, verdict, verified_anchors,
+    verify_prior_prompt, Relay, SynthesisInput, PRIOR_VERIFY_CEILING,
 };
 use tribunal_pipeline::verify::no_panel_result;
 
@@ -218,17 +219,39 @@ fn prior_case() -> impl Strategy<Value = Value> {
         })
 }
 
+/// Declared difference (`cf_same_finding`, see `diff_report.rs` in
+/// tribunal-core): the Workflow also matched a prior finding to any finding
+/// of the same file within 40 lines, so a prior the port sends to
+/// verification it reported as still open. To compare with the golden, the
+/// prior check runs with the Workflow's match. Witness:
+/// `a_prior_near_another_defect_is_verified_not_still_open`.
 fn rust_prior(c: &Value) -> Value {
+    rust_prior_with(c, true)
+}
+
+fn rust_prior_with(c: &Value, workflow_match: bool) -> Value {
     let mut logs = Vec::new();
     let scope = (!c["incrementalScope"].is_null()).then_some(&c["incrementalScope"]);
-    let check = prior_check(
-        scope,
-        Some(&c["priorReview"]),
-        c["current"].as_array().unwrap(),
-        &c["importAdjacency"],
-        PRIOR_VERIFY_CEILING,
-        &mut logs,
-    )
+    let check = if workflow_match {
+        prior_check_by(
+            scope,
+            Some(&c["priorReview"]),
+            c["current"].as_array().unwrap(),
+            &c["importAdjacency"],
+            PRIOR_VERIFY_CEILING,
+            &mut logs,
+            |a, b| cf_same_finding(a, b) || cf_same_place(a, b),
+        )
+    } else {
+        prior_check(
+            scope,
+            Some(&c["priorReview"]),
+            c["current"].as_array().unwrap(),
+            &c["importAdjacency"],
+            PRIOR_VERIFY_CEILING,
+            &mut logs,
+        )
+    }
     .unwrap();
     let mut calls = Vec::new();
     let mut verified = Vec::new();
@@ -287,12 +310,57 @@ fn prior_findings_are_carried_and_rechecked_as_the_workflow_does() {
         &params,
     );
     let rust: Vec<Value> = cases.iter().map(rust_prior).collect();
+    let declared = cases
+        .iter()
+        .zip(&rust)
+        .filter(|(c, r)| rust_prior_with(c, false) != **r)
+        .count();
+    assert!(
+        declared > 10,
+        "the declared difference reached {declared} cases"
+    );
     assert_same("prior findings", &cases, &rust, &js);
 }
 
 #[test]
+fn a_prior_near_another_defect_is_verified_not_still_open() {
+    let scope = json!({"changed": ["src/a.ts"], "added": [], "unchanged": [], "gone": []});
+    let prior = json!({"findings": [{"file": "src/a.ts", "line": 100, "title": "Retry flips the row to error", "severity": "critical", "blocking": true}]});
+    let current = [
+        json!({"file": "src/a.ts", "line": 120, "title": "Log message names the wrong queue", "severity": "nit"}),
+    ];
+    let mut logs = Vec::new();
+    let port = prior_check(
+        Some(&scope),
+        Some(&prior),
+        &current,
+        &json!({}),
+        PRIOR_VERIFY_CEILING,
+        &mut logs,
+    )
+    .unwrap();
+    assert!(port.outcome.still_open.is_empty());
+    assert_eq!(port.to_verify.len(), 1);
+    let workflow = prior_check_by(
+        Some(&scope),
+        Some(&prior),
+        &current,
+        &json!({}),
+        PRIOR_VERIFY_CEILING,
+        &mut logs,
+        |a, b| cf_same_finding(a, b) || cf_same_place(a, b),
+    )
+    .unwrap();
+    assert_eq!(workflow.outcome.still_open.len(), 1);
+    assert!(workflow.to_verify.is_empty());
+}
+
+#[test]
 fn the_generated_prior_cases_reach_every_branch() {
-    let out: Vec<Value> = sample(prior_case()).iter().map(rust_prior).collect();
+    let out: Vec<Value> = sample(prior_case())
+        .iter()
+        .map(|c| rust_prior_with(c, false))
+        .collect();
     let n = |f: &dyn Fn(&Value) -> bool| out.iter().filter(|o| f(o)).count();
     let any_log = |s: &'static str| {
         move |o: &Value| {

@@ -53,20 +53,20 @@ fn file_or_empty(f: &Value) -> Value {
     }
 }
 
-/// Ports `cfSameFinding`: same file, and either lines within the window or
-/// enough shared title tokens.
+fn same_file(a: &Value, b: &Value) -> bool {
+    js::truthy(Some(a))
+        && js::truthy(Some(b))
+        && js_ext::strict_eq(Some(&file_or_empty(a)), Some(&file_or_empty(b)))
+}
+
+/// Whether a current finding raises the same defect as a prior one: same
+/// file and enough shared title tokens. `cfSameFinding` also matched any two
+/// findings of the file within `CF_LINE_WINDOW` lines, so a fixed prior
+/// finding was reported as still open, and never re-checked, whenever the
+/// run raised another defect near it. Now such a prior goes to verification.
 pub fn cf_same_finding(a: &Value, b: &Value) -> bool {
-    if !js::truthy(Some(a)) || !js::truthy(Some(b)) {
+    if !same_file(a, b) {
         return false;
-    }
-    if !js_ext::strict_eq(Some(&file_or_empty(a)), Some(&file_or_empty(b))) {
-        return false;
-    }
-    let la = js_ext::to_number(js::get(a, "line"));
-    let lb = js_ext::to_number(js::get(b, "line"));
-    if la.is_finite() && lb.is_finite() && la > 0.0 && lb > 0.0 && (la - lb).abs() <= CF_LINE_WINDOW
-    {
-        return true;
     }
     let ta = cf_tokens(js::get(a, "title"));
     let tb = cf_tokens(js::get(b, "title"));
@@ -75,6 +75,18 @@ pub fn cf_same_finding(a: &Value, b: &Value) -> bool {
     }
     let shared = ta.iter().filter(|t| tb.contains(t)).count();
     shared as f64 / ta.len().min(tb.len()) as f64 >= CF_TITLE_OVERLAP_MIN
+}
+
+/// The branch of `cfSameFinding` the port dropped: same file and lines within
+/// `CF_LINE_WINDOW`. The differential test adds it back to compare with the
+/// Workflow.
+pub fn cf_same_place(a: &Value, b: &Value) -> bool {
+    if !same_file(a, b) {
+        return false;
+    }
+    let la = js_ext::to_number(js::get(a, "line"));
+    let lb = js_ext::to_number(js::get(b, "line"));
+    la.is_finite() && lb.is_finite() && la > 0.0 && lb > 0.0 && (la - lb).abs() <= CF_LINE_WINDOW
 }
 
 /// Ports `incrementalFallbackFor`. `None` when there was no baseline or the
@@ -366,12 +378,30 @@ fn with(p: &Value, extra: &[(&str, Value)]) -> Value {
 /// JavaScript throws: a `null` prior finding, a findings list that is not
 /// iterable, a scope list that is neither an array nor a string, an
 /// adjacency entry that has a length but no `map`, or a `null` adjacency
-/// item.
+/// item. A prior finding matches a current one by [`cf_same_finding`].
 pub fn classify_prior_findings(
     scope: Option<&Value>,
     prior_findings: Option<&Value>,
     current_findings: &[Value],
     import_adjacency: Option<&Map<String, Value>>,
+) -> Result<PriorClassification, String> {
+    classify_prior_findings_by(
+        scope,
+        prior_findings,
+        current_findings,
+        import_adjacency,
+        cf_same_finding,
+    )
+}
+
+/// [`classify_prior_findings`] with the match between a prior and a current
+/// finding given, so the differential test can run the Workflow's.
+pub fn classify_prior_findings_by(
+    scope: Option<&Value>,
+    prior_findings: Option<&Value>,
+    current_findings: &[Value],
+    import_adjacency: Option<&Map<String, Value>>,
+    same: impl Fn(&Value, &Value) -> bool,
 ) -> Result<PriorClassification, String> {
     let mut out = PriorClassification::default();
     let Some(scope) = scope.filter(|s| js::truthy(Some(s))) else {
@@ -416,7 +446,7 @@ pub fn classify_prior_findings(
             continue;
         }
         if in_list(list("changed"), file)? || in_list(list("added"), file)? {
-            match current_findings.iter().find(|c| cf_same_finding(&p, c)) {
+            match current_findings.iter().find(|c| same(&p, c)) {
                 Some(m) => {
                     let mut spread = js_ext::spread(&p);
                     // `matchedTitle: undefined` keeps the key, and JSON drops it.
@@ -466,7 +496,29 @@ mod tests {
         assert!(!cf_same_finding(&a, &b));
         let c = json!({"file": "w.ts", "line": "0x1E", "title": "x"});
         let d = json!({"file": "w.ts", "line": 60, "title": "y"});
-        assert!(cf_same_finding(&c, &d));
+        assert!(!cf_same_finding(&c, &d));
+        assert!(cf_same_place(&c, &d));
+    }
+
+    #[test]
+    fn a_fixed_prior_near_another_defect_goes_to_verification() {
+        let scope = json!({"changed": ["w.ts"], "unchanged": [], "gone": [], "added": []});
+        let prior = json!([{"file": "w.ts", "line": 100, "title": "Retry flips the row to error", "severity": "critical"}]);
+        let current = [
+            json!({"file": "w.ts", "line": 120, "title": "Log message names the wrong queue", "severity": "nit"}),
+        ];
+        let out = classify_prior_findings(Some(&scope), Some(&prior), &current, None).unwrap();
+        assert!(out.still_open.is_empty());
+        assert_eq!(
+            out.not_resurfaced[0]["title"],
+            json!("Retry flips the row to error")
+        );
+        let reraised = [
+            json!({"file": "w.ts", "line": 140, "title": "The retry still flips the row to error"}),
+        ];
+        let out = classify_prior_findings(Some(&scope), Some(&prior), &reraised, None).unwrap();
+        assert_eq!(out.still_open.len(), 1);
+        assert!(out.not_resurfaced.is_empty());
     }
 
     #[test]
