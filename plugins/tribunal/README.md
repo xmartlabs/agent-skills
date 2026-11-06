@@ -257,7 +257,7 @@ your machine, or when the download fails, the review says why and stops.
 | `--full` | Re-review everything, ignoring the incremental baseline |
 | `--since <sha>` | Take this commit as the incremental baseline |
 | `--max-panels <n>` | Raise the adjudication ceiling for a PR that deserves it (default 40) |
-| `--lens-samples <n>` | Run each lens `n` times, 1 to 4, and merge what they share (finds more, costs about `n` times the lens stage) |
+| `--lens-samples <n>` | Run each lens `n` times, 1 to 4, and merge what they share. With 2, more real defects come out as blocking at about 1.3 to 1.5 times the cost of a run; worth it on a large or high-risk PR |
 | `--codex` / `--no-codex` | Force the second-opinion head on or off (off is cheaper, weaker) |
 | `--gemini` | Add Google's head (off by default) |
 | `--bot-comments` | Also vet existing bot comments on the PR |
