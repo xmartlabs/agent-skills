@@ -85,6 +85,16 @@ fn sectioning(section_index: Option<&Value>, pr_context: &Value) -> (bool, f64, 
     )
 }
 
+/// `--thread-before` as the row records it: the instant the run read the
+/// thread up to, or `null` when it read the thread as it is.
+#[must_use]
+pub fn thread_before_of(args: &RunArgs) -> Value {
+    match args.thread_before.trim() {
+        "" => Value::Null,
+        t => json!(t),
+    }
+}
+
 /// Every variable the workflow's `metrics` object reads, from the run's
 /// outcomes.
 #[must_use]
@@ -147,6 +157,7 @@ pub fn metrics_scope(
         ref_evidence: synthesis.ref_evidence.clone(),
         head_pin: rc.head_pin.clone(),
         pinned_sha: json!(args.head_sha.trim()),
+        thread_before: thread_before_of(args),
         file_count: plan.file_count,
         lens_plan: Value::Array(lens_plan),
         lens_agent: review.lens_agent.clone(),

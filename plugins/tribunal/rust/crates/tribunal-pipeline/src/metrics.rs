@@ -50,6 +50,7 @@ pub struct MetricsScope {
     pub ref_evidence: Value,
     pub head_pin: Value,
     pub pinned_sha: Value,
+    pub thread_before: Value,
     pub file_count: f64,
     pub lens_plan: Value,
     pub lens_agent: String,
@@ -691,6 +692,7 @@ pub fn metrics_row(s: &MetricsScope) -> Result<Value, String> {
         json!({"pinned": get(&s.head_pin, "ok"), "kind": get(&s.head_pin, "kind")}),
     );
     put("pinned", json!(js::truthy(Some(&s.pinned_sha))));
+    put("threadBefore", s.thread_before.clone());
     put("mode", json!("workflow"));
     put("fileCount", n(s.file_count));
     put("additions", or_null(get(&s.pr_context, "additions")));
