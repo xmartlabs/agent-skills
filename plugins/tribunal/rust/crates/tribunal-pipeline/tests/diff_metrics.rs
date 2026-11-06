@@ -297,6 +297,18 @@ fn the_metrics_row_is_the_workflows() {
             let mut row = metrics_row(&s).unwrap();
             let samples = row.as_object_mut().unwrap().shift_remove("lensSamples");
             assert_eq!(samples, Some(json!(1)), "lensSamples on {c}");
+            // Declared difference: `lensNotReachedCount`, which the workflow
+            // never wrote, repeats `lensBudgetSkips` under a name that says what
+            // it counts. Witness: `not_reached_count.rs`.
+            let count = row
+                .as_object_mut()
+                .unwrap()
+                .shift_remove("lensNotReachedCount");
+            assert_eq!(
+                count.as_ref(),
+                row.get("lensBudgetSkips"),
+                "lensNotReachedCount on {c}"
+            );
             row
         })
         .collect();

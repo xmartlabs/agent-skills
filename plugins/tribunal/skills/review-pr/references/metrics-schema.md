@@ -629,7 +629,7 @@ run state) — that is Tier-1, read off `sectionedReceivers` on a micro-run.
 | Field | Meaning |
 |---|---|
 | `lensToolCallBudget` | The ceiling stated in the lens prompt for this run (40 today). Recorded because it is a tunable that changes the largest cost term in a run — a row that does not say which budget it ran under cannot be compared against one that ran under another. |
-| `lensBudgetSkips` | How many entries in `notChecked` came from a lens reporting `notReached` (it ran out of budget) rather than from the file partition. Separated so a rise in `notChecked` after the ceiling shipped is attributable instead of alarming. |
+| `lensBudgetSkips` | How many entries in `notChecked` came from a lens reporting `notReached` rather than from the file partition, whatever the reason the lens gave. Despite the name it is not a count of budget stops: read `lensNotReachedKinds.budget` for those. Kept for readers of older rows; new readers use `lensNotReachedCount`, which holds the same number. |
 
 `notChecked` is now the **union** of two different kinds of blind spot: changed
 files that fell outside every lens's scope (derivable by the harness) and
@@ -664,7 +664,7 @@ Regression cover: `eval/replay-lens-budget.mjs` (0 tokens) — the `notReached`
 plumbing against crashed and absent results, the union into `notChecked`, and the
 budget pinned between its measured failure floor (30) and efficiency knee (50).
 
-## Fields added for kinded gaps (Rust rows only): `lensNotReachedKinds`, `unreadRiskFiles`, `lensFailures`
+## Fields added for kinded gaps (Rust rows only): `lensNotReachedCount`, `lensNotReachedKinds`, `unreadRiskFiles`, `lensFailures`
 
 The Rust engine asks each lens to file a `notReached` entry as
 `{surface, file, kind}`. Rows from earlier runs, and Workflow rows, have plain
@@ -675,6 +675,7 @@ needed running something, or sat outside the PR.
 
 | Field | Meaning |
 |---|---|
+| `lensNotReachedCount` | How many `notReached` entries the lenses filed, of every kind. The same number as `lensBudgetSkips`, under a name that says what it counts. Rows written before this field have only `lensBudgetSkips`. |
 | `lensNotReachedKinds` | `{budget, outOfFocus, needsExecution, outsidePr, unstated}`: how many entries of each kind the lenses filed. `budget` is the only kind that is a hole in coverage. `unstated` counts plain strings. |
 | `unreadRiskFiles` | The files matching a `riskPaths` rule that every lens holding them left unread for budget. A non-empty list keeps the verdict from APPROVE (it becomes COMMENT), as an unreturned lens does, and the report names the files. |
 | `lensFailures` | `[{lens, cause}]` for each lens dispatch that returned no answer. `cause` is `rate-limit`, `overloaded`, `auth`, `timeout`, `killed`, `spawn-failed`, `no-answer` or `error`, read from the exit and what the CLI printed. Recorded so a retry is built for the causes that happen, if any do. |
@@ -1247,6 +1248,22 @@ report.
 | `coverageContradictions` | The names in `criticNotChecked` that some lens's commands contain: `{claim, token, lenses}`. A match by name (the full path, its last two segments, or its last segment when it is at least six characters), so it shows a lens looked, not what it concluded. Also printed in the report. |
 | `depsDrift` | The manifests that differ between the checkout that supplied the typecheck's installed packages and the reviewed commit: the lockfiles (`package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`) compared as bytes, or, with none, the dependency maps of `package.json`. Empty when they match or when no typecheck ran. A non-empty list also prints a warning in the report: module and type errors may come from the packages, and a clean result may not hold with the PR's versions. |
 | `anchorFormat` | `{annotatedUnresolved, files}`: `verifiedBy` anchors that came back unresolved and whose `file` ends in a note such as `src/a.ts (BE staging)`. The resolver reads a file of another repo only as `<repo-name>/<path>`; the lens prompt says so since this field was added. |
+
+## Fields added 2026-11-06 (what the lenses opened) — `lensCost[].filesOpened`, `prFilesNotOpened`, `transcriptsDir` (Rust rows only)
+
+The engine already saved every dispatch's event stream, tool calls with their
+arguments included, under `$TMPDIR/tribunal-transcripts-<pr>-<start>/`, but
+nothing in the row pointed there and the operating system clears that
+directory. A labelled defect that no run found could not be told apart: a lens
+that never opened its file, or one that read it and missed the defect. These
+fields are read off the same transcripts. None changes what is reviewed or the
+verdict.
+
+| Field | Meaning |
+|---|---|
+| `lensCost[].filesOpened` | How many of the PR's changed files that lens named in a tool call: a Read of the file, a Bash command with its path (`git show <sha>:<path>`, `sed -n ... <path>`). The path has to appear whole, so `src/a.ts` is not counted for `src/a.tsx` or `src/sub/a.ts`. A Grep or Glob over a directory names no file and does not count, and neither does the lens's own answer. `null` when the lens left no transcript. |
+| `prFilesNotOpened` | The PR's changed files that no lens named in a tool call. Every lens also receives the diff, so a file here may still have been read in its hunks; the list says no lens opened it beyond them. `null` when no lens left a transcript, `[]` when every file was opened. |
+| `transcriptsDir` | The directory the lenses' transcripts were saved in, or `null` when none was. Copy it before the operating system clears it if the run is to be studied later. |
 
 ## The posted-comment footer reads this row, it does not extend it
 

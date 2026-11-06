@@ -377,10 +377,47 @@ pub fn lens_cost(
                 "toolUses": d.tool_calls.len(),
                 "turns": d.output.as_ref().map_or(0, |o| o.num_turns),
                 "outputTokens": output,
+                "filesOpened": opened_by(d, files).map(|o| o.len()),
             })
         })
         .collect();
     Value::Array(rows)
+}
+
+/// The PR files a lens's saved transcript names in a tool call, or `None`
+/// when no transcript was saved and the reads are unknown.
+fn opened_by(d: &DispatchResult, files: &[String]) -> Option<Vec<String>> {
+    let path = d.transcript.as_deref()?;
+    Some(crate::coverage_report::files_opened(
+        &crate::coverage_report::calls_in_transcript(path),
+        files,
+    ))
+}
+
+/// The PR files no lens named in a tool call. They may still have been read
+/// in the diff every lens receives; this says no lens opened them beyond it.
+/// `null` when no lens left a transcript to read.
+#[must_use]
+pub fn pr_files_not_opened(files: &[String], lenses: &[DispatchResult]) -> Value {
+    let opened: Vec<Vec<String>> = lenses.iter().filter_map(|d| opened_by(d, files)).collect();
+    if opened.is_empty() {
+        return Value::Null;
+    }
+    let seen: BTreeSet<&String> = opened.iter().flatten().collect();
+    json!(files
+        .iter()
+        .filter(|f| !seen.contains(f))
+        .collect::<Vec<_>>())
+}
+
+/// The directory the lenses' transcripts were saved in, so a reader can find
+/// them before the operating system clears it.
+#[must_use]
+pub fn transcripts_dir(lenses: &[DispatchResult]) -> Value {
+    lenses
+        .iter()
+        .find_map(|d| d.transcript.as_deref()?.parent())
+        .map_or(Value::Null, |p| json!(p.to_string_lossy()))
 }
 
 /// `agentCost` in the schema's shape, from the CLI's own usage figures. The
@@ -612,6 +649,9 @@ pub fn persist_phase(
         &review.labels,
         &review.dispatches[..lenses.min(review.dispatches.len())],
     );
+    let lens_dispatches = &review.dispatches[..lenses.min(review.dispatches.len())];
+    metrics["prFilesNotOpened"] = pr_files_not_opened(&plan.files, lens_dispatches);
+    metrics["transcriptsDir"] = transcripts_dir(lens_dispatches);
     // `agentsActual` stays null through the self-audit, as the workflow's row
     // does, and is patched in afterwards the way SKILL.md's Step 4 patches it.
     let agent_count = labelled.len();
@@ -850,13 +890,59 @@ mod tests {
             rows,
             json!([
                 {"lens": "migration", "why": "forced", "overBudget": false, "costUsd": 0.3,
-                 "toolUses": 8, "turns": 3, "outputTokens": 100},
+                 "toolUses": 8, "turns": 3, "outputTokens": 100, "filesOpened": null},
                 {"lens": "security", "why": "default", "overBudget": false, "costUsd": 0.2,
-                 "toolUses": 5, "turns": 3, "outputTokens": 50},
+                 "toolUses": 5, "turns": 3, "outputTokens": 50, "filesOpened": null},
                 {"lens": "correctness", "why": "default", "overBudget": true, "costUsd": 0.1112,
-                 "toolUses": 21, "turns": 3, "outputTokens": 70},
+                 "toolUses": 21, "turns": 3, "outputTokens": 70, "filesOpened": null},
             ])
         );
+    }
+
+    #[test]
+    fn lens_reads_come_from_the_saved_transcripts() {
+        let dir = std::env::temp_dir().join(format!("tribunal-reads-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let transcript = dir.join("lens_1.jsonl");
+        std::fs::write(
+            &transcript,
+            concat!(
+                r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/w/src/a.ts"}}]}}"#,
+                "\n",
+                r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"StructuredOutput","input":{"summary":"src/b.ts"}}]}}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+        let files = ["src/a.ts".to_owned(), "src/b.ts".to_owned()];
+        let mut read = dispatch(0.1, 2, 1);
+        read.transcript = Some(transcript);
+        let unsaved = dispatch(0.1, 1, 1);
+
+        let rows = lens_cost(
+            &[json!("c"), json!("s")],
+            &files,
+            2.0,
+            false,
+            &profile(),
+            &[read.clone(), unsaved.clone()],
+        );
+        assert_eq!(rows[0]["filesOpened"], json!(1));
+        assert_eq!(rows[1]["filesOpened"], Value::Null);
+        assert_eq!(
+            pr_files_not_opened(&files, &[read.clone(), unsaved.clone()]),
+            json!(["src/b.ts"])
+        );
+        assert_eq!(
+            pr_files_not_opened(&files, std::slice::from_ref(&unsaved)),
+            Value::Null
+        );
+        assert_eq!(
+            transcripts_dir(&[unsaved.clone(), read]),
+            json!(dir.to_string_lossy())
+        );
+        assert_eq!(transcripts_dir(&[unsaved]), Value::Null);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

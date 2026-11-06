@@ -932,7 +932,10 @@ pub fn metrics_row(s: &MetricsScope) -> Result<Value, String> {
             json!([])
         },
     );
+    // Kept for older readers: it counts every notReached entry, not only budget
+    // stops. lensNotReachedCount says what it is; the split is lensNotReachedKinds.
     put("lensBudgetSkips", json!(s.lens_not_reached.len()));
+    put("lensNotReachedCount", json!(s.lens_not_reached.len()));
     put("lensToolCallBudget", n(LENS_TOOL_CALL_BUDGET));
     put("panelCeiling", n(s.max_panels));
     put("panelSkippedForBudget", s.panel_skipped_for_budget.clone());
