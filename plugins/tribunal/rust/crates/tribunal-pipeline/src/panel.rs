@@ -29,6 +29,7 @@ use tribunal_core::votes::artifact_truth::{apply_artifact_truth, PanelSlot};
 use tribunal_core::votes::clean_sweep::{
     parse_sweep_findings, should_run_clean_sweep, sweep_family_for, SweepGateInput,
 };
+use tribunal_core::votes::dedup_veto::titles_overlap;
 use tribunal_core::votes::js_ext::number_value;
 use tribunal_core::votes::panel_ceiling_tiebreak::{
     panel_ceiling_tied_group, resolve_panel_ceiling_tiebreak, TiebreakResolution,
@@ -759,9 +760,27 @@ pub async fn panel_phase<I: PanelIo>(
                 out.dropped_pre_panel.push(Value::Object(d));
                 continue;
             };
-            if panel_input.iter().any(|f| same_place(f, &kept))
-                || gaps.iter().any(|f| same_place(f, &kept))
-            {
+            // The Workflow's critic dropped any gap filed near a raised finding,
+            // whatever it claimed, and the differential tests keep that. The
+            // engine's critic drops it only when the titles also overlap, so a
+            // different defect at the same place (a job that is never enqueued
+            // vs. what happens when it fails) reaches the panel, and it logs
+            // the drop instead of losing the gap silently. The log, not
+            // dropped_pre_panel, because the report reads that list as the
+            // out-of-scope gate.
+            let rust_critic = env.critic_gap.is_some();
+            let repeats =
+                |f: &Value| same_place(f, &kept) && (!rust_critic || titles_overlap(f, &kept));
+            if let Some(matched) = panel_input.iter().chain(gaps.iter()).find(|f| repeats(f)) {
+                if rust_critic {
+                    logs.push(format!(
+                        "Completeness critic gap dropped as a repeat of \"{}\": \"{}\" ({}:{})",
+                        s(js::get(matched, "title")),
+                        s(js::get(&kept, "title")),
+                        s(js::get(&kept, "file")),
+                        s(js::get(&kept, "line"))
+                    ));
+                }
                 continue;
             }
             gaps.push(kept);

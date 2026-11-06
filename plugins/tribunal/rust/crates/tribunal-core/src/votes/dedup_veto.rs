@@ -45,6 +45,12 @@ pub fn mergeable_within(a: &Value, b: &Value) -> bool {
     {
         return true;
     }
+    titles_overlap(a, b)
+}
+
+/// Whether two findings' titles share at least `TITLE_OVERLAP_MIN` of the
+/// shorter title's words. An empty title overlaps nothing.
+pub fn titles_overlap(a: &Value, b: &Value) -> bool {
     let ta = title_tokens(js::get(a, "title"));
     let tb = title_tokens(js::get(b, "title"));
     if ta.is_empty() || tb.is_empty() {
@@ -76,6 +82,20 @@ mod tests {
         let a = json!({"line": 1, "title": "Missing transaction around merge"});
         let b = json!({"line": 900, "title": "merge has no transaction"});
         assert!(mergeable_within(&a, &b));
+    }
+
+    #[test]
+    fn a_reworded_title_overlaps_and_a_different_claim_does_not() {
+        let raised = json!({"title": "Retry job is never enqueued"});
+        assert!(titles_overlap(
+            &raised,
+            &json!({"title": "The retry job never gets enqueued"})
+        ));
+        assert!(!titles_overlap(
+            &raised,
+            &json!({"title": "Exhausted rows cannot be replayed from the failure list"})
+        ));
+        assert!(!titles_overlap(&raised, &json!({"title": ""})));
     }
 
     #[test]
