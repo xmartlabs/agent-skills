@@ -250,12 +250,12 @@ async fn located_evidence_gives_a_finding_without_verified_by_an_anchor_the_gate
 }
 
 #[tokio::test]
-async fn unlocated_evidence_a_nit_and_a_cited_finding_stay_as_they_were() {
+async fn ambiguous_evidence_a_nit_and_a_cited_finding_stay_as_they_were() {
     let cited = json!([{"file": "src/limit.ts", "line": 3, "quote": "  return count <= limit;"}]);
     let mut with_anchor = evidenced_verdict("important", "exact", json!(2));
     with_anchor["finding"]["verifiedBy"] = cited.clone();
     let rows = [
-        evidenced_verdict("important", "not-found", Value::Null),
+        evidenced_verdict("important", "ambiguous", Value::Null),
         evidenced_verdict("nit", "exact", json!(2)),
         with_anchor,
     ];
@@ -302,4 +302,53 @@ async fn the_anchor_of_a_merged_finding_is_found_in_the_file_at_head() {
     .await
     .unwrap();
     assert_eq!(out["results"][0]["status"], "found", "{out}");
+}
+
+/// Evidence the resolver did not find in the diff: the quote is unchanged code
+/// of the file, as in a finding about a check placed after an old one.
+async fn outside_the_diff(name: &str, file: Option<&str>) -> (Vec<Value>, Vec<String>) {
+    let endpoint = format!("repos/{REPO}/contents/src/limit.ts?ref={HEAD}");
+    let s = match file {
+        Some(text) => setup_with(name, &[(endpoint.as_str(), text)]),
+        None => setup_with(name, &[]),
+    };
+    let unanchored = evidenced_verdict("important", "not-found", Value::Null);
+    let before = surviving_for_synthesis(std::slice::from_ref(&unanchored));
+    assert!(note_of(&before[0])
+        .unwrap()
+        .contains("verifiedBy is missing or empty"));
+    let mut v = vec![Some(unanchored)];
+    assert_eq!(anchor_from_evidence(&mut v), 1);
+    let mut logs = Vec::new();
+    repair_anchor_lines(&s.tools, HEAD, REPO, &[], &mut v, &mut logs).await;
+    let rows: Vec<Value> = v.into_iter().flatten().collect();
+    (surviving_for_synthesis(&rows), logs)
+}
+
+#[tokio::test]
+async fn evidence_outside_the_diff_found_in_the_file_at_head_passes_the_gate() {
+    let (out, logs) = outside_the_diff("outside-found", Some(FILE)).await;
+    assert_eq!(out[0]["adjudicated"], json!(true), "{logs:?}");
+    assert_eq!(note_of(&out[0]), None);
+    assert_eq!(
+        out[0]["verifiedBy"],
+        json!([{"file": "src/limit.ts", "line": 2, "quote": QUOTE.trim()}])
+    );
+    assert!(logs[0].contains("completed 1 of 1"), "{logs:?}");
+}
+
+#[tokio::test]
+async fn evidence_outside_the_diff_and_absent_from_the_file_stays_demoted() {
+    let other = "export const unrelated = true;\n";
+    let (out, logs) = outside_the_diff("outside-absent", Some(other)).await;
+    assert_eq!(out[0]["adjudicated"], json!(false));
+    assert!(note_of(&out[0]).is_some());
+    assert!(logs[0].contains("completed 0 of 1"), "{logs:?}");
+}
+
+#[tokio::test]
+async fn evidence_outside_the_diff_with_a_failed_read_stays_demoted() {
+    let (out, _) = outside_the_diff("outside-unread", None).await;
+    assert_eq!(out[0]["adjudicated"], json!(false));
+    assert!(note_of(&out[0]).is_some());
 }
