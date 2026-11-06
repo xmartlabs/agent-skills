@@ -854,6 +854,9 @@ fn rust_synth(c: &Value) -> String {
     })
 }
 
+const GROUNDED_RULE: &str = "A finding's \"grounded.verdict\" of \"confirmed\" means the finding claims a compile error and the repository's own typecheck reported a diagnostic (its \"grounded.diagnostic\" string) within 5 lines of its line, so it skipped the panel. That is checker evidence, not a vote.";
+const GROUNDED_RULE_WORKFLOW: &str = "A finding's \"grounded.verdict\" of \"confirmed\" means a real tsc --noEmit diagnostic (its \"grounded.diagnostic\" string) landed on its changed line, so it skipped the panel \u{2014} ground truth, not a vote.";
+
 #[test]
 fn the_report_prompt_is_the_workflows() {
     let cases = sample(synth_case());
@@ -873,7 +876,16 @@ fn the_report_prompt_is_the_workflows() {
         })
         .collect();
     let js = span(&SYNTH_SPAN, &params);
-    let rust: Vec<Value> = cases.iter().map(|c| json!(rust_synth(c))).collect();
+    // Declared difference: the grounding rule says what a typecheck
+    // confirmation takes now, a compile claim and a diagnostic within the
+    // line window, where the workflow said the diagnostic "landed on its
+    // changed line". Witness: every generated prompt carries the new sentence.
+    let raw: Vec<String> = cases.iter().map(rust_synth).collect();
+    assert!(raw.iter().all(|r| r.contains(GROUNDED_RULE)));
+    let rust: Vec<Value> = raw
+        .iter()
+        .map(|r| json!(r.replace(GROUNDED_RULE, GROUNDED_RULE_WORKFLOW)))
+        .collect();
     assert_same("synthesis prompt", &cases, &rust, &js);
     let has = |s: &str| {
         rust.iter()

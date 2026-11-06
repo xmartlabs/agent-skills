@@ -29,7 +29,7 @@ use crate::review::answer_of;
 use crate::run::{
     effective_lens_samples, DispatchPolicy, ReviewOutcome, SynthesisOutcome, VerifyOutcome,
 };
-use crate::verify::Grounded;
+use crate::verify::{Grounded, GroundedGate};
 
 fn output_tokens<'a>(results: impl IntoIterator<Item = &'a DispatchResult>) -> f64 {
     results
@@ -584,9 +584,10 @@ fn stage_seconds_row(seconds: [f64; 6]) -> Value {
 }
 
 /// What the grounded gate had to decide on: how many deduped candidates
-/// claimed a compile error (`mechanicalClaim`), and how many diagnostics the
-/// checker reported in PR files, null when no usable typecheck ran.
-fn grounded_input(candidates: &[Value], grounded: &Grounded) -> Value {
+/// claimed a compile error (`mechanicalClaim`), how many diagnostics the
+/// checker reported in PR files (null when no usable typecheck ran), and how
+/// many candidates went to the panel carrying a nearby diagnostic.
+fn grounded_input(candidates: &[Value], grounded: &Grounded, gate: &GroundedGate) -> Value {
     let claims = candidates
         .iter()
         .filter(|c| js::truthy(js::get(c, "mechanicalClaim")))
@@ -594,7 +595,11 @@ fn grounded_input(candidates: &[Value], grounded: &Grounded) -> Value {
     let diagnostics = grounded
         .available
         .then(|| grounded.diags_by_file.diagnostic_count());
-    json!({"mechanicalClaims": claims, "prDiagnostics": diagnostics})
+    json!({
+        "mechanicalClaims": claims,
+        "prDiagnostics": diagnostics,
+        "diagnosticToPanel": gate.diagnostic_to_panel,
+    })
 }
 
 /// What the grounded typecheck was: the checker that ran (`tsc`, `mypy`,
@@ -660,7 +665,11 @@ pub fn persist_phase(
     metrics["stageSeconds"] = stage_seconds(review, verify, synthesis);
     metrics["groundedChecker"] =
         grounded_checker(verify.typecheck.as_ref().map(|t| t.text.as_str()));
-    metrics["groundedInput"] = grounded_input(&verify.dedup.panel_candidates, &verify.grounded);
+    metrics["groundedInput"] = grounded_input(
+        &verify.dedup.panel_candidates,
+        &verify.grounded,
+        &verify.gate,
+    );
     metrics["repoResolution"] = verify
         .repo_cwd
         .to_json(&review.prepared.repo, &rt.operator.cwd);
@@ -857,6 +866,13 @@ mod tests {
     const TSC_CLEAN: &str = "CREATED_WORKTREE <wt>\nNO_DIAGNOSTICS\n---COVERED--- 1\nsrc/a.ts";
     const TSC_DRIFT: &str = "CREATED_WORKTREE <wt>\nDEGRADED_SCHEMA_DRIFT";
 
+    fn input_for(candidates: &[Value], grounded: &Grounded) -> Value {
+        let pr = ["src/a.ts".to_owned()];
+        let gate =
+            crate::verify::grounded_gate(candidates, grounded, &pr, &mut Vec::new()).unwrap();
+        grounded_input(candidates, grounded, &gate)
+    }
+
     fn grounded_from(text: &str) -> Grounded {
         crate::verify::apply_typecheck_result(text, &["src/a.ts".to_owned()], &mut Vec::new())
             .unwrap()
@@ -866,29 +882,29 @@ mod tests {
     fn grounded_input_counts_compile_claims_and_pr_diagnostics() {
         let candidates = [
             json!({"file": "src/a.ts", "line": 1, "mechanicalClaim": "type-error"}),
-            json!({"file": "src/a.ts", "line": 9}),
+            json!({"file": "src/a.ts", "line": 4}),
             json!({"file": "src/a.ts", "line": 9, "mechanicalClaim": null}),
             json!({"file": "src/b.ts", "line": 3, "mechanicalClaim": "undefined-symbol"}),
         ];
         assert_eq!(
-            grounded_input(&candidates, &grounded_from(TSC_TWO_ERRORS)),
-            json!({"mechanicalClaims": 2, "prDiagnostics": 2})
+            input_for(&candidates, &grounded_from(TSC_TWO_ERRORS)),
+            json!({"mechanicalClaims": 2, "prDiagnostics": 2, "diagnosticToPanel": 1})
         );
         assert_eq!(
-            grounded_input(&candidates, &grounded_from(TSC_CLEAN)),
-            json!({"mechanicalClaims": 2, "prDiagnostics": 0})
+            input_for(&candidates, &grounded_from(TSC_CLEAN)),
+            json!({"mechanicalClaims": 2, "prDiagnostics": 0, "diagnosticToPanel": 0})
         );
     }
 
     #[test]
     fn grounded_input_has_no_diagnostic_count_without_a_usable_typecheck() {
         assert_eq!(
-            grounded_input(&[], &grounded_from(TSC_DRIFT)),
-            json!({"mechanicalClaims": 0, "prDiagnostics": null})
+            input_for(&[], &grounded_from(TSC_DRIFT)),
+            json!({"mechanicalClaims": 0, "prDiagnostics": null, "diagnosticToPanel": 0})
         );
         assert_eq!(
-            grounded_input(&[], &Grounded::default()),
-            json!({"mechanicalClaims": 0, "prDiagnostics": null})
+            input_for(&[], &Grounded::default()),
+            json!({"mechanicalClaims": 0, "prDiagnostics": null, "diagnosticToPanel": 0})
         );
     }
 

@@ -17,7 +17,7 @@ use serde_json::{json, Value};
 use tribunal_core::evidence::tsc_oracle::{DiagsByFile, TscDiagnostic};
 use tribunal_pipeline::verify::{
     apply_dedup, apply_typecheck_result, dedup_prompt, grounded_gate, needs_panel, no_panel_result,
-    panel_plan, partition_results, Grounded,
+    panel_plan, partition_results, Grounded, GROUNDED_DIAGNOSTIC,
 };
 
 const FILES: &[&str] = &[
@@ -454,6 +454,103 @@ fn rust_gate(c: &Value) -> Value {
     json!({"groundedConfirmedList": g.confirmed, "groundedRefutedList": g.refuted, "panelInput": g.panel_input, "logs": logs})
 }
 
+/// Declared difference: the workflow confirmed any finding with a diagnostic
+/// near it. The gate now confirms only a finding that claims a compile error
+/// (`mechanicalClaim`) and sends any other one to the panel carrying the
+/// diagnostic in `groundedDiagnostic`. This puts those findings back where the
+/// workflow had them, so the rest of the gate is still compared with its
+/// golden. Witness: `a_diagnostic_near_a_finding_with_no_compile_claim_goes_to_the_panel`.
+fn as_the_workflow_gated(c: &Value, out: &Value) -> Value {
+    let candidates = c["panelCandidates"].as_array().unwrap();
+    let confirmed = out["groundedConfirmedList"].as_array().unwrap();
+    let refuted = out["groundedRefutedList"].as_array().unwrap();
+    let panel = out["panelInput"].as_array().unwrap();
+    let (mut ci, mut ri, mut pi) = (0, 0, 0);
+    let mut old_confirmed = Vec::new();
+    let mut old_panel = Vec::new();
+    for cand in candidates {
+        if confirmed.get(ci).is_some_and(|e| &e["finding"] == cand) {
+            old_confirmed.push(confirmed[ci].clone());
+            ci += 1;
+        } else if refuted.get(ri).is_some_and(|e| &e["finding"] == cand) {
+            ri += 1;
+        } else {
+            let mut p = panel[pi].clone();
+            pi += 1;
+            let m = p.as_object_mut().unwrap();
+            m.shift_remove("slotId");
+            match m.shift_remove(GROUNDED_DIAGNOSTIC) {
+                Some(d) => old_confirmed.push(
+                    json!({"finding": p, "grounded": {"verdict": "confirmed", "diagnostic": d}}),
+                ),
+                None => old_panel.push(p),
+            }
+        }
+    }
+    assert_eq!(
+        (ci, ri, pi),
+        (confirmed.len(), refuted.len(), panel.len()),
+        "every gate entry is a candidate, in order"
+    );
+    let old_panel: Vec<Value> = old_panel
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut p)| {
+            p["slotId"] = json!(i);
+            p
+        })
+        .collect();
+    let mut logs: Vec<Value> = out["logs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|l| !l.as_str().unwrap().starts_with("Grounded gate:"))
+        .cloned()
+        .collect();
+    if !old_confirmed.is_empty() || !refuted.is_empty() {
+        logs.push(json!(format!(
+            "Grounded gate: {} confirmed (panel skipped), {} refuted pre-panel",
+            old_confirmed.len(),
+            refuted.len()
+        )));
+    }
+    json!({"groundedConfirmedList": old_confirmed, "groundedRefutedList": refuted, "panelInput": old_panel, "logs": logs})
+}
+
+fn shows_a_diagnostic(out: &Value) -> bool {
+    out["panelInput"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| p.get(GROUNDED_DIAGNOSTIC).is_some())
+}
+
+#[test]
+fn a_diagnostic_near_a_finding_with_no_compile_claim_goes_to_the_panel() {
+    let case = json!({
+        "panelCandidates": [
+            {"file": "src/a.ts", "line": 10, "title": "logic", "description": "d", "evidence": "e"},
+            {"file": "src/a.ts", "line": 10, "title": "types", "description": "d", "evidence": "e", "mechanicalClaim": true},
+        ],
+        "groundedAvailable": true,
+        "diagsByFile": {"src/a.ts": [{"file": "src/a.ts", "line": 9, "code": "TS2345", "message": "m"}]},
+        "covered": ["src/a.ts"],
+    });
+    let out = rust_gate(&case);
+    let confirmed = out["groundedConfirmedList"].as_array().unwrap();
+    assert_eq!(confirmed.len(), 1);
+    assert_eq!(confirmed[0]["finding"]["title"], "types");
+    let panel = out["panelInput"].as_array().unwrap();
+    assert_eq!(panel.len(), 1);
+    assert_eq!(panel[0]["title"], "logic");
+    assert_eq!(panel[0][GROUNDED_DIAGNOSTIC], "src/a.ts(9): TS2345: m");
+    assert_eq!(panel[0]["slotId"], 0);
+    // The workflow confirmed both, with no panel.
+    let old = as_the_workflow_gated(&case, &out);
+    assert_eq!(old["groundedConfirmedList"].as_array().unwrap().len(), 2);
+    assert!(old["panelInput"].as_array().unwrap().is_empty());
+}
+
 #[test]
 fn grounded_gate_matches_the_workflow() {
     let cases = sample(gate_case());
@@ -478,7 +575,17 @@ fn grounded_gate_matches_the_workflow() {
         },
         &params,
     );
-    let rust: Vec<Value> = cases.iter().map(rust_gate).collect();
+    let gated: Vec<Value> = cases.iter().map(rust_gate).collect();
+    let declared = gated.iter().filter(|o| shows_a_diagnostic(o)).count();
+    assert!(
+        declared > 10,
+        "the declared difference reached {declared} cases"
+    );
+    let rust: Vec<Value> = cases
+        .iter()
+        .zip(&gated)
+        .map(|(c, o)| as_the_workflow_gated(c, o))
+        .collect();
     assert_same("grounded gate", &cases, &rust, &js);
 }
 
@@ -490,24 +597,40 @@ fn the_generated_gate_cases_reach_every_branch() {
             .filter(|o| !o[k].as_array().unwrap().is_empty())
             .count()
     };
+    // A confirmation needs a compile claim now; a diagnostic near any other
+    // finding sends it to the panel (`as_the_workflow_gated`).
+    let shown = out.iter().filter(|o| shows_a_diagnostic(o)).count();
     assert!(
-        n("groundedConfirmedList") > 30,
+        n("groundedConfirmedList") > 15,
         "{}",
         n("groundedConfirmedList")
     );
+    assert!(shown > 15, "{shown}");
     assert!(
         n("groundedRefutedList") > 10,
         "{}",
         n("groundedRefutedList")
     );
-    let basename = out.iter().filter(|o| {
+    let by_basename = |o: &&Value| {
         o["groundedConfirmedList"]
             .as_array()
             .unwrap()
             .iter()
             .any(|e| e["finding"]["file"] == "service.ts")
-    });
-    assert!(basename.count() > 2);
+    };
+    let shown_by_basename = |o: &&Value| {
+        o["panelInput"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["file"] == "service.ts" && p.get(GROUNDED_DIAGNOSTIC).is_some())
+    };
+    let confirmed = out.iter().filter(by_basename).count();
+    let sent = out.iter().filter(shown_by_basename).count();
+    assert!(
+        confirmed > 0 && sent > 0 && confirmed + sent > 2,
+        "{confirmed} {sent}"
+    );
 }
 
 // ------------------------------------------------- needsPanel and the budget

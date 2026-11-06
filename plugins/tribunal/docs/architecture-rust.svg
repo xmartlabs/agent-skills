@@ -1529,8 +1529,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="520" y="1266" class="t-messagebus" font-size="7" text-anchor="middle">one claim from several lenses</text>
         </g>
 
-        <g id="node-tsc" data-node-id="tsc" data-node-label="grounded typecheck" tabindex="0" role="button" aria-label="Focus grounded typecheck, DETERMINISTIC · Rust runs tsc, mypy or pyright, Check" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · Rust runs tsc, mypy or pyright" data-node-tag="a hit confirms; only a clean tsc kills" data-node-context="Check">
-          <title>grounded typecheck · DETERMINISTIC · Rust runs tsc, mypy or pyright · Check · a hit confirms; only a clean tsc kills</title>
+        <g id="node-tsc" data-node-id="tsc" data-node-label="grounded typecheck" tabindex="0" role="button" aria-label="Focus grounded typecheck, DETERMINISTIC · Rust runs tsc, mypy or pyright, Check" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · Rust runs tsc, mypy or pyright" data-node-tag="a hit confirms a compile claim; a clean tsc kills one" data-node-context="Check">
+          <title>grounded typecheck · DETERMINISTIC · Rust runs tsc, mypy or pyright · Check · a hit confirms a compile claim; a clean tsc kills one</title>
           <rect x="380" y="1326" width="280" height="64" rx="8" class="c-mask"/>
           <rect x="380" y="1326" width="280" height="64" rx="8" class="c-backend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-29;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(386 1332) scale(0.6875)">
@@ -1538,7 +1538,7 @@ rect.c-bg-rect { fill: var(--bg); }
           </g>
           <text data-node-label="" x="520" y="1356" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">grounded typecheck</text>
         <text x="520" y="1372" class="t-muted" font-size="9" text-anchor="middle">DETERMINISTIC · Rust runs tsc, mypy or pyright</text>
-        <text x="520" y="1382" class="t-backend" font-size="7" text-anchor="middle">a hit confirms; only a clean tsc kills</text>
+        <text x="520" y="1382" class="t-backend" font-size="7" text-anchor="middle">a hit confirms a compile claim; a clean tsc kills one</text>
         </g>
 
         <g id="node-sweep" data-node-id="sweep" data-node-label="clean-verdict sweep" tabindex="0" role="button" aria-label="Focus clean-verdict sweep, MODEL · Codex, other family, Check" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="MODEL · Codex, other family" data-node-tag="only when none reach a panel" data-node-context="Check">
