@@ -1068,6 +1068,37 @@ fn carry_forward_seeds() -> Vec<Value> {
     ]
 }
 
+/// Declared difference: the Workflow's `cfSameFinding` also matched two
+/// findings of one file within 40 lines, whatever they claimed, so a fixed
+/// prior finding came back as still open (and skipped verification) when the
+/// run raised another defect near it. The port matches on the file and the
+/// title only. To compare with the golden, the Workflow's place branch
+/// (`cf_same_place`) is added back. Witness:
+/// `declared_difference_a_nearby_finding_with_another_title_is_not_the_prior`.
+fn workflow_same_finding(a: &Value, b: &Value) -> bool {
+    cf::cf_same_finding(a, b) || cf::cf_same_place(a, b)
+}
+
+/// The port's own answer, without the place branch added back.
+fn run_carry_forward_port(call: &Value) -> Result<Value, String> {
+    let args = &call["args"];
+    let a = |i| opt_arg(args, i);
+    match call["fn"].as_str().unwrap() {
+        "classifyPriorFindings" => Ok(cf::classify_prior_findings(
+            a(0),
+            a(1),
+            match a(2) {
+                Some(Value::Array(l)) => l.as_slice(),
+                _ => &[],
+            },
+            a(3).and_then(Value::as_object),
+        )?
+        .to_json()),
+        "cfSameFinding" => Ok(json!(cf::cf_same_finding(a(0).unwrap(), a(1).unwrap()))),
+        _ => run_carry_forward(call),
+    }
+}
+
 fn run_carry_forward(call: &Value) -> Result<Value, String> {
     let args = &call["args"];
     let a = |i| opt_arg(args, i);
@@ -1078,14 +1109,15 @@ fn run_carry_forward(call: &Value) -> Result<Value, String> {
         }
     };
     Ok(match call["fn"].as_str().unwrap() {
-        "classifyPriorFindings" => cf::classify_prior_findings(
+        "classifyPriorFindings" => cf::classify_prior_findings_by(
             a(0),
             a(1),
             slice(2).unwrap_or(&[]),
             a(3).and_then(Value::as_object),
+            workflow_same_finding,
         )?
         .to_json(),
-        "cfSameFinding" => json!(cf::cf_same_finding(a(0).unwrap(), a(1).unwrap())),
+        "cfSameFinding" => json!(workflow_same_finding(a(0).unwrap(), a(1).unwrap())),
         "incrementalFallbackFor" => {
             cf::incremental_fallback_for(a(0), a(1), a(2), a(3), a(4)).unwrap_or(Value::Null)
         }
@@ -1099,6 +1131,43 @@ fn run_carry_forward(call: &Value) -> Result<Value, String> {
         "priorGrade" => cf::prior_grade(a(0).unwrap()),
         other => panic!("no Rust port wired for {other}"),
     })
+}
+
+/// The seed call `carry_forward_matches_js` compares with the golden, where
+/// the Workflow answers true, is the witness: the port alone says these are
+/// different findings, and the prior goes to verification.
+#[test]
+fn declared_difference_a_nearby_finding_with_another_title_is_not_the_prior() {
+    let prior = json!({"file": "a.ts", "line": 100, "title": "completely unrelated words here"});
+    let current = json!({"file": "a.ts", "line": 120, "title": "nothing in common at all"});
+    let seed = json!({"fn": "cfSameFinding", "args": [prior, current]});
+    assert!(carry_forward_seeds().contains(&seed));
+    assert!(!cf::cf_same_finding(&prior, &current));
+    assert!(workflow_same_finding(&prior, &current));
+    let scope = json!({"changed": ["a.ts"], "unchanged": [], "gone": [], "added": []});
+    let priors = json!([prior]);
+    let port = cf::classify_prior_findings(
+        Some(&scope),
+        Some(&priors),
+        std::slice::from_ref(&current),
+        None,
+    )
+    .unwrap();
+    assert!(port.still_open.is_empty());
+    assert_eq!(port.not_resurfaced.len(), 1);
+    let workflow = cf::classify_prior_findings_by(
+        Some(&scope),
+        Some(&priors),
+        &[current],
+        None,
+        workflow_same_finding,
+    )
+    .unwrap();
+    assert_eq!(workflow.still_open.len(), 1);
+    assert_eq!(
+        workflow.still_open[0]["matchedTitle"],
+        json!("nothing in common at all")
+    );
 }
 
 /// Declared difference: a finding a person lowered with `tribunal override
@@ -1204,6 +1273,14 @@ fn carry_forward_matches_js() {
         calls.push(json!({"fn": "verdictFor", "args": [list_arg(&s), list_arg(&p)]}));
     }
 
+    let declared = calls
+        .iter()
+        .filter(|c| run_carry_forward_port(c) != run_carry_forward(c))
+        .count();
+    assert!(
+        declared > 20,
+        "the declared difference reached {declared} calls"
+    );
     let rust = calls.iter().map(run_carry_forward).collect();
     compare_raw("CARRY-FORWARD", CARRY_FORWARD_EXPORTS, &calls, rust);
 }

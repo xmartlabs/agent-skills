@@ -440,6 +440,14 @@ Each has a witness input asserted in its group's test file.
   description. `diff_verify.rs` maps the gate's output back before comparing,
   and `diff_synthesize.rs` declares the synthesis prompt's sentence about
   what a confirmation means.
+- An incremental re-review matches a prior finding to one of the run's
+  findings by file and title only. The Workflow also matched any finding of
+  the same file within 40 lines, so a fixed prior finding came back as still
+  open, and skipped verification, when the run raised another defect near it.
+  The Workflow's place branch survives as `cf_same_place`, which
+  `diff_report.rs` (through `classify_prior_findings_by`) and
+  `diff_synthesize.rs` (through `prior_check_by`) add back before comparing
+  with their goldens.
 - The native row's `relays` is always empty (nothing travels through a relay
   agent) and its `platform` is null, so the row falls back to the PR
   context's platform, as the workflow did when no platform argument was

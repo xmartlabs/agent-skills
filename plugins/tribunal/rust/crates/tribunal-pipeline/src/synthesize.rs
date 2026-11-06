@@ -17,8 +17,8 @@ use tribunal_core::panel::panel_gates::lower_severity_votes;
 use tribunal_core::profile::high_risk_surface::with_risk_path_surface;
 use tribunal_core::profile::profile_lookup::risk_path_rules;
 use tribunal_core::report::carry_forward::{
-    classify_prior_findings, grade_prior_verification, prior_grade, unresolved_prior_blockers_from,
-    verdict_for, PriorClassification,
+    cf_same_finding, classify_prior_findings_by, grade_prior_verification, prior_grade,
+    unresolved_prior_blockers_from, verdict_for, PriorClassification,
 };
 use tribunal_core::report::draft_comments_strip::{
     is_draft_heading, strip_draft_comments_from_body,
@@ -140,14 +140,44 @@ pub fn prior_check(
     ceiling: usize,
     logs: &mut Vec<String>,
 ) -> Result<PriorCheck, String> {
+    prior_check_by(
+        scope,
+        prior_review,
+        current,
+        import_adjacency,
+        ceiling,
+        logs,
+        cf_same_finding,
+    )
+}
+
+/// [`prior_check`] with the match between a prior and a current finding
+/// given, so the differential test can run the Workflow's.
+///
+/// # Errors
+/// Where `classifyPriorFindings` throws.
+pub fn prior_check_by(
+    scope: Option<&Value>,
+    prior_review: Option<&Value>,
+    current: &[Value],
+    import_adjacency: &Value,
+    ceiling: usize,
+    logs: &mut Vec<String>,
+    same: impl Fn(&Value, &Value) -> bool,
+) -> Result<PriorCheck, String> {
     let empty = json!([]);
     let findings = prior_review
         .filter(|p| js::truthy(Some(p)))
         .and_then(|p| js::get(p, "findings"))
         .filter(|f| js::truthy(Some(f)))
         .unwrap_or(&empty);
-    let outcome =
-        classify_prior_findings(scope, Some(findings), current, import_adjacency.as_object())?;
+    let outcome = classify_prior_findings_by(
+        scope,
+        Some(findings),
+        current,
+        import_adjacency.as_object(),
+        same,
+    )?;
     let escalated = |p: &&Value| js::truthy(js::get(p, "escalatedByImportHeuristic"));
     let genuine: Vec<Value> = outcome
         .not_resurfaced
