@@ -629,7 +629,7 @@ run state) — that is Tier-1, read off `sectionedReceivers` on a micro-run.
 | Field | Meaning |
 |---|---|
 | `lensToolCallBudget` | The ceiling stated in the lens prompt for this run (40 today). Recorded because it is a tunable that changes the largest cost term in a run — a row that does not say which budget it ran under cannot be compared against one that ran under another. |
-| `lensBudgetSkips` | How many entries in `notChecked` came from a lens reporting `notReached` (it ran out of budget) rather than from the file partition. Separated so a rise in `notChecked` after the ceiling shipped is attributable instead of alarming. |
+| `lensBudgetSkips` | How many entries in `notChecked` came from a lens reporting `notReached` rather than from the file partition, whatever the reason the lens gave. Despite the name it is not a count of budget stops: read `lensNotReachedKinds.budget` for those. Kept for readers of older rows; new readers use `lensNotReachedCount`, which holds the same number. |
 
 `notChecked` is now the **union** of two different kinds of blind spot: changed
 files that fell outside every lens's scope (derivable by the harness) and
@@ -664,7 +664,7 @@ Regression cover: `eval/replay-lens-budget.mjs` (0 tokens) — the `notReached`
 plumbing against crashed and absent results, the union into `notChecked`, and the
 budget pinned between its measured failure floor (30) and efficiency knee (50).
 
-## Fields added for kinded gaps (Rust rows only): `lensNotReachedKinds`, `unreadRiskFiles`, `lensFailures`
+## Fields added for kinded gaps (Rust rows only): `lensNotReachedCount`, `lensNotReachedKinds`, `unreadRiskFiles`, `lensFailures`
 
 The Rust engine asks each lens to file a `notReached` entry as
 `{surface, file, kind}`. Rows from earlier runs, and Workflow rows, have plain
@@ -675,6 +675,7 @@ needed running something, or sat outside the PR.
 
 | Field | Meaning |
 |---|---|
+| `lensNotReachedCount` | How many `notReached` entries the lenses filed, of every kind. The same number as `lensBudgetSkips`, under a name that says what it counts. Rows written before this field have only `lensBudgetSkips`. |
 | `lensNotReachedKinds` | `{budget, outOfFocus, needsExecution, outsidePr, unstated}`: how many entries of each kind the lenses filed. `budget` is the only kind that is a hole in coverage. `unstated` counts plain strings. |
 | `unreadRiskFiles` | The files matching a `riskPaths` rule that every lens holding them left unread for budget. A non-empty list keeps the verdict from APPROVE (it becomes COMMENT), as an unreturned lens does, and the report names the files. |
 | `lensFailures` | `[{lens, cause}]` for each lens dispatch that returned no answer. `cause` is `rate-limit`, `overloaded`, `auth`, `timeout`, `killed`, `spawn-failed`, `no-answer` or `error`, read from the exit and what the CLI printed. Recorded so a retry is built for the causes that happen, if any do. |
