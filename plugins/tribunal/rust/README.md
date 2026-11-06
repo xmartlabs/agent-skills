@@ -113,6 +113,49 @@ This applies to code ported from the Workflow and its scripts. Code written
 after the port has no JavaScript twin and is tested in Rust alone, without
 `node` (see `../CLAUDE.md`).
 
+### How to declare one
+
+When a change to ported code makes it print something its golden did not
+record:
+
+1. Find the `diff_*.rs` test that compares that code with its golden, run it,
+   and read which comparison fails.
+2. Leave the golden alone. It is final once its script is gone, and in
+   `tribunal-pipeline` a span result over 1,024 bytes is stored as a SHA-256
+   digest (`DIGEST_OVER` in its `tests/common/mod.rs`), so the recorded
+   answer often cannot be edited into the new one anyway. Map the port's
+   output back to what the Workflow printed, then compare that:
+   - a field the Workflow never wrote: remove it first and assert its value
+     (`diff_metrics.rs` removes `lensSamples`, `lensNotReachedCount` and
+     `threadBefore`);
+   - changed text: put the old text back (`diff_synthesize.rs` swaps
+     `GROUNDED_RULE` for `GROUNDED_RULE_WORKFLOW`);
+   - a changed decision: rebuild the old decision from the new output
+     (`diff_verify.rs`, `as_the_workflow_gated`, moves the findings the gate
+     now sends to the panel back to confirmed and recomputes the slot ids and
+     the log line).
+3. Check the declaration fires. Assert that the new behavior shows up in the
+   generated cases (`diff_verify.rs` requires more than 10 such cases,
+   `diff_synthesize.rs` the new sentence in every prompt). A mapping that
+   never runs would hide a regression.
+4. Add a witness: a named test with a fixed input that shows the new output
+   and, through the same mapping, the old one.
+5. Keep the generators. A generator that produces other inputs than the
+   golden recorded fails on replay. When a branch-coverage test counts the
+   outcomes of the generated cases, move its counts to the new rule and count
+   the new branch too.
+6. Never read fields out of a result the golden keeps as a digest: they come
+   back null on replay although the test passed while regenerating. Read them
+   from a second span whose `ret` holds only them (`js_heads` in
+   `diff_plan.rs`).
+7. Write `Declared difference:` in a comment where you make it, and name the
+   witness. `git grep 'Declared difference'` lists them all; the list below
+   keeps the ones a reader of rows, reports or prompts would notice.
+
+A Rust-only addition outside ported code needs none of this. For example,
+`run_metrics.rs` sets `groundedChecker` and `groundedInput` on the row after
+`metrics_row` builds it, so `diff_metrics.rs` never sees them.
+
 ## Ported so far
 
 All 37 decision regions are ported. Each region is one module, and each
@@ -385,6 +428,18 @@ Each has a witness input asserted in its group's test file.
   `full review · 3 lens samples`) when the row has it, and nothing on an older
   row. Both are declared differences: `diff_metrics.rs` and
   `diff_post_footer.rs` take them out before comparing with their goldens.
+- The native row also carries `lensNotReachedCount` (the number
+  `lensBudgetSkips` holds, under a name that says what it counts) and
+  `threadBefore` (the `--thread-before` instant, or null). The Workflow wrote
+  neither, and `diff_metrics.rs` takes them out before comparing.
+- The grounded gate confirms a finding by typecheck only when the finding
+  claims a compile error (`mechanicalClaim`). The Workflow confirmed any
+  finding with a diagnostic within 5 lines, and skipped its panel. A finding
+  with a diagnostic nearby and no such claim now goes to the panel carrying
+  it in `groundedDiagnostic`, which every panel prompt prints after the
+  description. `diff_verify.rs` maps the gate's output back before comparing,
+  and `diff_synthesize.rs` declares the synthesis prompt's sentence about
+  what a confirmation means.
 - The native row's `relays` is always empty (nothing travels through a relay
   agent) and its `platform` is null, so the row falls back to the PR
   context's platform, as the workflow did when no platform argument was

@@ -42,7 +42,8 @@ goldens.
   template change that must ship before then needs that binary release first.
 - **A fix that changes what ported code prints** is declared in the
   `diff_*.rs` test that compares it with its golden, with a witness input.
-  The golden itself is final: its script is gone.
+  The golden itself is final: its script is gone. `rust/README.md`, "How to
+  declare one", has the steps.
 
 These rules are about the language tribunal is written in, not the languages
 it reviews. Supporting a new kind of repo (Python, Go, anything) is welcome:
