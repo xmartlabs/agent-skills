@@ -29,6 +29,7 @@ use crate::review::answer_of;
 use crate::run::{
     effective_lens_samples, DispatchPolicy, ReviewOutcome, SynthesisOutcome, VerifyOutcome,
 };
+use crate::verify::Grounded;
 
 fn output_tokens<'a>(results: impl IntoIterator<Item = &'a DispatchResult>) -> f64 {
     results
@@ -582,6 +583,20 @@ fn stage_seconds_row(seconds: [f64; 6]) -> Value {
     )
 }
 
+/// What the grounded gate had to decide on: how many deduped candidates
+/// claimed a compile error (`mechanicalClaim`), and how many diagnostics the
+/// checker reported in PR files, null when no usable typecheck ran.
+fn grounded_input(candidates: &[Value], grounded: &Grounded) -> Value {
+    let claims = candidates
+        .iter()
+        .filter(|c| js::truthy(js::get(c, "mechanicalClaim")))
+        .count();
+    let diagnostics = grounded
+        .available
+        .then(|| grounded.diags_by_file.diagnostic_count());
+    json!({"mechanicalClaims": claims, "prDiagnostics": diagnostics})
+}
+
 /// What the grounded typecheck was: the checker that ran (`tsc`, `mypy`,
 /// `pyright`), the marker that says why none did, or null when the review had
 /// no typecheck to run.
@@ -645,6 +660,7 @@ pub fn persist_phase(
     metrics["stageSeconds"] = stage_seconds(review, verify, synthesis);
     metrics["groundedChecker"] =
         grounded_checker(verify.typecheck.as_ref().map(|t| t.text.as_str()));
+    metrics["groundedInput"] = grounded_input(&verify.dedup.panel_candidates, &verify.grounded);
     metrics["repoResolution"] = verify
         .repo_cwd
         .to_json(&review.prepared.repo, &rt.operator.cwd);
@@ -834,6 +850,46 @@ mod tests {
             "foci": {"correctness": "c", "security": "s", "migration": "m"},
             "riskPaths": [{"focus": "migration", "pattern": "^tests/signup"}],
         })
+    }
+
+    // Recorded real tsc output, from the goldens of diff_grounded_typecheck.rs.
+    const TSC_TWO_ERRORS: &str = "CREATED_WORKTREE <wt>\nsrc/a.ts(1,14): error TS2322: Type 'string' is not assignable to type 'number'.\nsrc/a.ts(2,14): error TS2322: Type 'number' is not assignable to type 'string'.\n---COVERED--- 2\nsrc/a.ts";
+    const TSC_CLEAN: &str = "CREATED_WORKTREE <wt>\nNO_DIAGNOSTICS\n---COVERED--- 1\nsrc/a.ts";
+    const TSC_DRIFT: &str = "CREATED_WORKTREE <wt>\nDEGRADED_SCHEMA_DRIFT";
+
+    fn grounded_from(text: &str) -> Grounded {
+        crate::verify::apply_typecheck_result(text, &["src/a.ts".to_owned()], &mut Vec::new())
+            .unwrap()
+    }
+
+    #[test]
+    fn grounded_input_counts_compile_claims_and_pr_diagnostics() {
+        let candidates = [
+            json!({"file": "src/a.ts", "line": 1, "mechanicalClaim": "type-error"}),
+            json!({"file": "src/a.ts", "line": 9}),
+            json!({"file": "src/a.ts", "line": 9, "mechanicalClaim": null}),
+            json!({"file": "src/b.ts", "line": 3, "mechanicalClaim": "undefined-symbol"}),
+        ];
+        assert_eq!(
+            grounded_input(&candidates, &grounded_from(TSC_TWO_ERRORS)),
+            json!({"mechanicalClaims": 2, "prDiagnostics": 2})
+        );
+        assert_eq!(
+            grounded_input(&candidates, &grounded_from(TSC_CLEAN)),
+            json!({"mechanicalClaims": 2, "prDiagnostics": 0})
+        );
+    }
+
+    #[test]
+    fn grounded_input_has_no_diagnostic_count_without_a_usable_typecheck() {
+        assert_eq!(
+            grounded_input(&[], &grounded_from(TSC_DRIFT)),
+            json!({"mechanicalClaims": 0, "prDiagnostics": null})
+        );
+        assert_eq!(
+            grounded_input(&[], &Grounded::default()),
+            json!({"mechanicalClaims": 0, "prDiagnostics": null})
+        );
     }
 
     #[test]

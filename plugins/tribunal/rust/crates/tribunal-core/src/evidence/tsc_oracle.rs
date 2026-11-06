@@ -171,6 +171,11 @@ impl DiagsByFile {
         self.entries.is_empty()
     }
 
+    /// Diagnostics across every file, where `len` counts files.
+    pub fn diagnostic_count(&self) -> usize {
+        self.entries.iter().map(|(_, d)| d.len()).sum()
+    }
+
     pub fn to_value(&self) -> Value {
         Value::Object(
             self.entries
