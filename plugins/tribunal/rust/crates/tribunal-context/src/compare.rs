@@ -13,10 +13,15 @@
 //! the comparison measured nothing and says so instead of reporting parity.
 //!
 //! When every resample gives nearly the same difference (every arm unanimous
-//! in every run), the percentile interval collapses to a point. Each recall
+//! in every run), the percentile interval collapses to a point. A recall
 //! interval is therefore the wider of the bootstrap's and one computed from the
-//! pooled counts: Wilson for an arm's rate, Newcombe's hybrid score interval for
-//! the difference. Every verdict also carries a strength word by unit count.
+//! pooled counts (Wilson for an arm's rate, Newcombe's hybrid score interval for
+//! the difference) when the bootstrap's is a point, when there are fewer than
+//! `MIN_UNITS` units, or when a unit has a single run in either arm. Otherwise
+//! the bootstrap's stands: Newcombe treats the arms as independent samples, so
+//! it gives up what pairing the same items in both arms buys, and with enough
+//! units and runs the bootstrap alone kept false positives under 5% in
+//! simulation. Every verdict also carries a strength word by unit count.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -31,6 +36,11 @@ pub const MAX_RESAMPLES: usize = 1_000_000;
 pub const MIN_UNITS: usize = 5;
 /// Below this many units a result describes those PRs, not PRs like them.
 pub const MIN_INDICATIVE_UNITS: usize = 3;
+/// With fewer runs than this in a unit of either arm, or fewer than
+/// `MIN_UNITS` units, a recall interval keeps the score-interval floor.
+/// Simulated with plan-ab: one run per unit put the bootstrap alone at 6 to
+/// 7% false positives, two or more runs at 1 to 3%.
+pub const MIN_RUNS_PER_UNIT: usize = 2;
 
 const LOWER: f64 = 0.025;
 const UPPER: f64 = 0.975;
@@ -516,9 +526,20 @@ fn recall_report(
     let Some(an) = analyze(&r.units, args, false) else {
         return json!({"recorded": false});
     };
-    let a_ci = envelope(an.a_ci, wilson(r.found_a, r.seen_a));
-    let b_ci = envelope(an.b_ci, wilson(r.found_b, r.seen_b));
-    let diff_ci = envelope(
+    let thin = units < MIN_UNITS
+        || r.units
+            .iter()
+            .any(|(a, b)| a.len() < MIN_RUNS_PER_UNIT || b.len() < MIN_RUNS_PER_UNIT);
+    let floor = |boot: [f64; 2], score: [f64; 2]| {
+        if thin || boot[0] == boot[1] {
+            envelope(boot, score)
+        } else {
+            boot
+        }
+    };
+    let a_ci = floor(an.a_ci, wilson(r.found_a, r.seen_a));
+    let b_ci = floor(an.b_ci, wilson(r.found_b, r.seen_b));
+    let diff_ci = floor(
         an.stat_ci,
         newcombe(r.found_a, r.seen_a, r.found_b, r.seen_b),
     );
@@ -973,6 +994,60 @@ mod tests {
         let (a_lo, a_hi) = lo_hi(&report["recall"]["a"]);
         assert!(a_lo == 0.0 && a_hi > 0.17, "{}", report["recall"]["a"]);
         assert!(report["notes"].to_string().contains("Newcombe"));
+    }
+
+    /// A finds d0 always and d2 in a third of its runs; B finds d0 always and
+    /// d2 in two thirds; neither finds d1. Paired, the bootstrap interval is
+    /// narrower than Newcombe's, which sees only the pooled counts.
+    fn paired_gain(units: usize, runs: usize) -> (Value, Value) {
+        let a = detections(units, runs, 3, |u, r, k| {
+            k == 0 || (k == 2 && (u + r) % 3 == 0)
+        });
+        let b = detections(units, runs, 3, |u, r, k| {
+            k == 0 || (k == 2 && (u + r) % 3 != 2)
+        });
+        (a, b)
+    }
+
+    fn narrower_than_newcombe(recall: &Value) -> bool {
+        let count = |arm: &str| {
+            let n = recall["observations"][arm].as_f64().unwrap();
+            (recall[arm]["rate"].as_f64().unwrap() * n, n)
+        };
+        let ((ka, na), (kb, nb)) = (count("a"), count("b"));
+        let [nlo, nhi] = newcombe(ka, na, kb, nb);
+        let boot = &recall["difference"]["bootstrapCi"];
+        boot[0].as_f64().unwrap() > nlo || boot[1].as_f64().unwrap() < nhi
+    }
+
+    #[test]
+    fn enough_units_and_runs_keep_the_bootstrap_interval() {
+        let (a, b) = paired_gain(8, 3);
+        let report = run(&a, &b);
+        let r = &report["recall"];
+        assert!(narrower_than_newcombe(r), "{r}");
+        let d = &r["difference"];
+        assert_eq!(d["widened"], false, "{d}");
+        assert_eq!(d["ci"], d["bootstrapCi"], "{d}");
+        assert!(!report["notes"].to_string().contains("Newcombe"));
+    }
+
+    #[test]
+    fn one_run_per_unit_keeps_the_floor() {
+        let (a, b) = paired_gain(24, 1);
+        let r = run(&a, &b)["recall"].clone();
+        assert!(narrower_than_newcombe(&r), "{r}");
+        assert_eq!(r["difference"]["widened"], true, "{r}");
+    }
+
+    #[test]
+    fn a_unanimous_difference_keeps_the_floor_with_many_units() {
+        let none = detections(8, 3, 2, |_, _, _| false);
+        let all = detections(8, 3, 2, |_, _, _| true);
+        let d = run(&none, &all)["recall"]["difference"].clone();
+        assert_eq!(d["bootstrapCi"], json!([1.0, 1.0]));
+        assert_eq!(d["widened"], true, "{d}");
+        assert!(lo_hi(&d).0 < 1.0, "{d}");
     }
 
     #[test]
