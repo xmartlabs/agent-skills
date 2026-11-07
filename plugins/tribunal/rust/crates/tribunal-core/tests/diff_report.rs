@@ -1068,15 +1068,17 @@ fn carry_forward_seeds() -> Vec<Value> {
     ]
 }
 
-/// Declared difference: the Workflow's `cfSameFinding` also matched two
-/// findings of one file within 40 lines, whatever they claimed, so a fixed
-/// prior finding came back as still open (and skipped verification) when the
-/// run raised another defect near it. The port matches on the file and the
-/// title only. To compare with the golden, the Workflow's place branch
-/// (`cf_same_place`) is added back. Witness:
-/// `declared_difference_a_nearby_finding_with_another_title_is_not_the_prior`.
+/// Declared difference: the Workflow's `cfSameFinding` matched two findings
+/// of one file on either a shared title or lines within 40 of each other, so
+/// a fixed prior finding came back as still open (and skipped verification)
+/// when the run raised another defect near it, or another defect anywhere in
+/// the file whose title shared its words. The port needs both. To compare
+/// with the golden, the Workflow's either-branch rule is rebuilt from
+/// `cf_same_title` and `cf_same_place`. Witnesses:
+/// `declared_difference_a_nearby_finding_with_another_title_is_not_the_prior`
+/// and `declared_difference_a_shared_title_far_away_is_not_the_prior`.
 fn workflow_same_finding(a: &Value, b: &Value) -> bool {
-    cf::cf_same_finding(a, b) || cf::cf_same_place(a, b)
+    cf::cf_same_title(a, b) || cf::cf_same_place(a, b)
 }
 
 /// The port's own answer, without the place branch added back.
@@ -1168,6 +1170,36 @@ fn declared_difference_a_nearby_finding_with_another_title_is_not_the_prior() {
         workflow.still_open[0]["matchedTitle"],
         json!("nothing in common at all")
     );
+}
+
+/// A fixed input, not a seed: the Workflow matched these on the title alone,
+/// 348 lines apart; the port sends the prior to verification.
+#[test]
+fn declared_difference_a_shared_title_far_away_is_not_the_prior() {
+    let prior = json!({"file": "a.ts", "line": 492, "title": "Upload retry can re-send a request while the first attempt's response is still pending"});
+    let current = json!({"file": "a.ts", "line": 840, "title": "Delete retries have no guard against a late request from the previous attempt (the upload retry test has one)"});
+    assert!(!cf::cf_same_finding(&prior, &current));
+    assert!(workflow_same_finding(&prior, &current));
+    let scope = json!({"changed": ["a.ts"], "unchanged": [], "gone": [], "added": []});
+    let priors = json!([prior]);
+    let port = cf::classify_prior_findings(
+        Some(&scope),
+        Some(&priors),
+        std::slice::from_ref(&current),
+        None,
+    )
+    .unwrap();
+    assert!(port.still_open.is_empty());
+    assert_eq!(port.not_resurfaced.len(), 1);
+    let workflow = cf::classify_prior_findings_by(
+        Some(&scope),
+        Some(&priors),
+        &[current],
+        None,
+        workflow_same_finding,
+    )
+    .unwrap();
+    assert_eq!(workflow.still_open.len(), 1);
 }
 
 /// Declared difference: a finding a person lowered with `tribunal override

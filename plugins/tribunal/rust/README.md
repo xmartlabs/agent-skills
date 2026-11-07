@@ -445,13 +445,18 @@ Each has a witness input asserted in its group's test file.
   and `diff_synthesize.rs` declares the synthesis prompt's sentence about
   what a confirmation means.
 - An incremental re-review matches a prior finding to one of the run's
-  findings by file and title only. The Workflow also matched any finding of
-  the same file within 40 lines, so a fixed prior finding came back as still
-  open, and skipped verification, when the run raised another defect near it.
-  The Workflow's place branch survives as `cf_same_place`, which
-  `diff_report.rs` (through `classify_prior_findings_by`) and
-  `diff_synthesize.rs` (through `prior_check_by`) add back before comparing
-  with their goldens.
+  findings only when they share the file, the title (40% of its words) and
+  the place (lines at most 40 apart). The Workflow took the title or the
+  place alone, so a fixed prior finding came back as still open, and skipped
+  verification, when the run raised another defect near it or another defect
+  anywhere in the file whose title shared its words. The two branches are
+  `cf_same_title` and `cf_same_place`, and `diff_report.rs` (through
+  `classify_prior_findings_by`) and `diff_synthesize.rs` (through
+  `prior_check_by`) join them with "or" before comparing with their goldens.
+  For the place to be known, `resolve_baseline` keeps the prior finding's
+  numeric `line`, which the Workflow's `projectFinding` dropped. No golden
+  input of `diff_incremental.rs` carries a line, so its witness
+  `declared_a_prior_finding_keeps_its_numeric_line` is a fixed row.
 - The native row's `relays` is always empty (nothing travels through a relay
   agent) and its `platform` is null, so the row falls back to the PR
   context's platform, as the workflow did when no platform argument was

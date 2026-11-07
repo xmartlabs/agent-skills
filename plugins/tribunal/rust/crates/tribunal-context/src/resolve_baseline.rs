@@ -139,12 +139,17 @@ fn has_truthy_length(v: Option<&Value>) -> bool {
 }
 
 /// Ports `projectFinding`. A key whose value is `undefined` is left out, as
-/// `JSON.stringify` leaves it out.
+/// `JSON.stringify` leaves it out. The port also keeps a numeric `line`,
+/// which `cf_same_finding` needs to tell a re-raised prior from another
+/// defect that shares its words.
 fn project_finding(f: &Value) -> Result<Value, String> {
     let file = prop(f, "file")?;
     let empty = Value::String(String::new());
     let mut out = Map::new();
     out.insert("file".into(), or(file, &empty).clone());
+    if let Some(line @ Value::Number(_)) = prop(f, "line")? {
+        out.insert("line".into(), line.clone());
+    }
     out.insert("title".into(), or(prop(f, "title")?, &empty).clone());
     if let Some(s) = prop(f, "severity")? {
         out.insert("severity".into(), s.clone());
