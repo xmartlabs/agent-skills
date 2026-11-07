@@ -356,12 +356,17 @@ fn lens_request(
 /// Writes the lenses' shared system prompt into the model cache with one small
 /// request, so the lenses started after it read it instead of each creating it.
 pub async fn warm_cache<A: Agent>(agent: &A, setup: &ReviewerSetup) -> DispatchResult {
-    let mut req = lens_request(
-        setup,
-        "cache-warmup".into(),
-        WARMUP_PROMPT.into(),
-        schemas::findings(),
-    );
+    warm_cache_with(agent, setup, schemas::findings()).await
+}
+
+/// [`warm_cache`] with the schema the lenses use, which is part of the cached
+/// prefix.
+pub async fn warm_cache_with<A: Agent>(
+    agent: &A,
+    setup: &ReviewerSetup,
+    schema: Value,
+) -> DispatchResult {
+    let mut req = lens_request(setup, "cache-warmup".into(), WARMUP_PROMPT.into(), schema);
     req.timeout = WARMUP_TIMEOUT;
     agent.run(&req).await
 }
@@ -380,8 +385,12 @@ pub async fn dispatch_lenses<A: Agent>(
         .iter()
         .filter(|t| t.label.starts_with("lens:"))
         .count();
+    let schema = tasks
+        .iter()
+        .find(|t| t.label.starts_with("lens:"))
+        .map_or_else(schemas::findings, |t| t.schema.clone());
     let warmup = if warm && lenses >= 2 {
-        Some(warm_cache(agent, setup).await)
+        Some(warm_cache_with(agent, setup, schema).await)
     } else {
         None
     };

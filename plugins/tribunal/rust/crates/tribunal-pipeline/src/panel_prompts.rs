@@ -14,6 +14,7 @@ use tribunal_core::panel::debate_degrade::debate_defense_block;
 use crate::decisions::PRECEDENCE_RULE;
 use crate::synthesize::render;
 use crate::verify::GROUNDED_DIAGNOSTIC;
+use tribunal_context::runtime_case::RUNTIME_CASE;
 
 const REFUTE: &str = include_str!("panel/refute.txt");
 const REFUTE_TAIL: &str = include_str!("panel/refute-tail.txt");
@@ -60,12 +61,47 @@ fn diagnostic_note(f: &Value) -> String {
         })
 }
 
+/// The failing case `--runtime-confirm` ran for the finding, as a paragraph
+/// after its description. Empty when none confirmed, which leaves every
+/// prompt as it was.
+fn runtime_note(f: &Value) -> String {
+    let Some(case) = get(f, RUNTIME_CASE).filter(|c| c.is_object()) else {
+        return String::new();
+    };
+    let json = |v: Option<&Value>| v.map_or_else(|| "null".to_owned(), Value::to_string);
+    let args = get(case, "args")
+        .and_then(Value::as_array)
+        .map_or_else(String::new, |a| {
+            a.iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        });
+    let expected = match get(case, "expect") {
+        Some(e) if get(e, "throws") == Some(&Value::Bool(true)) => "to throw".to_owned(),
+        Some(e) => format!("to return {}", json(get(e, "returns"))),
+        None => "a different result".to_owned(),
+    };
+    format!(
+        "\n\nA test generated from this finding ran at the PR head with the repository's own vitest and failed. It called {}({args}) and expected it {expected}. The failure: {}\nIt is evidence about that code, not a verdict on the finding: the expected value comes from the finding.",
+        s(get(case, "function")),
+        s(get(case, "failure"))
+    )
+}
+
 fn described(f: &Value) -> String {
-    format!("{}{}", s(get(f, "description")), diagnostic_note(f))
+    format!(
+        "{}{}{}",
+        s(get(f, "description")),
+        diagnostic_note(f),
+        runtime_note(f)
+    )
 }
 
 fn described_xml(f: &Value) -> String {
-    let note = diagnostic_note(f).replace('<', "&lt;").replace('>', "&gt;");
+    let note = format!("{}{}", diagnostic_note(f), runtime_note(f))
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
     format!("{}{note}", escape_xml(get(f, "description")))
 }
 
@@ -553,6 +589,75 @@ mod grounded_diagnostic_tests {
         let p = batch_prompt(&[shown], "L", &json!(7), "acme/web-app", "DIFF", "CTX");
         assert!(p.contains("'Promise&lt;string&gt;'"), "{p}");
         assert!(!p.contains("Promise<string>"), "{p}");
+    }
+}
+
+#[cfg(test)]
+mod runtime_case_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn findings() -> (Value, Value) {
+        let plain = json!({"title": "T", "file": "src/a.ts", "line": 3, "severity": "important", "description": "D"});
+        let mut shown = plain.clone();
+        shown[RUNTIME_CASE] = json!({
+            "function": "ratio",
+            "args": [1, 0],
+            "expect": {"returns": 0},
+            "failure": "AssertionError: expected Infinity to deeply equal +0 <x>"
+        });
+        (plain, shown)
+    }
+
+    fn every_prompt(f: &Value) -> Vec<String> {
+        let pr = json!(7);
+        let repo = "acme/web-app";
+        vec![
+            refute_prompt(&pr, repo, "DIFF", "CTX", f, "L"),
+            strengthen_prompt(&pr, repo, "DIFF", f, &[]),
+            defense_prompt(&pr, repo, "DIFF", f, &[]),
+            judge_prompt("DIFF", f, &[], None, true),
+            external_prompt(f, &["src/a.ts".to_owned()], "CTX", None),
+        ]
+    }
+
+    #[test]
+    fn every_panel_prompt_shows_the_failing_case_after_the_description() {
+        let (_, shown) = findings();
+        let note = "D\n\nA test generated from this finding ran at the PR head with the repository's own vitest and failed. It called ratio(1, 0) and expected it to return 0. The failure: AssertionError: expected Infinity to deeply equal +0 <x>\nIt is evidence about that code, not a verdict on the finding: the expected value comes from the finding.";
+        for p in every_prompt(&shown) {
+            assert!(p.contains(note), "{p}");
+        }
+    }
+
+    #[test]
+    fn a_throw_expectation_reads_as_one() {
+        let (_, mut shown) = findings();
+        shown[RUNTIME_CASE]["expect"] = json!({"throws": true});
+        let p = refute_prompt(&json!(7), "acme/web-app", "DIFF", "CTX", &shown, "L");
+        assert!(
+            p.contains("called ratio(1, 0) and expected it to throw."),
+            "{p}"
+        );
+    }
+
+    #[test]
+    fn a_finding_without_one_gets_the_prompts_it_always_got() {
+        let (plain, shown) = findings();
+        let mut stripped = shown.clone();
+        stripped.as_object_mut().unwrap().remove(RUNTIME_CASE);
+        assert_eq!(every_prompt(&plain), every_prompt(&stripped));
+        for p in every_prompt(&plain) {
+            assert!(!p.contains("A test generated"), "{p}");
+        }
+    }
+
+    #[test]
+    fn the_batch_prompt_escapes_the_failure() {
+        let (_, shown) = findings();
+        let p = batch_prompt(&[shown], "L", &json!(7), "acme/web-app", "DIFF", "CTX");
+        assert!(p.contains("+0 &lt;x&gt;"), "{p}");
+        assert!(!p.contains("+0 <x>"), "{p}");
     }
 }
 

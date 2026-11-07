@@ -44,6 +44,7 @@ pub mod resolve_baseline;
 pub mod resolve_evidence_line;
 pub mod resolve_verified_anchors;
 pub mod review_record;
+pub mod runtime_case;
 pub mod section_diff;
 pub mod siblings;
 pub mod typescript_fallback;

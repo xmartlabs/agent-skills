@@ -14,6 +14,7 @@ use tribunal_context::head_worktree::{
 };
 use tribunal_context::heads::{self, HeadSetup};
 use tribunal_context::repo_locator::{self, RepoCwd, ENV_REPO_DIR};
+use tribunal_context::runtime_case;
 use tribunal_context::{resolve_evidence_line, resolve_verified_anchors};
 use tribunal_core::evidence::line_correction::apply_line_correction;
 use tribunal_core::js;
@@ -376,7 +377,12 @@ pub async fn run_review<A: Agent>(
             &reference,
             &mut exposure,
         )?;
-        tasks.push(lens_task(format!("lens:{}", i + 1), prompt));
+        let mut task = lens_task(format!("lens:{}", i + 1), prompt);
+        if args.runtime_confirm {
+            task.prompt.push_str(runtime_case::LENS_PARAGRAPH);
+            task.schema = schemas::findings_with_runtime_claim();
+        }
+        tasks.push(task);
     }
     let has_bot_comments = args.bot_comments
         && js::get(&rc.pr_context, "botComments")
@@ -489,6 +495,8 @@ pub struct VerifyOutcome {
     pub deps_drift: Vec<String>,
     pub grounded: Grounded,
     pub gate: GroundedGate,
+    /// `runtimeChecks`: what `--runtime-confirm` ran, `None` without it.
+    pub runtime: Option<Value>,
     pub panel: PanelOutcome,
     pub verdicts: Verdicts,
     pub dispatches: Vec<(String, DispatchResult)>,
@@ -640,7 +648,7 @@ pub async fn verify_phase<A: Agent>(
             }
         }
     }
-    let gate = grounded_gate(&dedup.panel_candidates, &grounded, pr_files, logs)?;
+    let mut gate = grounded_gate(&dedup.panel_candidates, &grounded, pr_files, logs)?;
 
     // The availability probe: which CLIs exist, and a tree for them to read.
     let flags = PanelFlags {
@@ -727,6 +735,33 @@ pub async fn verify_phase<A: Agent>(
     if vote_dir.is_none() {
         logs.push(format!("Artifact directory not resolved by the probe — falling back to {}. This path is shared by every run on this commit, so invocation counts read from it may include earlier runs.", vote_dir_path.display()));
     }
+    let runtime = if args.runtime_confirm && !args.panel_only {
+        let checkout = match rt
+            .tools
+            .git(&["rev-parse", "--show-toplevel"], Some(&typecheck_cwd))
+            .await
+        {
+            Ok(o) if o.ok() => PathBuf::from(o.stdout.trim_end_matches('\n')),
+            _ => typecheck_cwd.clone(),
+        };
+        let data_dir = vote_dir_path.join("runtime-cases");
+        let setup = runtime_case::Setup {
+            pr_files,
+            tree: pinned_tree,
+            checkout: &checkout,
+            data_dir: &data_dir,
+            timeout: runtime_case::CASE_TIMEOUT,
+        };
+        let record = runtime_case::confirm(&mut gate.panel_input, &setup).await;
+        logs.push(format!(
+            "Runtime confirmation: {} confirmed, {} passed, {} inconclusive, {} skipped; cases kept in {}",
+            record["confirmed"], record["passed"], record["inconclusive"], record["skipped"],
+            data_dir.display()
+        ));
+        Some(record)
+    } else {
+        None
+    };
 
     let agents = PanelAgents {
         refuter: agent_def::load(&rt.plugin_root, "tribunal-refuter")?,
@@ -875,6 +910,7 @@ pub async fn verify_phase<A: Agent>(
         deps_drift,
         grounded,
         gate,
+        runtime,
         panel,
         verdicts,
         dispatches,

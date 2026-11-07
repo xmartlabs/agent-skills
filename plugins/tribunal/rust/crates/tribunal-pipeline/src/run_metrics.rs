@@ -602,6 +602,16 @@ fn grounded_input(candidates: &[Value], grounded: &Grounded, gate: &GroundedGate
     })
 }
 
+/// `runtimeConfirm`, always written so a comparison can tell the runs apart,
+/// and `runtimeChecks`, null unless `--runtime-confirm` ran.
+#[must_use]
+pub fn runtime_metrics(enabled: bool, record: Option<&Value>) -> [(&'static str, Value); 2] {
+    [
+        ("runtimeConfirm", json!(enabled)),
+        ("runtimeChecks", record.cloned().unwrap_or(Value::Null)),
+    ]
+}
+
 /// What the grounded typecheck was: the checker that ran (`tsc`, `mypy`,
 /// `pyright`), the marker that says why none did, or null when the review had
 /// no typecheck to run.
@@ -670,6 +680,9 @@ pub fn persist_phase(
         &verify.grounded,
         &verify.gate,
     );
+    for (k, v) in runtime_metrics(args.runtime_confirm, verify.runtime.as_ref()) {
+        metrics[k] = v;
+    }
     metrics["repoResolution"] = verify
         .repo_cwd
         .to_json(&review.prepared.repo, &rt.operator.cwd);

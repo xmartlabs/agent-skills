@@ -141,6 +141,17 @@ the obvious paths. They are not a sandbox: the case can read any file the user
 can read by its absolute path, and a module the target imports runs its own top
 level code. Use the flag only on PRs you would run the tests of.
 
+## Known limit
+
+A module that checks its required settings when it is imported, as many
+backends do with a schema over `process.env`, fails to load in the cleared
+environment, so every case that imports it, directly or through another
+module, is `inconclusive`. The reason recorded is the loader's error. Lifting
+this needs the repository to name a test environment the case may use, which
+is a profile field for a later version. Until then the step does useful work
+on modules that import no configuration: parsers, formatters, predicates,
+calculations.
+
 ## Measuring it
 
 Recall cannot show anything: two or three of the labelled defects are claims of
