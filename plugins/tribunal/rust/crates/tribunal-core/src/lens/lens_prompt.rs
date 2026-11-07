@@ -16,7 +16,7 @@ pub const LENS_TOOL_CALL_BUDGET: u32 = 40;
 pub const WORKFLOW_NOT_REACHED_PARAGRAPH: &str = "If you stop with something still unexamined, list it in `notReached` — one entry per file or surface you meant to look at and did not. That array is how the run reports its own blind spots; leaving it empty when you did run out of room is worse than the gap itself.";
 
 /// What a lens is asked to file in `notReached`.
-pub const NOT_REACHED_PARAGRAPH: &str = "List in `notReached` everything you meant to check and did not, one entry per surface. `surface` says what it is, `file` the repo path it lives in (null when there is none), and `kind` why it was left: `budget` when you meant to read that code and ran out of room, `out-of-focus` when it is outside your focus or your file list, `needs-execution` when only running something can settle it (tests, a build, a migration, a live service, a secret), and `outside-pr` when it lives in another repo or in code this PR does not reach. Unchanged code that reads what this PR adds or changes (a new enum member or job name, a column, a payload field) is reached: if you traced that it breaks there, that is a finding anchored at the changed declaration with the reader's line in `verifiedBy`, not a `notReached` entry. A decision that defers related work to another PR is not a reason to leave a break out either: raise it, and the panel decides whether the decision covers it. That array is how the run reports its own blind spots. A `budget` gap on a risk path keeps the review from approving, and leaving the array empty when you did run out of room is worse than the gap itself.";
+pub const NOT_REACHED_PARAGRAPH: &str = "List in `notReached` everything you meant to check and did not, one entry per surface. `surface` says what it is, `file` the repo path it lives in (null when there is none), and `kind` why it was left: `budget` when you meant to read that code and ran out of room, `out-of-focus` when it is outside your focus or your file list, `needs-execution` when only running something can settle it (tests, a build, a migration, a live service, a secret), and `outside-pr` when it lives in another repo or in code this PR does not reach. That array is how the run reports its own blind spots. A `budget` gap on a risk path keeps the review from approving, and leaving the array empty when you did run out of room is worse than the gap itself.";
 
 /// How `verifiedBy.file` is written. The resolver reads a file of another repo
 /// as `<repo-name>/<path>` and anything else as a path in the reviewed repo,
@@ -117,16 +117,6 @@ mod tests {
         assert!(p.find("Restrict this pass to ONLY: F").unwrap() > marker);
         assert!(p.contains("Jira: none\nundefined\n</context>\n\n\nBudget: about 40"));
         assert!(p.ends_with("discarded:\n  - a.ts\nReturn findings scoped to that focus only — everything above this line is the same for every lens on this PR; this section is yours.\n</your_focus>"));
-    }
-
-    #[test]
-    fn a_break_in_code_that_reads_a_changed_declaration_is_a_finding_not_a_gap() {
-        let p = lens_prompt(&json!({"files": ["a.ts"]})).unwrap();
-        assert!(p.contains("Unchanged code that reads what this PR adds or changes"));
-        assert!(p.contains("anchored at the changed declaration with the reader's line"));
-        assert!(p.contains("the panel decides whether the decision covers it"));
-        let marker = p.find("===== YOUR PASS =====").unwrap();
-        assert!(p.find("Unchanged code that reads").unwrap() < marker);
     }
 
     #[test]
