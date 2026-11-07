@@ -118,8 +118,12 @@ after the port has no JavaScript twin and is tested in Rust alone, without
 When a change to ported code makes it print something its golden did not
 record:
 
-1. Find the `diff_*.rs` test that compares that code with its golden, run it,
-   and read which comparison fails.
+1. Find every `diff_*.rs` test that compares that code with its golden, run
+   them, and read which comparisons fail. There can be more than one, in
+   another crate too: `cf_same_finding` is compared in `tribunal-core`'s
+   `diff_report.rs` and, through `prior_check`, in `tribunal-pipeline`'s
+   `diff_synthesize.rs`. Search the tests for the function and its callers,
+   and run the whole suite before you call the declaration done.
 2. Leave the golden alone. It is final once its script is gone, and in
    `tribunal-pipeline` a span result over 1,024 bytes is stored as a SHA-256
    digest (`DIGEST_OVER` in its `tests/common/mod.rs`), so the recorded
