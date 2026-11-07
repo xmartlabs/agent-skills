@@ -65,6 +65,10 @@ pub struct RunArgs {
     /// the Verify phase takes the candidates as given, with no dedup, no
     /// grounded gate and no completeness critic, each one a retest target.
     pub panel_only: bool,
+    /// `--runtime-confirm`: lenses may attach a `runtimeClaim`, and the
+    /// claims run as vitest cases before the panel
+    /// (`docs/runtime-confirmation-v1.md`).
+    pub runtime_confirm: bool,
 }
 
 /// Where the run executes.

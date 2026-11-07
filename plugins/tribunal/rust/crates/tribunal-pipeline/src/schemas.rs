@@ -14,6 +14,37 @@ pub fn findings() -> Value {
     parse(include_str!("../../../schemas/findings.schema.json"))
 }
 
+/// [`findings`] with the optional `runtimeClaim` a lens fills under
+/// `--runtime-confirm`.
+#[must_use]
+pub fn findings_with_runtime_claim() -> Value {
+    let mut s = findings();
+    if let Some(props) = s
+        .pointer_mut("/properties/findings/items/properties")
+        .and_then(Value::as_object_mut)
+    {
+        props.insert(
+            "runtimeClaim".into(),
+            serde_json::json!({
+                "type": ["object", "null"],
+                "properties": {
+                    "function": {"type": "string"},
+                    "args": {"type": "array"},
+                    "expect": {
+                        "type": "object",
+                        "properties": {
+                            "returns": {},
+                            "throws": {"type": "boolean"}
+                        }
+                    }
+                },
+                "required": ["function", "args", "expect"]
+            }),
+        );
+    }
+    s
+}
+
 /// `BOT_VETTING_SCHEMA`: what the bot-comment vetting pass returns.
 #[must_use]
 pub fn bot_vetting() -> Value {

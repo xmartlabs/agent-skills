@@ -83,6 +83,14 @@ Read this before reviewing a pull request you did not write.
 - **So review untrusted PRs in an isolated environment**: a container, a VM or
   a cloud dev box with no credentials beyond a read-only GitHub token, and with
   `--no-post`. PRs from your own team are the case it was built for.
+- **`--runtime-confirm` runs the PR's code.** It imports the functions a
+  finding names and runs them with the repo's vitest. The child gets only
+  `PATH`, an empty `HOME`, a timeout and capped output, which keeps tokens in
+  your environment out of its reach but is not a sandbox: it can read any
+  file you can, and the modules it imports run their top-level code. Off by
+  default; turn it on only for PRs whose tests you would run. A module that
+  validates its environment when it is imported cannot load there, so claims
+  about it come back inconclusive.
 - **The code leaves your machine.** The diff and the files the reviewers read
   go to Anthropic (Claude). Codex, on by default, sends the same context to
   OpenAI, and `--gemini` to Google. Use `--no-codex` if your code may only go
@@ -261,6 +269,7 @@ your machine, or when the download fails, the review says why and stops.
 | `--codex` / `--no-codex` | Force the second-opinion head on or off (off is cheaper, weaker) |
 | `--gemini` | Add Google's head (off by default) |
 | `--bot-comments` | Also vet existing bot comments on the PR |
+| `--runtime-confirm` | Run the reviewers' claims about what a function returns as vitest cases before the panel. Runs PR code; see *Security* |
 | `--profile <path>` / `--rules <path>` | Try a profile before committing it |
 | `--head-sha <sha>` / `--thread-before <iso>` | Pin the tree and the thread, to compare a re-run with an earlier one |
 | `--model <id>` / `--effort <level>` | Model and reasoning effort for the agents |
