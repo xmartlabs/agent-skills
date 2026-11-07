@@ -1797,6 +1797,33 @@ fn split_keeps_quoted_headers_the_workflow_splitter_refuses() {
 // ---------------------------------------------------------------------------
 // Declared differences, each with its witness
 
+/// Declared difference: the Workflow's `projectFinding` dropped a prior
+/// finding's line, and the port keeps a numeric one, which
+/// `cf_same_finding` needs. No generated or named row carries a line, so the
+/// comparisons above never see it; this fixed row does. Without the line the
+/// projection is what the Workflow printed.
+#[test]
+fn declared_a_prior_finding_keeps_its_numeric_line() {
+    let row = |line: Value| {
+        json!({"schemaVersion": 3, "pr": 42, "headSha": "aaaa1111", "posted": true,
+               "findings": [{"file": "src/a.ts", "line": line, "title": "Null deref",
+                             "severity": "high", "blocking": true}]})
+    };
+    let projected = |line: Value| {
+        resolve_baseline(&[row(line)], &[], &json!("head0000"), &json!("")).unwrap()["findings"][0]
+            .clone()
+    };
+    let workflow = json!({"file": "src/a.ts", "title": "Null deref", "severity": "high",
+                          "blocking": true, "survived": false, "posted": false});
+    let mut kept = projected(json!(476));
+    assert_eq!(kept["line"], json!(476));
+    kept.as_object_mut().unwrap().remove("line");
+    assert_eq!(kept, workflow);
+    for not_a_number in [json!("476"), Value::Null, json!([476])] {
+        assert_eq!(projected(not_a_number), workflow);
+    }
+}
+
 #[test]
 fn declared_non_ascii_paths_collate_by_code_point() {
     let cur = "diff --git a/f.ts b/f.ts\n+f\ndiff --git a/\u{e9}.ts b/\u{e9}.ts\n+e";

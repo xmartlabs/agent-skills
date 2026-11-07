@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use common::{assert_same, sample, span, span_at, span_raw, Span, LOGS, LOG_FN};
 use proptest::prelude::*;
 use serde_json::{json, Value};
-use tribunal_core::report::carry_forward::{cf_same_finding, cf_same_place};
+use tribunal_core::report::carry_forward::{cf_same_place, cf_same_title};
 use tribunal_pipeline::synthesize::{
     anchored_payload, baseline_description, finish_report, graded, missing_identifiers,
     prior_check, prior_check_by, prior_re_examined, ref_evidence, ref_evidence_targets,
@@ -220,11 +220,12 @@ fn prior_case() -> impl Strategy<Value = Value> {
 }
 
 /// Declared difference (`cf_same_finding`, see `diff_report.rs` in
-/// tribunal-core): the Workflow also matched a prior finding to any finding
-/// of the same file within 40 lines, so a prior the port sends to
-/// verification it reported as still open. To compare with the golden, the
-/// prior check runs with the Workflow's match. Witness:
-/// `a_prior_near_another_defect_is_verified_not_still_open`.
+/// tribunal-core): the Workflow matched a prior finding to a finding of the
+/// same file on a shared title or on lines within 40, either one, so a prior
+/// the port sends to verification it reported as still open. To compare with
+/// the golden, the prior check runs with the Workflow's match. Witnesses:
+/// `a_prior_near_another_defect_is_verified_not_still_open` and
+/// `a_prior_whose_title_matches_far_away_is_verified_not_still_open`.
 fn rust_prior(c: &Value) -> Value {
     rust_prior_with(c, true)
 }
@@ -240,7 +241,7 @@ fn rust_prior_with(c: &Value, workflow_match: bool) -> Value {
             &c["importAdjacency"],
             PRIOR_VERIFY_CEILING,
             &mut logs,
-            |a, b| cf_same_finding(a, b) || cf_same_place(a, b),
+            |a, b| cf_same_title(a, b) || cf_same_place(a, b),
         )
     } else {
         prior_check(
@@ -348,7 +349,40 @@ fn a_prior_near_another_defect_is_verified_not_still_open() {
         &json!({}),
         PRIOR_VERIFY_CEILING,
         &mut logs,
-        |a, b| cf_same_finding(a, b) || cf_same_place(a, b),
+        |a, b| cf_same_title(a, b) || cf_same_place(a, b),
+    )
+    .unwrap();
+    assert_eq!(workflow.outcome.still_open.len(), 1);
+    assert!(workflow.to_verify.is_empty());
+}
+
+#[test]
+fn a_prior_whose_title_matches_far_away_is_verified_not_still_open() {
+    let scope = json!({"changed": ["src/a.ts"], "added": [], "unchanged": [], "gone": []});
+    let prior = json!({"findings": [{"file": "src/a.ts", "line": 492, "title": "Upload retry can re-send a request while the first attempt's response is still pending", "severity": "important", "blocking": true}]});
+    let current = [
+        json!({"file": "src/a.ts", "line": 840, "title": "Delete retries have no guard against a late request from the previous attempt (the upload retry test has one)", "severity": "nit"}),
+    ];
+    let mut logs = Vec::new();
+    let port = prior_check(
+        Some(&scope),
+        Some(&prior),
+        &current,
+        &json!({}),
+        PRIOR_VERIFY_CEILING,
+        &mut logs,
+    )
+    .unwrap();
+    assert!(port.outcome.still_open.is_empty());
+    assert_eq!(port.to_verify.len(), 1);
+    let workflow = prior_check_by(
+        Some(&scope),
+        Some(&prior),
+        &current,
+        &json!({}),
+        PRIOR_VERIFY_CEILING,
+        &mut logs,
+        |a, b| cf_same_title(a, b) || cf_same_place(a, b),
     )
     .unwrap();
     assert_eq!(workflow.outcome.still_open.len(), 1);

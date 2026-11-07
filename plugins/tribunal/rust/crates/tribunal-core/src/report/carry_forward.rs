@@ -60,11 +60,20 @@ fn same_file(a: &Value, b: &Value) -> bool {
 }
 
 /// Whether a current finding raises the same defect as a prior one: same
-/// file and enough shared title tokens. `cfSameFinding` also matched any two
-/// findings of the file within `CF_LINE_WINDOW` lines, so a fixed prior
-/// finding was reported as still open, and never re-checked, whenever the
-/// run raised another defect near it. Now such a prior goes to verification.
+/// file, enough shared title tokens, and lines within `CF_LINE_WINDOW`.
+/// `cfSameFinding` took either condition alone, and a match reports the prior
+/// as still open without verification. Place alone matched any other defect
+/// raised near a fixed prior. A title alone matched a defect hundreds of
+/// lines away that shared the file's vocabulary, such as a missing guard in
+/// one test taken for the guard just added to another. A finding without a
+/// line matches nothing, so its prior goes to verification.
 pub fn cf_same_finding(a: &Value, b: &Value) -> bool {
+    cf_same_title(a, b) && cf_same_place(a, b)
+}
+
+/// The title branch of `cfSameFinding`: same file and enough shared title
+/// tokens.
+pub fn cf_same_title(a: &Value, b: &Value) -> bool {
     if !same_file(a, b) {
         return false;
     }
@@ -77,9 +86,8 @@ pub fn cf_same_finding(a: &Value, b: &Value) -> bool {
     shared as f64 / ta.len().min(tb.len()) as f64 >= CF_TITLE_OVERLAP_MIN
 }
 
-/// The branch of `cfSameFinding` the port dropped: same file and lines within
-/// `CF_LINE_WINDOW`. The differential test adds it back to compare with the
-/// Workflow.
+/// The place branch of `cfSameFinding`: same file and lines within
+/// `CF_LINE_WINDOW`.
 pub fn cf_same_place(a: &Value, b: &Value) -> bool {
     if !same_file(a, b) {
         return false;
@@ -519,6 +527,22 @@ mod tests {
         let out = classify_prior_findings(Some(&scope), Some(&prior), &reraised, None).unwrap();
         assert_eq!(out.still_open.len(), 1);
         assert!(out.not_resurfaced.is_empty());
+    }
+
+    #[test]
+    fn a_shared_title_far_away_or_without_a_line_goes_to_verification() {
+        let scope = json!({"changed": ["w.ts"], "unchanged": [], "gone": [], "added": []});
+        let prior = json!([{"file": "w.ts", "line": 492, "title": "Upload retry can re-send a request while the first attempt's response is still pending"}]);
+        let far = [
+            json!({"file": "w.ts", "line": 840, "title": "Delete retries have no guard against a late request from the previous attempt (the upload retry test has one)"}),
+        ];
+        assert!(cf_same_title(&prior[0], &far[0]));
+        let out = classify_prior_findings(Some(&scope), Some(&prior), &far, None).unwrap();
+        assert!(out.still_open.is_empty());
+        assert_eq!(out.not_resurfaced.len(), 1);
+        let unplaced = [json!({"file": "w.ts", "title": "Upload retry re-sends a request"})];
+        let out = classify_prior_findings(Some(&scope), Some(&prior), &unplaced, None).unwrap();
+        assert!(out.still_open.is_empty());
     }
 
     #[test]
