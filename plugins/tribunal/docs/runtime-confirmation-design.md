@@ -2,8 +2,9 @@
 
 Back to the [Tribunal README](../README.md).
 
-Status: proposal. No code yet. This is the note that item 3 of issue #79 asks
-for before any code.
+Status: proposal. This is the note that item 3 of issue #79 asks for before any
+code. [The first version](runtime-confirmation-v1.md) settles the open
+questions below and the mechanics.
 
 ## The problem
 
@@ -105,6 +106,10 @@ measurement, and `tribunal compare` needs more than a handful of labelled PRs
 to say anything.
 
 ## Open questions
+
+[The first version](runtime-confirmation-v1.md) answers these: the lens writes
+the claim as JSON and the binary writes the test, a confirmation goes to the
+panel as evidence, the case runs at the head only, and TypeScript comes first.
 
 1. *Who writes the case.* The lens, as an optional field, or a separate cheap
    dispatch given the function's source. The first is free and the second is
