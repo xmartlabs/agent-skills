@@ -288,6 +288,8 @@ pub fn kind_of(label: &str) -> Option<&'static str> {
         "completeness-critic" => "critic",
         "synthesize" => "synthesize",
         "panel-ceiling-tiebreak" | "verify-prior" => "mechanical",
+        "questions" => "question-generator",
+        "question" | "question-warmup" => "question-answer",
         _ => return None,
     })
 }
@@ -657,6 +659,12 @@ pub fn persist_phase(
         .enumerate()
         .map(|(i, d)| (if i < lenses { "lens" } else { "bot-vetting" }, d))
         .chain(review.warmup.iter().map(|d| ("cache-warmup", d)))
+        .chain(
+            review
+                .questions
+                .iter()
+                .flat_map(|q| q.dispatches.iter().map(|(l, d)| (l.as_str(), d))),
+        )
         .chain(verify.dispatches.iter().map(|(l, d)| (l.as_str(), d)))
         .chain(synthesis.dispatches.iter().map(|(l, d)| (l.as_str(), d)))
         .collect();
@@ -696,6 +704,10 @@ pub fn persist_phase(
     metrics["pluginVersion"] =
         tribunal_context::post_footer::own_plugin_version(&rt.plugin_root.to_string_lossy())
             .unwrap_or(Value::Null);
+    metrics["scenarioQuestions"] = review
+        .questions
+        .as_ref()
+        .map_or(Value::Null, crate::questions::QuestionOutcome::metrics);
     metrics["lensNotReachedKinds"] = kind_counts(&review.candidates.lens_gaps);
     metrics["unreadRiskFiles"] = json!(synthesis.unread_risk_files);
     metrics["lensFailures"] = lens_failures(
@@ -961,6 +973,14 @@ mod tests {
             json!({"context": 1.0, "lenses": 20.3, "dedup": 0.0, "panel": 100.0,
                    "critic": 5.5, "synthesize": 12.0})
         );
+    }
+
+    #[test]
+    fn scenario_question_dispatches_have_their_own_cost_kinds() {
+        assert_eq!(kind_of("questions:2"), Some("question-generator"));
+        assert_eq!(kind_of("question:17"), Some("question-answer"));
+        assert_eq!(kind_of("question-warmup"), Some("question-answer"));
+        assert_eq!(kind_of("lens:3"), Some("lens"));
     }
 
     #[test]

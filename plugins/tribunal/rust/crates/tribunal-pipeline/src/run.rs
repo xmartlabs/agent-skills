@@ -43,6 +43,9 @@ use crate::prompts::{
     lens_dispatch_prompt, lens_system_prompt, DiffDelivery, DiffExposure, LensPromptInput,
     LensReference, SHARED_REFERENCE_NOTICE,
 };
+use crate::questions::{
+    generator_prompt, question_stage, QuestionInputs, QuestionOutcome, DEFAULT_QUESTION_MODEL,
+};
 use crate::review::{
     answer_of, bot_task, bot_vetting_prompt, check_lenses_returned, collect_candidates,
     dispatch_all, dispatch_lenses, lens_labels, lens_task, relabel_unchanged_drops, Candidates,
@@ -202,6 +205,8 @@ pub struct ReviewOutcome {
     pub lenses_unreturned: Vec<Value>,
     pub evidence: EvidenceStats,
     pub exposure: DiffExposure,
+    /// What `--scenario-questions` asked and answered; `None` without it.
+    pub questions: Option<QuestionOutcome>,
 }
 
 #[derive(Debug)]
@@ -434,6 +439,56 @@ pub async fn run_review<A: Agent>(
         check_lenses_returned(&plan_files, &answers, &labels)?;
     logs.extend(unreturned_log);
 
+    let questions = match args.scenario_questions {
+        None => None,
+        Some(samples) => {
+            let lens_count = rc.plan.lens_plan.len();
+            let lens_prompts: Vec<String> = tasks
+                .iter()
+                .take(lens_count)
+                .map(|t| t.prompt.clone())
+                .collect();
+            let lens_schema = tasks
+                .first()
+                .map_or_else(schemas::findings, |t| t.schema.clone());
+            let answer_model = args
+                .question_model
+                .clone()
+                .unwrap_or_else(|| DEFAULT_QUESTION_MODEL.to_owned());
+            let q = question_stage(
+                agent,
+                &QuestionInputs {
+                    lens_setup: &setup,
+                    answer_model: &answer_model,
+                    samples,
+                    lens_prompts: &lens_prompts,
+                    lens_files: &plan_files,
+                    lens_schema: &lens_schema,
+                    generator_prompt: generator_prompt(
+                        diff.is_some(),
+                        rc.delivery.diff_path.as_deref(),
+                    ),
+                    pr_files: &rc.plan.files,
+                    blast_radius: rc.blast_radius.as_ref(),
+                },
+            )
+            .await;
+            logs.push(format!(
+                "Scenario questions: {} written by {} generator sample(s), {} asked after the merge, {} answered on {answer_model}, {} candidate(s) added ({} dropped out-of-diff).",
+                q.generated,
+                q.samples,
+                q.questions.len(),
+                q.answered,
+                q.candidates.len(),
+                q.dropped_out_of_diff
+            ));
+            candidates
+                .all_candidates
+                .extend(q.candidates.iter().cloned());
+            Some(q)
+        }
+    };
+
     let evidence = resolve_evidence(
         &mut candidates.all_candidates,
         rc.delivery.diff_path.as_deref(),
@@ -453,6 +508,7 @@ pub async fn run_review<A: Agent>(
         lenses_unreturned,
         evidence,
         exposure,
+        questions,
     })))
 }
 

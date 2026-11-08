@@ -4,6 +4,7 @@
 //!
 //!   tribunal review --pr <n> [--repo <owner/name>] [--head-sha <sha>]
 //!     [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>]
+//!     [--scenario-questions <n>] [--question-model <id>]
 //!     [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight]
 //!     [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>]
 //!     [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]
@@ -25,6 +26,7 @@ use tribunal_context::fetch_pr_context::default_tmpdir;
 use tribunal_context::operator::OperatorEnv;
 use tribunal_pipeline::context::{RunArgs, Runtime};
 use tribunal_pipeline::post::PostMode;
+use tribunal_pipeline::questions::MAX_QUESTION_SAMPLES;
 use tribunal_pipeline::run::{run_full, DispatchPolicy, FullOutcome, MAX_LENS_SAMPLES};
 
 const DEFAULT_MODEL: &str = "claude-sonnet-5-5";
@@ -44,7 +46,7 @@ fn usage() -> ExitCode {
     eprintln!("usage: tribunal override --ts <row ts> --title <finding title prefix> (--direction reinstated|rejected|withdrawn | --severity nit|important) --reason <how it was checked> [--by <login>] [--verified-at <sha>] [--dry-run]");
     eprintln!("usage: tribunal selfcheck [--apply] [--no-battery] [--model <id>] [--effort <level>] [--out <file>]");
     eprintln!("usage: tribunal post --from <run.json> [--verdict approve|request-changes|comment] [--delta|--edit-existing] [--over-own-review] [--over-standing-review] [--model <id>] [--effort <level>]");
-    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>] [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight] [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
+    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>] [--scenario-questions <n>] [--question-model <id>] [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight] [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
     eprintln!("usage: tribunal panel --pr <n> --repo <owner/name> --head-sha <sha> --findings <file.json> [--thread-before <iso>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--model <id>] [--effort <level>] [--out <file>]");
     ExitCode::from(2)
 }
@@ -232,6 +234,16 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
                 }
                 args.lens_samples = Some(n);
             }
+            "--scenario-questions" => {
+                let n: u32 = value(&mut it, a)?
+                    .parse()
+                    .map_err(|_| "--scenario-questions takes a whole number from 1 to 4")?;
+                if !(1..=MAX_QUESTION_SAMPLES).contains(&n) {
+                    return Err("--scenario-questions takes a whole number from 1 to 4".into());
+                }
+                args.scenario_questions = Some(n);
+            }
+            "--question-model" => args.question_model = Some(value(&mut it, a)?),
             "--context" => args.context = Some(value(&mut it, a)?),
             "--model" => args.review_model = value(&mut it, a)?,
             "--concurrency" => {
@@ -1201,6 +1213,33 @@ mod tests {
         assert!(!is_utc_instant("2026-10-14T18:02:11.Z"));
         assert!(!is_utc_instant("2026-10-14 18:02:11Z"));
         assert!(!is_utc_instant("2026-10-14T18:02:11+00:00"));
+    }
+
+    #[test]
+    fn scenario_questions_takes_a_whole_number_from_one_to_four() {
+        let parse_with = |v: &str| {
+            let a: Vec<String> = ["--pr", "12", "--scenario-questions", v]
+                .iter()
+                .map(|s| (*s).to_owned())
+                .collect();
+            parse(&a)
+        };
+        assert_eq!(parse_with("3").unwrap().args.scenario_questions, Some(3));
+        assert!(parse_with("0").is_err());
+        assert!(parse_with("5").is_err());
+        assert!(parse_with("two").is_err());
+        let none: Vec<String> = ["--pr", "12"].iter().map(|s| (*s).to_owned()).collect();
+        let parsed = parse(&none).unwrap();
+        assert_eq!(parsed.args.scenario_questions, None);
+        assert_eq!(parsed.args.question_model, None);
+        let m: Vec<String> = ["--pr", "12", "--question-model", "claude-sonnet-5-5"]
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect();
+        assert_eq!(
+            parse(&m).unwrap().args.question_model.as_deref(),
+            Some("claude-sonnet-5-5")
+        );
     }
 
     #[test]

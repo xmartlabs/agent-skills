@@ -419,7 +419,9 @@ pub async fn dispatch_all<A: Agent>(
     futures_join_all(runs).await
 }
 
-async fn futures_join_all<F: std::future::Future>(futs: impl Iterator<Item = F>) -> Vec<F::Output> {
+pub(crate) async fn futures_join_all<F: std::future::Future>(
+    futs: impl Iterator<Item = F>,
+) -> Vec<F::Output> {
     let mut set = Vec::new();
     for f in futs {
         set.push(Box::pin(f));
