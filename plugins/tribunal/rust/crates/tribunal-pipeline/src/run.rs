@@ -44,7 +44,8 @@ use crate::prompts::{
     LensReference, SHARED_REFERENCE_NOTICE,
 };
 use crate::questions::{
-    generator_prompt, question_stage, QuestionInputs, QuestionOutcome, DEFAULT_QUESTION_MODEL,
+    generator_prompt, question_stage, rank_and_place, rank_prompt, QuestionInputs, QuestionOutcome,
+    DEFAULT_QUESTION_MODEL,
 };
 use crate::review::{
     answer_of, bot_task, bot_vetting_prompt, check_lenses_returned, collect_candidates,
@@ -567,6 +568,9 @@ pub struct VerifyOutcome {
     pub external_cwd: Option<String>,
     /// The refuters' share of the diff exposure.
     pub exposure: DiffExposure,
+    /// What the scenario-question ranking did after the panel; `None` when
+    /// it did not run.
+    pub question_rank: Option<Value>,
 }
 
 fn output_of(results: &[&DispatchResult]) -> f64 {
@@ -976,6 +980,7 @@ pub async fn verify_phase<A: Agent>(
         probe_answered: probe.then_some(true),
         external_cwd: external_cwd.map(|(p, _)| p),
         exposure,
+        question_rank: None,
     })
 }
 
@@ -1455,6 +1460,28 @@ pub async fn run_full<A: Agent>(
             return Err(e);
         }
     };
+    let mut verify = verify;
+    if let Some(setup) = review.questions.as_ref().and_then(|q| q.setup.as_ref()) {
+        let head = js::get(&review.context.pr_context, "headRefOid")
+            .and_then(Value::as_str)
+            .unwrap_or(args.head_sha.as_str())
+            .to_owned();
+        let prompt = rank_prompt(
+            &review.prepared.repo,
+            &args.pr,
+            &head,
+            &verify.verdicts.surviving,
+        );
+        let v = &mut verify.verdicts;
+        let (res, summary) =
+            rank_and_place(agent, setup, prompt, &mut v.surviving, &mut v.placed_aside).await;
+        logs.push(format!(
+            "Scenario-question ranking: {} ranked, {} moved to questions to review, {} kept in the report.",
+            summary["ranked"], summary["movedToQuestionsToReview"], summary["keptInReport"]
+        ));
+        verify.dispatches.push(("question-rank".into(), res));
+        verify.question_rank = Some(summary);
+    }
     let synthesis = synthesize_phase(agent, rt, args, policy, &review, &verify, logs).await;
     let persisted = match &synthesis {
         Ok(s) => {

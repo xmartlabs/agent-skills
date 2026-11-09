@@ -290,6 +290,7 @@ pub fn kind_of(label: &str) -> Option<&'static str> {
         "panel-ceiling-tiebreak" | "verify-prior" => "mechanical",
         "questions" => "question-generator",
         "question" | "question-warmup" => "question-answer",
+        "question-rank" => "question-rank",
         _ => return None,
     })
 }
@@ -704,10 +705,11 @@ pub fn persist_phase(
     metrics["pluginVersion"] =
         tribunal_context::post_footer::own_plugin_version(&rt.plugin_root.to_string_lossy())
             .unwrap_or(Value::Null);
-    metrics["scenarioQuestions"] = review
-        .questions
-        .as_ref()
-        .map_or(Value::Null, crate::questions::QuestionOutcome::metrics);
+    metrics["scenarioQuestions"] = review.questions.as_ref().map_or(Value::Null, |q| {
+        let mut m = q.metrics();
+        m["ranking"] = verify.question_rank.clone().unwrap_or(Value::Null);
+        m
+    });
     metrics["lensNotReachedKinds"] = kind_counts(&review.candidates.lens_gaps);
     metrics["unreadRiskFiles"] = json!(synthesis.unread_risk_files);
     metrics["lensFailures"] = lens_failures(

@@ -194,6 +194,174 @@ pub fn generator_prompt(diff_in_system_prompt: bool, diff_path: Option<&str>) ->
     }
 }
 
+/// What the ranking dispatch is told. It compares every finding the panel kept
+/// against the others, because judged one by one, findings raised by a leading
+/// question looked as real as the defects they were mixed with.
+pub const RANK_PROMPT: &str = "You rank the findings of one code review of a pull request. Read the code in the working directory (the pull request head) as much as you need. Order every finding from the one a reviewer of this pull request would most want to see to the one they would least want: real defects this pull request introduces, with a consequence someone would notice, come first; real but minor issues next; claims that misread the code, describe intended or unreachable behaviour, or are about code the pull request does not change come last. Compare findings with each other rather than judging each alone. Give each a worth from 1 (noise) to 5 (must fix before merging). Return every id exactly once.";
+
+/// A finding from an answered question stays in the report when the ranking
+/// gives it at least this worth, or when this many candidates were merged into
+/// it; below both it moves to the report's "questions to review" section.
+pub const KEEP_WORTH: u64 = 3;
+pub const KEEP_SUPPORT: usize = 4;
+
+/// The `placement` a moved finding carries, which keeps it out of the verdict.
+pub const LOWER_PRIORITY: &str = "lower-priority-question";
+
+fn rank_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "ranking": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}, "worth": {"type": "integer"}},
+                    "required": ["id", "worth"]
+                }
+            }
+        },
+        "required": ["ranking"]
+    })
+}
+
+fn finding_of(result: &Value) -> &Value {
+    js::get(result, "finding").unwrap_or(result)
+}
+
+/// How many candidates were merged into the result's finding, at least one.
+#[must_use]
+pub fn support_of(result: &Value) -> usize {
+    js::get(finding_of(result), "mergedFrom")
+        .and_then(Value::as_array)
+        .map_or(1, |m| m.len().max(1))
+}
+
+/// The ranking prompt for these results: one line per finding, numbered from 1.
+#[must_use]
+pub fn rank_prompt(repo: &str, pr: &str, head: &str, results: &[Value]) -> String {
+    let mut out = format!(
+        "Pull request {repo}#{pr}, head {head}. The review reported these {} findings:\n\n",
+        results.len()
+    );
+    for (i, r) in results.iter().enumerate() {
+        let f = finding_of(r);
+        let s = |k: &str| {
+            js::get(f, k)
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_owned()
+        };
+        let line = js::get(f, "line").map_or(String::new(), |l| match l {
+            Value::Number(n) => n.to_string(),
+            _ => String::new(),
+        });
+        let evidence: String = s("evidence")
+            .chars()
+            .take(300)
+            .collect::<String>()
+            .replace('\n', " ");
+        out.push_str(&format!(
+            "[{}] {}:{} | {}\n    {}\n",
+            i + 1,
+            s("file"),
+            line,
+            s("title"),
+            evidence
+        ));
+    }
+    out.push_str("\nRank them.");
+    out
+}
+
+/// The worth the ranking gave each result, by position; `None` where the
+/// ranking left a result out or returned nothing.
+#[must_use]
+pub fn worths(answer: Option<&Value>, count: usize) -> Vec<Option<u64>> {
+    let mut out = vec![None; count];
+    if let Some(Value::Array(items)) = answer.and_then(|a| js::get(a, "ranking")) {
+        for item in items {
+            let id = js::get(item, "id")
+                .and_then(Value::as_str)
+                .and_then(|s| s.trim_matches(['[', ']']).parse::<usize>().ok());
+            let worth = js::get(item, "worth").and_then(Value::as_u64);
+            if let (Some(id), Some(w)) = (id, worth) {
+                if (1..=count).contains(&id) {
+                    out[id - 1] = Some(w);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Whether a result from an answered question stays in the report.
+#[must_use]
+pub fn keeps(worth: Option<u64>, support: usize) -> bool {
+    match worth {
+        None => true,
+        Some(w) => w >= KEEP_WORTH || support >= KEEP_SUPPORT,
+    }
+}
+
+/// Moves the surviving results from answered questions that rank below the
+/// bar into `placed_aside`, with a [`LOWER_PRIORITY`] placement. Lens results
+/// are never moved. Returns how many were ranked and moved.
+pub fn place_lower_priority(
+    surviving: &mut Vec<Value>,
+    placed_aside: &mut Vec<Value>,
+    worth: &[Option<u64>],
+) -> (usize, usize) {
+    let ranked = worth.iter().filter(|w| w.is_some()).count();
+    let mut kept = Vec::new();
+    let mut moved = 0;
+    for (r, w) in surviving
+        .drain(..)
+        .zip(worth.iter().copied().chain(std::iter::repeat(None)))
+    {
+        let from_question = js::get(finding_of(&r), "lens") == Some(&json!(QUESTION_LENS));
+        if from_question && !keeps(w, support_of(&r)) {
+            let mut r = r;
+            if let Value::Object(m) = &mut r {
+                m.insert(
+                    "placement".into(),
+                    json!({"placement": LOWER_PRIORITY, "worth": w, "support": support_of(&Value::Object(m.clone()))}),
+                );
+            }
+            placed_aside.push(r);
+            moved += 1;
+        } else {
+            kept.push(r);
+        }
+    }
+    *surviving = kept;
+    (ranked, moved)
+}
+
+/// Ranks the results the panel kept and moves the low ones from answered
+/// questions out of the verdict. One dispatch; when it returns nothing, nothing
+/// moves.
+pub async fn rank_and_place<A: Agent>(
+    agent: &A,
+    setup: &ReviewerSetup,
+    prompt: String,
+    surviving: &mut Vec<Value>,
+    placed_aside: &mut Vec<Value>,
+) -> (DispatchResult, Value) {
+    let mut req = DispatchRequest::new("question-rank", prompt, setup.cwd.clone());
+    req.system_prompt = Some(RANK_PROMPT.to_owned());
+    req.model = Some(setup.model.clone());
+    req.effort = setup.effort.clone();
+    req.tools = setup.agent.tools.clone();
+    req.schema = Some(rank_schema());
+    req.timeout = setup.timeout;
+    let res = agent.run(&req).await;
+    let w = worths(answer_of(&res).as_ref(), surviving.len());
+    let (ranked, moved) = place_lower_priority(surviving, placed_aside, &w);
+    let summary = json!({"ranked": ranked, "movedToQuestionsToReview": moved, "keptInReport": surviving.len()});
+    (res, summary)
+}
+
 /// Everything the question stage produced.
 #[derive(Debug, Default)]
 pub struct QuestionOutcome {
@@ -212,6 +380,8 @@ pub struct QuestionOutcome {
     /// Every dispatch, labelled `questions:<n>` (generators),
     /// `question-warmup` or `question:<n>` (answers).
     pub dispatches: Vec<(String, DispatchResult)>,
+    /// The lenses' setup, for the ranking after the panel.
+    pub setup: Option<ReviewerSetup>,
 }
 
 impl QuestionOutcome {
@@ -290,6 +460,7 @@ pub async fn question_stage<A: Agent>(agent: &A, input: &QuestionInputs<'_>) -> 
     let mut out = QuestionOutcome {
         samples,
         model: input.answer_model.to_owned(),
+        setup: Some(setup.clone()),
         ..QuestionOutcome::default()
     };
     let gens: Vec<DispatchRequest> = (1..=samples)

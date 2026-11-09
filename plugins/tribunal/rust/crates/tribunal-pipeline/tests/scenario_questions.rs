@@ -209,3 +209,82 @@ async fn a_generator_that_returns_nothing_asks_nothing() {
         "no warm-up and no answer without questions"
     );
 }
+
+fn result(title: &str, lens: &str, merged: usize) -> serde_json::Value {
+    json!({
+        "survived": true,
+        "finding": {
+            "title": title, "file": "src/a.ts", "line": 3, "evidence": "x",
+            "lens": lens, "mergedFrom": vec![lens; merged]
+        }
+    })
+}
+
+#[tokio::test]
+async fn low_ranked_question_findings_move_out_of_the_verdict_and_lens_findings_never_do() {
+    use tribunal_pipeline::questions::{rank_and_place, rank_prompt, LOWER_PRIORITY, RANK_PROMPT};
+    let fake = FakeAgent::new().answer(
+        "question-rank",
+        FakeAnswer::Structured(json!({"ranking": [
+            {"id": "1", "worth": 1}, {"id": "2", "worth": 1}, {"id": "3", "worth": 4},
+            {"id": "4", "worth": 2}, {"id": "[5]", "worth": 1}
+        ]})),
+    );
+    let mut surviving = vec![
+        result("lens finding ranked low", "correctness", 0),
+        result("question finding ranked low", QUESTION_LENS, 0),
+        result("question finding ranked high", QUESTION_LENS, 0),
+        result("question finding many raised", QUESTION_LENS, 5),
+        result("question finding bracket id", QUESTION_LENS, 2),
+    ];
+    let mut aside = Vec::new();
+    let prompt = rank_prompt("acme/web-app", "12", "abc123", &surviving);
+    assert!(prompt.contains("[2] src/a.ts:3 | question finding ranked low"));
+    let s = setup();
+    let (_, summary) = rank_and_place(&fake, &s, prompt, &mut surviving, &mut aside).await;
+    let kept: Vec<&str> = surviving
+        .iter()
+        .map(|r| r["finding"]["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        kept,
+        [
+            "lens finding ranked low",
+            "question finding ranked high",
+            "question finding many raised"
+        ]
+    );
+    let moved: Vec<&str> = aside
+        .iter()
+        .map(|r| r["finding"]["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        moved,
+        ["question finding ranked low", "question finding bracket id"]
+    );
+    assert!(aside
+        .iter()
+        .all(|r| r["placement"]["placement"] == json!(LOWER_PRIORITY)));
+    assert_eq!(summary["ranked"], json!(5));
+    assert_eq!(summary["movedToQuestionsToReview"], json!(2));
+    let call = &fake.calls()[0];
+    assert_eq!(call.system_prompt.as_deref(), Some(RANK_PROMPT));
+    assert_eq!(call.model.as_deref(), Some("claude-sonnet-5-5"));
+}
+
+#[tokio::test]
+async fn a_ranking_that_returns_nothing_moves_nothing() {
+    use tribunal_pipeline::questions::{rank_and_place, rank_prompt};
+    let fake = FakeAgent::new().answer(
+        "question-rank",
+        FakeAnswer::Structured(json!({"ranking": []})),
+    );
+    let mut surviving = vec![result("q", QUESTION_LENS, 0)];
+    let mut aside = Vec::new();
+    let prompt = rank_prompt("acme/web-app", "12", "abc123", &surviving);
+    let s = setup();
+    let (_, summary) = rank_and_place(&fake, &s, prompt, &mut surviving, &mut aside).await;
+    assert_eq!(surviving.len(), 1);
+    assert!(aside.is_empty());
+    assert_eq!(summary["ranked"], json!(0));
+}
