@@ -44,13 +44,13 @@ use crate::prompts::{
     LensReference, SHARED_REFERENCE_NOTICE,
 };
 use crate::questions::{
-    generator_prompt, question_stage, rank_and_place, rank_prompt, QuestionInputs, QuestionOutcome,
-    DEFAULT_QUESTION_MODEL,
+    generator_prompt, lenses_with_questions, rank_and_place, rank_prompt, LensesAndQuestions,
+    QuestionInputs, QuestionOutcome, DEFAULT_QUESTION_MODEL,
 };
 use crate::review::{
     answer_of, bot_task, bot_vetting_prompt, check_lenses_returned, collect_candidates,
-    dispatch_all, dispatch_lenses, lens_labels, lens_task, relabel_unchanged_drops, Candidates,
-    ReviewerSetup, ReviewerTask,
+    dispatch_all, lens_labels, lens_task, relabel_unchanged_drops, Candidates, ReviewerSetup,
+    ReviewerTask,
 };
 use crate::schemas;
 use crate::synthesize::{
@@ -188,7 +188,8 @@ impl Default for DispatchPolicy {
 
 #[derive(Debug)]
 pub struct ReviewOutcome {
-    /// Wall-clock seconds of the context and lenses stages.
+    /// Wall-clock seconds of the context and lenses stages. The lenses' clock
+    /// leaves out the question stage, which runs beside them.
     pub context_seconds: f64,
     pub lenses_seconds: f64,
     pub prepared: Prepared,
@@ -416,10 +417,50 @@ pub async fn run_review<A: Agent>(
         concurrency: policy.concurrency,
         effort: policy.effort.clone(),
     };
-    let (dispatches, warmup) = dispatch_lenses(agent, &setup, &tasks, shared.is_some()).await;
+    let lens_count = rc.plan.lens_plan.len();
+    let plan_files: Vec<Option<Vec<String>>> =
+        rc.plan.lens_plan.iter().map(|s| s.files.clone()).collect();
+    let lens_prompts: Vec<String> = tasks
+        .iter()
+        .take(lens_count)
+        .map(|t| t.prompt.clone())
+        .collect();
+    let lens_schema = tasks
+        .first()
+        .map_or_else(schemas::findings, |t| t.schema.clone());
+    let answer_model = args
+        .question_model
+        .clone()
+        .unwrap_or_else(|| DEFAULT_QUESTION_MODEL.to_owned());
+    let question_inputs = args.scenario_questions.map(|samples| QuestionInputs {
+        lens_setup: &setup,
+        answer_model: &answer_model,
+        samples,
+        lens_prompts: &lens_prompts,
+        lens_files: &plan_files,
+        lens_schema: &lens_schema,
+        generator_prompt: generator_prompt(diff.is_some(), rc.delivery.diff_path.as_deref()),
+        pr_files: &rc.plan.files,
+        blast_radius: rc.blast_radius.as_ref(),
+    });
+    let before_dispatch = lenses_started.elapsed().as_secs_f64();
+    let LensesAndQuestions {
+        dispatches,
+        warmup,
+        lens_seconds,
+        questions,
+    } = lenses_with_questions(
+        agent,
+        &setup,
+        &tasks,
+        shared.is_some(),
+        question_inputs.as_ref(),
+    )
+    .await;
+    let after_dispatch = std::time::Instant::now();
     let answers: Vec<Option<Value>> = dispatches.iter().map(answer_of).collect();
     let bot_vetting = if has_bot_comments {
-        answers.get(rc.plan.lens_plan.len()).cloned().flatten()
+        answers.get(lens_count).cloned().flatten()
     } else {
         None
     };
@@ -434,61 +475,24 @@ pub async fn run_review<A: Agent>(
         profile,
     )?;
     logs.extend(candidates.logs.iter().cloned());
-    let plan_files: Vec<Option<Vec<String>>> =
-        rc.plan.lens_plan.iter().map(|s| s.files.clone()).collect();
     let (lenses_unreturned, unreturned_log) =
         check_lenses_returned(&plan_files, &answers, &labels)?;
     logs.extend(unreturned_log);
 
-    let questions = match args.scenario_questions {
-        None => None,
-        Some(samples) => {
-            let lens_count = rc.plan.lens_plan.len();
-            let lens_prompts: Vec<String> = tasks
-                .iter()
-                .take(lens_count)
-                .map(|t| t.prompt.clone())
-                .collect();
-            let lens_schema = tasks
-                .first()
-                .map_or_else(schemas::findings, |t| t.schema.clone());
-            let answer_model = args
-                .question_model
-                .clone()
-                .unwrap_or_else(|| DEFAULT_QUESTION_MODEL.to_owned());
-            let q = question_stage(
-                agent,
-                &QuestionInputs {
-                    lens_setup: &setup,
-                    answer_model: &answer_model,
-                    samples,
-                    lens_prompts: &lens_prompts,
-                    lens_files: &plan_files,
-                    lens_schema: &lens_schema,
-                    generator_prompt: generator_prompt(
-                        diff.is_some(),
-                        rc.delivery.diff_path.as_deref(),
-                    ),
-                    pr_files: &rc.plan.files,
-                    blast_radius: rc.blast_radius.as_ref(),
-                },
-            )
-            .await;
-            logs.push(format!(
-                "Scenario questions: {} written by {} generator sample(s), {} asked after the merge, {} answered on {answer_model}, {} candidate(s) added ({} dropped out-of-diff).",
-                q.generated,
-                q.samples,
-                q.questions.len(),
-                q.answered,
-                q.candidates.len(),
-                q.dropped_out_of_diff
-            ));
-            candidates
-                .all_candidates
-                .extend(q.candidates.iter().cloned());
-            Some(q)
-        }
-    };
+    if let Some(q) = &questions {
+        logs.push(format!(
+            "Scenario questions: {} written by {} generator sample(s), {} asked after the merge, {} answered on {answer_model}, {} candidate(s) added ({} dropped out-of-diff), alongside the lenses.",
+            q.generated,
+            q.samples,
+            q.questions.len(),
+            q.answered,
+            q.candidates.len(),
+            q.dropped_out_of_diff
+        ));
+        candidates
+            .all_candidates
+            .extend(q.candidates.iter().cloned());
+    }
 
     let evidence = resolve_evidence(
         &mut candidates.all_candidates,
@@ -497,7 +501,7 @@ pub async fn run_review<A: Agent>(
     );
     Ok(RunOutcome::Reviewed(Box::new(ReviewOutcome {
         context_seconds,
-        lenses_seconds: lenses_started.elapsed().as_secs_f64(),
+        lenses_seconds: before_dispatch + lens_seconds + after_dispatch.elapsed().as_secs_f64(),
         prepared,
         bot_vetting,
         context: rc,

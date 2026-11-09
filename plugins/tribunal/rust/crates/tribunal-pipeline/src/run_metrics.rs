@@ -578,7 +578,7 @@ fn stage_seconds(
         synthesis.synthesize_seconds,
     ]);
     // Not from the workflow: under `--scenario-questions` the questions get
-    // their own stage out of the lenses' time, and the ranking its own.
+    // their own stage, which overlaps the lenses, and the ranking its own.
     if let Some(q) = questions {
         let rank = verify
             .question_rank
@@ -586,17 +586,15 @@ fn stage_seconds(
             .and_then(|r| js::get(r, "seconds"))
             .and_then(Value::as_f64)
             .unwrap_or(0.0);
-        add_question_stages(&mut row, review.lenses_seconds, q, rank);
+        add_question_stages(&mut row, q, rank);
     }
     row
 }
 
-/// The question stage runs inside the lenses' clock, so it is taken out of
-/// `lenses` and given its own `questions`; the ranking after the panel gets
-/// `rank`.
-fn add_question_stages(row: &mut Value, lenses: f64, questions: f64, rank: f64) {
+/// The question stage runs beside the lenses on its own clock, so `lenses`
+/// and `questions` overlap; the ranking after the panel gets `rank`.
+fn add_question_stages(row: &mut Value, questions: f64, rank: f64) {
     let tenth = |x: f64| (x * 10.0).round() / 10.0;
-    row["lenses"] = json!(tenth((lenses - questions).max(0.0)));
     row["questions"] = json!(tenth(questions));
     row["rank"] = json!(tenth(rank));
 }
@@ -1016,9 +1014,9 @@ mod tests {
     }
 
     #[test]
-    fn question_mode_takes_the_questions_out_of_the_lenses_stage() {
-        let mut row = stage_seconds_row([1.0, 339.3, 6.5, 44.2, 46.7, 37.1]);
-        add_question_stages(&mut row, 339.3, 280.04, 12.36);
+    fn question_mode_adds_its_own_stages_and_leaves_the_lenses_alone() {
+        let mut row = stage_seconds_row([1.0, 59.3, 6.5, 44.2, 46.7, 37.1]);
+        add_question_stages(&mut row, 280.04, 12.36);
         assert_eq!(row["lenses"], json!(59.3));
         assert_eq!(row["questions"], json!(280.0));
         assert_eq!(row["rank"], json!(12.4));

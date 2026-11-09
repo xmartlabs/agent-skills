@@ -8,9 +8,10 @@ use serde_json::json;
 use tribunal_agent::{FakeAgent, FakeAnswer};
 use tribunal_pipeline::agent_def::AgentDef;
 use tribunal_pipeline::questions::{
-    question_stage, QuestionInputs, ANSWER_PARAGRAPH, GENERATOR_PROMPT, QUESTION_LENS,
+    lenses_with_questions, question_stage, QuestionInputs, ANSWER_PARAGRAPH, GENERATOR_PROMPT,
+    QUESTION_LENS,
 };
-use tribunal_pipeline::review::{ReviewerSetup, WARMUP_PROMPT};
+use tribunal_pipeline::review::{lens_task, ReviewerSetup, WARMUP_PROMPT};
 use tribunal_pipeline::schemas;
 
 fn setup() -> ReviewerSetup {
@@ -474,4 +475,86 @@ async fn the_answers_run_at_twice_the_run_concurrency() {
         "setup concurrency is {}",
         s.concurrency
     );
+}
+
+/// Holds every lens until a question generator has started, so the lenses
+/// can only return when the two stages run at the same time.
+struct LensesWaitForQuestions {
+    inner: FakeAgent,
+    generator_started: std::sync::atomic::AtomicBool,
+}
+
+impl tribunal_agent::Agent for LensesWaitForQuestions {
+    async fn run(&self, req: &tribunal_agent::DispatchRequest) -> tribunal_agent::DispatchResult {
+        use std::sync::atomic::Ordering;
+        if req.label.starts_with("questions:") {
+            self.generator_started.store(true, Ordering::SeqCst);
+        }
+        if req.label.starts_with("lens:") {
+            while !self.generator_started.load(Ordering::SeqCst) {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }
+        self.inner.run(req).await
+    }
+}
+
+#[tokio::test]
+async fn the_questions_run_beside_the_lenses_not_after_them() {
+    let agent = LensesWaitForQuestions {
+        inner: FakeAgent::new()
+            .answer(
+                "questions:1",
+                FakeAnswer::Structured(json!({"questions": [
+                    {"file": "src/jobs/sync.ts", "question": "What if the retry fires twice?"}
+                ]})),
+            )
+            .answer(
+                "lens:1",
+                FakeAnswer::Structured(json!({"findings": [{"title": "lens finding"}]})),
+            )
+            .otherwise(FakeAnswer::Structured(json!({"findings": []}))),
+        generator_started: std::sync::atomic::AtomicBool::new(false),
+    };
+    let s = setup();
+    let tasks = vec![
+        lens_task("lens:1".into(), "LENS ONE PROMPT".into()),
+        lens_task("lens:2".into(), "LENS TWO PROMPT".into()),
+    ];
+    let prompts = ["LENS ONE PROMPT".to_owned(), "LENS TWO PROMPT".to_owned()];
+    let files = [None, None];
+    let pr_files = vec!["src/jobs/sync.ts".to_owned()];
+    let schema = schemas::findings();
+    let input = QuestionInputs {
+        lens_setup: &s,
+        answer_model: "claude-haiku-5-5",
+        samples: 1,
+        lens_prompts: &prompts,
+        lens_files: &files,
+        lens_schema: &schema,
+        generator_prompt: GENERATOR_PROMPT.to_owned(),
+        pr_files: &pr_files,
+        blast_radius: None,
+    };
+    let out = tokio::time::timeout(
+        Duration::from_secs(5),
+        lenses_with_questions(&agent, &s, &tasks, true, Some(&input)),
+    )
+    .await
+    .expect("the lenses waited for a question generator that never started");
+    assert_eq!(out.dispatches.len(), 2);
+    assert!(out.warmup.is_some());
+    let q = out.questions.expect("the question stage ran");
+    assert_eq!(q.answered, 1);
+}
+
+#[tokio::test]
+async fn without_questions_only_the_lenses_run() {
+    let agent = FakeAgent::new().otherwise(FakeAnswer::Structured(json!({"findings": []})));
+    let s = setup();
+    let tasks = vec![lens_task("lens:1".into(), "LENS ONE PROMPT".into())];
+    let out = lenses_with_questions(&agent, &s, &tasks, false, None).await;
+    assert_eq!(out.dispatches.len(), 1);
+    assert!(out.questions.is_none());
+    assert!(out.warmup.is_none());
 }

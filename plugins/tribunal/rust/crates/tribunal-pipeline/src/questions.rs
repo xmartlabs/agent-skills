@@ -19,7 +19,9 @@ use tribunal_agent::{Agent, DispatchRequest, DispatchResult};
 use tribunal_core::js;
 use tribunal_core::lens::out_of_diff::reanchor_out_of_diff;
 
-use crate::review::{answer_of, futures_join_all, warm_cache_with, ReviewerSetup};
+use crate::review::{
+    answer_of, dispatch_lenses, futures_join_all, warm_cache_with, ReviewerSetup, ReviewerTask,
+};
 use crate::schemas;
 
 /// The most generator samples one run may ask for.
@@ -685,6 +687,45 @@ pub async fn question_stage<A: Agent>(agent: &A, input: &QuestionInputs<'_>) -> 
     }
     out.seconds = started.elapsed().as_secs_f64();
     out
+}
+
+/// What [`lenses_with_questions`] returns.
+pub struct LensesAndQuestions {
+    pub dispatches: Vec<DispatchResult>,
+    pub warmup: Option<DispatchResult>,
+    /// Wall-clock seconds of the lens dispatches alone.
+    pub lens_seconds: f64,
+    pub questions: Option<QuestionOutcome>,
+}
+
+/// Runs the lenses and, when asked, the question stage at the same time. The
+/// question stage reads the lens prompts and plan, never the lens answers, so
+/// waiting for the lenses cost a run their whole duration.
+pub async fn lenses_with_questions<A: Agent>(
+    agent: &A,
+    setup: &ReviewerSetup,
+    tasks: &[ReviewerTask],
+    warm: bool,
+    questions: Option<&QuestionInputs<'_>>,
+) -> LensesAndQuestions {
+    let lenses = async {
+        let started = std::time::Instant::now();
+        let (dispatches, warmup) = dispatch_lenses(agent, setup, tasks, warm).await;
+        (dispatches, warmup, started.elapsed().as_secs_f64())
+    };
+    let asked = async {
+        match questions {
+            Some(input) => Some(question_stage(agent, input).await),
+            None => None,
+        }
+    };
+    let ((dispatches, warmup, lens_seconds), questions) = tokio::join!(lenses, asked);
+    LensesAndQuestions {
+        dispatches,
+        warmup,
+        lens_seconds,
+        questions,
+    }
 }
 
 fn bump(record: &mut Value, key: &str) {
