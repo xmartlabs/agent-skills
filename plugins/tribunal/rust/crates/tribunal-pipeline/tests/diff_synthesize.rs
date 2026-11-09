@@ -1195,3 +1195,25 @@ fn the_questions_section_appears_only_with_a_lower_priority_question() {
     }]);
     assert!(!rust_synth(&c).contains("### Questions to review"));
 }
+
+/// Not a port: with the refutation panel off, survivors carry
+/// `refutersSkipped`, and only then does the prompt carry the rule that says so
+/// once instead of marking every finding NOT ADJUDICATED. Every workflow case
+/// ran a panel, which is why the golden comparison above is unchanged.
+#[test]
+fn the_refuters_rule_appears_only_when_a_survivor_skipped_the_panel() {
+    let mut c = sample(synth_case()).into_iter().next().expect("a case");
+    let rule =
+        "\"refutersSkipped\": true on a finding means this review ran without the refutation panel";
+    assert!(!rust_synth(&c).contains(rule));
+    c["survivingFindingsForSynthesis"] = json!([{
+        "title": "t", "file": "src/a.ts", "line": 3, "severity": "important",
+        "adjudicated": true, "refutersSkipped": true
+    }]);
+    assert!(rust_synth(&c).contains(rule));
+    c["survivingFindingsForSynthesis"] = json!([{
+        "title": "t", "file": "src/a.ts", "line": 3, "severity": "important",
+        "adjudicated": true
+    }]);
+    assert!(!rust_synth(&c).contains(rule));
+}

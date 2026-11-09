@@ -1,8 +1,9 @@
 # tribunal action
 
 Runs the [tribunal](../../plugins/tribunal) review on a pull request and posts it as a comment
-review by default. Independent reviewers read the diff, every serious finding faces a panel that
-tries to disprove it, and only the survivors are reported. A review that does not post leaves a
+review by default. Independent reviewers read the diff, and the engine merges and checks
+what they find before reporting it. A refutation panel that tries to disprove each serious finding
+runs when `codex` is on; from Tribunal 115.4.0 it is otherwise off. A review that does not post leaves a
 "Tribunal pending" comment with the reason and a link to the run.
 
 ## Setup
@@ -335,7 +336,7 @@ transcript).
 | `tribunal-version` | `bundled` | Use the action's tested snapshot, `latest`, or a stable exact version starting at `115.2.0`. |
 | `verdict` | `comment` | `comment` or `suggested` (the engine's approve/request-changes/comment verdict). |
 | `review-mode` | `full` | `full` or `incremental`; an unavailable/incompatible baseline causes an explicit full review. |
-| `codex` | `false` | Install and enable the optional second model family. Gemini has no input: the engine adds a Gemini panel on its own when the job environment has `GEMINI_API_KEY`, so leave it unset for Claude-only reviews. |
+| `codex` | `false` | Install and enable the optional second model family. Gemini has no input: when the panel runs (with `codex` on, or on Tribunal before 115.4.0) the engine adds a Gemini head on its own when the job environment has `GEMINI_API_KEY`, so leave it unset for Claude-only reviews. |
 | `openai-api-key` | empty | API key required when `codex: true`. Supply through a secret. |
 | `codex-model` | empty | Override the external model; empty inherits the engine's default. |
 | `model` | empty | Override the Claude model; empty inherits the engine's default. |

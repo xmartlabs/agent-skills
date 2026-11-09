@@ -4,7 +4,7 @@
 //!
 //!   tribunal review --pr <n> [--repo <owner/name>] [--head-sha <sha>]
 //!     [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>]
-//!     [--scenario-questions <n>] [--question-model <id>] [--no-refuters]
+//!     [--scenario-questions <n>] [--question-model <id>] [--refuters|--no-refuters]
 //!     [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight]
 //!     [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>]
 //!     [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]
@@ -46,7 +46,7 @@ fn usage() -> ExitCode {
     eprintln!("usage: tribunal override --ts <row ts> --title <finding title prefix> (--direction reinstated|rejected|withdrawn | --severity nit|important) --reason <how it was checked> [--by <login>] [--verified-at <sha>] [--dry-run]");
     eprintln!("usage: tribunal selfcheck [--apply] [--no-battery] [--model <id>] [--effort <level>] [--out <file>]");
     eprintln!("usage: tribunal post --from <run.json> [--verdict approve|request-changes|comment] [--delta|--edit-existing] [--over-own-review] [--over-standing-review] [--model <id>] [--effort <level>]");
-    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>] [--scenario-questions <n>] [--question-model <id>] [--no-refuters] [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight] [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
+    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>] [--scenario-questions <n>] [--question-model <id>] [--refuters|--no-refuters] [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight] [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
     eprintln!("usage: tribunal panel --pr <n> --repo <owner/name> --head-sha <sha> --findings <file.json> [--thread-before <iso>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--model <id>] [--effort <level>] [--out <file>]");
     ExitCode::from(2)
 }
@@ -203,6 +203,7 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
     };
     let mut policy = DispatchPolicy::default();
     let mut out = None;
+    let mut refuters = None;
     let mut it = argv.iter();
     let value = |it: &mut std::slice::Iter<String>, flag: &str| {
         it.next()
@@ -244,7 +245,8 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
                 args.scenario_questions = Some(n);
             }
             "--question-model" => args.question_model = Some(value(&mut it, a)?),
-            "--no-refuters" => args.no_refuters = true,
+            "--refuters" => refuters = Some(true),
+            "--no-refuters" => refuters = Some(false),
             "--context" => args.context = Some(value(&mut it, a)?),
             "--model" => args.review_model = value(&mut it, a)?,
             "--concurrency" => {
@@ -307,6 +309,10 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
             args.thread_before
         ));
     }
+    // The refutation panel is off unless asked for: it killed about 3% of what
+    // it saw for about a quarter of a run. Asking for an external head asks
+    // for the panel it sits on.
+    args.no_refuters = !refuters.unwrap_or(args.codex == Some(true) || args.gemini == Some(true));
     if policy.effort.is_none() {
         policy.effort = operator_effort();
     }
@@ -1259,12 +1265,26 @@ mod tests {
             parse(&m).unwrap().args.question_model.as_deref(),
             Some("claude-sonnet-5-5")
         );
-        assert!(!parsed.args.no_refuters);
-        let nr: Vec<String> = ["--pr", "12", "--no-refuters"]
-            .iter()
-            .map(|s| (*s).to_owned())
-            .collect();
-        assert!(parse(&nr).unwrap().args.no_refuters);
+    }
+
+    #[test]
+    fn the_panel_is_off_unless_refuters_or_an_external_head_is_asked_for() {
+        let no_refuters = |extra: &[&str]| {
+            let a: Vec<String> = ["--pr", "12"]
+                .iter()
+                .chain(extra)
+                .map(|s| (*s).to_owned())
+                .collect();
+            parse(&a).unwrap().args.no_refuters
+        };
+        assert!(no_refuters(&[]));
+        assert!(no_refuters(&["--no-refuters"]));
+        assert!(no_refuters(&["--no-codex"]));
+        assert!(!no_refuters(&["--refuters"]));
+        assert!(!no_refuters(&["--codex"]));
+        assert!(!no_refuters(&["--gemini"]));
+        assert!(no_refuters(&["--codex", "--no-refuters"]));
+        assert!(!no_refuters(&["--no-refuters", "--refuters"]));
     }
 
     #[test]
