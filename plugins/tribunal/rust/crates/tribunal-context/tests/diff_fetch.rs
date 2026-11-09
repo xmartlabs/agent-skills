@@ -2873,6 +2873,7 @@ async fn fetch_pr_context_matches_js_on_invalid_utf8() {
                 ("GH_BYTES".into(), rec_path.clone().into_os_string()),
                 ("GH_CALL_LOG".into(), rs_log.clone().into_os_string()),
             ],
+            ..Tools::default()
         };
         let rs_out = fpc::run_cli(&t, &a, rs_tmp.to_str().unwrap())
             .await
@@ -3015,6 +3016,7 @@ async fn head_worktree_clones_as_the_bash_does() {
             ("GH_BARE".into(), o.bare.clone().into_os_string()),
             ("GH_CALL_LOG".into(), rs.log.clone().into_os_string()),
         ],
+        ..Tools::default()
     };
     let rs_wt = hw::prepare_head_worktree(
         &t,

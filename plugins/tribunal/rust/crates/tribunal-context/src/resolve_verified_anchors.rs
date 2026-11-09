@@ -252,11 +252,22 @@ async fn resolve_anchor(
 
     let cross = split_cross_repo(file, repo, siblings);
     let (lookup_repo, lookup_ref, lookup_file) = cross.unwrap_or((repo, ref_, file));
-    let cross_note = cross
-        .is_some()
-        .then(|| format!("resolved as a cross-repo anchor into {lookup_repo}@{lookup_ref}"));
+    let with_token = cross.is_some() && tools.conventions.is_some();
+    let lookup_tools = if with_token && !lookup_repo.eq_ignore_ascii_case(repo) {
+        tools.for_conventions()
+    } else {
+        tools.clone()
+    };
+    let cross_note = cross.is_some().then(|| {
+        let token = if with_token {
+            " with the conventions token"
+        } else {
+            ""
+        };
+        format!("resolved as a cross-repo anchor into {lookup_repo}@{lookup_ref}{token}")
+    });
 
-    let text = match file_at_ref(tools, lookup_repo, lookup_ref, lookup_file).await {
+    let text = match file_at_ref(&lookup_tools, lookup_repo, lookup_ref, lookup_file).await {
         Fetched::Ok(text) => text,
         Fetched::Failed { status, detail } => {
             let note = match &cross_note {

@@ -214,7 +214,9 @@ impl ClaudeAgent {
             .into_iter()
             .filter(|(k, _)| {
                 let k = k.to_string_lossy();
-                !SESSION_VARS.contains(&k.as_ref())
+                // The binary removes it at startup; a library caller may not.
+                k != "TRIBUNAL_CONVENTIONS_TOKEN"
+                    && !SESSION_VARS.contains(&k.as_ref())
                     && !(drop_keys && (k == "ANTHROPIC_API_KEY" || k == "ANTHROPIC_AUTH_TOKEN"))
             })
             .collect();
@@ -566,6 +568,15 @@ mod tests {
                 .find(|(n, _)| *n == k)
                 .map(|(_, v)| (*v).to_owned())
         }
+    }
+
+    #[test]
+    fn a_child_never_gets_the_conventions_token() {
+        let env = ClaudeAgent::new("claude").env([
+            ("TRIBUNAL_CONVENTIONS_TOKEN".into(), "docs".into()),
+            ("PATH".into(), "/bin".into()),
+        ]);
+        assert_eq!(env, [("PATH".into(), "/bin".into())]);
     }
 
     #[test]

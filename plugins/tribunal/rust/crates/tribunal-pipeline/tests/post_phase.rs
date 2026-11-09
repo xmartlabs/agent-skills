@@ -187,6 +187,7 @@ async fn post_with(
     };
     let mut logs = Vec::new();
     let input = PostInput {
+        cross_repo_note: "",
         metrics,
         report: "## Report\nVerdict suggestion: REQUEST CHANGES\n",
         verdict: "REQUEST CHANGES",
@@ -435,6 +436,7 @@ async fn no_homosapiens_means_no_post() {
         ..RunArgs::default()
     };
     let input = PostInput {
+        cross_repo_note: "",
         metrics: &r,
         report: "x",
         verdict: "COMMENT",

@@ -16,6 +16,9 @@ pub struct ConventionsChannel {
     /// The metrics row's record of the loaded file; `None` when there is none.
     pub manifest: Option<Value>,
     line: String,
+    /// Where other repos are checked out on this run, when they are. Empty
+    /// keeps every prompt as it is without a conventions token.
+    anchors: String,
 }
 
 impl ConventionsChannel {
@@ -25,12 +28,20 @@ impl ConventionsChannel {
         self.line.strip_prefix("CONVENTIONS FILE: ")
     }
 
+    /// This channel, with `note` on each prompt under the conventions line.
+    #[must_use]
+    pub fn with_anchor_note(mut self, note: &str) -> Self {
+        note.clone_into(&mut self.anchors);
+        self
+    }
+
     /// `withConventions`: the conventions line, a blank line, the prompt.
     pub fn with_conventions(&self, prompt: &str) -> String {
-        if self.line.is_empty() {
-            prompt.to_owned()
-        } else {
-            format!("{}\n\n{prompt}", self.line)
+        match (self.line.is_empty(), self.anchors.is_empty()) {
+            (true, true) => prompt.to_owned(),
+            (false, true) => format!("{}\n\n{prompt}", self.line),
+            (true, false) => format!("{}\n\n{prompt}", self.anchors),
+            (false, false) => format!("{}\n{}\n\n{prompt}", self.line, self.anchors),
         }
     }
 
@@ -42,7 +53,12 @@ impl ConventionsChannel {
         } else {
             format!("\n{}", self.line)
         };
-        format!("{methodology_line}{line}\n\n{prompt}")
+        let anchors = if self.anchors.is_empty() {
+            String::new()
+        } else {
+            format!("\n{}", self.anchors)
+        };
+        format!("{methodology_line}{line}{anchors}\n\n{prompt}")
     }
 }
 
@@ -128,6 +144,7 @@ pub fn conventions_channel(args: &Value, profile: &Value) -> Result<ConventionsC
         return Ok(ConventionsChannel {
             manifest: None,
             line: String::new(),
+            anchors: String::new(),
         });
     }
     let c = js::get(args, "conventions").filter(|c| js::is_object_like(c));
@@ -174,12 +191,23 @@ pub fn conventions_channel(args: &Value, profile: &Value) -> Result<ConventionsC
     Ok(ConventionsChannel {
         manifest: Some(Value::Object(manifest)),
         line: format!("CONVENTIONS FILE: {path}"),
+        anchors: String::new(),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_anchor_note_goes_under_the_conventions_line_and_empty_changes_nothing() {
+        let args = serde_json::json!({});
+        let none = conventions_channel(&args, &serde_json::json!({})).unwrap();
+        assert_eq!(none.clone().with_anchor_note(""), none);
+        let noted = none.with_anchor_note("NOTE");
+        assert_eq!(noted.with_conventions("R"), "NOTE\n\nR");
+        assert_eq!(noted.reviewer_prompt("M", "R"), "M\nNOTE\n\nR");
+    }
     use serde_json::json;
 
     const SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

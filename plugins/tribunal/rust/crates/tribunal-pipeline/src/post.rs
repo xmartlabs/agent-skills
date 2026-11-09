@@ -161,6 +161,16 @@ Write the final body to {out} with the Write tool, then answer with the single w
     )
 }
 
+/// `prompt` with the note on where other repos are checked out, which
+/// overrides [`CROSS_REPO_READ`]'s `gh api`. No note leaves it unchanged.
+fn with_cross_repo_note(note: &str, prompt: String) -> String {
+    if note.is_empty() {
+        prompt
+    } else {
+        format!("{note}\n\n{prompt}")
+    }
+}
+
 /// The compose prompt for [`PostMode::Edit`]: the full body, written to
 /// replace the operator's own latest review, which step 1 must not report on.
 #[must_use]
@@ -357,6 +367,8 @@ pub struct PostInput<'a> {
     pub verdict: &'a str,
     pub head_sha: &'a str,
     pub repo: &'a str,
+    /// Where other repos are checked out, when a conventions token cloned them.
+    pub cross_repo_note: &'a str,
     /// Where the compose step reads code: the pinned checkout when there is one.
     pub cwd: &'a Path,
     pub effort: Option<&'a String>,
@@ -481,16 +493,18 @@ pub async fn post_phase<A: Agent>(
         PostMode::Delta => delta_prompt,
         PostMode::Edit => edit_prompt,
     };
+    let compose = prompt(
+        &args.pr,
+        input.repo,
+        input.head_sha,
+        &report_file,
+        &body_file,
+    );
+    let compose = with_cross_repo_note(input.cross_repo_note, compose);
     let answer = ask(
         agent,
         "compose-post",
-        prompt(
-            &args.pr,
-            input.repo,
-            input.head_sha,
-            &report_file,
-            &body_file,
-        ),
+        compose,
         &args.review_model,
         input.effort,
         input.cwd,
@@ -660,6 +674,7 @@ pub async fn post_saved_run<A: Agent>(
         .verdict
         .map_or_else(|| text(js::get(run, "verdict")), str::to_owned);
     let repo = text(js::get(run, "repo"));
+    let cross_repo_note = text(js::get(run, "crossRepoNote"));
     let head = text(js::get(metrics, "headSha"));
     let pr = js::get(metrics, "pr")
         .map(|p| to_js_string(Some(p)))
@@ -732,6 +747,7 @@ pub async fn post_saved_run<A: Agent>(
         verdict: &verdict,
         head_sha: &head,
         repo: &repo,
+        cross_repo_note: &cross_repo_note,
         cwd: &cwd,
         effort,
         choice,
@@ -790,6 +806,12 @@ mod tests {
             findings_in_body(&findings, body),
             [json!({"title": "Lost write"})]
         );
+    }
+
+    #[test]
+    fn the_cross_repo_note_leads_the_compose_prompt_only_when_there_is_one() {
+        assert_eq!(with_cross_repo_note("", "P".into()), "P");
+        assert_eq!(with_cross_repo_note("NOTE", "P".into()), "NOTE\n\nP");
     }
 
     #[test]

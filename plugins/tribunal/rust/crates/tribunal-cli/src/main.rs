@@ -464,7 +464,7 @@ fn report(outcome: &FullOutcome, logs: &[String]) -> Value {
                 .iter()
                 .filter_map(|d| d["costUsd"].as_f64())
                 .sum();
-            json!({
+            let mut report = json!({
                 "repo": r.prepared.repo,
                 "lensAgent": r.lens_agent,
                 "headPin": r.context.head_pin,
@@ -506,7 +506,12 @@ fn report(outcome: &FullOutcome, logs: &[String]) -> Value {
                     tribunal_pipeline::post::PostOutcome::Held(why) => json!({"posted": false, "reason": why}),
                 }),
                 "logs": logs,
-            })
+            });
+            // `tribunal post` runs later and needs it; absent without a token.
+            if !r.prepared.cross_repo_note.is_empty() {
+                report["crossRepoNote"] = json!(r.prepared.cross_repo_note);
+            }
+            report
         }
     }
 }
@@ -588,7 +593,10 @@ fn runtime() -> Runtime {
         ),
         plugin_root: plugin_root(),
         tmpdir: default_tmpdir(),
-        tools: Tools::default(),
+        tools: Tools {
+            conventions: CONVENTIONS_TOKEN.get().cloned().flatten(),
+            ..Tools::default()
+        },
         operator: OperatorEnv {
             review_harness_config: std::env::var("REVIEW_HARNESS_CONFIG").ok(),
             home,
@@ -1111,8 +1119,18 @@ fn override_main(argv: &[String]) -> ExitCode {
     }
 }
 
+/// The conventions token, taken out of the environment before anything runs.
+static CONVENTIONS_TOKEN: std::sync::OnceLock<Option<tribunal_context::exec::ConventionsToken>> =
+    std::sync::OnceLock::new();
+
+fn main() -> ExitCode {
+    // Before the runtime starts a thread: no child may inherit this token.
+    let _ = CONVENTIONS_TOKEN.set(tribunal_context::exec::take_conventions_token());
+    run()
+}
+
 #[tokio::main]
-async fn main() -> ExitCode {
+async fn run() -> ExitCode {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     match argv.first().map(String::as_str) {
         Some("review") => {}

@@ -66,6 +66,8 @@ Behaviour lives in the Rust crates, the agent definitions under `agents/` and th
 | `--max-agents <n>` | Ceiling on the agents a run dispatches (default 150). The panel count is cut to fit it before `--max-panels` applies, and the run logs the projection. |
 | `--max-output-tokens <n>` | Output-token ceiling for the run (default 1,200,000). Once it is crossed the cost breaker declines every further escalation, refine and debate, findings keep the adjudication they already have, and the report says the run is degraded. |
 
+**`TRIBUNAL_CONVENTIONS_TOKEN`** (environment variable, not a flag): a read-only token for the repos a profile's `conventionSources` and `crossRepoAnchors` name, when your `gh` login should not be used for them or cannot reach them. The reviewed repo, posting included, stays on your `gh` login. The engine takes it out of its environment at startup, so reviewers never inherit it: it writes the on-demand docs to disk and shallow-clones each anchor repo for them to read. See `docs/project-profile.md`.
+
 Everything below is the mechanics behind these commands, not needed just to *use* the skill.
 
 ## Dispatch decision

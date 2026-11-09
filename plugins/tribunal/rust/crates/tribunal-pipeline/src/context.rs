@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use serde_json::{json, Map, Value};
 use tribunal_agent::{Agent, DispatchRequest};
+use tribunal_context::anchor_checkouts;
 use tribunal_context::exec::Tools;
 use tribunal_context::fetch_pr_context::{fetch_pr_context, FetchOptions};
 use tribunal_context::head_worktree::{parse_head_worktree, prepare_head_worktree};
@@ -28,7 +29,9 @@ use tribunal_core::profile::conventions_channel::{conventions_channel, Conventio
 use crate::agent_def;
 use crate::decisions::{build_decisions, Decisions};
 use crate::plan::{build_plan, Plan, PlanInput};
-use crate::prompts::{conventions_path, methodology_line, methodology_path, DiffDelivery};
+use crate::prompts::{
+    conventions_path, methodology_line, methodology_path, repo_slug, DiffDelivery,
+};
 use crate::schemas;
 
 /// What the operator asked for, as the workflow's `args` carry it.
@@ -100,6 +103,9 @@ pub struct Prepared {
     pub profile: Value,
     pub methodology_path: String,
     pub conventions: ConventionsChannel,
+    /// Where the compose step finds other repos on this run. Empty without a
+    /// conventions token, and then the step's prompt is unchanged.
+    pub cross_repo_note: String,
     /// `PROFILE_SHA256`, `PROFILE_SOURCE` and the project rules' pair, as
     /// the row records them: the string, else null.
     pub profile_sha256: Value,
@@ -239,6 +245,17 @@ pub async fn prepare(rt: &Runtime, args: &RunArgs) -> Result<Prepared, String> {
         ));
     }
 
+    // What a separate token reads for the reviewers stays out of the uploaded
+    // files, in one directory a new run starts afresh.
+    let private_dir = PathBuf::from(tmp(
+        rt,
+        &format!("tribunal-private-{}-{}", repo_slug(&repo), args.pr),
+    ));
+    let mut loader_tools = rt.tools.clone();
+    if rt.tools.conventions.is_some() {
+        let _ = std::fs::remove_dir_all(&private_dir);
+        loader_tools.conventions_docs_dir = Some(private_dir.join("docs"));
+    }
     let lists = |k: &str| matches!(js::get(&profile, k), Some(Value::Array(a)) if !a.is_empty());
     let lists_conventions = lists("conventionFiles") || lists("conventionSources");
     let conventions_args = if lists_conventions {
@@ -272,7 +289,7 @@ pub async fn prepare(rt: &Runtime, args: &RunArgs) -> Result<Prepared, String> {
         if !args.head_sha.is_empty() {
             argv.extend(["--head-sha".to_owned(), args.head_sha.clone()]);
         }
-        let got = load_conventions::main(&rt.tools, &argv).await;
+        let got = load_conventions::main(&loader_tools, &argv).await;
         let got = json_line(&got.stdout, "load-conventions")?;
         for w in got
             .get("warnings")
@@ -307,7 +324,18 @@ pub async fn prepare(rt: &Runtime, args: &RunArgs) -> Result<Prepared, String> {
     } else {
         json!({})
     };
-    let conventions = conventions_channel(&conventions_args, &profile)?;
+    let cloned =
+        anchor_checkouts::clone_anchors(&rt.tools, &profile, &repo, &private_dir.join("anchors"))
+            .await;
+    logs.extend(
+        cloned
+            .warnings
+            .iter()
+            .map(|w| format!("conventions warning: {w}")),
+    );
+    let cross_repo_note = anchor_checkouts::note(&cloned.checkouts);
+    let conventions =
+        conventions_channel(&conventions_args, &profile)?.with_anchor_note(&cross_repo_note);
     let text = |v: Option<&Value>| v.filter(|x| x.is_string()).cloned().unwrap_or(Value::Null);
     let rules = loaded.get("projectRules");
     Ok(Prepared {
@@ -315,6 +343,7 @@ pub async fn prepare(rt: &Runtime, args: &RunArgs) -> Result<Prepared, String> {
         profile,
         methodology_path: methodology,
         conventions,
+        cross_repo_note,
         profile_sha256: text(loaded.get("sha256")),
         profile_source: text(loaded.get("source")),
         project_rules_sha256: text(rules.and_then(|r| js::get(r, "sha256"))),

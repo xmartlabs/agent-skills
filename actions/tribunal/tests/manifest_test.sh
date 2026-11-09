@@ -34,6 +34,25 @@ assert_ok "there are action manifests to check" test "${#MANIFESTS[@]}" -gt 0
 assert_eq "no expression inside a description" "" "$(expressions_in_descriptions "${MANIFESTS[@]}")"
 assert_eq "no secrets or vars context in an action" "" "$(forbidden_contexts "${MANIFESTS[@]}")"
 
+# conventions-token: optional, and only the review step, the one that reads other repos, gets it.
+ACTION_YML="$HERE/../action.yml"
+token_steps() {
+  python3 - "$ACTION_YML" <<'PY'
+import re, sys
+token = False
+for line in open(sys.argv[1]):
+    m = re.search(r'run\.sh" (\S+)', line)
+    if m:
+        if token:
+            print(m[1])
+        token = False
+    elif "TRIBUNAL_CONVENTIONS_TOKEN:" in line:
+        token = True
+PY
+}
+assert_eq "only the review step gets the conventions token" "review" "$(token_steps)"
+assert_ok "the conventions token defaults to empty" grep -A5 '^  conventions-token:' "$ACTION_YML"
+
 # defaults FILE: "name=default" for each input of an action manifest, sorted by name.
 defaults() {
   python3 - "$1" <<'PY'

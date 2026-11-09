@@ -88,6 +88,15 @@ fields it reads), and every field is optional except that `ref` goes with
   reviewed repo itself, read at the profile's ref (resolved to a commit, so
   the whole run reads one snapshot). `ref` is required with `repo` and refused
   without it.
+- Reading another repo's docs needs a token that reaches it. By default that
+  is whatever `gh` is logged in with. `TRIBUNAL_CONVENTIONS_TOKEN` (the action's
+  `conventions-token` input) gives these reads, and the `crossRepoAnchors`
+  reads, a separate read-only token, while the reviewed repo keeps the main
+  one. That includes a `submodule:<path>` pointer and a source that names the
+  reviewed repo. With it, reviewers never hold the token: the menu of on-demand
+  docs points at files the engine already wrote, and each anchor repo is
+  shallow-cloned for them to read, which adds its clone time to the run. A read
+  that fails is a warning naming the token, and the review goes on without it.
 - `root` limits the source to a folder, written with a trailing `/` such as
   `docs/`. Paths stay relative to the repo root.
 - `ref`, with `repo`, is a git ref of the docs repo, or `submodule:<path>`:

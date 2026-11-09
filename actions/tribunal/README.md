@@ -102,6 +102,35 @@ The action needs a Linux x64 runner. On a pool that mixes operating systems, sel
 Everything a run writes stays in the job's temporary directory, so runners that share a host do
 not see each other's files, and Node is set up when the runner has none.
 
+### Private conventions repo
+
+The default `github.token` only reaches the repository the workflow runs in. When a profile's
+`conventionSources` or `crossRepoAnchors` name other private repositories, give the action a
+separate read-only token for them, so reviews still post as `github-actions[bot]`:
+
+```yaml
+      - uses: xmartlabs/agent-skills/actions/tribunal@tribunal-action-v1
+        with:
+          claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          conventions-token: ${{ secrets.CONVENTIONS_REPO_TOKEN }}
+```
+
+Create a fine-grained personal access token, owned by the organization that owns those repositories,
+with access to only the conventions and anchor repositories and one permission: `Contents: read`.
+GitHub adds `Metadata: read` by itself. It needs nothing on the reviewed repository.
+
+| Read | Token |
+| --- | --- |
+| The pull request, its files, reviews and comments; posting; the pending comment; label removal | `github-token` |
+| A source with no `repo`, or one that names the reviewed repository | `github-token` |
+| A `submodule:<path>` source's pointer, which lives in the reviewed repository | `github-token` |
+| The docs of a source in another repository, and a `crossRepoAnchors` repository | `conventions-token` |
+
+Model calls do not get this token. The action reads the docs and shallow-clones each anchor repository
+into the job's temporary directory, and the reviewers read those files. When a read fails, the review
+goes on without that source or anchor, and the run log names the token that was used. The run does not
+retry with `github-token`.
+
 ### Skip bot pull requests
 
 Dependabot's runs get no secrets and are skipped on their own. Other bots that open pull requests
@@ -297,6 +326,7 @@ transcript).
 | `claude-token` | empty | Claude Code OAuth token (subscription). This or `anthropic-api-key` is required. |
 | `anthropic-api-key` | empty | Anthropic API key (billed per use). Wins over `claude-token` when both are set. |
 | `github-token` | `github.token` | Reads the pull request and posts the review (`pull-requests: write`). |
+| `conventions-token` | empty | Read-only token for the repos in `conventionSources` and `crossRepoAnchors`. See [Private conventions repo](#private-conventions-repo). Needs Tribunal 115.4.0 or newer. |
 | `label` | `tribunal` | Adding this label forces a review (ignores `drafts`, `paths` and `once`); another label skips. It is removed at the end. |
 | `paths` | empty | Review only when a changed file matches one of these globs, one per line (`*` also crosses `/`, `!` excludes). Empty reviews any change. |
 | `once` | `true` | Skip a pull request the action already reviewed (a review of its own with tribunal's footer). |
@@ -354,7 +384,13 @@ and prefer an OpenAI project key with a spending limit.
 
 When neither the base nor the default branch has a profile, the pull request's own copy is used,
 so the pull request that adds it is reviewed under its own rules. Merge the profile first if that
-matters to you.
+matters to you. With `conventions-token`, that copy also chooses which repositories the token reads.
+
+`conventions-token` stays out of the model calls' environment, so an ordinary `env` or a transcript
+does not show it. That is not a hard boundary: on Linux a model call runs as the same user as the
+processes that hold it, and a pull request that steers one could read it from a parent process.
+Keep the token read-only and limited to those repositories. What it reads reaches the model calls,
+and so transcripts, on purpose.
 
 ## Maintaining this action
 

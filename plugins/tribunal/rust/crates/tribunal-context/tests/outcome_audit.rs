@@ -176,6 +176,7 @@ fn tools(dir: &std::path::Path) -> Tools {
                 dir.join("calls.log").into_os_string(),
             ),
         ],
+        ..Tools::default()
     }
 }
 
@@ -474,6 +475,7 @@ fn candidate_tools(dir: &std::path::Path) -> Tools {
                 dir.join("calls.log").into_os_string(),
             ),
         ],
+        ..Tools::default()
     }
 }
 
