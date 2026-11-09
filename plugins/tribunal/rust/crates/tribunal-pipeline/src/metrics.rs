@@ -241,6 +241,13 @@ fn blocking(v: &Value, f: &Value) -> Option<Value> {
     if js::truthy(get(f, crate::questions::RANKED_BELOW_BLOCKING)) {
         return Some(json!(false));
     }
+    // Not from the workflow: moved to "Questions to review", outside the
+    // verdict, under `--scenario-questions`.
+    if get(v, "placement").and_then(|p| get(p, "placement"))
+        == Some(&json!(crate::questions::LOWER_PRIORITY))
+    {
+        return Some(json!(false));
+    }
     let ran = get(v, "panelRan");
     let first = if js::truthy(ran) {
         Some(json!(!js::truthy(get(v, "unverified"))))
@@ -1021,6 +1028,15 @@ mod refuters_skipped_tests {
         let mut v = result("important", true);
         v["finding"]["rankedBelowBlocking"] = json!(true);
         assert_eq!(blocking(&v, &v["finding"]), Some(json!(false)));
+    }
+
+    #[test]
+    fn a_finding_moved_to_questions_to_review_is_not_blocking() {
+        let mut v = result("important", true);
+        v["placement"] = json!({"placement": "lower-priority-question", "worth": 2, "support": 1});
+        assert_eq!(blocking(&v, &v["finding"]), Some(json!(false)));
+        v.as_object_mut().unwrap().remove("placement");
+        assert_eq!(blocking(&v, &v["finding"]), Some(json!(true)));
     }
 
     #[test]
