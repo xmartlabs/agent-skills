@@ -113,3 +113,24 @@ too narrow, and the notes say so. Every verdict also carries a strength word,
 | `exploratory` | 1 or 2 | Something about these PRs, not about PRs like them |
 | `indicative` | 3 or 4 | A direction worth checking on more PRs |
 | `adequate` | 5 or more | Enough units for the interval to mean what it says |
+
+## Measuring against your own corpus
+
+`tribunal compare` reads two observation files, one per arm. Building them
+takes a labelled corpus (pull requests pinned at the commit whose defects were
+labelled) and a matcher that decides which finding is which defect. Neither
+is in this repository: the corpus tribunal was measured on comes from private
+pull requests, and the tools that read it live next to it, outside the plugin.
+
+Three of those tools would help anyone with a corpus of their own:
+
+- turning `metrics.jsonl` rows and a corpus into the two observation files;
+- checking, before paying for runs, that each labelled defect is in the code a
+  pinned run reviews;
+- pass@k per defect, to see what a second or third run adds.
+
+They are not ported because nobody outside the team has needed them yet. When
+someone does, they come in as `tribunal` subcommands in Rust, with the corpus
+format published as a spec and the corpus itself passed in, never committed
+here. Open an issue to ask for them. Until then, any script that writes the
+files described in [The files](#the-files) works with `tribunal compare`.
