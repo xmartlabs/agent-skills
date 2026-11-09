@@ -39,6 +39,18 @@ estimate from the two parts, measured separately, not from a run with both.
 
 ### With scenario questions (the default since 2026-11-09)
 
+With everything as it now ships (one generator dispatch, no panel, 5-minute
+cache writes), 4 backend pull requests of 4 to 22 files, one run each way:
+with questions a run cost a mean of US$2.87 against US$1.67 without (1.72
+times, interval 1.59 to 1.95), from US$1.31 against US$0.79 on the smallest
+to US$5.65 against US$3.58 on the largest. It took 9 to 22 minutes against 3
+to 6. Most of the extra time is the answers: each is a Haiku dispatch that
+reads code for 12 to 25 tool turns, 1 to 3 minutes, and at most 8 ran at once.
+One run with `--concurrency 16` answered 22 questions in 201 seconds, where
+17 had taken 252 at 8.
+
+The earlier measurement:
+
 On 8 backend pull requests of 4 to 24 files, with three generator samples and
 no panel, a run cost a median of US$3.67 (US$2.53 to US$8.24), about 1.9 times
 a normal review of the same pull requests with the panel on. It took a median

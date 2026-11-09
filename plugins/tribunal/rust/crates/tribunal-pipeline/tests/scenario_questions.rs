@@ -358,3 +358,54 @@ fn the_row_records_the_rank_worth_only_where_the_ranking_scored() {
     assert!(f[1].get("rankWorth").is_none());
     assert!(f[1].get("rankedBelowBlocking").is_none());
 }
+
+#[tokio::test]
+async fn a_question_about_a_file_with_no_logic_is_not_answered() {
+    let fake = FakeAgent::new()
+        .answer(
+            "questions:1",
+            FakeAnswer::Structured(json!({"questions": [
+                {"file": "src/jobs/sync.ts", "line": 40, "question": "If the provider returns 503, does the job retry?"},
+                {"file": "package-lock.json", "question": "Does the lockfile pin the new client?"},
+                {"file": "docs/README.md", "question": "Does the README describe the retry?"}
+            ]})),
+        )
+        .answer("question:1", FakeAnswer::Structured(json!({"findings": []})));
+    let s = setup();
+    let prompts = ["LENS ONE PROMPT".to_owned()];
+    let files = [None];
+    let pr_files = [
+        "src/jobs/sync.ts".to_owned(),
+        "package-lock.json".to_owned(),
+        "docs/README.md".to_owned(),
+    ];
+    let schema = schemas::findings();
+    let out = question_stage(
+        &fake,
+        &QuestionInputs {
+            lens_setup: &s,
+            answer_model: "claude-haiku-5-5",
+            samples: 1,
+            lens_prompts: &prompts,
+            lens_files: &files,
+            lens_schema: &schema,
+            generator_prompt: GENERATOR_PROMPT.to_owned(),
+            pr_files: &pr_files,
+            blast_radius: None,
+        },
+    )
+    .await;
+    assert_eq!(out.questions.len(), 3);
+    assert_eq!(out.skipped_no_logic, 2);
+    let answered: Vec<_> = fake
+        .calls()
+        .into_iter()
+        .filter(|c| c.label.starts_with("question:"))
+        .map(|c| c.label)
+        .collect();
+    assert_eq!(answered, ["question:1"]);
+    assert_eq!(out.records[1]["skipped"], json!("no-logic-file"));
+    assert_eq!(out.records[2]["skipped"], json!("no-logic-file"));
+    assert_eq!(out.records[1]["routed"], json!(false));
+    assert_eq!(out.metrics()["skippedNoLogicFile"], json!(2));
+}
