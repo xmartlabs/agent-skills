@@ -5257,13 +5257,13 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="3" data-composition-frame-label="Check" x="10" y="960" width="890" height="586" rx="12" class="c-region" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="4" data-composition-frame-label="Refuter panel, per finding: off unless --refuters, --codex or --gemini" x="10" y="1590" width="890" height="246" rx="12" class="c-region" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="4" data-composition-frame-label="Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm" x="10" y="1590" width="890" height="246" rx="12" class="c-region" stroke-width="1"/>
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="5" data-composition-frame-label="Decide and write" x="10" y="1880" width="890" height="474" rx="12" class="c-region" stroke-width="1"/>
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="6" data-composition-frame-label="After the run" x="10" y="2390" width="600" height="126" rx="12" class="c-region" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="7" data-composition-frame-label="Scenario questions, opt-in" x="890" y="790" width="310" height="1046" rx="12" class="c-region" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="7" data-composition-frame-label="Scenario questions, on unless --no-scenario-questions" x="890" y="790" width="310" height="1046" rx="12" class="c-region" stroke-width="1"/>
 
         <!-- Connection paths (before components for correct z-order) -->
         <g data-graph-role="automatic-crossover" style="--step:0">
@@ -5415,12 +5415,12 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <path data-edge-from="override" data-edge-to="row" data-edge-label="direction or severity" data-edge-key="36" data-edge-id="override-row" data-composition-points="455,2420;455,2334" data-composition-crossover="halo" data-composition-independent="true" d="M 455 2420 L 455 2334" class="a-dashed" data-animate="edge" style="--step:12" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:37">
-          <path data-graph-role="automatic-crossover-underlay" d="M 330 2318 L 282 2318 Q 274 2318 274 2326 L 274 2420" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="row" data-edge-to="cost" data-edge-label="read" data-edge-key="37" data-edge-id="row-cost" data-composition-points="330,2318;274,2318;274,2420" data-composition-crossover="halo" data-composition-independent="true" d="M 330 2318 L 282 2318 Q 274 2318 274 2326 L 274 2420" class="a-default" data-animate="edge" style="--step:12" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 330 2309 L 318 2309 Q 310 2309 310 2317 L 310 2450 Q 310 2458 302 2458 L 290 2458" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="row" data-edge-to="cost" data-edge-label="read" data-edge-key="37" data-edge-id="row-cost" data-composition-points="330,2309;310,2309;310,2458;290,2458" data-composition-crossover="halo" data-composition-independent="true" d="M 330 2309 L 318 2309 Q 310 2309 310 2317 L 310 2450 Q 310 2458 302 2458 L 290 2458" class="a-default" data-animate="edge" style="--step:12" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:38">
           <path data-graph-role="automatic-crossover-underlay" d="M 580 620 L 928 620 Q 936 620 936 628 L 936 820" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="partition" data-edge-to="qgen" data-edge-label="opt-in" data-edge-key="38" data-edge-id="partition-qgen" data-composition-points="580,620;936,620;936,820" data-composition-crossover="halo" data-composition-independent="true" d="M 580 620 L 928 620 Q 936 620 936 628 L 936 820" class="a-dashed" data-animate="edge" style="--step:12" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+          <path data-edge-from="partition" data-edge-to="qgen" data-edge-label="questions" data-edge-key="38" data-edge-id="partition-qgen" data-composition-points="580,620;936,620;936,820" data-composition-crossover="halo" data-composition-independent="true" d="M 580 620 L 928 620 Q 936 620 936 628 L 936 820" class="a-default" data-animate="edge" style="--step:12" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:39">
           <path data-graph-role="automatic-crossover-underlay" d="M 1045 896 L 1045 990" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
@@ -5441,6 +5441,10 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <g data-graph-role="automatic-crossover" style="--step:43">
           <path data-graph-role="automatic-crossover-underlay" d="M 920 1785 L 818.8000000000001 1785 Q 810.8000000000001 1785 810.8000000000001 1793 L 810.8000000000001 1878 Q 810.8000000000001 1886 802.8000000000001 1886 L 487 1886 Q 479 1886 479 1894 L 479 1910" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
           <path data-edge-from="qrank" data-edge-to="verdict" data-edge-label="worth" data-edge-key="43" data-edge-id="qrank-verdict" data-composition-points="920,1785;810.8000000000001,1785;810.8000000000001,1886;479,1886;479,1910" data-composition-crossover="halo" data-composition-independent="true" d="M 920 1785 L 818.8000000000001 1785 Q 810.8000000000001 1785 810.8000000000001 1793 L 810.8000000000001 1878 Q 810.8000000000001 1886 802.8000000000001 1886 L 487 1886 Q 479 1886 479 1894 L 479 1910" class="a-default" data-animate="edge" style="--step:12" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        </g>
+        <g data-graph-role="automatic-crossover" style="--step:44">
+          <path data-graph-role="automatic-crossover-underlay" d="M 330 2295 L 290 2295" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="row" data-edge-to="rowfields" data-edge-key="44" data-edge-id="row-rowfields" data-composition-points="330,2295;290,2295" data-composition-crossover="halo" data-composition-independent="true" d="M 330 2295 L 290 2295" class="a-dashed" data-animate="edge" style="--step:12" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         </g>
 
         <!-- Components -->
@@ -5704,8 +5708,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="fine" x="455" y="1382" class="t-backend" font-size="7" text-anchor="middle">a hit confirms; only a clean tsc kills</text>
         </g>
 
-        <g id="node-sweep" data-node-id="sweep" data-node-label="clean-verdict sweep" tabindex="0" role="button" aria-label="Focus clean-verdict sweep, MODEL · Codex, other family, Check" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="MODEL · Codex, other family" data-node-tag="only when none reach a panel" data-node-context="Check">
-          <title>clean-verdict sweep · MODEL · Codex, other family · Check · only when none reach a panel</title>
+        <g id="node-sweep" data-node-id="sweep" data-node-label="clean-verdict sweep" tabindex="0" role="button" aria-label="Focus clean-verdict sweep, MODEL · Codex, other family, Check" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="MODEL · Codex, other family" data-node-tag="with the panel on, when none reach it" data-node-context="Check">
+          <title>clean-verdict sweep · MODEL · Codex, other family · Check · with the panel on, when none reach it</title>
           <rect x="620" y="1320" width="250" height="76" rx="8" class="c-mask"/>
           <rect x="620" y="1320" width="250" height="76" rx="8" class="c-cloud" data-animate="node" style="--step:12" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="cloud" class="semantic-sigil s-cloud" transform="translate(626 1326) scale(0.6875)">
@@ -5713,7 +5717,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           </g>
           <text data-node-label="" data-detail-anchor="" x="745" y="1356" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">clean-verdict sweep</text>
         <text data-detail="context" x="745" y="1372" class="t-muted" font-size="9" text-anchor="middle">MODEL · Codex, other family</text>
-        <text data-detail="fine" x="745" y="1388" class="t-cloud" font-size="7" text-anchor="middle">only when none reach a panel</text>
+        <text data-detail="fine" x="745" y="1388" class="t-cloud" font-size="7" text-anchor="middle">with the panel on, when none reach it</text>
         </g>
 
         <g id="node-critic" data-node-id="critic" data-node-label="completeness-critic" tabindex="0" role="button" aria-label="Focus completeness-critic, MODEL · sonnet, asked for 20 tool calls at most, Check" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet, asked for 20 tool calls at most" data-node-tag="audits unnamed files, lens gaps, siblings" data-node-context="Check">
@@ -5731,8 +5735,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="fine" x="455" y="1518" class="t-frontend" font-size="7" text-anchor="middle">audits unnamed files, lens gaps, siblings</text>
         </g>
 
-        <g id="node-codex" data-node-id="codex" data-node-label="Codex / Gemini" tabindex="0" role="button" aria-label="Focus Codex / Gemini, MODEL · Codex or Gemini, Refuter panel, per finding: off unless --refuters, --codex or --gemini" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="MODEL · Codex or Gemini" data-node-tag="one outside vote, from its file" data-node-context="Refuter panel, per finding: off unless --refuters, --codex or --gemini">
-          <title>Codex / Gemini · MODEL · Codex or Gemini · Refuter panel, per finding: off unless --refuters, --codex or --gemini · one outside vote, from its file</title>
+        <g id="node-codex" data-node-id="codex" data-node-label="Codex / Gemini" tabindex="0" role="button" aria-label="Focus Codex / Gemini, MODEL · Codex or Gemini, Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="MODEL · Codex or Gemini" data-node-tag="one outside vote, from its file" data-node-context="Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm">
+          <title>Codex / Gemini · MODEL · Codex or Gemini · Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm · one outside vote, from its file</title>
           <rect x="40" y="1620" width="250" height="76" rx="8" class="c-mask"/>
           <rect x="40" y="1620" width="250" height="76" rx="8" class="c-cloud" data-animate="node" style="--step:12" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="cloud" class="semantic-sigil s-cloud" transform="translate(46 1626) scale(0.6875)">
@@ -5743,8 +5747,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="fine" x="165" y="1688" class="t-cloud" font-size="7" text-anchor="middle">one outside vote, from its file</text>
         </g>
 
-        <g id="node-claude" data-node-id="claude" data-node-label="Claude refuter x 1-2" tabindex="0" role="button" aria-label="Focus Claude refuter x 1-2, MODEL · sonnet, tribunal-refuter, Refuter panel, per finding: off unless --refuters, --codex or --gemini" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet, tribunal-refuter" data-node-tag="try to kill the finding" data-node-context="Refuter panel, per finding: off unless --refuters, --codex or --gemini">
-          <title>Claude refuter x 1-2 · MODEL · sonnet, tribunal-refuter · Refuter panel, per finding: off unless --refuters, --codex or --gemini · try to kill the finding</title>
+        <g id="node-claude" data-node-id="claude" data-node-label="Claude refuter x 1-2" tabindex="0" role="button" aria-label="Focus Claude refuter x 1-2, MODEL · sonnet, tribunal-refuter, Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet, tribunal-refuter" data-node-tag="try to kill the finding" data-node-context="Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm">
+          <title>Claude refuter x 1-2 · MODEL · sonnet, tribunal-refuter · Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm · try to kill the finding</title>
           <rect x="330" y="1620" width="250" height="76" rx="8" class="c-mask"/>
           <rect x="330" y="1620" width="250" height="76" rx="8" class="c-frontend" data-animate="node" style="--step:12" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(336 1626) scale(0.6875)">
@@ -5758,8 +5762,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="fine" x="455" y="1688" class="t-frontend" font-size="7" text-anchor="middle">try to kill the finding</text>
         </g>
 
-        <g id="node-escalate" data-node-id="escalate" data-node-label="escalate, refine, debate" tabindex="0" role="button" aria-label="Focus escalate, refine, debate, MODEL · sonnet, Refuter panel, per finding: off unless --refuters, --codex or --gemini" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet" data-node-tag="split or borderline votes" data-node-context="Refuter panel, per finding: off unless --refuters, --codex or --gemini">
-          <title>escalate, refine, debate · MODEL · sonnet · Refuter panel, per finding: off unless --refuters, --codex or --gemini · split or borderline votes</title>
+        <g id="node-escalate" data-node-id="escalate" data-node-label="escalate, refine, debate" tabindex="0" role="button" aria-label="Focus escalate, refine, debate, MODEL · sonnet, Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet" data-node-tag="split or borderline votes" data-node-context="Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm">
+          <title>escalate, refine, debate · MODEL · sonnet · Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm · split or borderline votes</title>
           <rect x="620" y="1620" width="250" height="64" rx="8" class="c-mask"/>
           <rect x="620" y="1620" width="250" height="64" rx="8" class="c-frontend" data-animate="node" style="--step:12" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(626 1626) scale(0.6875)">
@@ -5773,8 +5777,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="fine" x="745" y="1676" class="t-frontend" font-size="7" text-anchor="middle">split or borderline votes</text>
         </g>
 
-        <g id="node-classify" data-node-id="classify" data-node-label="classify artifacts" tabindex="0" role="button" aria-label="Focus classify artifacts, DETERMINISTIC · Rust, Refuter panel, per finding: off unless --refuters, --codex or --gemini" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · Rust" data-node-tag="reads each outside model&#39;s file" data-node-context="Refuter panel, per finding: off unless --refuters, --codex or --gemini">
-          <title>classify artifacts · DETERMINISTIC · Rust · Refuter panel, per finding: off unless --refuters, --codex or --gemini · reads each outside model&#39;s file</title>
+        <g id="node-classify" data-node-id="classify" data-node-label="classify artifacts" tabindex="0" role="button" aria-label="Focus classify artifacts, DETERMINISTIC · Rust, Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · Rust" data-node-tag="reads each outside model&#39;s file" data-node-context="Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm">
+          <title>classify artifacts · DETERMINISTIC · Rust · Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm · reads each outside model&#39;s file</title>
           <rect x="40" y="1740" width="250" height="64" rx="8" class="c-mask"/>
           <rect x="40" y="1740" width="250" height="64" rx="8" class="c-backend" data-animate="node" style="--step:12" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(46 1746) scale(0.6875)">
@@ -5785,8 +5789,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="fine" x="165" y="1796" class="t-backend" font-size="7" text-anchor="middle">reads each outside model&#39;s file</text>
         </g>
 
-        <g id="node-tally" data-node-id="tally" data-node-label="tallyVotes" tabindex="0" role="button" aria-label="Focus tallyVotes, DETERMINISTIC · Rust, Refuter panel, per finding: off unless --refuters, --codex or --gemini" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · Rust" data-node-tag="weighted refute fraction, kill at 0.45, a lower severity needs two votes" data-node-context="Refuter panel, per finding: off unless --refuters, --codex or --gemini">
-          <title>tallyVotes · DETERMINISTIC · Rust · Refuter panel, per finding: off unless --refuters, --codex or --gemini · weighted refute fraction, kill at 0.45, a lower severity needs two votes</title>
+        <g id="node-tally" data-node-id="tally" data-node-label="tallyVotes" tabindex="0" role="button" aria-label="Focus tallyVotes, DETERMINISTIC · Rust, Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · Rust" data-node-tag="weighted refute fraction, kill at 0.45, a lower severity needs two votes" data-node-context="Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm">
+          <title>tallyVotes · DETERMINISTIC · Rust · Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm · weighted refute fraction, kill at 0.45, a lower severity needs two votes</title>
           <rect x="330" y="1740" width="270" height="76" rx="8" class="c-mask"/>
           <rect x="330" y="1740" width="270" height="76" rx="8" class="c-backend" data-animate="node" style="--step:12" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(336 1746) scale(0.6875)">
@@ -5925,8 +5929,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="fine" x="165" y="2488" class="t-backend" font-size="7" text-anchor="middle">where the money went, by agent kind and lens</text>
         </g>
 
-        <g id="node-qgen" data-node-id="qgen" data-node-label="question generator" tabindex="0" role="button" aria-label="Focus question generator, MODEL · sonnet, --scenario-questions, Scenario questions, opt-in" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet, --scenario-questions" data-node-tag="three passes of up to 12 scenarios" data-node-context="Scenario questions, opt-in">
-          <title>question generator · MODEL · sonnet, --scenario-questions · Scenario questions, opt-in · three passes of up to 12 scenarios</title>
+        <g id="node-qgen" data-node-id="qgen" data-node-label="question generator" tabindex="0" role="button" aria-label="Focus question generator, MODEL · sonnet, on by default, Scenario questions, on unless --no-scenario-questions" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet, on by default" data-node-tag="three passes of up to 12 scenarios" data-node-context="Scenario questions, on unless --no-scenario-questions">
+          <title>question generator · MODEL · sonnet, on by default · Scenario questions, on unless --no-scenario-questions · three passes of up to 12 scenarios</title>
           <rect x="920" y="820" width="250" height="76" rx="8" class="c-mask"/>
           <rect x="920" y="820" width="250" height="76" rx="8" class="c-frontend" data-animate="node" style="--step:12" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(926 826) scale(0.6875)">
@@ -5936,12 +5940,12 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
             <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="1045" y="856" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">question generator</text>
-        <text data-detail="context" x="1045" y="872" class="t-muted" font-size="9" text-anchor="middle">MODEL · sonnet, --scenario-questions</text>
+        <text data-detail="context" x="1045" y="872" class="t-muted" font-size="9" text-anchor="middle">MODEL · sonnet, on by default</text>
         <text data-detail="fine" x="1045" y="888" class="t-frontend" font-size="7" text-anchor="middle">three passes of up to 12 scenarios</text>
         </g>
 
-        <g id="node-qanswer" data-node-id="qanswer" data-node-label="question answers" tabindex="0" role="button" aria-label="Focus question answers, MODEL · haiku, one per question, Scenario questions, opt-in" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="MODEL · haiku, one per question" data-node-tag="the lens prompt that covers its file" data-node-context="Scenario questions, opt-in">
-          <title>question answers · MODEL · haiku, one per question · Scenario questions, opt-in · the lens prompt that covers its file</title>
+        <g id="node-qanswer" data-node-id="qanswer" data-node-label="question answers" tabindex="0" role="button" aria-label="Focus question answers, MODEL · haiku, one per question, Scenario questions, on unless --no-scenario-questions" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="MODEL · haiku, one per question" data-node-tag="the lens prompt that covers its file" data-node-context="Scenario questions, on unless --no-scenario-questions">
+          <title>question answers · MODEL · haiku, one per question · Scenario questions, on unless --no-scenario-questions · the lens prompt that covers its file</title>
           <rect x="920" y="990" width="250" height="76" rx="8" class="c-mask"/>
           <rect x="920" y="990" width="250" height="76" rx="8" class="c-messagebus" data-animate="node" style="--step:12" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(926 996) scale(0.6875)">
@@ -5955,8 +5959,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="fine" x="1045" y="1058" class="t-messagebus" font-size="7" text-anchor="middle">the lens prompt that covers its file</text>
         </g>
 
-        <g id="node-qrank" data-node-id="qrank" data-node-label="question-rank" tabindex="0" role="button" aria-label="Focus question-rank, MODEL · sonnet, evolved prompt, Scenario questions, opt-in" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet, evolved prompt" data-node-tag="worth on every finding; low worth to Questions to review" data-node-context="Scenario questions, opt-in">
-          <title>question-rank · MODEL · sonnet, evolved prompt · Scenario questions, opt-in · worth on every finding; low worth to Questions to review</title>
+        <g id="node-qrank" data-node-id="qrank" data-node-label="question-rank" tabindex="0" role="button" aria-label="Focus question-rank, MODEL · sonnet, evolved prompt, Scenario questions, on unless --no-scenario-questions" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet, evolved prompt" data-node-tag="worth on every finding; low worth to Questions to review" data-node-context="Scenario questions, on unless --no-scenario-questions">
+          <title>question-rank · MODEL · sonnet, evolved prompt · Scenario questions, on unless --no-scenario-questions · worth on every finding; low worth to Questions to review</title>
           <rect x="920" y="1740" width="250" height="76" rx="8" class="c-mask"/>
           <rect x="920" y="1740" width="250" height="76" rx="8" class="c-frontend" data-animate="node" style="--step:12" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(926 1746) scale(0.6875)">
@@ -5970,8 +5974,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="fine" x="1045" y="1808" class="t-frontend" font-size="7" text-anchor="middle">worth on every finding; low worth to Questions to review</text>
         </g>
 
-        <g id="node-runtime" data-node-id="runtime" data-node-label="runtime confirmation" tabindex="0" role="button" aria-label="Focus runtime confirmation, DETERMINISTIC · Rust runs the repo&#39;s vitest, Check" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · Rust runs the repo&#39;s vitest" data-node-tag="--runtime-confirm: a lens claim as a case" data-node-context="Check">
-          <title>runtime confirmation · DETERMINISTIC · Rust runs the repo&#39;s vitest · Check · --runtime-confirm: a lens claim as a case</title>
+        <g id="node-runtime" data-node-id="runtime" data-node-label="runtime confirmation" tabindex="0" role="button" aria-label="Focus runtime confirmation, DETERMINISTIC · Rust runs the repo&#39;s vitest, Check" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · Rust runs the repo&#39;s vitest" data-node-tag="--runtime-confirm, turns the panel on" data-node-context="Check">
+          <title>runtime confirmation · DETERMINISTIC · Rust runs the repo&#39;s vitest · Check · --runtime-confirm, turns the panel on</title>
           <rect x="620" y="1450" width="250" height="76" rx="8" class="c-mask"/>
           <rect x="620" y="1450" width="250" height="76" rx="8" class="c-backend" data-animate="node" style="--step:12" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(626 1456) scale(0.6875)">
@@ -5979,7 +5983,20 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           </g>
           <text data-node-label="" data-detail-anchor="" x="745" y="1486" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">runtime confirmation</text>
         <text data-detail="context" x="745" y="1502" class="t-muted" font-size="9" text-anchor="middle">DETERMINISTIC · Rust runs the repo&#39;s vitest</text>
-        <text data-detail="fine" x="745" y="1518" class="t-backend" font-size="7" text-anchor="middle">--runtime-confirm: a lens claim as a case</text>
+        <text data-detail="fine" x="745" y="1518" class="t-backend" font-size="7" text-anchor="middle">--runtime-confirm, turns the panel on</text>
+        </g>
+
+        <g id="node-rowfields" data-node-id="rowfields" data-node-label="what a row records" tabindex="0" role="button" aria-label="Focus what a row records, DETERMINISTIC · per run and per finding, Decide and write" aria-pressed="false" data-node-kind="database" data-node-sublabel="DETERMINISTIC · per run and per finding" data-node-tag="cache 5m/1h, thinking, rankWorth, each question" data-node-context="Decide and write">
+          <title>what a row records · DETERMINISTIC · per run and per finding · Decide and write · cache 5m/1h, thinking, rankWorth, each question</title>
+          <rect x="40" y="2270" width="250" height="64" rx="8" class="c-mask"/>
+          <rect x="40" y="2270" width="250" height="64" rx="8" class="c-database" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(46 2276) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="165" y="2300" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">what a row records</text>
+        <text data-detail="context" x="165" y="2316" class="t-muted" font-size="9" text-anchor="middle">DETERMINISTIC · per run and per finding</text>
+        <text data-detail="fine" x="165" y="2326" class="t-database" font-size="7" text-anchor="middle">cache 5m/1h, thinking, rankWorth, each question</text>
         </g>
 
         <!-- Connection labels -->
@@ -6081,12 +6098,12 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <text x="455" y="2410" class="t-edge-dashed" font-size="8" text-anchor="middle">direction or severity</text>
         </g>
         <g data-detail="context" data-edge-from="row" data-edge-to="cost" data-edge-label="read" data-edge-key="37" data-edge-id="row-cost">
-          <rect x="259" y="2349" width="30" height="14" rx="3" class="c-mask"/>
-          <text x="274" y="2359" class="t-edge-default" font-size="8" text-anchor="middle">read</text>
+          <rect x="295" y="2363.5" width="30" height="14" rx="3" class="c-mask"/>
+          <text x="310" y="2373.5" class="t-edge-default" font-size="8" text-anchor="middle">read</text>
         </g>
-        <g data-detail="context" data-edge-from="partition" data-edge-to="qgen" data-edge-label="opt-in" data-edge-key="38" data-edge-id="partition-qgen">
-          <rect x="916.6" y="700" width="38.8" height="14" rx="3" class="c-mask"/>
-          <text x="936" y="710" class="t-edge-dashed" font-size="8" text-anchor="middle">opt-in</text>
+        <g data-detail="context" data-edge-from="partition" data-edge-to="qgen" data-edge-label="questions" data-edge-key="38" data-edge-id="partition-qgen">
+          <rect x="909.4" y="700" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
+          <text x="936" y="710" class="t-edge-default" font-size="8" text-anchor="middle">questions</text>
         </g>
         <g data-detail="context" data-edge-from="qgen" data-edge-to="qanswer" data-edge-label="questions" data-edge-key="39" data-edge-id="qgen-qanswer">
           <rect x="985.8" y="936" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
@@ -6109,6 +6126,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <text x="810.8000000000001" y="1825.5" class="t-edge-default" font-size="8" text-anchor="middle">worth</text>
         </g>
 
+
         <!-- Boundary labels (foreground masks keep routes out of titles) -->
         <g data-graph-role="structural-frame-label" data-composition-frame-id="0" data-composition-frame-kind="region" data-composition-frame-label="Launch">
           <rect data-graph-role="structural-frame-label-mask" x="14" y="20" width="42.4" height="16" rx="3" class="c-mask"/>
@@ -6130,9 +6148,9 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <text data-boundary-label="" x="18" y="983" class="t-cloud" font-size="9" font-weight="600">Check</text>
         </g>
 
-        <g data-graph-role="structural-frame-label" data-composition-frame-id="4" data-composition-frame-kind="region" data-composition-frame-label="Refuter panel, per finding: off unless --refuters, --codex or --gemini">
-          <rect data-graph-role="structural-frame-label-mask" x="14" y="1600" width="388" height="16" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="18" y="1613" class="t-cloud" font-size="9" font-weight="600">Refuter panel, per finding: off unless --refuters, --codex or --gemini</text>
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="4" data-composition-frame-kind="region" data-composition-frame-label="Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm">
+          <rect data-graph-role="structural-frame-label-mask" x="14" y="1600" width="490.59999999999997" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="18" y="1613" class="t-cloud" font-size="9" font-weight="600">Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm</text>
         </g>
 
         <g data-graph-role="structural-frame-label" data-composition-frame-id="5" data-composition-frame-kind="region" data-composition-frame-label="Decide and write">
@@ -6145,9 +6163,9 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <text data-boundary-label="" x="18" y="2413" class="t-cloud" font-size="9" font-weight="600">After the run</text>
         </g>
 
-        <g data-graph-role="structural-frame-label" data-composition-frame-id="7" data-composition-frame-kind="region" data-composition-frame-label="Scenario questions, opt-in">
-          <rect data-graph-role="structural-frame-label-mask" x="944" y="800" width="150.4" height="16" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="948" y="813" class="t-cloud" font-size="9" font-weight="600">Scenario questions, opt-in</text>
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="7" data-composition-frame-kind="region" data-composition-frame-label="Scenario questions, on unless --no-scenario-questions">
+          <rect data-graph-role="structural-frame-label-mask" x="894" y="800" width="296.2" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="898" y="813" class="t-cloud" font-size="9" font-weight="600">Scenario questions, on unless --no-scenario-questions</text>
         </g>
 
         <!-- Legend -->
@@ -6355,7 +6373,21 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
     </div>
     <!-- Info Cards -->
     <div class="cards">
-
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot slate"></div>
+          <h3>What a metrics row records</h3>
+        </div>
+        <ul>
+          <li>agentCost: cost per call, by agent kind and by lens</li>
+          <li>cache reads, cache writes at 5 minutes and at 1 hour, thinking tokens, in total and per kind</li>
+          <li>seconds per stage, the question stage and the ranking included</li>
+          <li>scenario questions: one record per question (pass, file, answered, findings, dropped out of diff)</li>
+          <li>per finding: rankWorth on every finding the ranking scored, and where it was placed</li>
+          <li>lens health: failed dispatches and surfaces not reached, by reason</li>
+          <li>noRefuters, engineVersion and the pinned sha</li>
+        </ul>
+      </div>
     </div>
     <nav class="node-outline no-print" id="node-outline" hidden aria-labelledby="node-outline-title">
       <div class="node-outline-head">

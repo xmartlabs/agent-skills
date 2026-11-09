@@ -109,6 +109,8 @@ fn run(votes: Vec<Option<Value>>, lone_refuter: bool) -> (usize, Value) {
         output_ceiling: 1_200_000.0,
         spent: &spent,
         spent_before: 0.0,
+        no_refuters: false,
+        raised_without_panel: &[],
     };
     let finding = json!({
         "title": "F0 defect in handler", "file": "src/a.ts", "line": 10, "severity": "important",

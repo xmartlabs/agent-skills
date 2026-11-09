@@ -633,6 +633,10 @@ pub fn side_payloads(
                 ("placement", get(p.and_then(|p| js::get(p, "placement")))),
                 ("intendedBy", get(p.and_then(|p| js::get(p, "intendedBy")))),
                 ("refuteFraction", get(js::get(v, "refuteFraction"))),
+                (
+                    crate::verify::REFUTERS_SKIPPED,
+                    get(finding_field(v, crate::verify::REFUTERS_SKIPPED)),
+                ),
             ])
         })
         .collect();
@@ -1093,14 +1097,23 @@ pub fn synthesis_prompt(s: &SynthesisInput) -> String {
     } else {
         String::new()
     };
-    let refuters_rule = if s
-        .surviving
-        .iter()
-        .any(|f| js::truthy(js::get(f, crate::verify::REFUTERS_SKIPPED)))
-    {
+    let skipped = |f: &Value| {
+        js::truthy(js::get(f, crate::verify::REFUTERS_SKIPPED))
+            || js::truthy(
+                js::get(f, "finding").and_then(|g| js::get(g, crate::verify::REFUTERS_SKIPPED)),
+            )
+    };
+    let refuters_rule = if s.surviving.iter().any(skipped) {
         REFUTERS_RULE
     } else {
         ""
+    };
+    // Without a panel, what sits aside was kept by the question ranking, not
+    // by refuters.
+    let placed_aside_note = if !refuters_rule.is_empty() || s.placed_aside.iter().any(skipped) {
+        "kept without a refutation panel, not counted toward the verdict"
+    } else {
+        "kept by the panel, not counted toward the verdict"
     };
     let questions_rule = if s.placed_aside.iter().any(|p| {
         js::get(p, "placement").and_then(Value::as_str) == Some(crate::questions::LOWER_PRIORITY)
@@ -1182,6 +1195,7 @@ pub fn synthesis_prompt(s: &SynthesisInput) -> String {
             ("carriedFormat", &carried_format),
             ("questionsRule", questions_rule),
             ("refutersRule", refuters_rule),
+            ("placedAsideNote", placed_aside_note),
         ],
     )
 }

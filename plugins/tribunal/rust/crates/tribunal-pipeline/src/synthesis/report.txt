@@ -13,7 +13,7 @@ Author: {{author}} | Jira: {{jira}} | Repo: {{repo}}
 {{preDecided}}
 </pre_decided>
 
-<placed_aside note="kept by the panel, not counted toward the verdict">
+<placed_aside note="{{placedAsideNote}}">
 {{placedAside}}
 </placed_aside>
 

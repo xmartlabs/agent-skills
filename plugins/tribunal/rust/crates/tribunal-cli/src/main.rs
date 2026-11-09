@@ -4,7 +4,7 @@
 //!
 //!   tribunal review --pr <n> [--repo <owner/name>] [--head-sha <sha>]
 //!     [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>]
-//!     [--scenario-questions <n>] [--question-model <id>] [--refuters|--no-refuters]
+//!     [--scenario-questions <n>|--no-scenario-questions] [--question-model <id>] [--refuters|--no-refuters]
 //!     [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight]
 //!     [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>]
 //!     [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]
@@ -27,6 +27,10 @@ use tribunal_context::operator::OperatorEnv;
 use tribunal_pipeline::context::{RunArgs, Runtime};
 use tribunal_pipeline::post::PostMode;
 use tribunal_pipeline::questions::MAX_QUESTION_SAMPLES;
+
+/// Generator dispatches when `--scenario-questions` is not given: one, which
+/// writes three passes and found as much as three dispatches.
+const DEFAULT_QUESTION_SAMPLES: u32 = 1;
 use tribunal_pipeline::run::{run_full, DispatchPolicy, FullOutcome, MAX_LENS_SAMPLES};
 
 const DEFAULT_MODEL: &str = "claude-sonnet-5-5";
@@ -46,7 +50,7 @@ fn usage() -> ExitCode {
     eprintln!("usage: tribunal override --ts <row ts> --title <finding title prefix> (--direction reinstated|rejected|withdrawn | --severity nit|important) --reason <how it was checked> [--by <login>] [--verified-at <sha>] [--dry-run]");
     eprintln!("usage: tribunal selfcheck [--apply] [--no-battery] [--model <id>] [--effort <level>] [--out <file>]");
     eprintln!("usage: tribunal post --from <run.json> [--verdict approve|request-changes|comment] [--delta|--edit-existing] [--over-own-review] [--over-standing-review] [--model <id>] [--effort <level>]");
-    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>] [--scenario-questions <n>] [--question-model <id>] [--refuters|--no-refuters] [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight] [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
+    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>] [--scenario-questions <n>|--no-scenario-questions] [--question-model <id>] [--refuters|--no-refuters] [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight] [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
     eprintln!("usage: tribunal panel --pr <n> --repo <owner/name> --head-sha <sha> --findings <file.json> [--thread-before <iso>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--model <id>] [--effort <level>] [--out <file>]");
     ExitCode::from(2)
 }
@@ -204,6 +208,7 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
     let mut policy = DispatchPolicy::default();
     let mut out = None;
     let mut refuters = None;
+    let mut questions: Option<u32> = None;
     let mut it = argv.iter();
     let value = |it: &mut std::slice::Iter<String>, flag: &str| {
         it.next()
@@ -238,12 +243,13 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
             "--scenario-questions" => {
                 let n: u32 = value(&mut it, a)?
                     .parse()
-                    .map_err(|_| "--scenario-questions takes a whole number from 1 to 4")?;
-                if !(1..=MAX_QUESTION_SAMPLES).contains(&n) {
-                    return Err("--scenario-questions takes a whole number from 1 to 4".into());
+                    .map_err(|_| "--scenario-questions takes a whole number from 0 to 4")?;
+                if n > MAX_QUESTION_SAMPLES {
+                    return Err("--scenario-questions takes a whole number from 0 to 4".into());
                 }
-                args.scenario_questions = Some(n);
+                questions = Some(n);
             }
+            "--no-scenario-questions" => questions = Some(0),
             "--question-model" => args.question_model = Some(value(&mut it, a)?),
             "--refuters" => refuters = Some(true),
             "--no-refuters" => refuters = Some(false),
@@ -310,9 +316,16 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
         ));
     }
     // The refutation panel is off unless asked for: it killed about 3% of what
-    // it saw for about a quarter of a run. Asking for an external head asks
-    // for the panel it sits on.
-    args.no_refuters = !refuters.unwrap_or(args.codex == Some(true) || args.gemini == Some(true));
+    // it saw for about a quarter of a run. Asking for an external head, or for
+    // runtime cases (evidence only a refuter reads), asks for the panel.
+    // Scenario questions are on unless turned off: on labelled BE pull
+    // requests they found most of what the lenses alone missed.
+    args.scenario_questions = match questions.unwrap_or(DEFAULT_QUESTION_SAMPLES) {
+        0 => None,
+        n => Some(n),
+    };
+    args.no_refuters = !refuters
+        .unwrap_or(args.codex == Some(true) || args.gemini == Some(true) || args.runtime_confirm);
     if policy.effort.is_none() {
         policy.effort = operator_effort();
     }
@@ -1250,12 +1263,21 @@ mod tests {
             parse(&a)
         };
         assert_eq!(parse_with("3").unwrap().args.scenario_questions, Some(3));
-        assert!(parse_with("0").is_err());
+        assert_eq!(parse_with("0").unwrap().args.scenario_questions, None);
         assert!(parse_with("5").is_err());
         assert!(parse_with("two").is_err());
         let none: Vec<String> = ["--pr", "12"].iter().map(|s| (*s).to_owned()).collect();
         let parsed = parse(&none).unwrap();
-        assert_eq!(parsed.args.scenario_questions, None);
+        assert_eq!(
+            parsed.args.scenario_questions,
+            Some(1),
+            "on by default, one dispatch"
+        );
+        let off: Vec<String> = ["--pr", "12", "--no-scenario-questions"]
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect();
+        assert_eq!(parse(&off).unwrap().args.scenario_questions, None);
         assert_eq!(parsed.args.question_model, None);
         let m: Vec<String> = ["--pr", "12", "--question-model", "claude-sonnet-5-5"]
             .iter()
@@ -1283,6 +1305,8 @@ mod tests {
         assert!(!no_refuters(&["--refuters"]));
         assert!(!no_refuters(&["--codex"]));
         assert!(!no_refuters(&["--gemini"]));
+        assert!(!no_refuters(&["--runtime-confirm"]));
+        assert!(no_refuters(&["--runtime-confirm", "--no-refuters"]));
         assert!(no_refuters(&["--codex", "--no-refuters"]));
         assert!(!no_refuters(&["--no-refuters", "--refuters"]));
     }

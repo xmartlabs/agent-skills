@@ -595,8 +595,8 @@ svg[data-preset="editorial"] { --flow-halo-peak: 0.07; --flow-glow-peak: 0.28; -
   10.902%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-17 { 
-  0%, 2.368% { opacity: 0; }
-  7.895% { opacity: var(--flow-peak, 0.3); }
+  0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
+  7.895% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
   24.812%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-18 { 
@@ -898,7 +898,7 @@ rect.c-bg-rect { fill: var(--bg); }
         </g>
         <g data-graph-role="automatic-crossover" style="--step:17">
           <path data-graph-role="automatic-crossover-underlay" d="M 396 506 L 396 518 Q 396 526 388 526 L 300 526" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="lenses" data-edge-to="questions" data-edge-label="opt-in" data-edge-key="17" data-edge-id="lenses-questions" data-composition-points="396,506;396,526;300,526" data-composition-crossover="halo" data-composition-independent="true" d="M 396 506 L 396 518 Q 396 526 388 526 L 300 526" class="a-dashed" data-animate="edge" style="--step: 12;" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+          <path data-edge-from="lenses" data-edge-to="questions" data-edge-label="questions" data-edge-key="17" data-edge-id="lenses-questions" data-composition-points="396,506;396,526;300,526" data-composition-crossover="halo" data-composition-independent="true" d="M 396 506 L 396 518 Q 396 526 388 526 L 300 526" class="a-default" data-animate="edge" style="--step: 12;" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:18">
           <path data-graph-role="automatic-crossover-underlay" d="M 300 540 L 388 540 Q 396 540 396 548 L 396 560" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
@@ -993,8 +993,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="530" y="758" class="t-frontend" font-size="7" text-anchor="middle">audits unnamed files, lens gaps and siblings of the change</text>
         </g>
 
-        <g id="node-panel" data-node-id="panel" data-node-label="Refuter panel" tabindex="0" role="button" aria-label="Focus Refuter panel, MODEL · sonnet refuters, off by default, The review" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet refuters, off by default" data-node-tag="--refuters, --codex or --gemini runs it; each tries to kill one finding" data-node-context="The review">
-          <title>Refuter panel · MODEL · sonnet refuters, off by default · The review · --refuters, --codex or --gemini runs it; each tries to kill one finding</title>
+        <g id="node-panel" data-node-id="panel" data-node-label="Refuter panel" tabindex="0" role="button" aria-label="Focus Refuter panel, MODEL · sonnet refuters, off by default, The review" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet refuters, off by default" data-node-tag="--refuters, --codex, --gemini or --runtime-confirm; each tries to kill one" data-node-context="The review">
+          <title>Refuter panel · MODEL · sonnet refuters, off by default · The review · --refuters, --codex, --gemini or --runtime-confirm; each tries to kill one</title>
           <rect x="380" y="820" width="300" height="76" rx="8" class="c-mask"/>
           <rect x="380" y="820" width="300" height="76" rx="8" class="c-frontend" data-animate="node" style="--step: 6; --flow-node-name: archify-relay-node-3;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(386 826) scale(0.6875)">
@@ -1005,7 +1005,7 @@ rect.c-bg-rect { fill: var(--bg); }
           </g>
           <text data-node-label="" x="530" y="856" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Refuter panel</text>
         <text x="530" y="872" class="t-muted" font-size="9" text-anchor="middle">MODEL · sonnet refuters, off by default</text>
-        <text x="530" y="888" class="t-frontend" font-size="6.8" text-anchor="middle">--refuters, --codex or --gemini runs it; each tries to kill one finding</text>
+        <text x="530" y="888" class="t-frontend" font-size="6.5" text-anchor="middle">--refuters, --codex, --gemini or --runtime-confirm; each tries to kill one</text>
         </g>
 
         <g id="node-outside" data-node-id="outside" data-node-label="Outside vote" tabindex="0" role="button" aria-label="Focus Outside vote, MODEL · Codex or Gemini, The review" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="MODEL · Codex or Gemini" data-node-tag="a second model family" data-node-context="The review">
@@ -1149,8 +1149,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="890" y="1386" class="t-muted" font-size="9" text-anchor="middle">posted and verdict</text>
         </g>
 
-        <g id="node-questions" data-node-id="questions" data-node-label="Scenario questions" tabindex="0" role="button" aria-label="Focus Scenario questions, MODEL · opt-in, sonnet writes, haiku answers, The review" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="MODEL · opt-in, sonnet writes, haiku answers" data-node-tag="--scenario-questions 1: up to 36 questions, each answered alone" data-node-context="The review">
-          <title>Scenario questions · MODEL · opt-in, sonnet writes, haiku answers · The review · --scenario-questions 1: up to 36 questions, each answered alone</title>
+        <g id="node-questions" data-node-id="questions" data-node-label="Scenario questions" tabindex="0" role="button" aria-label="Focus Scenario questions, MODEL · sonnet writes, haiku answers, The review" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="MODEL · sonnet writes, haiku answers" data-node-tag="up to 36, each answered alone; --no-scenario-questions turns it off" data-node-context="The review">
+          <title>Scenario questions · MODEL · sonnet writes, haiku answers · The review · up to 36, each answered alone; --no-scenario-questions turns it off</title>
           <rect x="40" y="495" width="260" height="76" rx="8" class="c-mask"/>
           <rect x="40" y="495" width="260" height="76" rx="8" class="c-messagebus" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-13;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(46 501) scale(0.6875)">
@@ -1160,12 +1160,12 @@ rect.c-bg-rect { fill: var(--bg); }
             <circle cx="7" cy="11.5" r="1" class="sigil-fill"/>
           </g>
           <text data-node-label="" x="170" y="531" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Scenario questions</text>
-        <text x="170" y="547" class="t-muted" font-size="9" text-anchor="middle">MODEL · opt-in, sonnet writes, haiku answers</text>
-        <text x="170" y="563" class="t-messagebus" font-size="6.6" text-anchor="middle">--scenario-questions 1: up to 36 questions, each answered alone</text>
+        <text x="170" y="547" class="t-muted" font-size="9" text-anchor="middle">MODEL · sonnet writes, haiku answers</text>
+        <text x="170" y="563" class="t-messagebus" font-size="6.2" text-anchor="middle">up to 36, each answered alone; --no-scenario-questions turns it off</text>
         </g>
 
-        <g id="node-rank" data-node-id="rank" data-node-label="Rank question findings" tabindex="0" role="button" aria-label="Focus Rank question findings, MODEL · sonnet, opt-in, The review" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet, opt-in" data-node-tag="worth kept per finding; low worth goes to Questions to review" data-node-context="The review">
-          <title>Rank question findings · MODEL · sonnet, opt-in · The review · worth kept per finding; low worth goes to Questions to review</title>
+        <g id="node-rank" data-node-id="rank" data-node-label="Rank question findings" tabindex="0" role="button" aria-label="Focus Rank question findings, MODEL · sonnet, The review" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet" data-node-tag="worth kept per finding; low worth goes to Questions to review" data-node-context="The review">
+          <title>Rank question findings · MODEL · sonnet · The review · worth kept per finding; low worth goes to Questions to review</title>
           <rect x="40" y="950" width="260" height="76" rx="8" class="c-mask"/>
           <rect x="40" y="950" width="260" height="76" rx="8" class="c-frontend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-7;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(46 956) scale(0.6875)">
@@ -1175,7 +1175,7 @@ rect.c-bg-rect { fill: var(--bg); }
             <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
           </g>
           <text data-node-label="" x="170" y="986" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Rank question findings</text>
-        <text x="170" y="1002" class="t-muted" font-size="9" text-anchor="middle">MODEL · sonnet, opt-in</text>
+        <text x="170" y="1002" class="t-muted" font-size="9" text-anchor="middle">MODEL · sonnet</text>
         <text x="170" y="1018" class="t-frontend" font-size="6.8" text-anchor="middle">worth kept per finding; low worth goes to Questions to review</text>
         </g>
 
@@ -1224,9 +1224,9 @@ rect.c-bg-rect { fill: var(--bg); }
           <text x="720" y="1238" class="t-edge-default" font-size="8" text-anchor="middle">completed</text>
         </g>
 
-        <g data-edge-from="lenses" data-edge-to="questions" data-edge-label="opt-in" data-edge-key="17" data-edge-id="lenses-questions">
-          <rect x="328.6" y="506" width="38.8" height="14" rx="3" class="c-mask"/>
-          <text x="348" y="516" class="t-edge-dashed" font-size="8" text-anchor="middle">opt-in</text>
+        <g data-edge-from="lenses" data-edge-to="questions" data-edge-label="questions" data-edge-key="17" data-edge-id="lenses-questions">
+          <rect x="321.4" y="506" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
+          <text x="348" y="516" class="t-edge-default" font-size="8" text-anchor="middle">questions</text>
         </g>
         <g data-edge-from="questions" data-edge-to="checks" data-edge-label="findings" data-edge-key="18" data-edge-id="questions-checks">
           <rect x="371.8" y="530" width="48.4" height="14" rx="3" class="c-mask"/>

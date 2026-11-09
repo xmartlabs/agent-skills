@@ -154,6 +154,13 @@ pub struct PanelEnv<'a> {
     /// What the run spent before the panel, which the workflow's run counter
     /// (started with the run) has already counted.
     pub spent_before: f64,
+    /// The refutation panel is off: nothing opens a panel, the clean-verdict
+    /// sweep does not run, and the critic's gaps stand without a refuter.
+    pub no_refuters: bool,
+    /// Lens findings that skipped the panel because it is off. The critic
+    /// reads them as already raised, so it neither repeats them nor numbers
+    /// its gaps over their slots.
+    pub raised_without_panel: &'a [Value],
 }
 
 /// What the panel leaves for the results split and the report.
@@ -184,6 +191,9 @@ pub struct PanelOutcome {
     pub tiebreak: Value,
     pub use_codex: bool,
     pub use_gemini: bool,
+    /// Critic gaps that skipped the panel because it is off, each marked
+    /// `refutersSkipped`.
+    pub unpaneled: Vec<Value>,
 }
 
 fn s(v: Option<&Value>) -> String {
@@ -622,12 +632,19 @@ pub async fn panel_phase<I: PanelIo>(
         .iter()
         .filter(|f| needs_panel(f, retest(f)))
         .count();
-    let gate = should_run_clean_sweep(&SweepGateInput {
-        panel_eligible_count: preliminary,
-        codex_installed: use_codex,
-        codex_healthy: health.codex,
-        external_cwd: env.external_cwd,
-    });
+    let gate = if env.no_refuters {
+        tribunal_core::votes::clean_sweep::SweepGate {
+            run: false,
+            reason: Some("refutation-panel-off"),
+        }
+    } else {
+        should_run_clean_sweep(&SweepGateInput {
+            panel_eligible_count: preliminary,
+            codex_installed: use_codex,
+            codex_healthy: health.codex,
+            external_cwd: env.external_cwd,
+        })
+    };
     let family = sweep_family_for(&gate);
     if preliminary == 0 && family.is_none() {
         out.clean_sweep = Some(json!({
@@ -700,6 +717,14 @@ pub async fn panel_phase<I: PanelIo>(
     // --- Completeness critic ---
     if env.critic && env.file_count > 2.0 {
         let critic_started = std::time::Instant::now();
+        // What is already raised: the panel's input plus, with the panel off,
+        // the lens findings that skipped it.
+        let known: Vec<Value> = env
+            .raised_without_panel
+            .iter()
+            .chain(panel_input.iter())
+            .cloned()
+            .collect();
         let critic_text = match (env.critic_gap, env.diff_path) {
             (Some(gap), Some(diff_path)) => critic_gap_prompt(
                 &CriticBase {
@@ -707,7 +732,7 @@ pub async fn panel_phase<I: PanelIo>(
                     repo: env.repo,
                     head: js::get(env.pr_context, "headRefOid"),
                     files: &pr_files,
-                    panel_input: &panel_input,
+                    panel_input: &known,
                 },
                 diff_path,
                 gap.uncovered,
@@ -719,7 +744,7 @@ pub async fn panel_phase<I: PanelIo>(
                 env.repo,
                 js::get(env.pr_context, "headRefOid"),
                 &pr_files,
-                &panel_input,
+                &known,
             ),
         };
         let critic = io
@@ -771,7 +796,7 @@ pub async fn panel_phase<I: PanelIo>(
             let rust_critic = env.critic_gap.is_some();
             let repeats =
                 |f: &Value| same_place(f, &kept) && (!rust_critic || titles_overlap(f, &kept));
-            if let Some(matched) = panel_input.iter().chain(gaps.iter()).find(|f| repeats(f)) {
+            if let Some(matched) = known.iter().chain(gaps.iter()).find(|f| repeats(f)) {
                 if rust_critic {
                     logs.push(format!(
                         "Completeness critic gap dropped as a repeat of \"{}\": \"{}\" ({}:{})",
@@ -786,7 +811,17 @@ pub async fn panel_phase<I: PanelIo>(
             gaps.push(kept);
         }
         let rules = risk_path_rules(env.profile)?;
-        let base = panel_input.len();
+        let base = if env.raised_without_panel.is_empty() {
+            panel_input.len()
+        } else {
+            known
+                .iter()
+                .filter_map(|f| js::get(f, "slotId").and_then(Value::as_u64))
+                .map(|n| n as usize + 1)
+                .max()
+                .unwrap_or(0)
+                .max(known.len())
+        };
         let raised: Vec<Value> = gaps
             .into_iter()
             .enumerate()
@@ -813,13 +848,31 @@ pub async fn panel_phase<I: PanelIo>(
             })
             .collect();
         out.critic_gaps = raised.len();
-        if !raised.is_empty() {
-            logs.push(format!(
-                "Completeness critic raised {} gap(s) — routing through the ordinary panel path",
-                raised.len()
-            ));
+        if env.no_refuters {
+            if !raised.is_empty() {
+                logs.push(format!(
+                    "Completeness critic raised {} gap(s); the refutation panel is off, so they stand without one",
+                    raised.len()
+                ));
+            }
+            out.unpaneled = raised
+                .into_iter()
+                .map(|mut g| {
+                    if let Value::Object(m) = &mut g {
+                        m.insert(crate::verify::REFUTERS_SKIPPED.into(), json!(true));
+                    }
+                    g
+                })
+                .collect();
+        } else {
+            if !raised.is_empty() {
+                logs.push(format!(
+                    "Completeness critic raised {} gap(s) — routing through the ordinary panel path",
+                    raised.len()
+                ));
+            }
+            panel_input.extend(raised);
         }
-        panel_input.extend(raised);
     }
 
     // --- Which findings open a panel ---

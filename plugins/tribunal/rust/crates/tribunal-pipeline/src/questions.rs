@@ -161,6 +161,51 @@ pub fn merge_questions(samples: &[Vec<Question>], cap: usize) -> Vec<Question> {
     kept
 }
 
+/// The answers run at this many times the run's concurrency (16 at the
+/// default 8). Each is a Haiku dispatch that reads code for 1 to 3 minutes,
+/// and at 8 the answers were 60 to 70% of a run's wall clock; one run at 16
+/// took about 9 seconds a question against 15, at the same cost.
+pub const ANSWER_CONCURRENCY_FACTOR: usize = 2;
+
+/// A file with no behaviour to question: lockfiles, snapshots, minified or
+/// built output, generated code, binaries and prose docs. A question about one
+/// is not answered. Across 256 labelled question findings, the two on docs
+/// were not defects, and none of the 247 labelled corpus defects is in a file
+/// of these kinds. Tests, config and migrations stay: the corpus has real
+/// defects in each.
+#[must_use]
+pub fn no_logic_file(path: &str) -> bool {
+    let p = path.to_ascii_lowercase();
+    let name = p.rsplit('/').next().unwrap_or(&p);
+    const NAMES: [&str; 9] = [
+        "package-lock.json",
+        "npm-shrinkwrap.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "cargo.lock",
+        "poetry.lock",
+        "gemfile.lock",
+        "composer.lock",
+        "go.sum",
+    ];
+    const SUFFIXES: [&str; 23] = [
+        ".lock", ".snap", ".min.js", ".min.css", ".map", ".pb.go", "_pb2.py", ".md", ".mdx",
+        ".rst", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".pdf", ".woff", ".woff2",
+        ".ttf", ".eot", ".zip", ".gz",
+    ];
+    const DIRS: [&str; 5] = [
+        "__snapshots__",
+        "node_modules",
+        "dist",
+        "generated",
+        "__generated__",
+    ];
+    NAMES.contains(&name)
+        || SUFFIXES.iter().any(|s| name.ends_with(s))
+        || name.contains(".generated.")
+        || p.split('/').rev().skip(1).any(|d| DIRS.contains(&d))
+}
+
 fn same_file(a: &str, b: &str) -> bool {
     a == b || a.ends_with(&format!("/{b}")) || b.ends_with(&format!("/{a}"))
 }
@@ -443,6 +488,9 @@ pub struct QuestionOutcome {
     pub candidates: Vec<Value>,
     /// Findings dropped by the out-of-diff gate.
     pub dropped_out_of_diff: usize,
+    /// Merged questions not answered because their file has no behaviour to
+    /// question ([`no_logic_file`]).
+    pub skipped_no_logic: usize,
     /// Every dispatch, labelled `questions:<n>` (generators),
     /// `question-warmup` or `question:<n>` (answers).
     pub dispatches: Vec<(String, DispatchResult)>,
@@ -467,6 +515,7 @@ impl QuestionOutcome {
             "answered": self.answered,
             "candidates": self.candidates.len(),
             "droppedOutOfDiff": self.dropped_out_of_diff,
+            "skippedNoLogicFile": self.skipped_no_logic,
             "seconds": (self.seconds * 10.0).round() / 10.0,
             "questions": self.records,
         })
@@ -570,6 +619,11 @@ pub async fn question_stage<A: Agent>(agent: &A, input: &QuestionInputs<'_>) -> 
     let mut asks = Vec::new();
     let mut routed = Vec::new();
     for (i, q) in out.questions.iter().enumerate() {
+        if no_logic_file(&q.file) {
+            out.records[i]["skipped"] = json!("no-logic-file");
+            out.skipped_no_logic += 1;
+            continue;
+        }
         let Some(slot) = route(&q.file, input.lens_files) else {
             continue;
         };
@@ -593,7 +647,8 @@ pub async fn question_stage<A: Agent>(agent: &A, input: &QuestionInputs<'_>) -> 
         out.dispatches.push(("question-warmup".into(), w));
     }
     let labels: Vec<String> = asks.iter().map(|r| r.label.clone()).collect();
-    let results = run_all(agent, setup.concurrency, asks).await;
+    let answer_concurrency = setup.concurrency.max(1) * ANSWER_CONCURRENCY_FACTOR;
+    let results = run_all(agent, answer_concurrency, asks).await;
     for ((label, res), qi) in labels.into_iter().zip(results).zip(routed) {
         let q = &out.questions[qi];
         if let Some(Value::Array(findings)) = answer_of(&res)
@@ -730,6 +785,37 @@ mod tests {
         let m = merge_questions(&[a, b], 4);
         let samples: Vec<usize> = m.iter().map(|q| q.sample).collect();
         assert_eq!(samples, [1, 2, 1, 2]);
+    }
+
+    #[test]
+    fn files_with_no_logic_are_told_apart_from_code_tests_and_config() {
+        for f in [
+            "package-lock.json",
+            "web/yarn.lock",
+            "pnpm-lock.yaml",
+            "src/__snapshots__/Banner.test.tsx.snap",
+            "public/app.min.js",
+            "dist/index.js",
+            "src/generated/client.ts",
+            "src/api.generated.ts",
+            "docs/runbook.md",
+            "README.MD",
+            "assets/logo.png",
+        ] {
+            assert!(no_logic_file(f), "{f}");
+        }
+        for f in [
+            "src/jobs/sync.ts",
+            "src/jobs/sync.test.ts",
+            "package.json",
+            "prisma/migrations/20260101_init/migration.sql",
+            "src/types.ts",
+            "scripts/build/run.ts",
+            "src/distance.ts",
+            "src/lockout.ts",
+        ] {
+            assert!(!no_logic_file(f), "{f}");
+        }
     }
 
     #[test]

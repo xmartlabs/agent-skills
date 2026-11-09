@@ -3,7 +3,9 @@
 Reviews an open pull request with several independent lenses, then checks what
 they found before reporting it: it merges duplicates, confirms claimed compile
 errors with the repository's own type check where there is one, and asks a
-completeness critic what the lenses missed. A refutation panel whose job is to
+completeness critic what the lenses missed. It also writes scenario questions
+about the change and answers each one, which finds defects the lenses alone
+miss (`--no-scenario-questions` turns that off). A refutation panel whose job is to
 kill each serious finding can run too (`--refuters`, or `--codex` for a second
 model). It is off by default: on measured runs it removed about 3% of what it
 saw and cost about a quarter of a run.
@@ -136,12 +138,15 @@ To report a vulnerability, see [SECURITY.md](../../SECURITY.md).
    in code, and gives it the diff already on disk and about 20 tool calls. It also
    gets a short list of siblings: code outside the PR that calls a name the changed
    lines call, or writes a model they write, nearest directory first.
-4. **Panel** (off by default; `--refuters`, `--codex` or `--gemini` runs it):
+4. **Panel** (off by default; `--refuters`, `--codex`, `--gemini` or
+   `--runtime-confirm` runs it):
    each critical or behavior-changing candidate faces refuters that try to
    disprove it, with **Codex** as a second model family when asked for. Verdicts
    come from a weighted vote: a finding dies when it's *refuted*, not when a
    reviewer is merely unsure. Without the panel every candidate survives and
-   blocks by its severity, and the report says that no panel ran.
+   blocks by its severity, the critic's gaps included, and the report says that
+   no panel ran. The outside heads only vote on panels, so without one Codex and
+   Gemini do not run, and neither does the clean-verdict Codex sweep.
 5. **Report**: survivors, ranked, with a suggested verdict. Nothing reaches
    GitHub until you confirm.
 
@@ -181,20 +186,21 @@ disagree on.
 
 | Mode | Pull requests | Labelled defects found per run |
 |---|---|---|
-| Normal review | 8 backend | 48% |
-| With `--scenario-questions` | the same 8 | 71% |
-| Normal review | 9 frontend and test | 36% |
-| With `--scenario-questions` | the same 9 | 87% |
+| Lenses only | 8 backend | 48% |
+| With scenario questions | the same 8 | 71% |
+| Lenses only | 9 frontend and test | 36% |
+| With scenario questions | the same 9 | 87% |
 
 Found means a finding states the defect, at any severity. Both gains have
 bootstrap intervals above zero, and wide ones: +1 to +44 points on the backend
-set and +25 to +78 on the other. Those `--scenario-questions` runs used three
-generator samples.
+set and +25 to +78 on the other. Those question runs used three generator
+samples; the default is one dispatch writing three passes, which found as many
+labelled defects in replays.
 
 What a report holds, with every finding in its body judged against the code
 at that commit (by a model, not a person) on the 8 backend pull requests:
 
-| Per review | Normal | With `--scenario-questions` |
+| Per review | Lenses only | With scenario questions |
 |---|---|---|
 | Findings | 8.5 | 18.2 |
 | Real defects | 1.8 (21%) | 4.9 (27%) |
@@ -206,9 +212,10 @@ pointed question about a labelled defect, a lens reported it in 62 of 64 cases;
 reviewing the same code open-ended, in about 2%. Scenario questions are an
 attempt to ask those questions without knowing the answer.
 
-## Scenario questions (opt-in)
+## Scenario questions (on by default)
 
-`--scenario-questions 1` adds a planning step after the lenses. One dispatch
+A review adds a planning step after the lenses; `--no-scenario-questions`
+turns it off. One dispatch
 writes three independent passes of up to 12 concrete scenarios ("if the
 provider times out after charging the card, does the retry charge it again?"),
 and each one is answered in its own dispatch by the lens that covers its file.
@@ -249,7 +256,7 @@ real pull requests, and the check on pull requests the search never saw.
 
 ## What it costs
 
-Measured on 57 recorded reviews, with the refutation panel on: a PR of 1 to 7 files had a median cost of US$0.85 and took about 2.5 minutes, one of 8 to 25 files US$1.52 and 3 minutes. Size in files is a loose guide; the most expensive of those runs, US$7.25, touched 7 files or fewer. `--scenario-questions` costs about twice as much and takes about four times as long. The panel now off by default and the 5-minute prompt cache should take roughly 40% off a normal review, an estimate from the two parts measured separately. The [full numbers](docs/cost.md) say where the money goes.
+Measured on 57 recorded reviews, with the refutation panel on: a PR of 1 to 7 files had a median cost of US$0.85 and took about 2.5 minutes, one of 8 to 25 files US$1.52 and 3 minutes. Size in files is a loose guide; the most expensive of those runs, US$7.25, touched 7 files or fewer. Those reviews ran without scenario questions; with them, the default since 2026-11-09, a review costs about twice as much and takes about four times as long. The panel now off by default and the 5-minute prompt cache should take roughly 40% off a normal review, an estimate from the two parts measured separately. The [full numbers](docs/cost.md) say where the money goes.
 
 ## What it records, and why that matters
 
@@ -355,15 +362,15 @@ your machine, or when the download fails, the review says why and stops.
 | `--context "<text>"` | Decisions reviewers must not re-litigate |
 | `--full` | Re-review everything, ignoring the incremental baseline |
 | `--since <sha>` | Take this commit as the incremental baseline |
-| `--refuters` / `--no-refuters` | Run the refutation panel, which is off by default; `--codex` and `--gemini` also run it, and `--no-refuters` keeps it off even with them |
+| `--refuters` / `--no-refuters` | Run the refutation panel, which is off by default; `--codex`, `--gemini` and `--runtime-confirm` also run it, and `--no-refuters` keeps it off even with them (then no outside head, sweep or runtime case runs) |
 | `--max-panels <n>` | When the panel runs, raise its adjudication ceiling for a PR that deserves it (default 40) |
 | `--lens-samples <n>` | Run each lens `n` times, 1 to 4, and merge what they share. With 2, more real defects come out as blocking at about 1.3 to 1.5 times the cost of a run; worth it on a large or high-risk PR |
 | `--codex` / `--no-codex` | Run the panel with the second-opinion head, or keep that head off |
 | `--gemini` | Run the panel with Google's head (off by default) |
-| `--scenario-questions <n>` | Add the scenario-question step; use 1. About twice the cost and four times the wall clock of a normal review; see *Scenario questions* |
+| `--scenario-questions <n>` / `--no-scenario-questions` | The scenario-question step is on by default with one generator dispatch. `--no-scenario-questions` (or 0) turns it off, for about half the cost and a quarter of the wall clock; more than 1 is for experiments. See *Scenario questions* |
 | `--question-model <id>` | The model that answers the scenario questions (default Haiku) |
 | `--bot-comments` | Also vet existing bot comments on the PR |
-| `--runtime-confirm` | Run the reviewers' claims about what a function returns as vitest cases before the panel. Runs PR code; see *Security* |
+| `--runtime-confirm` | Run the reviewers' claims about what a function returns as vitest cases before the panel, which it turns on because only a refuter reads them. Runs PR code; see *Security* |
 | `--profile <path>` / `--rules <path>` | Try a profile before committing it |
 | `--head-sha <sha>` / `--thread-before <iso>` | Pin the tree and the thread, to compare a re-run with an earlier one |
 | `--model <id>` / `--effort <level>` | Model and reasoning effort for the agents |
