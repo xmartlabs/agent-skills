@@ -220,10 +220,11 @@ to 71%, at about 1.9 times the cost.
 The answers add findings, many of them true but minor, so a ranking step weighs
 each question finding against the rest of the review. One ranked below the
 report's bar moves to a "Questions to review" section, outside the verdict.
+The prompt that does this ranking was not written by hand: an evolutionary
+search produced it, as the next section describes.
 
-### How the ranking prompt was chosen
+### An evolutionary search wrote the ranking prompt
 
-The ranking's prompt came out of an evolutionary search, not from a person.
 Starting from a hand-written prompt, each generation kept the two best prompts
 and asked a model for two variants of each. The model saw the current prompt's
 worst mistakes: real defects it had ranked low and non-defects it had ranked
@@ -240,6 +241,11 @@ That held-out set is small, and some defect classes the winner lists came from
 the training examples, so read the gain as measured on one team's code, not as
 a general result. The prompt is `RANK_PROMPT` in
 `rust/crates/tribunal-pipeline/src/questions.rs`.
+
+The method follows published work on evolving prompts, such as EvoPrompt and
+Promptbreeder (2023) and the reflective mutation of GEPA (2025). What is
+particular here is the task, ranking code-review findings against labels from
+real pull requests, and the check on pull requests the search never saw.
 
 ## What it costs
 
