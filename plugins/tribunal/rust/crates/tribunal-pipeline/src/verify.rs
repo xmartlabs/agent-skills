@@ -419,6 +419,51 @@ pub struct GroundedGate {
     pub diagnostic_to_panel: usize,
 }
 
+/// `--no-refuters`: every candidate bound for the refutation panel survives
+/// without a panel, as a grounded-confirmed one does (`panelRan: false`).
+/// Returns how many skipped the panel.
+pub fn skip_refuters(gate: &mut GroundedGate) -> usize {
+    let n = gate.panel_input.len();
+    for c in gate.panel_input.drain(..) {
+        gate.confirmed.push(json!({
+            "finding": c,
+            "grounded": {"verdict": null, "diagnostic": null}
+        }));
+    }
+    n
+}
+
+#[cfg(test)]
+mod skip_refuters_tests {
+    use super::*;
+
+    #[test]
+    fn every_panel_candidate_survives_without_a_panel() {
+        let mut gate = GroundedGate {
+            confirmed: vec![
+                json!({"finding": {"title": "grounded"}, "grounded": {"verdict": "confirmed"}}),
+            ],
+            refuted: vec![],
+            panel_input: vec![
+                json!({"title": "a", "slotId": 0}),
+                json!({"title": "b", "slotId": 1}),
+            ],
+            diagnostic_to_panel: 0,
+        };
+        assert_eq!(skip_refuters(&mut gate), 2);
+        assert!(gate.panel_input.is_empty());
+        let results: Vec<Value> = gate.confirmed.iter().map(confirmed_result).collect();
+        let titles: Vec<&str> = results
+            .iter()
+            .map(|r| r["finding"]["title"].as_str().unwrap())
+            .collect();
+        assert_eq!(titles, ["grounded", "a", "b"]);
+        assert!(results
+            .iter()
+            .all(|r| r["survived"] == json!(true) && r["panelRan"] == json!(false)));
+    }
+}
+
 /// The field a panel candidate carries when a checker diagnostic sat near it
 /// but the finding claims no compile error: the refuters see the diagnostic.
 pub const GROUNDED_DIAGNOSTIC: &str = "groundedDiagnostic";

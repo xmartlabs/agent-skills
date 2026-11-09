@@ -710,6 +710,7 @@ pub fn persist_phase(
         m["ranking"] = verify.question_rank.clone().unwrap_or(Value::Null);
         m
     });
+    metrics["noRefuters"] = json!(args.no_refuters);
     metrics["lensNotReachedKinds"] = kind_counts(&review.candidates.lens_gaps);
     metrics["unreadRiskFiles"] = json!(synthesis.unread_risk_files);
     metrics["lensFailures"] = lens_failures(

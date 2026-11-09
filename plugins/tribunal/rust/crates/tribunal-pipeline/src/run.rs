@@ -709,6 +709,12 @@ pub async fn verify_phase<A: Agent>(
         }
     }
     let mut gate = grounded_gate(&dedup.panel_candidates, &grounded, pr_files, logs)?;
+    if args.no_refuters {
+        let n = crate::verify::skip_refuters(&mut gate);
+        logs.push(format!(
+            "--no-refuters: {n} candidate(s) skip the refutation panel and survive."
+        ));
+    }
 
     // The availability probe: which CLIs exist, and a tree for them to read.
     let flags = PanelFlags {

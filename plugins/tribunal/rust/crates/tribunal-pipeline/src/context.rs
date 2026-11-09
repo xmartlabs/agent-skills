@@ -76,6 +76,9 @@ pub struct RunArgs {
     /// `--question-model`: the model that answers the scenario questions.
     /// `None` is `crate::questions::DEFAULT_QUESTION_MODEL`.
     pub question_model: Option<String>,
+    /// `--no-refuters`: candidates skip the refutation panel and all survive;
+    /// with `--scenario-questions`, the ranking after it is then the filter.
+    pub no_refuters: bool,
 }
 
 /// Where the run executes.

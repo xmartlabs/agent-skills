@@ -4,7 +4,7 @@
 //!
 //!   tribunal review --pr <n> [--repo <owner/name>] [--head-sha <sha>]
 //!     [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>]
-//!     [--scenario-questions <n>] [--question-model <id>]
+//!     [--scenario-questions <n>] [--question-model <id>] [--no-refuters]
 //!     [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight]
 //!     [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>]
 //!     [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]
@@ -46,7 +46,7 @@ fn usage() -> ExitCode {
     eprintln!("usage: tribunal override --ts <row ts> --title <finding title prefix> (--direction reinstated|rejected|withdrawn | --severity nit|important) --reason <how it was checked> [--by <login>] [--verified-at <sha>] [--dry-run]");
     eprintln!("usage: tribunal selfcheck [--apply] [--no-battery] [--model <id>] [--effort <level>] [--out <file>]");
     eprintln!("usage: tribunal post --from <run.json> [--verdict approve|request-changes|comment] [--delta|--edit-existing] [--over-own-review] [--over-standing-review] [--model <id>] [--effort <level>]");
-    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>] [--scenario-questions <n>] [--question-model <id>] [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight] [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
+    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>] [--scenario-questions <n>] [--question-model <id>] [--no-refuters] [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight] [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
     eprintln!("usage: tribunal panel --pr <n> --repo <owner/name> --head-sha <sha> --findings <file.json> [--thread-before <iso>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--model <id>] [--effort <level>] [--out <file>]");
     ExitCode::from(2)
 }
@@ -244,6 +244,7 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
                 args.scenario_questions = Some(n);
             }
             "--question-model" => args.question_model = Some(value(&mut it, a)?),
+            "--no-refuters" => args.no_refuters = true,
             "--context" => args.context = Some(value(&mut it, a)?),
             "--model" => args.review_model = value(&mut it, a)?,
             "--concurrency" => {
@@ -1240,6 +1241,12 @@ mod tests {
             parse(&m).unwrap().args.question_model.as_deref(),
             Some("claude-sonnet-5-5")
         );
+        assert!(!parsed.args.no_refuters);
+        let nr: Vec<String> = ["--pr", "12", "--no-refuters"]
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect();
+        assert!(parse(&nr).unwrap().args.no_refuters);
     }
 
     #[test]
