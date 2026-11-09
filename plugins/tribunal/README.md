@@ -170,6 +170,42 @@ Three properties worth knowing, since they explain what the machinery is for:
 - **Changes to tribunal are validated offline before they cost a run**: the
   Rust test suite and a release gate that every version has to pass.
 
+## How well it finds defects
+
+Measured against a labelled corpus: 126 pull requests from one team's backend,
+frontend and end-to-end test repositories, with 237 defects judged real at the
+commit that was reviewed. Each run is pinned to that commit and cut off from
+the review thread that later found the defect. Its findings are matched to the
+labels by word overlap, with a model judge and a person reading the cases they
+disagree on.
+
+| Mode | Pull requests | Labelled defects found per run |
+|---|---|---|
+| Normal review | 8 backend | 48% |
+| With `--scenario-questions` | the same 8 | 71% |
+| Normal review | 9 frontend and test | 36% |
+| With `--scenario-questions` | the same 9 | 87% |
+
+Found means a finding states the defect, at any severity. Both gains have
+bootstrap intervals above zero, and wide ones: +1 to +44 points on the backend
+set and +25 to +78 on the other. Those `--scenario-questions` runs used three
+generator samples.
+
+What a report holds, with every finding in its body judged against the code
+at that commit (by a model, not a person) on the 8 backend pull requests:
+
+| Per review | Normal | With `--scenario-questions` |
+|---|---|---|
+| Findings | 8.5 | 18.2 |
+| Real defects | 1.8 (21%) | 4.9 (27%) |
+| Worth reporting | 2.6 | 5.9 |
+| Not a defect | 1.6 | 5.4 |
+
+The rest are real but minor. Why the lenses miss what they miss: asked one
+pointed question about a labelled defect, a lens reported it in 62 of 64 cases;
+reviewing the same code open-ended, in about 2%. Scenario questions are an
+attempt to ask those questions without knowing the answer.
+
 ## Scenario questions (opt-in)
 
 `--scenario-questions 1` adds a planning step after the lenses. One dispatch
@@ -254,6 +290,10 @@ runs only with `--portable`, which skips the client-name scan.
   gate.
 - **Gemini fails at scale** and is off by default. It works on small PRs; on a
   23-panel run, 0 of 42 dispatched slots produced a successful vote.
+- **Blocking is noisy.** On the 8 backend pull requests above, normal reviews
+  marked 68 findings blocking. 19 were real defects, and the labels would have
+  blocked 3; most of the rest were real but minor. Read Blocking as "look at
+  these first", not as a merge gate.
 - **It reads the diff, not your intent.** It can't know a suspicious-looking
   change was deliberate unless you say so with `--context`.
 
