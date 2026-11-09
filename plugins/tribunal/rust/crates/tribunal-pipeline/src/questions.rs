@@ -4,9 +4,10 @@
 //! Measured on labelled defects the lenses almost never find, a lens asked one
 //! pointed question about a defect reports it nearly every time, while the
 //! same lens reviewing open-endedly almost never does. A generator that has not
-//! seen the defect covers more of them when it is sampled several times and
-//! the samples are merged, and a question answered alone is answered better
-//! than the same question among a dozen. The answers become candidates like a
+//! seen the defect covers more of them when it writes several independent
+//! lists: three samples merged did, and so did one dispatch asked for three
+//! passes, at about half the cost. A question answered alone is answered
+//! better than the same question among a dozen. The answers become candidates like a
 //! lens's findings and go through the same refutation panel.
 
 use std::collections::BTreeSet;
@@ -46,7 +47,7 @@ Go through every changed function, handler, job, script, component and test in t
 - time: clocks, timeouts against another component's timeout, expiry;
 - every contract the change sets or relies on: a caller, a consumer, another repository, a comment or docblock that states what the code does, a test that is meant to fail when the behaviour regresses.
 
-Write each scenario as one question with the concrete trigger and the observable consequence to check, for example: "If the payment provider times out after charging the card, does the retry charge it again, and what does the user see?" Name the file and line it starts from. Give at most 12 questions, ranked by how likely the answer reveals a real defect, and prefer the ones a reviewer reading line by line would not ask."#;
+Write each scenario as one question with the concrete trigger and the observable consequence to check, for example: "If the payment provider times out after charging the card, does the retry charge it again, and what does the user see?" Name the file and line it starts from. Plan three independent passes over the change. Each pass starts from a different part of the diff and looks for a different kind of failure, and a scenario one pass already asked does not appear in another. Give at most 12 questions per pass, 36 in all, each pass ranked by how likely the answer reveals a real defect, and prefer the ones a reviewer reading line by line would not ask. List the first pass's questions first, then the second's, then the third's."#;
 
 /// What an answering dispatch gets after its lens's own prompt.
 pub const ANSWER_PARAGRAPH: &str = "\n\nOne more question for this pass. Answer it from the code, reading whatever you need. If the answer shows a defect, report it as a finding like any other; if it does not, report nothing for it.\nQuestion: ";
@@ -722,6 +723,16 @@ mod tests {
         let p = answer_prompt("LENS PROMPT\n\n", &question);
         assert!(p.starts_with("LENS PROMPT\n\nOne more question for this pass."));
         assert!(p.ends_with("Question: src/a.ts:7 What happens on a 503?\n"));
+    }
+
+    #[test]
+    fn one_generator_dispatch_asks_for_three_passes_of_twelve() {
+        // Measured 2026-11-09: one dispatch asked for three passes found as
+        // many labelled defects as three single-pass dispatches, at about half
+        // the cost of the question stage.
+        assert!(GENERATOR_PROMPT.contains("Plan three independent passes"));
+        assert!(GENERATOR_PROMPT.contains("at most 12 questions per pass, 36 in all"));
+        assert!(!GENERATOR_PROMPT.contains("Give at most 12 questions, ranked"));
     }
 
     #[test]
