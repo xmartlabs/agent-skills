@@ -207,7 +207,7 @@ a general result. The prompt is `RANK_PROMPT` in
 
 ## What it costs
 
-Cost follows PR size: from about 14k output tokens for a PR of 1 to 7 files to over a million for the most expensive run recorded, measured over 57 runs. Read the [full table](docs/cost.md) before launching a run on anything large.
+Measured on 57 recorded reviews, with the refutation panel on: a PR of 1 to 7 files had a median cost of US$0.85 and took about 2.5 minutes, one of 8 to 25 files US$1.52 and 3 minutes. Size in files is a loose guide; the most expensive of those runs, US$7.25, touched 7 files or fewer. `--scenario-questions` costs about twice as much and takes about four times as long. The panel now off by default and the 5-minute prompt cache should take roughly 40% off a normal review, an estimate from the two parts measured separately. The [full numbers](docs/cost.md) say where the money goes.
 
 ## What it records, and why that matters
 
@@ -263,8 +263,8 @@ The commands are in [Quick start](#quick-start). **Developing this plugin, not
 just using it?** Don't hand-edit the installed cache: see
 [Developing it](#developing-it) for the `--plugin-dir` workflow.
 
-The `codex` CLI is optional but recommended: it powers the second-opinion
-refuter, which is on by default.
+The `codex` CLI is optional: `--codex` adds it as a second-opinion refuter and
+runs the refutation panel, which is off by default.
 
 The Codex head runs on the `model` in `~/.codex/review.config.toml`, the file
 `codex --profile review` reads, and falls back to the `model` in
@@ -309,10 +309,13 @@ your machine, or when the download fails, the review says why and stops.
 | `--context "<text>"` | Decisions reviewers must not re-litigate |
 | `--full` | Re-review everything, ignoring the incremental baseline |
 | `--since <sha>` | Take this commit as the incremental baseline |
-| `--max-panels <n>` | Raise the adjudication ceiling for a PR that deserves it (default 40) |
+| `--refuters` / `--no-refuters` | Run the refutation panel, which is off by default; `--codex` and `--gemini` also run it, and `--no-refuters` keeps it off even with them |
+| `--max-panels <n>` | When the panel runs, raise its adjudication ceiling for a PR that deserves it (default 40) |
 | `--lens-samples <n>` | Run each lens `n` times, 1 to 4, and merge what they share. With 2, more real defects come out as blocking at about 1.3 to 1.5 times the cost of a run; worth it on a large or high-risk PR |
-| `--codex` / `--no-codex` | Force the second-opinion head on or off (off is cheaper, weaker) |
-| `--gemini` | Add Google's head (off by default) |
+| `--codex` / `--no-codex` | Run the panel with the second-opinion head, or keep that head off |
+| `--gemini` | Run the panel with Google's head (off by default) |
+| `--scenario-questions <n>` | Add the scenario-question step; use 1. About twice the cost and four times the wall clock of a normal review; see *Scenario questions* |
+| `--question-model <id>` | The model that answers the scenario questions (default Haiku) |
 | `--bot-comments` | Also vet existing bot comments on the PR |
 | `--runtime-confirm` | Run the reviewers' claims about what a function returns as vitest cases before the panel. Runs PR code; see *Security* |
 | `--profile <path>` / `--rules <path>` | Try a profile before committing it |
