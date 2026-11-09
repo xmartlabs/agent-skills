@@ -221,6 +221,8 @@ fn adjudicated(v: &Value) -> bool {
     (js::truthy(get(v, "panelRan")) && !js::truthy(get(v, "unverified")))
         || (js::truthy(grounded)
             && grounded.and_then(|g| get(g, "verdict")) == Some(&json!("confirmed")))
+        // Not from the workflow: `--no-refuters` (absent from every golden case).
+        || crate::verify::refuters_skipped(v)
 }
 
 /// `v.survived && severity !== "nit" && ((v.panelRan && !v.unverified) ||
@@ -234,6 +236,11 @@ fn blocking(v: &Value, f: &Value) -> Option<Value> {
     if get(f, "severity") == Some(&json!("nit")) {
         return Some(json!(false));
     }
+    // Not from the workflow: ranked below the blocking bar under
+    // `--scenario-questions` (absent from every golden case).
+    if js::truthy(get(f, crate::questions::RANKED_BELOW_BLOCKING)) {
+        return Some(json!(false));
+    }
     let ran = get(v, "panelRan");
     let first = if js::truthy(ran) {
         Some(json!(!js::truthy(get(v, "unverified"))))
@@ -242,6 +249,11 @@ fn blocking(v: &Value, f: &Value) -> Option<Value> {
     };
     if js::truthy(first.as_ref()) {
         return first;
+    }
+    // Not from the workflow: a finding that skipped the panel under
+    // `--no-refuters` blocks by its severity, as a panel survivor does.
+    if crate::verify::refuters_skipped(v) {
+        return Some(json!(true));
     }
     let grounded = get(v, "grounded");
     if !js::truthy(grounded) {
@@ -981,4 +993,40 @@ pub fn metrics_row(s: &MetricsScope) -> Result<Value, String> {
         json!({"passed": null, "checked": 0, "violations": []}),
     );
     Ok(Value::Object(m))
+}
+
+#[cfg(test)]
+mod refuters_skipped_tests {
+    use super::*;
+
+    fn result(severity: &str, skipped: bool) -> Value {
+        let mut f = json!({"title": "t", "severity": severity});
+        if skipped {
+            f["refutersSkipped"] = json!(true);
+        }
+        json!({"survived": true, "panelRan": false, "grounded": {"verdict": null}, "finding": f})
+    }
+
+    #[test]
+    fn a_finding_that_skipped_the_panel_blocks_by_its_severity() {
+        let v = result("important", true);
+        assert!(adjudicated(&v));
+        assert_eq!(blocking(&v, &v["finding"]), Some(json!(true)));
+        let nit = result("nit", true);
+        assert_eq!(blocking(&nit, &nit["finding"]), Some(json!(false)));
+    }
+
+    #[test]
+    fn a_question_finding_ranked_below_blocking_is_not_blocking() {
+        let mut v = result("important", true);
+        v["finding"]["rankedBelowBlocking"] = json!(true);
+        assert_eq!(blocking(&v, &v["finding"]), Some(json!(false)));
+    }
+
+    #[test]
+    fn without_the_flag_an_unpaneled_finding_is_neither_adjudicated_nor_blocking() {
+        let v = result("important", false);
+        assert!(!adjudicated(&v));
+        assert_ne!(blocking(&v, &v["finding"]), Some(json!(true)));
+    }
 }

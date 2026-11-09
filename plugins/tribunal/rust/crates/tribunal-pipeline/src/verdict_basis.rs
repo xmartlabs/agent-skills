@@ -29,6 +29,7 @@ pub fn verdict_basis(findings: &[Value]) -> Option<String> {
         js::truthy(Some(f))
             && !flag(f, "verifiedByGateNote")
             && js::get(f, "adjudicated") != Some(&Value::Bool(false))
+            && !flag(f, crate::questions::RANKED_BELOW_BLOCKING)
     }) {
         let mut why: Vec<&str> = Vec::new();
         match js::get(f, "severity").and_then(Value::as_str) {

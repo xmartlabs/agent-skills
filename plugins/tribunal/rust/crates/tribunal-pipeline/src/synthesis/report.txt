@@ -85,7 +85,7 @@ Produce the report in this format:
 - <finding> — <file:line> → REQUIRED BY CONVENTION: <intendedBy.file>: "<intendedBy.rule, word for word>"
 (one line per entry of placed_aside, by its "placement". The panel did not refute these: say so, and do not call them fixed or wrong. omit section if empty)
 
-{{carriedFormat}}### Refuted / downgraded
+{{questionsRule}}{{carriedFormat}}### Refuted / downgraded
 - <finding> → <one-line reason it didn't hold> (refuteFraction N.NN; killReason: <category or "uncategorized">)
 
 ### Dropped (out of scope)

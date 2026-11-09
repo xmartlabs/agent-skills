@@ -43,6 +43,10 @@ use crate::prompts::{
     lens_dispatch_prompt, lens_system_prompt, DiffDelivery, DiffExposure, LensPromptInput,
     LensReference, SHARED_REFERENCE_NOTICE,
 };
+use crate::questions::{
+    generator_prompt, question_stage, rank_and_place, rank_prompt, QuestionInputs, QuestionOutcome,
+    DEFAULT_QUESTION_MODEL,
+};
 use crate::review::{
     answer_of, bot_task, bot_vetting_prompt, check_lenses_returned, collect_candidates,
     dispatch_all, dispatch_lenses, lens_labels, lens_task, relabel_unchanged_drops, Candidates,
@@ -202,6 +206,8 @@ pub struct ReviewOutcome {
     pub lenses_unreturned: Vec<Value>,
     pub evidence: EvidenceStats,
     pub exposure: DiffExposure,
+    /// What `--scenario-questions` asked and answered; `None` without it.
+    pub questions: Option<QuestionOutcome>,
 }
 
 #[derive(Debug)]
@@ -434,6 +440,56 @@ pub async fn run_review<A: Agent>(
         check_lenses_returned(&plan_files, &answers, &labels)?;
     logs.extend(unreturned_log);
 
+    let questions = match args.scenario_questions {
+        None => None,
+        Some(samples) => {
+            let lens_count = rc.plan.lens_plan.len();
+            let lens_prompts: Vec<String> = tasks
+                .iter()
+                .take(lens_count)
+                .map(|t| t.prompt.clone())
+                .collect();
+            let lens_schema = tasks
+                .first()
+                .map_or_else(schemas::findings, |t| t.schema.clone());
+            let answer_model = args
+                .question_model
+                .clone()
+                .unwrap_or_else(|| DEFAULT_QUESTION_MODEL.to_owned());
+            let q = question_stage(
+                agent,
+                &QuestionInputs {
+                    lens_setup: &setup,
+                    answer_model: &answer_model,
+                    samples,
+                    lens_prompts: &lens_prompts,
+                    lens_files: &plan_files,
+                    lens_schema: &lens_schema,
+                    generator_prompt: generator_prompt(
+                        diff.is_some(),
+                        rc.delivery.diff_path.as_deref(),
+                    ),
+                    pr_files: &rc.plan.files,
+                    blast_radius: rc.blast_radius.as_ref(),
+                },
+            )
+            .await;
+            logs.push(format!(
+                "Scenario questions: {} written by {} generator sample(s), {} asked after the merge, {} answered on {answer_model}, {} candidate(s) added ({} dropped out-of-diff).",
+                q.generated,
+                q.samples,
+                q.questions.len(),
+                q.answered,
+                q.candidates.len(),
+                q.dropped_out_of_diff
+            ));
+            candidates
+                .all_candidates
+                .extend(q.candidates.iter().cloned());
+            Some(q)
+        }
+    };
+
     let evidence = resolve_evidence(
         &mut candidates.all_candidates,
         rc.delivery.diff_path.as_deref(),
@@ -453,6 +509,7 @@ pub async fn run_review<A: Agent>(
         lenses_unreturned,
         evidence,
         exposure,
+        questions,
     })))
 }
 
@@ -511,6 +568,9 @@ pub struct VerifyOutcome {
     pub external_cwd: Option<String>,
     /// The refuters' share of the diff exposure.
     pub exposure: DiffExposure,
+    /// What the scenario-question ranking did after the panel; `None` when
+    /// it did not run.
+    pub question_rank: Option<Value>,
 }
 
 fn output_of(results: &[&DispatchResult]) -> f64 {
@@ -649,6 +709,12 @@ pub async fn verify_phase<A: Agent>(
         }
     }
     let mut gate = grounded_gate(&dedup.panel_candidates, &grounded, pr_files, logs)?;
+    if args.no_refuters {
+        let n = crate::verify::skip_refuters(&mut gate);
+        logs.push(format!(
+            "--no-refuters: {n} candidate(s) skip the refutation panel and survive."
+        ));
+    }
 
     // The availability probe: which CLIs exist, and a tree for them to read.
     let flags = PanelFlags {
@@ -920,6 +986,7 @@ pub async fn verify_phase<A: Agent>(
         probe_answered: probe.then_some(true),
         external_cwd: external_cwd.map(|(p, _)| p),
         exposure,
+        question_rank: None,
     })
 }
 
@@ -1399,6 +1466,29 @@ pub async fn run_full<A: Agent>(
             return Err(e);
         }
     };
+    let mut verify = verify;
+    if let Some(setup) = review.questions.as_ref().and_then(|q| q.setup.as_ref()) {
+        let head = js::get(&review.context.pr_context, "headRefOid")
+            .and_then(Value::as_str)
+            .unwrap_or(args.head_sha.as_str())
+            .to_owned();
+        let prompt = rank_prompt(
+            &review.prepared.repo,
+            &args.pr,
+            &head,
+            &verify.verdicts.surviving,
+        );
+        let v = &mut verify.verdicts;
+        let (res, summary) =
+            rank_and_place(agent, setup, prompt, &mut v.surviving, &mut v.placed_aside).await;
+        crate::questions::sync_results(&mut v.results, &v.surviving, &v.placed_aside);
+        logs.push(format!(
+            "Scenario-question ranking: {} ranked, {} moved to questions to review, {} kept in the report.",
+            summary["ranked"], summary["movedToQuestionsToReview"], summary["keptInReport"]
+        ));
+        verify.dispatches.push(("question-rank".into(), res));
+        verify.question_rank = Some(summary);
+    }
     let synthesis = synthesize_phase(agent, rt, args, policy, &review, &verify, logs).await;
     let persisted = match &synthesis {
         Ok(s) => {

@@ -72,6 +72,16 @@ pub struct RunArgs {
     /// claims run as vitest cases before the panel
     /// (`docs/runtime-confirmation-v1.md`).
     pub runtime_confirm: bool,
+    /// `--scenario-questions`: how many generator samples write scenario
+    /// questions, each then answered in its own dispatch
+    /// (`crate::questions`). `None` runs no question stage.
+    pub scenario_questions: Option<u32>,
+    /// `--question-model`: the model that answers the scenario questions.
+    /// `None` is `crate::questions::DEFAULT_QUESTION_MODEL`.
+    pub question_model: Option<String>,
+    /// `--no-refuters`: candidates skip the refutation panel and all survive;
+    /// with `--scenario-questions`, the ranking after it is then the filter.
+    pub no_refuters: bool,
 }
 
 /// Where the run executes.

@@ -19,6 +19,7 @@ pub mod persist;
 pub mod plan;
 pub mod post;
 pub mod prompts;
+pub mod questions;
 pub mod review;
 pub mod run;
 pub mod run_metrics;

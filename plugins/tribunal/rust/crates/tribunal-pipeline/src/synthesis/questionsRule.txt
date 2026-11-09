@@ -1,0 +1,4 @@
+### Questions to review (not counted toward the verdict)
+- <finding> — <file:line> → QUESTION TO REVIEW: raised while answering a scenario question and ranked below this report's bar; worth a look, not a blocker
+(one line per entry of placed_aside whose "placement" is "lower-priority-question"; list those here and not under Pre-existing. omit section if empty)
+

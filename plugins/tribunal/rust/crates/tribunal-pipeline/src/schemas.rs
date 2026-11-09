@@ -14,6 +14,30 @@ pub fn findings() -> Value {
     parse(include_str!("../../../schemas/findings.schema.json"))
 }
 
+/// What a `--scenario-questions` generator returns: the questions it wants
+/// answered, each anchored at a file and, when it can, a line.
+#[must_use]
+pub fn scenario_questions() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "questions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "file": {"type": "string"},
+                        "line": {"type": "number"},
+                        "question": {"type": "string"}
+                    },
+                    "required": ["file", "question"]
+                }
+            }
+        },
+        "required": ["questions"]
+    })
+}
+
 /// [`findings`] with the optional `runtimeClaim` a lens fills under
 /// `--runtime-confirm`.
 #[must_use]

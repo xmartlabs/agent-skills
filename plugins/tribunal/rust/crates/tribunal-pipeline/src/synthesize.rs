@@ -37,6 +37,7 @@ const SWEEP_RULE: &str = include_str!("synthesis/sweepRule.txt");
 const SCOPED_RULES: &str = include_str!("synthesis/scopedRules.txt");
 const SCOPE_LINE: &str = include_str!("synthesis/scopeLine.txt");
 const CARRIED_FORMAT: &str = include_str!("synthesis/carriedFormat.txt");
+const QUESTIONS_RULE: &str = include_str!("synthesis/questionsRule.txt");
 const VERIFY_PRIOR: &str = include_str!("synthesis/verify-prior.txt");
 
 pub const PRIOR_VERIFY_CEILING: usize = 6;
@@ -419,6 +420,7 @@ pub fn surviving_for_synthesis(surviving: &[Value]) -> Vec<Value> {
                 json!(
                     (js::truthy(js::get(v, "panelRan")) && !js::truthy(js::get(v, "unverified")))
                         || confirmed
+                        || crate::verify::refuters_skipped(v)
                 ),
             );
             m.insert(
@@ -1090,6 +1092,13 @@ pub fn synthesis_prompt(s: &SynthesisInput) -> String {
     } else {
         String::new()
     };
+    let questions_rule = if s.placed_aside.iter().any(|p| {
+        js::get(p, "placement").and_then(Value::as_str) == Some(crate::questions::LOWER_PRIORITY)
+    }) {
+        QUESTIONS_RULE
+    } else {
+        ""
+    };
     let carried_format = if scope.is_some() {
         render(CARRIED_FORMAT, &[("sha8", &slice8(js::get(prior, "sha")))])
     } else {
@@ -1161,6 +1170,7 @@ pub fn synthesis_prompt(s: &SynthesisInput) -> String {
             ("scopeLine", &scope_line),
             ("tKill", &js::number_to_string(T_KILL)),
             ("carriedFormat", &carried_format),
+            ("questionsRule", questions_rule),
         ],
     )
 }

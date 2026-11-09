@@ -1173,3 +1173,25 @@ fn an_empty_synthesis_stops_both_engines() {
     assert!(js[1].is_ok(), "{:?}", js[1]);
     assert!(rust(Some("## Review\n\n### Verdict suggestion: APPROVE\n")).is_ok());
 }
+
+/// Not a port: `--scenario-questions` moves low-ranked question findings into
+/// placed-aside with their own placement, and only then does the prompt carry
+/// the "Questions to review" section. Every workflow case has none, which is
+/// why the golden comparison above is unchanged.
+#[test]
+fn the_questions_section_appears_only_with_a_lower_priority_question() {
+    let mut c = sample(synth_case()).into_iter().next().expect("a case");
+    let without = rust_synth(&c);
+    assert!(!without.contains("### Questions to review"));
+    c["placedAsideForSynthesis"] = json!([{
+        "title": "t", "file": "src/a.ts", "line": 3, "severity": "important",
+        "placement": "lower-priority-question"
+    }]);
+    let with = rust_synth(&c);
+    assert!(with.contains("### Questions to review (not counted toward the verdict)"));
+    c["placedAsideForSynthesis"] = json!([{
+        "title": "t", "file": "src/a.ts", "line": 3, "severity": "important",
+        "placement": "pre-existing"
+    }]);
+    assert!(!rust_synth(&c).contains("### Questions to review"));
+}
