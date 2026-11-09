@@ -60,6 +60,8 @@ pub struct Question {
     pub text: String,
     /// Which generator sample wrote it, from 1.
     pub sample: usize,
+    /// Which of the generator's passes it came from, when the generator said.
+    pub pass: Option<u64>,
 }
 
 impl Question {
@@ -90,11 +92,15 @@ pub fn questions_of(answer: Option<&Value>, sample: usize) -> Vec<Question> {
                 .and_then(Value::as_f64)
                 .filter(|l| l.is_finite() && *l >= 1.0)
                 .map(|l| l as u64);
+            let pass = js::get(q, "pass")
+                .and_then(Value::as_u64)
+                .filter(|p| (1..=3).contains(p));
             Some(Question {
                 file: file.to_owned(),
                 line,
                 text: text.to_owned(),
                 sample,
+                pass,
             })
         })
         .collect()
@@ -222,6 +228,10 @@ pub const BLOCKING_WORTH: u64 = 4;
 /// blockers. `verdict_for`, the verdict basis and the row's `blocking` read it.
 pub const RANKED_BELOW_BLOCKING: &str = "rankedBelowBlocking";
 
+/// The finding field holding the worth the ranking gave it, 1 to 5, on every
+/// finding the ranking scored, so a threshold can be tried again offline.
+pub const RANK_WORTH: &str = "rankWorth";
+
 fn rank_schema() -> Value {
     json!({
         "type": "object",
@@ -335,11 +345,14 @@ pub fn place_lower_priority(
         .drain(..)
         .zip(worth.iter().copied().chain(std::iter::repeat(None)))
     {
+        let mut r = r;
+        if let (Some(w), Some(Value::Object(f))) = (w, r.get_mut("finding")) {
+            f.insert(RANK_WORTH.into(), json!(w));
+        }
         let from_question = js::get(finding_of(&r), "lens") == Some(&json!(QUESTION_LENS));
         let below_blocking =
             from_question && w.is_some_and(|w| w < BLOCKING_WORTH) && support_of(&r) < KEEP_SUPPORT;
         if from_question && !keeps(w, support_of(&r)) {
-            let mut r = r;
             if let Value::Object(m) = &mut r {
                 m.insert(
                     "placement".into(),
@@ -349,7 +362,6 @@ pub fn place_lower_priority(
             placed_aside.push(r);
             moved += 1;
         } else {
-            let mut r = r;
             if below_blocking {
                 below += 1;
                 if let Some(Value::Object(f)) = r.get_mut("finding") {
@@ -436,6 +448,11 @@ pub struct QuestionOutcome {
     pub dispatches: Vec<(String, DispatchResult)>,
     /// The lenses' setup, for the ranking after the panel.
     pub setup: Option<ReviewerSetup>,
+    /// Wall-clock seconds of the whole stage, generators and answers.
+    pub seconds: f64,
+    /// One record per merged question: where it came from and what its
+    /// answer gave, for the metrics row.
+    pub records: Vec<Value>,
 }
 
 impl QuestionOutcome {
@@ -450,6 +467,8 @@ impl QuestionOutcome {
             "answered": self.answered,
             "candidates": self.candidates.len(),
             "droppedOutOfDiff": self.dropped_out_of_diff,
+            "seconds": (self.seconds * 10.0).round() / 10.0,
+            "questions": self.records,
         })
     }
 }
@@ -509,6 +528,7 @@ fn request(
 /// Generates the questions, merges the samples and answers each question in
 /// its own dispatch.
 pub async fn question_stage<A: Agent>(agent: &A, input: &QuestionInputs<'_>) -> QuestionOutcome {
+    let started = std::time::Instant::now();
     let setup = input.lens_setup;
     let samples = input.samples.clamp(1, MAX_QUESTION_SAMPLES);
     let mut out = QuestionOutcome {
@@ -537,6 +557,15 @@ pub async fn question_stage<A: Agent>(agent: &A, input: &QuestionInputs<'_>) -> 
     }
     out.generated = per_sample.iter().map(Vec::len).sum();
     out.questions = merge_questions(&per_sample, MAX_QUESTIONS);
+    out.records = out
+        .questions
+        .iter()
+        .enumerate()
+        .map(|(i, q)| {
+            json!({"position": i + 1, "sample": q.sample, "pass": q.pass, "file": q.file,
+                   "routed": false, "answered": false, "findings": 0, "droppedOutOfDiff": 0})
+        })
+        .collect();
 
     let mut asks = Vec::new();
     let mut routed = Vec::new();
@@ -547,6 +576,7 @@ pub async fn question_stage<A: Agent>(agent: &A, input: &QuestionInputs<'_>) -> 
         let Some(prompt) = input.lens_prompts.get(slot) else {
             continue;
         };
+        out.records[i]["routed"] = json!(true);
         asks.push(request(
             setup,
             input.answer_model,
@@ -572,6 +602,7 @@ pub async fn question_stage<A: Agent>(agent: &A, input: &QuestionInputs<'_>) -> 
             .cloned()
         {
             out.answered += 1;
+            out.records[qi]["answered"] = json!(true);
             for f in findings {
                 let mut f = match f {
                     Value::Object(m) => m,
@@ -584,14 +615,25 @@ pub async fn question_stage<A: Agent>(agent: &A, input: &QuestionInputs<'_>) -> 
                     json!(format!("{} {}", q.anchor(), q.text)),
                 );
                 match reanchor_out_of_diff(&Value::Object(f), input.pr_files, input.blast_radius) {
-                    Ok(Some(kept)) => out.candidates.push(kept),
-                    _ => out.dropped_out_of_diff += 1,
+                    Ok(Some(kept)) => {
+                        out.candidates.push(kept);
+                        bump(&mut out.records[qi], "findings");
+                    }
+                    _ => {
+                        out.dropped_out_of_diff += 1;
+                        bump(&mut out.records[qi], "droppedOutOfDiff");
+                    }
                 }
             }
         }
         out.dispatches.push((label, res));
     }
+    out.seconds = started.elapsed().as_secs_f64();
     out
+}
+
+fn bump(record: &mut Value, key: &str) {
+    record[key] = json!(js::get(record, key).and_then(Value::as_u64).unwrap_or(0) + 1);
 }
 
 #[cfg(test)]
@@ -609,6 +651,8 @@ mod tests {
         sync_results(&mut results, &surviving, &aside);
         assert_eq!(results[0]["placement"]["placement"], json!(LOWER_PRIORITY));
         assert_eq!(results[1]["finding"][RANKED_BELOW_BLOCKING], json!(true));
+        assert_eq!(results[0]["finding"][RANK_WORTH], json!(1));
+        assert_eq!(results[1]["finding"][RANK_WORTH], json!(3));
         assert_eq!(results[2], refuted);
     }
     use super::*;
@@ -619,6 +663,7 @@ mod tests {
             line: None,
             text: text.into(),
             sample,
+            pass: None,
         }
     }
 

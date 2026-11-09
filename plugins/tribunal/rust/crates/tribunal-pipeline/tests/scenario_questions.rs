@@ -36,7 +36,7 @@ async fn questions_are_generated_merged_routed_and_answered_one_per_dispatch() {
             "questions:1",
             FakeAnswer::Structured(json!({"questions": [
                 {"file": "src/jobs/sync.ts", "line": 40, "question": "If the provider returns 503 for an hour, does the job ever retry?"},
-                {"file": "src/web/Banner.tsx", "question": "If the user goes Back mid-flow, does the redirect fire again?"}
+                {"file": "src/web/Banner.tsx", "pass": 2, "question": "If the user goes Back mid-flow, does the redirect fire again?"}
             ]})),
         )
         .answer(
@@ -164,6 +164,19 @@ async fn questions_are_generated_merged_routed_and_answered_one_per_dispatch() {
     assert_eq!(m["answered"], json!(3));
     assert_eq!(m["candidates"], json!(1));
     assert_eq!(m["droppedOutOfDiff"], json!(1));
+    assert!(m["seconds"].as_f64().is_some());
+    let records = m["questions"].as_array().expect("one record per question");
+    assert_eq!(records.len(), 3);
+    assert_eq!(
+        records[0],
+        json!({"position": 1, "sample": 1, "pass": null, "file": "src/jobs/sync.ts",
+               "routed": true, "answered": true, "findings": 1, "droppedOutOfDiff": 0})
+    );
+    assert_eq!(records[1]["pass"], json!(2));
+    assert_eq!(records[1]["findings"], json!(0));
+    assert_eq!(records[1]["answered"], json!(true));
+    assert_eq!(records[2]["sample"], json!(2));
+    assert_eq!(records[2]["droppedOutOfDiff"], json!(1));
     let labels: Vec<&str> = out.dispatches.iter().map(|(l, _)| l.as_str()).collect();
     assert_eq!(
         labels
@@ -321,4 +334,27 @@ async fn a_kept_question_finding_below_worth_four_cannot_block() {
         .collect();
     let basis = verdict_basis(&findings).expect("the worth-four finding qualifies");
     assert!(basis.contains("worth four") && !basis.contains("worth three"));
+}
+
+/// The ranking's worth reaches the metrics row on every finding it scored,
+/// so a threshold can be tried again offline; a finding it did not score
+/// keeps the row's shape.
+#[test]
+fn the_row_records_the_rank_worth_only_where_the_ranking_scored() {
+    use tribunal_pipeline::metrics::{metrics_row, MetricsScope};
+    let scored = json!({"survived": true, "panelRan": false, "finding": {
+        "title": "a", "file": "src/a.ts", "line": 3, "severity": "important",
+        "lens": "scenario-question", "rankWorth": 2, "rankedBelowBlocking": true}});
+    let unscored = json!({"survived": true, "panelRan": false, "finding": {
+        "title": "b", "file": "src/b.ts", "line": 4, "severity": "important", "lens": "correctness"}});
+    let scope = MetricsScope {
+        results: vec![scored, unscored],
+        ..MetricsScope::default()
+    };
+    let row = metrics_row(&scope).unwrap();
+    let f = row["findings"].as_array().unwrap();
+    assert_eq!(f[0]["rankWorth"], json!(2));
+    assert_eq!(f[0]["rankedBelowBlocking"], json!(true));
+    assert!(f[1].get("rankWorth").is_none());
+    assert!(f[1].get("rankedBelowBlocking").is_none());
 }

@@ -28,7 +28,9 @@ pub fn scenario_questions() -> Value {
                     "properties": {
                         "file": {"type": "string"},
                         "line": {"type": "number"},
-                        "question": {"type": "string"}
+                        "question": {"type": "string"},
+                        "pass": {"type": "integer", "minimum": 1, "maximum": 3,
+                                 "description": "which of the three passes the question belongs to"}
                     },
                     "required": ["file", "question"]
                 }
