@@ -713,6 +713,27 @@ pub async fn verify_phase<A: Agent>(
         }
     }
     let mut gate = grounded_gate(&dedup.panel_candidates, &grounded, pr_files, logs)?;
+    let mut decided_without_panel = Vec::new();
+    if args.no_refuters {
+        let scribe = agent_def::load(&rt.plugin_root, "tribunal-scribe")?;
+        let (kept, decided, res) = crate::pre_decided::check(
+            agent,
+            &scribe,
+            std::mem::take(&mut gate.panel_input),
+            js::get(&rc.pr_context, "inThreadDecisions"),
+            &rc.decisions.operator_decisions,
+            "sonnet",
+            policy.effort.as_ref(),
+            &rt.operator.cwd,
+            logs,
+        )
+        .await;
+        gate.panel_input = kept;
+        decided_without_panel = decided;
+        if let Some(res) = res {
+            dispatches.push((crate::pre_decided::LABEL.to_owned(), res));
+        }
+    }
     let raised_without_panel = if args.no_refuters {
         gate.panel_input.clone()
     } else {
@@ -962,6 +983,9 @@ pub async fn verify_phase<A: Agent>(
     );
     let panel_seconds = (panel_started.elapsed().as_secs_f64() - panel.critic_seconds).max(0.0);
     dispatches.extend(io.dispatches.into_inner().expect("lock"));
+    panel
+        .verified
+        .extend(decided_without_panel.into_iter().map(Some));
     let anchored = crate::anchor_repair::anchor_from_evidence(&mut panel.verified);
     if anchored > 0 {
         logs.push(format!(

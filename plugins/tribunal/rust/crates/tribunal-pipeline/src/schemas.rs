@@ -91,6 +91,13 @@ pub fn dedup() -> Value {
     parse(include_str!("../../../schemas/dedup.schema.json"))
 }
 
+/// The `pre-decided-check` dispatch's answer, run when the refutation panel
+/// is off.
+#[must_use]
+pub fn pre_decided() -> Value {
+    parse(include_str!("../../../schemas/pre-decided.schema.json"))
+}
+
 /// The `verify-prior` dispatch's answer.
 #[must_use]
 pub fn prior_verification() -> Value {
