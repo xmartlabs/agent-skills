@@ -2,7 +2,7 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Tribunal with --engine rust: the review at a glance",
+    "title": "Tribunal: the review at a glance",
     "locale": "en",
     "quality_profile": "showcase",
     "output": "plugins/tribunal/docs/architecture-rust-overview.html",
@@ -23,6 +23,9 @@
         },
         "external": {
           "label": "Session, repo or GitHub"
+        },
+        "messagebus": {
+          "label": "Model call: Haiku"
         }
       }
     }
@@ -31,7 +34,7 @@
     {
       "id": "start",
       "type": "external",
-      "label": "/tribunal:review-pr --engine rust",
+      "label": "/tribunal:review-pr",
       "sublabel": "MODEL · your Claude Code session",
       "tag": "asks before posting",
       "pos": [
@@ -47,8 +50,8 @@
       "id": "launch",
       "type": "backend",
       "label": "Find the binary",
-      "sublabel": "DETERMINISTIC · node + gh",
-      "tag": "pinned release, sha256 checked",
+      "sublabel": "DETERMINISTIC · bash + gh",
+      "tag": "pinned release, sha256 checked; stops when there is none",
       "pos": [
         380,
         170
@@ -59,26 +62,11 @@
       ]
     },
     {
-      "id": "fallback",
-      "type": "external",
-      "label": "the Workflow",
-      "sublabel": "when there is no binary",
-      "tag": "same review, JS harness",
-      "pos": [
-        40,
-        170
-      ],
-      "size": [
-        260,
-        76
-      ]
-    },
-    {
       "id": "prepare",
       "type": "backend",
       "label": "Prepare",
       "sublabel": "DETERMINISTIC · Rust, git, gh + one haiku call",
-      "tag": "profile, conventions, diff, worktree, callers; haiku reads the thread",
+      "tag": "profile, conventions, diff, worktree, callers; other repos with their own token",
       "pos": [
         380,
         300
@@ -93,7 +81,7 @@
       "type": "frontend",
       "label": "Lenses",
       "sublabel": "MODEL · sonnet, N in parallel",
-      "tag": "backend, frontend, e2e or python reviewer, one shared prompt",
+      "tag": "backend, frontend, e2e or python reviewer, one shared prompt, 5-minute cache",
       "pos": [
         380,
         430
@@ -137,8 +125,8 @@
       "id": "panel",
       "type": "frontend",
       "label": "Refuter panel",
-      "sublabel": "MODEL · sonnet refuters",
-      "tag": "each tries to kill one finding",
+      "sublabel": "MODEL · sonnet refuters, off by default",
+      "tag": "--refuters, --codex or --gemini runs it; each tries to kill one finding",
       "pos": [
         380,
         820
@@ -168,7 +156,7 @@
       "type": "backend",
       "label": "Tally and verdict",
       "sublabel": "DETERMINISTIC · Rust",
-      "tag": "weighted vote, fixed verdict rules, no APPROVE past an unread risk path",
+      "tag": "weighted vote, or all survive with no panel; an unread risk path blocks APPROVE",
       "pos": [
         380,
         950
@@ -183,7 +171,7 @@
       "type": "frontend",
       "label": "Write the report",
       "sublabel": "MODEL · sonnet",
-      "tag": "around a verdict it cannot change",
+      "tag": "around a verdict it cannot change; says when no panel ran",
       "pos": [
         380,
         1080
@@ -257,7 +245,7 @@
       "type": "database",
       "label": "every model call",
       "sublabel": "transcript and token usage",
-      "tag": "lenses, critic, refuters, report, post",
+      "tag": "lenses, questions, critic, refuters, report, post",
       "pos": [
         760,
         430
@@ -309,6 +297,36 @@
         260,
         64
       ]
+    },
+    {
+      "id": "questions",
+      "type": "messagebus",
+      "label": "Scenario questions",
+      "sublabel": "MODEL · opt-in, sonnet writes, haiku answers",
+      "tag": "--scenario-questions 1: up to 36 questions, each answered alone",
+      "pos": [
+        40,
+        495
+      ],
+      "size": [
+        260,
+        76
+      ]
+    },
+    {
+      "id": "rank",
+      "type": "frontend",
+      "label": "Rank question findings",
+      "sublabel": "MODEL · sonnet, opt-in",
+      "tag": "low worth goes to Questions to review",
+      "pos": [
+        40,
+        950
+      ],
+      "size": [
+        260,
+        76
+      ]
     }
   ],
   "boundaries": [
@@ -318,7 +336,6 @@
       "wraps": [
         "start",
         "launch",
-        "fallback",
         "prepare",
         "lenses",
         "checks",
@@ -329,7 +346,9 @@
         "report",
         "persist",
         "post",
-        "github"
+        "github",
+        "questions",
+        "rank"
       ]
     },
     {
@@ -349,13 +368,6 @@
       "id": "start-launch",
       "from": "start",
       "to": "launch"
-    },
-    {
-      "id": "launch-fallback",
-      "from": "launch",
-      "to": "fallback",
-      "label": "no binary",
-      "variant": "dashed"
     },
     {
       "id": "launch-prepare",
@@ -382,7 +394,8 @@
       "id": "critic-panel",
       "from": "critic",
       "to": "panel",
-      "label": "findings and gaps"
+      "label": "when the panel runs",
+      "variant": "dashed"
     },
     {
       "id": "outside-panel",
@@ -446,6 +459,32 @@
       "id": "post-mposted",
       "from": "post",
       "to": "m-posted"
+    },
+    {
+      "id": "lenses-questions",
+      "from": "lenses",
+      "to": "questions",
+      "label": "opt-in",
+      "variant": "dashed"
+    },
+    {
+      "id": "questions-checks",
+      "from": "questions",
+      "to": "checks",
+      "label": "findings"
+    },
+    {
+      "id": "panel-rank",
+      "from": "panel",
+      "to": "rank",
+      "label": "question findings",
+      "variant": "dashed"
+    },
+    {
+      "id": "rank-decide",
+      "from": "rank",
+      "to": "decide",
+      "label": "worth"
     }
   ]
 }
