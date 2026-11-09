@@ -37,7 +37,7 @@ By token type, writing the prompt cache was 55 to 64% of the cost.
 Together they should take roughly 40% off a normal review. That figure is an
 estimate from the two parts, measured separately, not from a run with both.
 
-### With `--scenario-questions`
+### With scenario questions (the default since 2026-11-09)
 
 On 8 backend pull requests of 4 to 24 files, with three generator samples and
 no panel, a run cost a median of US$3.67 (US$2.53 to US$8.24), about 1.9 times

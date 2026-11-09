@@ -826,8 +826,8 @@ svg[data-preset="editorial"] { --flow-halo-peak: 0.07; --flow-glow-peak: 0.28; -
   25.776%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-38 { 
-  0%, 6.988% { opacity: 0; }
-  23.292% { opacity: var(--flow-peak, 0.3); }
+  0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
+  23.292% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
   37.267%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-39 { 
@@ -1233,7 +1233,7 @@ rect.c-bg-rect { fill: var(--bg); }
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="6" data-composition-frame-label="After the run" x="10" y="2390" width="600" height="126" rx="12" class="c-region" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="7" data-composition-frame-label="Scenario questions, opt-in" x="890" y="790" width="310" height="1046" rx="12" class="c-region" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="7" data-composition-frame-label="Scenario questions, on unless --no-scenario-questions" x="890" y="790" width="310" height="1046" rx="12" class="c-region" stroke-width="1"/>
 
         <!-- Connection paths (before components for correct z-order) -->
         <g data-graph-role="automatic-crossover" style="--step:0">
@@ -1390,7 +1390,7 @@ rect.c-bg-rect { fill: var(--bg); }
         </g>
         <g data-graph-role="automatic-crossover" style="--step:38">
           <path data-graph-role="automatic-crossover-underlay" d="M 580 620 L 928 620 Q 936 620 936 628 L 936 820" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="partition" data-edge-to="qgen" data-edge-label="opt-in" data-edge-key="38" data-edge-id="partition-qgen" data-composition-points="580,620;936,620;936,820" data-composition-crossover="halo" data-composition-independent="true" d="M 580 620 L 928 620 Q 936 620 936 628 L 936 820" class="a-dashed" data-animate="edge" style="--step: 12;" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+          <path data-edge-from="partition" data-edge-to="qgen" data-edge-label="questions" data-edge-key="38" data-edge-id="partition-qgen" data-composition-points="580,620;936,620;936,820" data-composition-crossover="halo" data-composition-independent="true" d="M 580 620 L 928 620 Q 936 620 936 628 L 936 820" class="a-default" data-animate="edge" style="--step: 12;" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:39">
           <path data-graph-role="automatic-crossover-underlay" d="M 1045 896 L 1045 990" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
@@ -1899,8 +1899,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="165" y="2488" class="t-backend" font-size="7" text-anchor="middle">where the money went, by agent kind and lens</text>
         </g>
 
-        <g id="node-qgen" data-node-id="qgen" data-node-label="question generator" tabindex="0" role="button" aria-label="Focus question generator, MODEL · sonnet, --scenario-questions, Scenario questions, opt-in" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet, --scenario-questions" data-node-tag="three passes of up to 12 scenarios" data-node-context="Scenario questions, opt-in">
-          <title>question generator · MODEL · sonnet, --scenario-questions · Scenario questions, opt-in · three passes of up to 12 scenarios</title>
+        <g id="node-qgen" data-node-id="qgen" data-node-label="question generator" tabindex="0" role="button" aria-label="Focus question generator, MODEL · sonnet, on by default, Scenario questions, on unless --no-scenario-questions" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet, on by default" data-node-tag="three passes of up to 12 scenarios" data-node-context="Scenario questions, on unless --no-scenario-questions">
+          <title>question generator · MODEL · sonnet, on by default · Scenario questions, on unless --no-scenario-questions · three passes of up to 12 scenarios</title>
           <rect x="920" y="820" width="250" height="76" rx="8" class="c-mask"/>
           <rect x="920" y="820" width="250" height="76" rx="8" class="c-frontend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-22;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(926 826) scale(0.6875)">
@@ -1910,12 +1910,12 @@ rect.c-bg-rect { fill: var(--bg); }
             <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
           </g>
           <text data-node-label="" x="1045" y="856" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">question generator</text>
-        <text x="1045" y="872" class="t-muted" font-size="9" text-anchor="middle">MODEL · sonnet, --scenario-questions</text>
+        <text x="1045" y="872" class="t-muted" font-size="9" text-anchor="middle">MODEL · sonnet, on by default</text>
         <text x="1045" y="888" class="t-frontend" font-size="7" text-anchor="middle">three passes of up to 12 scenarios</text>
         </g>
 
-        <g id="node-qanswer" data-node-id="qanswer" data-node-label="question answers" tabindex="0" role="button" aria-label="Focus question answers, MODEL · haiku, one per question, Scenario questions, opt-in" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="MODEL · haiku, one per question" data-node-tag="the lens prompt that covers its file" data-node-context="Scenario questions, opt-in">
-          <title>question answers · MODEL · haiku, one per question · Scenario questions, opt-in · the lens prompt that covers its file</title>
+        <g id="node-qanswer" data-node-id="qanswer" data-node-label="question answers" tabindex="0" role="button" aria-label="Focus question answers, MODEL · haiku, one per question, Scenario questions, on unless --no-scenario-questions" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="MODEL · haiku, one per question" data-node-tag="the lens prompt that covers its file" data-node-context="Scenario questions, on unless --no-scenario-questions">
+          <title>question answers · MODEL · haiku, one per question · Scenario questions, on unless --no-scenario-questions · the lens prompt that covers its file</title>
           <rect x="920" y="990" width="250" height="76" rx="8" class="c-mask"/>
           <rect x="920" y="990" width="250" height="76" rx="8" class="c-messagebus" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-36;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(926 996) scale(0.6875)">
@@ -1929,8 +1929,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="1045" y="1058" class="t-messagebus" font-size="7" text-anchor="middle">the lens prompt that covers its file</text>
         </g>
 
-        <g id="node-qrank" data-node-id="qrank" data-node-label="question-rank" tabindex="0" role="button" aria-label="Focus question-rank, MODEL · sonnet, evolved prompt, Scenario questions, opt-in" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet, evolved prompt" data-node-tag="worth on every finding; low worth to Questions to review" data-node-context="Scenario questions, opt-in">
-          <title>question-rank · MODEL · sonnet, evolved prompt · Scenario questions, opt-in · worth on every finding; low worth to Questions to review</title>
+        <g id="node-qrank" data-node-id="qrank" data-node-label="question-rank" tabindex="0" role="button" aria-label="Focus question-rank, MODEL · sonnet, evolved prompt, Scenario questions, on unless --no-scenario-questions" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet, evolved prompt" data-node-tag="worth on every finding; low worth to Questions to review" data-node-context="Scenario questions, on unless --no-scenario-questions">
+          <title>question-rank · MODEL · sonnet, evolved prompt · Scenario questions, on unless --no-scenario-questions · worth on every finding; low worth to Questions to review</title>
           <rect x="920" y="1740" width="250" height="76" rx="8" class="c-mask"/>
           <rect x="920" y="1740" width="250" height="76" rx="8" class="c-frontend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-29;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(926 1746) scale(0.6875)">
@@ -2071,9 +2071,9 @@ rect.c-bg-rect { fill: var(--bg); }
           <rect x="295" y="2363.5" width="30" height="14" rx="3" class="c-mask"/>
           <text x="310" y="2373.5" class="t-edge-default" font-size="8" text-anchor="middle">read</text>
         </g>
-        <g data-edge-from="partition" data-edge-to="qgen" data-edge-label="opt-in" data-edge-key="38" data-edge-id="partition-qgen">
-          <rect x="916.6" y="700" width="38.8" height="14" rx="3" class="c-mask"/>
-          <text x="936" y="710" class="t-edge-dashed" font-size="8" text-anchor="middle">opt-in</text>
+        <g data-edge-from="partition" data-edge-to="qgen" data-edge-label="questions" data-edge-key="38" data-edge-id="partition-qgen">
+          <rect x="909.4" y="700" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
+          <text x="936" y="710" class="t-edge-default" font-size="8" text-anchor="middle">questions</text>
         </g>
         <g data-edge-from="qgen" data-edge-to="qanswer" data-edge-label="questions" data-edge-key="39" data-edge-id="qgen-qanswer">
           <rect x="985.8" y="936" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
@@ -2133,9 +2133,9 @@ rect.c-bg-rect { fill: var(--bg); }
           <text data-boundary-label="" x="18" y="2413" class="t-cloud" font-size="9" font-weight="600">After the run</text>
         </g>
 
-        <g data-graph-role="structural-frame-label" data-composition-frame-id="7" data-composition-frame-kind="region" data-composition-frame-label="Scenario questions, opt-in">
-          <rect data-graph-role="structural-frame-label-mask" x="944" y="800" width="150.4" height="16" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="948" y="813" class="t-cloud" font-size="9" font-weight="600">Scenario questions, opt-in</text>
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="7" data-composition-frame-kind="region" data-composition-frame-label="Scenario questions, on unless --no-scenario-questions">
+          <rect data-graph-role="structural-frame-label-mask" x="894" y="800" width="296.2" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="898" y="813" class="t-cloud" font-size="9" font-weight="600">Scenario questions, on unless --no-scenario-questions</text>
         </g>
 
         <!-- Legend -->

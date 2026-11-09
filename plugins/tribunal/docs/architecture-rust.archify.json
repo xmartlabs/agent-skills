@@ -590,7 +590,7 @@
       "id": "qgen",
       "type": "frontend",
       "label": "question generator",
-      "sublabel": "MODEL · sonnet, --scenario-questions",
+      "sublabel": "MODEL · sonnet, on by default",
       "tag": "three passes of up to 12 scenarios",
       "pos": [
         920,
@@ -746,7 +746,7 @@
     },
     {
       "kind": "region",
-      "label": "Scenario questions, opt-in",
+      "label": "Scenario questions, on unless --no-scenario-questions",
       "wraps": [
         "qgen",
         "qanswer",
@@ -975,8 +975,7 @@
       "id": "partition-qgen",
       "from": "partition",
       "to": "qgen",
-      "label": "opt-in",
-      "variant": "dashed"
+      "label": "questions"
     },
     {
       "id": "qgen-qanswer",

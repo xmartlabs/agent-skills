@@ -302,8 +302,8 @@
       "id": "questions",
       "type": "messagebus",
       "label": "Scenario questions",
-      "sublabel": "MODEL · opt-in, sonnet writes, haiku answers",
-      "tag": "--scenario-questions 1: up to 36 questions, each answered alone",
+      "sublabel": "MODEL · sonnet writes, haiku answers",
+      "tag": "up to 36, each answered alone; --no-scenario-questions turns it off",
       "pos": [
         40,
         495
@@ -317,7 +317,7 @@
       "id": "rank",
       "type": "frontend",
       "label": "Rank question findings",
-      "sublabel": "MODEL · sonnet, opt-in",
+      "sublabel": "MODEL · sonnet",
       "tag": "worth kept per finding; low worth goes to Questions to review",
       "pos": [
         40,
@@ -464,8 +464,7 @@
       "id": "lenses-questions",
       "from": "lenses",
       "to": "questions",
-      "label": "opt-in",
-      "variant": "dashed"
+      "label": "questions"
     },
     {
       "id": "questions-checks",
