@@ -302,6 +302,9 @@ struct Tally {
     fresh: u64,
     cache_read: u64,
     cache_creation: u64,
+    cache_write_5m: u64,
+    cache_write_1h: u64,
+    thinking: u64,
     output: u64,
     tool_uses: u64,
     cost_usd: f64,
@@ -317,6 +320,9 @@ impl Tally {
             self.fresh += u.input_tokens;
             self.cache_read += u.cache_read_input_tokens;
             self.cache_creation += u.cache_creation_input_tokens;
+            self.cache_write_5m += u.cache_creation_ephemeral5m_input_tokens;
+            self.cache_write_1h += u.cache_creation_ephemeral1h_input_tokens;
+            self.thinking += u.thinking_tokens;
             self.output += u.output_tokens;
         }
     }
@@ -337,6 +343,8 @@ impl Tally {
             "outputTokens": self.output, "inputUnits": self.units(),
             "toolUses": self.tool_uses, "toolTurns": null, "toolUsesPerTurn": null,
             "costUsd": usd(self.cost_usd),
+            "cacheRead": self.cache_read, "cacheWrite5m": self.cache_write_5m,
+            "cacheWrite1h": self.cache_write_1h, "thinkingTokens": self.thinking,
         })
     }
 }
@@ -468,6 +476,9 @@ pub fn agent_cost(dispatches: &[(&str, &DispatchResult)]) -> Value {
         "outputExact": true,
         "cacheRead": total.cache_read,
         "cacheCreation": total.cache_creation,
+        "cacheWrite5m": total.cache_write_5m,
+        "cacheWrite1h": total.cache_write_1h,
+        "thinkingTokens": total.thinking,
         "toolUses": total.tool_uses,
         "toolTurns": null,
         "toolUsesPerTurn": null,
@@ -557,14 +568,37 @@ fn stage_seconds(
     verify: &VerifyOutcome,
     synthesis: &SynthesisOutcome,
 ) -> Value {
-    stage_seconds_row([
+    let questions = review.questions.as_ref().map(|q| q.seconds);
+    let mut row = stage_seconds_row([
         review.context_seconds,
         review.lenses_seconds,
         verify.dedup_seconds,
         verify.panel_seconds,
         verify.panel.critic_seconds,
         synthesis.synthesize_seconds,
-    ])
+    ]);
+    // Not from the workflow: under `--scenario-questions` the questions get
+    // their own stage out of the lenses' time, and the ranking its own.
+    if let Some(q) = questions {
+        let rank = verify
+            .question_rank
+            .as_ref()
+            .and_then(|r| js::get(r, "seconds"))
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0);
+        add_question_stages(&mut row, review.lenses_seconds, q, rank);
+    }
+    row
+}
+
+/// The question stage runs inside the lenses' clock, so it is taken out of
+/// `lenses` and given its own `questions`; the ranking after the panel gets
+/// `rank`.
+fn add_question_stages(row: &mut Value, lenses: f64, questions: f64, rank: f64) {
+    let tenth = |x: f64| (x * 10.0).round() / 10.0;
+    row["lenses"] = json!(tenth((lenses - questions).max(0.0)));
+    row["questions"] = json!(tenth(questions));
+    row["rank"] = json!(tenth(rank));
 }
 
 fn stage_seconds_row(seconds: [f64; 6]) -> Value {
@@ -870,7 +904,10 @@ mod tests {
                         input_tokens: 0,
                         output_tokens: output,
                         cache_read_input_tokens: 0,
-                        cache_creation_input_tokens: 0,
+                        cache_creation_input_tokens: output * 3,
+                        cache_creation_ephemeral5m_input_tokens: output * 2,
+                        cache_creation_ephemeral1h_input_tokens: output,
+                        thinking_tokens: output / 2,
                         cost_usd: cost,
                     },
                 )]),
@@ -979,6 +1016,16 @@ mod tests {
     }
 
     #[test]
+    fn question_mode_takes_the_questions_out_of_the_lenses_stage() {
+        let mut row = stage_seconds_row([1.0, 339.3, 6.5, 44.2, 46.7, 37.1]);
+        add_question_stages(&mut row, 339.3, 280.04, 12.36);
+        assert_eq!(row["lenses"], json!(59.3));
+        assert_eq!(row["questions"], json!(280.0));
+        assert_eq!(row["rank"], json!(12.4));
+        assert_eq!(row["panel"], json!(44.2));
+    }
+
+    #[test]
     fn scenario_question_dispatches_have_their_own_cost_kinds() {
         assert_eq!(kind_of("questions:2"), Some("question-generator"));
         assert_eq!(kind_of("question:17"), Some("question-answer"));
@@ -997,6 +1044,18 @@ mod tests {
         assert_eq!(cost["costUsd"], json!(0.875));
         assert_eq!(cost["byKind"]["lens"]["costUsd"], json!(0.75));
         assert_eq!(cost["byKind"]["synthesize"]["costUsd"], json!(0.125));
+    }
+
+    #[test]
+    fn agent_cost_splits_cache_writes_by_lifetime_and_counts_thinking() {
+        let (a, b) = (dispatch(0.25, 1, 10), dispatch(0.5, 2, 20));
+        let cost = agent_cost(&[("lens", &a), ("completeness-critic", &b)]);
+        assert_eq!(cost["cacheWrite5m"], json!(60));
+        assert_eq!(cost["cacheWrite1h"], json!(30));
+        assert_eq!(cost["thinkingTokens"], json!(15));
+        assert_eq!(cost["byKind"]["lens"]["cacheWrite5m"], json!(20));
+        assert_eq!(cost["byKind"]["critic"]["cacheWrite1h"], json!(20));
+        assert_eq!(cost["byKind"]["critic"]["thinkingTokens"], json!(10));
     }
 
     #[test]

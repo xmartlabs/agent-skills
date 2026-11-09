@@ -1479,8 +1479,10 @@ pub async fn run_full<A: Agent>(
             &verify.verdicts.surviving,
         );
         let v = &mut verify.verdicts;
-        let (res, summary) =
+        let rank_started = std::time::Instant::now();
+        let (res, mut summary) =
             rank_and_place(agent, setup, prompt, &mut v.surviving, &mut v.placed_aside).await;
+        summary["seconds"] = json!((rank_started.elapsed().as_secs_f64() * 10.0).round() / 10.0);
         crate::questions::sync_results(&mut v.results, &v.surviving, &v.placed_aside);
         logs.push(format!(
             "Scenario-question ranking: {} ranked, {} moved to questions to review, {} kept in the report.",

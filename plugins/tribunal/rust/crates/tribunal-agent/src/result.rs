@@ -16,6 +16,15 @@ pub struct ModelUsage {
     pub cache_read_input_tokens: u64,
     #[serde(default)]
     pub cache_creation_input_tokens: u64,
+    /// The part of `cache_creation_input_tokens` written for 5 minutes and
+    /// for 1 hour; the CLI reports both, and 1 hour costs more to write.
+    #[serde(default)]
+    pub cache_creation_ephemeral5m_input_tokens: u64,
+    #[serde(default)]
+    pub cache_creation_ephemeral1h_input_tokens: u64,
+    /// The part of `output_tokens` spent thinking.
+    #[serde(default)]
+    pub thinking_tokens: u64,
     /// The CLI's own estimate at list price, not a bill.
     #[serde(default, rename = "costUSD")]
     pub cost_usd: f64,
@@ -78,5 +87,18 @@ mod tests {
     #[test]
     fn no_result_is_an_error() {
         assert!(CliResult::parse("plain text\n").is_err());
+    }
+
+    #[test]
+    fn model_usage_reads_the_cache_lifetime_split_and_thinking() {
+        let u: ModelUsage = serde_json::from_str(
+            r#"{"inputTokens":12,"outputTokens":8083,"cacheReadInputTokens":243672,"cacheCreationInputTokens":20940,"costUSD":0.0107,"thinkingTokens":4753,"cacheCreationEphemeral5mInputTokens":0,"cacheCreationEphemeral1hInputTokens":20940}"#,
+        )
+        .unwrap();
+        assert_eq!(u.cache_creation_ephemeral1h_input_tokens, 20940);
+        assert_eq!(u.cache_creation_ephemeral5m_input_tokens, 0);
+        assert_eq!(u.thinking_tokens, 4753);
+        let old: ModelUsage = serde_json::from_str(r#"{"inputTokens":1}"#).unwrap();
+        assert_eq!(old.thinking_tokens, 0);
     }
 }

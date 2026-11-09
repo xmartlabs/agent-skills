@@ -530,6 +530,14 @@ fn finding_row(v: &Value, s: &MetricsScope) -> Result<Value, String> {
         or(get(v, "possiblyPreDecided"), Value::Null),
     );
     put("placement", or(get(v, "placement"), Value::Null));
+    // Not from the workflow: written only under `--scenario-questions`, so
+    // every golden case keeps its shape.
+    if let Some(w) = fg(crate::questions::RANK_WORTH) {
+        put(crate::questions::RANK_WORTH, w.clone());
+    }
+    if js::truthy(fg(crate::questions::RANKED_BELOW_BLOCKING)) {
+        put(crate::questions::RANKED_BELOW_BLOCKING, json!(true));
+    }
     put("discardedVotes", or(get(v, "discardedVotes"), json!([])));
     put("votes", vote_rows(v));
     put("debate", debate_row(v));
