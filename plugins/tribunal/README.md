@@ -164,6 +164,41 @@ Three properties worth knowing, since they explain what the machinery is for:
 - **Changes to tribunal are validated offline before they cost a run**: the
   Rust test suite and a release gate that every version has to pass.
 
+## Scenario questions (opt-in)
+
+`--scenario-questions 1` adds a planning step after the lenses. One dispatch
+writes three independent passes of up to 12 concrete scenarios ("if the
+provider times out after charging the card, does the retry charge it again?"),
+and each one is answered in its own dispatch by the lens that covers its file.
+It exists because, on labelled defects the lenses almost never found, a lens
+asked one pointed question about the defect reported it nearly every time. On
+8 backend pull requests it raised the share of labelled defects seen from 48%
+to 71%, at about 1.9 times the cost.
+
+The answers add findings, many of them true but minor, so a ranking step weighs
+each question finding against the rest of the review. One ranked below the
+report's bar moves to a "Questions to review" section, outside the verdict.
+
+### How the ranking prompt was chosen
+
+The ranking's prompt came out of an evolutionary search, not from a person.
+Starting from a hand-written prompt, each generation kept the two best prompts
+and asked a model for two variants of each. The model saw the current prompt's
+worst mistakes: real defects it had ranked low and non-defects it had ranked
+high, each with the reason from its label. A prompt's fitness was how well its
+ranking separated labelled real defects from the rest, measured as AUC (the
+chance that a random real defect ranks above a random non-defect), on 7 pull
+requests with 176 labelled findings. A variant that named a project, product or
+business domain was thrown out, so the prompt stays usable on any repository.
+
+Five generations produced 18 candidates for about US$19. On 3 pull requests the
+search never saw (74 findings, 9 real defects), the winner reached an AUC of
+0.75 and 0.79 in two runs, against 0.71 and 0.72 for the hand-written prompt.
+That held-out set is small, and some defect classes the winner lists came from
+the training examples, so read the gain as measured on one team's code, not as
+a general result. The prompt is `RANK_PROMPT` in
+`rust/crates/tribunal-pipeline/src/questions.rs`.
+
 ## What it costs
 
 Cost follows PR size: from about 14k output tokens for a PR of 1 to 7 files to over a million for the most expensive run recorded, measured over 57 runs. Read the [full table](docs/cost.md) before launching a run on anything large.
