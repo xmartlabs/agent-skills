@@ -47,7 +47,8 @@ to US$5.65 against US$3.58 on the largest. It took 9 to 22 minutes against 3
 to 6. Most of the extra time is the answers: each is a Haiku dispatch that
 reads code for 12 to 25 tool turns, 1 to 3 minutes, and at most 8 ran at once.
 One run with `--concurrency 16` answered 22 questions in 201 seconds, where
-17 had taken 252 at 8.
+17 had taken 252 at 8, so the answers now run at twice the concurrency of the
+rest (16 by default).
 
 The earlier measurement:
 

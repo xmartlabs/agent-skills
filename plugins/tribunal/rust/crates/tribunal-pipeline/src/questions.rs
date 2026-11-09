@@ -161,6 +161,12 @@ pub fn merge_questions(samples: &[Vec<Question>], cap: usize) -> Vec<Question> {
     kept
 }
 
+/// The answers run at this many times the run's concurrency (16 at the
+/// default 8). Each is a Haiku dispatch that reads code for 1 to 3 minutes,
+/// and at 8 the answers were 60 to 70% of a run's wall clock; one run at 16
+/// took about 9 seconds a question against 15, at the same cost.
+pub const ANSWER_CONCURRENCY_FACTOR: usize = 2;
+
 /// A file with no behaviour to question: lockfiles, snapshots, minified or
 /// built output, generated code, binaries and prose docs. A question about one
 /// is not answered. Across 256 labelled question findings, the two on docs
@@ -641,7 +647,8 @@ pub async fn question_stage<A: Agent>(agent: &A, input: &QuestionInputs<'_>) -> 
         out.dispatches.push(("question-warmup".into(), w));
     }
     let labels: Vec<String> = asks.iter().map(|r| r.label.clone()).collect();
-    let results = run_all(agent, setup.concurrency, asks).await;
+    let answer_concurrency = setup.concurrency.max(1) * ANSWER_CONCURRENCY_FACTOR;
+    let results = run_all(agent, answer_concurrency, asks).await;
     for ((label, res), qi) in labels.into_iter().zip(results).zip(routed) {
         let q = &out.questions[qi];
         if let Some(Value::Array(findings)) = answer_of(&res)

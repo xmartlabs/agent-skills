@@ -409,3 +409,69 @@ async fn a_question_about_a_file_with_no_logic_is_not_answered() {
     assert_eq!(out.records[1]["routed"], json!(false));
     assert_eq!(out.metrics()["skippedNoLogicFile"], json!(2));
 }
+
+/// Counts how many answering dispatches run at once, and answers through a
+/// fake agent.
+struct Peak {
+    inner: FakeAgent,
+    in_flight: std::sync::atomic::AtomicUsize,
+    peak: std::sync::atomic::AtomicUsize,
+}
+
+impl tribunal_agent::Agent for Peak {
+    async fn run(&self, req: &tribunal_agent::DispatchRequest) -> tribunal_agent::DispatchResult {
+        use std::sync::atomic::Ordering;
+        let answering = req.label.starts_with("question:");
+        if answering {
+            let now = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            self.peak.fetch_max(now, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
+        }
+        self.inner.run(req).await
+    }
+}
+
+#[tokio::test]
+async fn the_answers_run_at_twice_the_run_concurrency() {
+    let questions: Vec<_> = (0..10)
+        .map(|i| json!({"file": format!("src/jobs/f{i}.ts"), "question": format!("What if step {i} fails?")}))
+        .collect();
+    let agent = Peak {
+        inner: FakeAgent::new()
+            .answer(
+                "questions:1",
+                FakeAnswer::Structured(json!({ "questions": questions })),
+            )
+            .otherwise(FakeAnswer::Structured(json!({"findings": []}))),
+        in_flight: std::sync::atomic::AtomicUsize::new(0),
+        peak: std::sync::atomic::AtomicUsize::new(0),
+    };
+    let s = setup();
+    let prompts = ["LENS ONE PROMPT".to_owned()];
+    let files = [None];
+    let pr_files: Vec<String> = (0..10).map(|i| format!("src/jobs/f{i}.ts")).collect();
+    let schema = schemas::findings();
+    let out = question_stage(
+        &agent,
+        &QuestionInputs {
+            lens_setup: &s,
+            answer_model: "claude-haiku-5-5",
+            samples: 1,
+            lens_prompts: &prompts,
+            lens_files: &files,
+            lens_schema: &schema,
+            generator_prompt: GENERATOR_PROMPT.to_owned(),
+            pr_files: &pr_files,
+            blast_radius: None,
+        },
+    )
+    .await;
+    assert_eq!(out.answered, 10);
+    assert_eq!(
+        agent.peak.load(std::sync::atomic::Ordering::SeqCst),
+        s.concurrency * 2,
+        "setup concurrency is {}",
+        s.concurrency
+    );
+}
