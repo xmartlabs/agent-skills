@@ -524,7 +524,7 @@
         250,
         64
       ],
-      "tag": "per-lens cost, stage seconds, completed marker"
+      "tag": "cost by lens and cache lifetime, stage seconds, questions"
     },
     {
       "id": "post",
@@ -621,7 +621,7 @@
       "type": "frontend",
       "label": "question-rank",
       "sublabel": "MODEL · sonnet, evolved prompt",
-      "tag": "low worth goes to Questions to review",
+      "tag": "worth on every finding; low worth to Questions to review",
       "pos": [
         920,
         1740

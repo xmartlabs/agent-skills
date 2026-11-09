@@ -274,7 +274,7 @@
       "type": "database",
       "label": "metrics row",
       "sublabel": "metrics.jsonl, run JSON, report",
-      "tag": "cost from every call and per lens, seconds per stage",
+      "tag": "cost per call, lens and cache lifetime; stage seconds; each question",
       "pos": [
         760,
         1210
@@ -318,7 +318,7 @@
       "type": "frontend",
       "label": "Rank question findings",
       "sublabel": "MODEL · sonnet, opt-in",
-      "tag": "low worth goes to Questions to review",
+      "tag": "worth kept per finding; low worth goes to Questions to review",
       "pos": [
         40,
         950

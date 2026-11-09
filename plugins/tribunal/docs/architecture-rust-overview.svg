@@ -1124,8 +1124,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="890" y="866" class="t-muted" font-size="9" text-anchor="middle">the vote is read from the file</text>
         </g>
 
-        <g id="node-m-row" data-node-id="m-row" data-node-label="metrics row" tabindex="0" role="button" aria-label="Focus metrics row, metrics.jsonl, run JSON, report, Measured along the way" aria-pressed="false" data-node-kind="database" data-node-sublabel="metrics.jsonl, run JSON, report" data-node-tag="cost from every call and per lens, seconds per stage" data-node-context="Measured along the way">
-          <title>metrics row · metrics.jsonl, run JSON, report · Measured along the way · cost from every call and per lens, seconds per stage</title>
+        <g id="node-m-row" data-node-id="m-row" data-node-label="metrics row" tabindex="0" role="button" aria-label="Focus metrics row, metrics.jsonl, run JSON, report, Measured along the way" aria-pressed="false" data-node-kind="database" data-node-sublabel="metrics.jsonl, run JSON, report" data-node-tag="cost per call, lens and cache lifetime; stage seconds; each question" data-node-context="Measured along the way">
+          <title>metrics row · metrics.jsonl, run JSON, report · Measured along the way · cost per call, lens and cache lifetime; stage seconds; each question</title>
           <rect x="760" y="1210" width="260" height="76" rx="8" class="c-mask"/>
           <rect x="760" y="1210" width="260" height="76" rx="8" class="c-database" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-17;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(766 1216) scale(0.6875)">
@@ -1134,7 +1134,7 @@ rect.c-bg-rect { fill: var(--bg); }
           </g>
           <text data-node-label="" x="890" y="1246" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">metrics row</text>
         <text x="890" y="1262" class="t-muted" font-size="9" text-anchor="middle">metrics.jsonl, run JSON, report</text>
-        <text x="890" y="1278" class="t-database" font-size="7" text-anchor="middle">cost from every call and per lens, seconds per stage</text>
+        <text x="890" y="1278" class="t-database" font-size="6.1" text-anchor="middle">cost per call, lens and cache lifetime; stage seconds; each question</text>
         </g>
 
         <g id="node-m-posted" data-node-id="m-posted" data-node-label="row updated" tabindex="0" role="button" aria-label="Focus row updated, posted and verdict, Measured along the way" aria-pressed="false" data-node-kind="database" data-node-sublabel="posted and verdict" data-node-context="Measured along the way">
@@ -1164,8 +1164,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="170" y="563" class="t-messagebus" font-size="6.6" text-anchor="middle">--scenario-questions 1: up to 36 questions, each answered alone</text>
         </g>
 
-        <g id="node-rank" data-node-id="rank" data-node-label="Rank question findings" tabindex="0" role="button" aria-label="Focus Rank question findings, MODEL · sonnet, opt-in, The review" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet, opt-in" data-node-tag="low worth goes to Questions to review" data-node-context="The review">
-          <title>Rank question findings · MODEL · sonnet, opt-in · The review · low worth goes to Questions to review</title>
+        <g id="node-rank" data-node-id="rank" data-node-label="Rank question findings" tabindex="0" role="button" aria-label="Focus Rank question findings, MODEL · sonnet, opt-in, The review" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet, opt-in" data-node-tag="worth kept per finding; low worth goes to Questions to review" data-node-context="The review">
+          <title>Rank question findings · MODEL · sonnet, opt-in · The review · worth kept per finding; low worth goes to Questions to review</title>
           <rect x="40" y="950" width="260" height="76" rx="8" class="c-mask"/>
           <rect x="40" y="950" width="260" height="76" rx="8" class="c-frontend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-7;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(46 956) scale(0.6875)">
@@ -1176,7 +1176,7 @@ rect.c-bg-rect { fill: var(--bg); }
           </g>
           <text data-node-label="" x="170" y="986" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Rank question findings</text>
         <text x="170" y="1002" class="t-muted" font-size="9" text-anchor="middle">MODEL · sonnet, opt-in</text>
-        <text x="170" y="1018" class="t-frontend" font-size="7" text-anchor="middle">low worth goes to Questions to review</text>
+        <text x="170" y="1018" class="t-frontend" font-size="6.8" text-anchor="middle">worth kept per finding; low worth goes to Questions to review</text>
         </g>
 
         <!-- Connection labels -->
