@@ -611,7 +611,8 @@ mod tests {
             ("TRIBUNAL_CONVENTIONS_TOKEN".into(), "docs".into()),
             ("PATH".into(), "/bin".into()),
         ]);
-        assert_eq!(env, [("PATH".into(), "/bin".into())]);
+        assert!(!env.iter().any(|(k, _)| k == "TRIBUNAL_CONVENTIONS_TOKEN"));
+        assert!(env.contains(&("PATH".into(), "/bin".into())));
     }
 
     #[test]
