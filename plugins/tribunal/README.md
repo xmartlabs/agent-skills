@@ -136,10 +136,12 @@ To report a vulnerability, see [SECURITY.md](../../SECURITY.md).
    in code, and gives it the diff already on disk and about 20 tool calls. It also
    gets a short list of siblings: code outside the PR that calls a name the changed
    lines call, or writes a model they write, nearest directory first.
-4. **Panel**: each critical or behavior-changing candidate faces refuters that
-   try to disprove it, including **Codex** as a second model family. Verdicts come
-   from a weighted vote: a finding dies when it's *refuted*, not when a reviewer
-   is merely unsure.
+4. **Panel** (off by default; `--refuters`, `--codex` or `--gemini` runs it):
+   each critical or behavior-changing candidate faces refuters that try to
+   disprove it, with **Codex** as a second model family when asked for. Verdicts
+   come from a weighted vote: a finding dies when it's *refuted*, not when a
+   reviewer is merely unsure. Without the panel every candidate survives and
+   blocks by its severity, and the report says that no panel ran.
 5. **Report**: survivors, ranked, with a suggested verdict. Nothing reaches
    GitHub until you confirm.
 
@@ -162,9 +164,9 @@ Three properties worth knowing, since they explain what the machinery is for:
 - **Votes are reconciled against the CLI's own artifacts**, not against what a
   wrapper agent reported saying. Across 35 runs of the earlier Workflow engine
   where that check ran, it caught **216 mismatched votes** in 16 of them.
-- **A finding the panel never adjudicated can't be reported as blocking.** When
-  the panel budget runs out, the dropped candidates are listed explicitly rather
-  than silently omitted.
+- **When the panel runs, a finding it never adjudicated can't be reported as
+  blocking.** When the panel budget runs out, the dropped candidates are listed
+  explicitly rather than silently omitted.
 - **Changes to tribunal are validated offline before they cost a run**: the
   Rust test suite and a release gate that every version has to pass.
 
