@@ -61,6 +61,13 @@ impl Drop for PromptFile {
 
 /// Variables a parent Claude Code session sets for itself. A child that
 /// inherits them believes it is part of that session.
+/// The CLI's prompt-cache lifetime. Unset, it is 1 hour on a subscription,
+/// and 1-hour cache writes cost 2x input against 1.25x for 5 minutes. A
+/// dispatch's turns run seconds apart, so the engine asks for 5 minutes
+/// unless the operator set the variable.
+const PROMPT_CACHE_TTL: &str = "CLAUDE_CODE_PROMPT_CACHE_TTL";
+const DEFAULT_PROMPT_CACHE_TTL: &str = "5m";
+
 const SESSION_VARS: &[&str] = &[
     "CLAUDECODE",
     "CLAUDE_CODE_ENTRYPOINT",
@@ -223,6 +230,9 @@ impl ClaudeAgent {
         if let Credentials::ApiKey(key) = &self.credentials {
             env.retain(|(k, _)| k != "ANTHROPIC_API_KEY");
             env.push(("ANTHROPIC_API_KEY".into(), key.into()));
+        }
+        if !env.iter().any(|(k, _)| k == PROMPT_CACHE_TTL) {
+            env.push((PROMPT_CACHE_TTL.into(), DEFAULT_PROMPT_CACHE_TTL.into()));
         }
         env
     }
@@ -531,6 +541,24 @@ mod tests {
     }
 
     #[test]
+    fn children_get_a_five_minute_cache_unless_the_operator_set_one() {
+        let ttl = |env: &[(OsString, OsString)]| -> Vec<String> {
+            env.iter()
+                .filter(|(k, _)| k == "CLAUDE_CODE_PROMPT_CACHE_TTL")
+                .map(|(_, v)| v.to_string_lossy().into_owned())
+                .collect()
+        };
+        let agent = ClaudeAgent::new("claude");
+        let unset: Vec<(OsString, OsString)> = vec![("PATH".into(), "/bin".into())];
+        assert_eq!(ttl(&agent.env(unset)), ["5m"]);
+        let set: Vec<(OsString, OsString)> = vec![
+            ("PATH".into(), "/bin".into()),
+            ("CLAUDE_CODE_PROMPT_CACHE_TTL".into(), "1h".into()),
+        ];
+        assert_eq!(ttl(&agent.env(set)), ["1h"]);
+    }
+
+    #[test]
     fn session_login_drops_keys_and_session_vars() {
         let parent: Vec<(OsString, OsString)> = [
             ("PATH", "/bin"),
@@ -547,7 +575,14 @@ mod tests {
             .iter()
             .map(|(k, _)| k.to_string_lossy().into_owned())
             .collect();
-        assert_eq!(keys, ["PATH", "CLAUDE_CODE_USE_BEDROCK"]);
+        assert_eq!(
+            keys,
+            [
+                "PATH",
+                "CLAUDE_CODE_USE_BEDROCK",
+                "CLAUDE_CODE_PROMPT_CACHE_TTL"
+            ]
+        );
 
         let mut keyed = ClaudeAgent::new("claude");
         keyed.credentials = Credentials::ApiKey("mine".into());
