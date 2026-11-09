@@ -2,7 +2,7 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Tribunal with --engine rust: one PR review, step by step",
+    "title": "Tribunal: one PR review, step by step",
     "locale": "en",
     "quality_profile": "showcase",
     "output": "plugins/tribunal/docs/architecture-rust.html",
@@ -36,13 +36,13 @@
       "type": "external",
       "label": "/tribunal:review-pr",
       "sublabel": "MODEL · your Claude Code session",
-      "tag": "with --engine rust",
+      "tag": "asks before posting",
       "pos": [
-        60,
+        40,
         40
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -53,11 +53,11 @@
       "sublabel": "DETERMINISTIC · bash script",
       "tag": "finds the binary for this machine",
       "pos": [
-        380,
+        330,
         40
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -68,26 +68,26 @@
       "sublabel": "DETERMINISTIC · gh, called by the launcher",
       "tag": "pinned in rust/release.json",
       "pos": [
-        700,
+        620,
         40
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
     {
-      "id": "workflow",
+      "id": "stop",
       "type": "external",
-      "label": "the Workflow",
-      "sublabel": "fallback: the Workflow path",
-      "tag": "no build for this machine",
+      "label": "stops and says why",
+      "sublabel": "no build for this machine, or a bad sha256",
+      "tag": "nothing else runs",
       "pos": [
-        700,
+        620,
         170
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -96,13 +96,13 @@
       "type": "external",
       "label": "Repo profile",
       "sublabel": "DETERMINISTIC · Rust + gh, at the base ref",
-      "tag": "rules, conventions, documentation bundles",
+      "tag": "rules, conventions; other repos read with their own token",
       "pos": [
-        60,
+        40,
         300
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -113,11 +113,11 @@
       "sublabel": "DETERMINISTIC · Rust + gh",
       "tag": "PR, thread, diff, pinned sha",
       "pos": [
-        380,
+        330,
         300
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -128,11 +128,11 @@
       "sublabel": "MODEL · haiku",
       "tag": "decisions already taken",
       "pos": [
-        60,
+        40,
         430
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -142,11 +142,11 @@
       "label": "head worktree",
       "sublabel": "DETERMINISTIC · Rust + git",
       "pos": [
-        380,
+        330,
         430
       ],
       "size": [
-        280,
+        250,
         64
       ],
       "tag": "source at the pinned sha"
@@ -158,11 +158,11 @@
       "sublabel": "DETERMINISTIC · Rust + git, oxc, QuickJS",
       "tag": "oxc, TypeScript in QuickJS",
       "pos": [
-        700,
+        620,
         430
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -172,11 +172,11 @@
       "label": "incremental probe",
       "sublabel": "DETERMINISTIC · Rust",
       "pos": [
-        60,
+        40,
         560
       ],
       "size": [
-        280,
+        250,
         64
       ],
       "tag": "earlier review of this PR"
@@ -188,11 +188,11 @@
       "sublabel": "DETERMINISTIC · Rust",
       "tag": "by churn; each forced focus gets a lens",
       "pos": [
-        380,
+        330,
         560
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -203,11 +203,11 @@
       "sublabel": "DETERMINISTIC · written by Rust",
       "tag": "inflight-runs.jsonl",
       "pos": [
-        60,
+        40,
         670
       ],
       "size": [
-        280,
+        250,
         64
       ]
     },
@@ -218,11 +218,11 @@
       "sublabel": "MODEL · sonnet, backend/frontend/e2e/python",
       "tag": "own files, callers, facts",
       "pos": [
-        60,
+        40,
         820
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -231,13 +231,13 @@
       "type": "frontend",
       "label": "lens N",
       "sublabel": "MODEL · sonnet, in parallel",
-      "tag": "N in parallel, after a cache warm-up",
+      "tag": "N in parallel, after a cache warm-up; 5-minute cache",
       "pos": [
-        380,
+        330,
         820
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -248,11 +248,11 @@
       "sublabel": "MODEL · sonnet, --bot-comments only",
       "tag": "bot comments, if asked",
       "pos": [
-        700,
+        620,
         820
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -263,11 +263,11 @@
       "sublabel": "DETERMINISTIC · Rust",
       "tag": "nothing back is not a clean pass",
       "pos": [
-        60,
+        40,
         990
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -277,11 +277,11 @@
       "label": "out-of-diff gate",
       "sublabel": "DETERMINISTIC · Rust",
       "pos": [
-        380,
+        330,
         990
       ],
       "size": [
-        280,
+        250,
         64
       ],
       "tag": "re-anchor on the changed file, else drop"
@@ -292,11 +292,11 @@
       "label": "evidence resolver",
       "sublabel": "DETERMINISTIC · Rust",
       "pos": [
-        380,
+        330,
         1100
       ],
       "size": [
-        280,
+        250,
         64
       ],
       "tag": "is the quoted code really there?"
@@ -307,11 +307,11 @@
       "label": "dedup-candidates",
       "sublabel": "MODEL · haiku, tribunal-scribe",
       "pos": [
-        380,
+        330,
         1210
       ],
       "size": [
-        280,
+        250,
         64
       ],
       "tag": "one claim from several lenses"
@@ -322,11 +322,11 @@
       "label": "grounded typecheck",
       "sublabel": "DETERMINISTIC · Rust runs tsc, mypy or pyright",
       "pos": [
-        380,
+        330,
         1326
       ],
       "size": [
-        280,
+        250,
         64
       ],
       "tag": "a hit confirms; only a clean tsc kills"
@@ -338,11 +338,11 @@
       "sublabel": "MODEL · Codex, other family",
       "tag": "only when none reach a panel",
       "pos": [
-        700,
+        620,
         1320
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -353,11 +353,11 @@
       "sublabel": "MODEL · sonnet, asked for 20 tool calls at most",
       "tag": "audits unnamed files, lens gaps, siblings",
       "pos": [
-        380,
+        330,
         1450
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -368,11 +368,11 @@
       "sublabel": "MODEL · Codex or Gemini",
       "tag": "one outside vote, from its file",
       "pos": [
-        60,
+        40,
         1620
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -383,11 +383,11 @@
       "sublabel": "MODEL · sonnet, tribunal-refuter",
       "tag": "try to kill the finding",
       "pos": [
-        380,
+        330,
         1620
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -397,11 +397,11 @@
       "label": "escalate, refine, debate",
       "sublabel": "MODEL · sonnet",
       "pos": [
-        700,
+        620,
         1620
       ],
       "size": [
-        280,
+        250,
         64
       ],
       "tag": "split or borderline votes"
@@ -412,11 +412,11 @@
       "label": "classify artifacts",
       "sublabel": "DETERMINISTIC · Rust",
       "pos": [
-        60,
+        40,
         1740
       ],
       "size": [
-        280,
+        250,
         64
       ],
       "tag": "reads each outside model's file"
@@ -428,11 +428,11 @@
       "sublabel": "DETERMINISTIC · Rust",
       "tag": "weighted refute fraction, kill at 0.45, a lower severity needs two votes",
       "pos": [
-        380,
+        330,
         1740
       ],
       "size": [
-        280,
+        270,
         76
       ]
     },
@@ -442,11 +442,11 @@
       "label": "wrong-ref audit",
       "sublabel": "DETERMINISTIC · Rust reads the checkout",
       "pos": [
-        60,
+        40,
         1910
       ],
       "size": [
-        280,
+        250,
         64
       ],
       "tag": "refutations citing missing code"
@@ -458,11 +458,11 @@
       "sublabel": "DETERMINISTIC · Rust, fixed rules",
       "tag": "APPROVE, COMMENT or REQUEST CHANGES; an unread risk path blocks APPROVE",
       "pos": [
-        380,
+        330,
         1910
       ],
       "size": [
-        280,
+        270,
         76
       ]
     },
@@ -472,11 +472,11 @@
       "label": "anchor resolver",
       "sublabel": "DETERMINISTIC · Rust + gh",
       "pos": [
-        700,
+        620,
         1910
       ],
       "size": [
-        280,
+        250,
         64
       ],
       "tag": "pins each cited line"
@@ -486,13 +486,13 @@
       "type": "frontend",
       "label": "synthesize",
       "sublabel": "MODEL · sonnet, tribunal-scribe",
-      "tag": "writes the report around it",
+      "tag": "writes the report around it, says when no panel ran",
       "pos": [
-        380,
+        330,
         2030
       ],
       "size": [
-        280,
+        250,
         64
       ]
     },
@@ -503,11 +503,11 @@
       "sublabel": "DETERMINISTIC · Rust",
       "tag": "row, self-audit, vote reconciliation",
       "pos": [
-        380,
+        330,
         2140
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -517,11 +517,11 @@
       "label": "metrics row and run JSON",
       "sublabel": "DETERMINISTIC · written by Rust",
       "pos": [
-        380,
+        330,
         2270
       ],
       "size": [
-        280,
+        250,
         64
       ],
       "tag": "per-lens cost, stage seconds, completed marker"
@@ -533,11 +533,11 @@
       "sublabel": "MODEL · sonnet, then gh",
       "tag": "homosapiens, fidelity check, footer",
       "pos": [
-        700,
+        620,
         2140
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -547,11 +547,11 @@
       "label": "GitHub review",
       "sublabel": "posted through gh",
       "pos": [
-        700,
+        620,
         2270
       ],
       "size": [
-        280,
+        250,
         64
       ],
       "tag": "on the PR"
@@ -563,11 +563,11 @@
       "sublabel": "DETERMINISTIC · Rust, run by you",
       "tag": "your call on one finding, with a reason",
       "pos": [
-        380,
+        330,
         2420
       ],
       "size": [
-        280,
+        250,
         76
       ]
     },
@@ -578,11 +578,71 @@
       "sublabel": "DETERMINISTIC · Rust, reads the rows",
       "tag": "where the money went, by agent kind and lens",
       "pos": [
-        60,
+        40,
         2420
       ],
       "size": [
-        280,
+        250,
+        76
+      ]
+    },
+    {
+      "id": "qgen",
+      "type": "frontend",
+      "label": "question generator",
+      "sublabel": "MODEL · sonnet, --scenario-questions",
+      "tag": "three passes of up to 12 scenarios",
+      "pos": [
+        920,
+        820
+      ],
+      "size": [
+        250,
+        76
+      ]
+    },
+    {
+      "id": "qanswer",
+      "type": "messagebus",
+      "label": "question answers",
+      "sublabel": "MODEL · haiku, one per question",
+      "tag": "the lens prompt that covers its file",
+      "pos": [
+        920,
+        990
+      ],
+      "size": [
+        250,
+        76
+      ]
+    },
+    {
+      "id": "qrank",
+      "type": "frontend",
+      "label": "question-rank",
+      "sublabel": "MODEL · sonnet, evolved prompt",
+      "tag": "low worth goes to Questions to review",
+      "pos": [
+        920,
+        1740
+      ],
+      "size": [
+        250,
+        76
+      ]
+    },
+    {
+      "id": "runtime",
+      "type": "backend",
+      "label": "runtime confirmation",
+      "sublabel": "DETERMINISTIC · Rust runs the repo's vitest",
+      "tag": "--runtime-confirm: a lens claim as a case",
+      "pos": [
+        620,
+        1450
+      ],
+      "size": [
+        250,
         76
       ]
     }
@@ -595,7 +655,7 @@
         "skill",
         "launcher",
         "release",
-        "workflow"
+        "stop"
       ]
     },
     {
@@ -631,12 +691,13 @@
         "dedup",
         "tsc",
         "sweep",
-        "critic"
+        "critic",
+        "runtime"
       ]
     },
     {
       "kind": "region",
-      "label": "Refuter panel, per finding",
+      "label": "Refuter panel, per finding: off unless --refuters, --codex or --gemini",
       "wraps": [
         "codex",
         "claude",
@@ -666,14 +727,22 @@
         "override",
         "cost"
       ]
+    },
+    {
+      "kind": "region",
+      "label": "Scenario questions, opt-in",
+      "wraps": [
+        "qgen",
+        "qanswer",
+        "qrank"
+      ]
     }
   ],
   "connections": [
     {
       "id": "skill-launcher",
       "from": "skill",
-      "to": "launcher",
-      "label": "--engine rust"
+      "to": "launcher"
     },
     {
       "id": "launcher-release",
@@ -682,9 +751,9 @@
       "label": "first run"
     },
     {
-      "id": "launcher-workflow",
+      "id": "launcher-stop",
       "from": "launcher",
-      "to": "workflow",
+      "to": "stop",
       "label": "no binary",
       "variant": "dashed"
     },
@@ -802,7 +871,8 @@
       "id": "critic-claude",
       "from": "critic",
       "to": "claude",
-      "label": "findings and gaps"
+      "label": "when the panel runs",
+      "variant": "dashed"
     },
     {
       "id": "codex-classify",
@@ -884,6 +954,45 @@
       "from": "row",
       "to": "cost",
       "label": "read"
+    },
+    {
+      "id": "partition-qgen",
+      "from": "partition",
+      "to": "qgen",
+      "label": "opt-in",
+      "variant": "dashed"
+    },
+    {
+      "id": "qgen-qanswer",
+      "from": "qgen",
+      "to": "qanswer",
+      "label": "questions"
+    },
+    {
+      "id": "qanswer-dedup",
+      "from": "qanswer",
+      "to": "dedup",
+      "label": "findings"
+    },
+    {
+      "id": "runtime-claude",
+      "from": "runtime",
+      "to": "claude",
+      "label": "evidence",
+      "variant": "dashed"
+    },
+    {
+      "id": "tally-qrank",
+      "from": "tally",
+      "to": "qrank",
+      "label": "question findings",
+      "variant": "dashed"
+    },
+    {
+      "id": "qrank-verdict",
+      "from": "qrank",
+      "to": "verdict",
+      "label": "worth"
     }
   ]
 }
