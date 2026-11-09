@@ -1,9 +1,12 @@
 # Tribunal
 
-Reviews an open pull request, then **attacks its own findings**. Every serious
-candidate goes to a refutation panel whose job is to kill it; only what survives
-is reported. The goal isn't to find more: it's to stop reporting things that
-turn out not to be real.
+Reviews an open pull request with several independent lenses, then checks what
+they found before reporting it: it merges duplicates, confirms claimed compile
+errors with the repository's own type check where there is one, and asks a
+completeness critic what the lenses missed. A refutation panel whose job is to
+kill each serious finding can run too (`--refuters`, or `--codex` for a second
+model). It is off by default: on measured runs it removed about 3% of what it
+saw and cost about a quarter of a run.
 
 Works on any open PR, including your own.
 
@@ -29,7 +32,8 @@ You need `gh` (logged in) and `claude`. The review runs in a binary the plugin
 downloads on first use, which needs nothing else; on a TypeScript repository it
 also runs the repository's own type check with that repository's `npm`/`npx`
 when they are there.
-The `codex` CLI is optional and adds a second model to the refutation panel.
+The `codex` CLI is optional; with `--codex` it adds a second model to the
+refutation panel and turns the panel on.
 
 **1. Install both plugins** in Claude Code. Tribunal runs its report through
 homosapiens before posting, so install it too.
@@ -132,10 +136,12 @@ To report a vulnerability, see [SECURITY.md](../../SECURITY.md).
    in code, and gives it the diff already on disk and about 20 tool calls. It also
    gets a short list of siblings: code outside the PR that calls a name the changed
    lines call, or writes a model they write, nearest directory first.
-4. **Panel**: each critical or behavior-changing candidate faces refuters that
-   try to disprove it, including **Codex** as a second model family. Verdicts come
-   from a weighted vote: a finding dies when it's *refuted*, not when a reviewer
-   is merely unsure.
+4. **Panel** (off by default; `--refuters`, `--codex` or `--gemini` runs it):
+   each critical or behavior-changing candidate faces refuters that try to
+   disprove it, with **Codex** as a second model family when asked for. Verdicts
+   come from a weighted vote: a finding dies when it's *refuted*, not when a
+   reviewer is merely unsure. Without the panel every candidate survives and
+   blocks by its severity, and the report says that no panel ran.
 5. **Report**: survivors, ranked, with a suggested verdict. Nothing reaches
    GitHub until you confirm.
 
@@ -158,9 +164,9 @@ Three properties worth knowing, since they explain what the machinery is for:
 - **Votes are reconciled against the CLI's own artifacts**, not against what a
   wrapper agent reported saying. Across 35 runs of the earlier Workflow engine
   where that check ran, it caught **216 mismatched votes** in 16 of them.
-- **A finding the panel never adjudicated can't be reported as blocking.** When
-  the panel budget runs out, the dropped candidates are listed explicitly rather
-  than silently omitted.
+- **When the panel runs, a finding it never adjudicated can't be reported as
+  blocking.** When the panel budget runs out, the dropped candidates are listed
+  explicitly rather than silently omitted.
 - **Changes to tribunal are validated offline before they cost a run**: the
   Rust test suite and a release gate that every version has to pass.
 
