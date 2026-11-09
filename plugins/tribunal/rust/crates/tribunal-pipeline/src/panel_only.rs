@@ -240,6 +240,7 @@ pub async fn panel_on_context<A: Agent>(
             evidence,
             exposure: DiffExposure::default(),
             questions: None,
+            lens_setup: None,
         })
     };
     let prepared_findings: Result<Vec<Value>, String> = findings

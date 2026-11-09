@@ -255,7 +255,7 @@ async fn low_ranked_question_findings_move_out_of_the_verdict_and_lens_findings_
     let prompt = rank_prompt("acme/web-app", "12", "abc123", &surviving);
     assert!(prompt.contains("[2] src/a.ts:3 | question finding ranked low"));
     let s = setup();
-    let (_, summary) = rank_and_place(&fake, &s, prompt, &mut surviving, &mut aside).await;
+    let (_, summary) = rank_and_place(&fake, &s, prompt, &mut surviving, &mut aside, None).await;
     let kept: Vec<&str> = surviving
         .iter()
         .map(|r| r["finding"]["title"].as_str().unwrap())
@@ -297,7 +297,7 @@ async fn a_ranking_that_returns_nothing_moves_nothing() {
     let mut aside = Vec::new();
     let prompt = rank_prompt("acme/web-app", "12", "abc123", &surviving);
     let s = setup();
-    let (_, summary) = rank_and_place(&fake, &s, prompt, &mut surviving, &mut aside).await;
+    let (_, summary) = rank_and_place(&fake, &s, prompt, &mut surviving, &mut aside, None).await;
     assert_eq!(surviving.len(), 1);
     assert!(aside.is_empty());
     assert_eq!(summary["ranked"], json!(0));
@@ -320,7 +320,7 @@ async fn a_kept_question_finding_below_worth_four_cannot_block() {
     let mut aside = Vec::new();
     let prompt = rank_prompt("acme/web-app", "12", "abc123", &surviving);
     let s = setup();
-    let (_, summary) = rank_and_place(&fake, &s, prompt, &mut surviving, &mut aside).await;
+    let (_, summary) = rank_and_place(&fake, &s, prompt, &mut surviving, &mut aside, None).await;
     assert_eq!(surviving.len(), 2, "worth 3 stays in the report");
     assert_eq!(surviving[0]["finding"][RANKED_BELOW_BLOCKING], json!(true));
     assert!(surviving[1]["finding"].get(RANKED_BELOW_BLOCKING).is_none());
@@ -557,4 +557,78 @@ async fn without_questions_only_the_lenses_run() {
     assert_eq!(out.dispatches.len(), 1);
     assert!(out.questions.is_none());
     assert!(out.warmup.is_none());
+}
+
+#[tokio::test]
+async fn block_min_worth_keeps_lens_findings_ranked_below_it_from_blocking() {
+    use tribunal_core::report::carry_forward::verdict_for;
+    use tribunal_pipeline::questions::{rank_and_place, rank_prompt, RANKED_BELOW_BLOCKING};
+    let fake = FakeAgent::new().answer(
+        "question-rank",
+        FakeAnswer::Structured(json!({"ranking": [
+            {"id": "1", "worth": 4}, {"id": "2", "worth": 5}
+        ]})),
+    );
+    let mut surviving = vec![
+        result("lens finding ranked four", "correctness", 0),
+        result("lens finding ranked five", "security", 0),
+        result("lens finding the ranking skipped", "correctness", 0),
+    ];
+    let mut aside = Vec::new();
+    let prompt = rank_prompt("acme/web-app", "12", "abc123", &surviving);
+    let s = setup();
+    let (_, summary) = rank_and_place(&fake, &s, prompt, &mut surviving, &mut aside, Some(5)).await;
+    assert!(aside.is_empty(), "lens findings never leave the report");
+    let marked: Vec<bool> = surviving
+        .iter()
+        .map(|r| r["finding"][RANKED_BELOW_BLOCKING] == json!(true))
+        .collect();
+    assert_eq!(marked, [true, false, false]);
+    assert_eq!(summary["belowBlocking"], json!(1));
+    let finding = |i: usize| {
+        let mut f = surviving[i]["finding"].clone();
+        f["severity"] = json!("critical");
+        f["adjudicated"] = json!(true);
+        f
+    };
+    assert_eq!(verdict_for(Some(&[finding(0)]), None), "COMMENT");
+    assert_eq!(verdict_for(Some(&[finding(1)]), None), "REQUEST CHANGES");
+}
+
+#[tokio::test]
+async fn without_block_min_worth_lens_findings_block_whatever_their_worth() {
+    use tribunal_pipeline::questions::{rank_and_place, rank_prompt, RANKED_BELOW_BLOCKING};
+    let fake = FakeAgent::new().answer(
+        "question-rank",
+        FakeAnswer::Structured(json!({"ranking": [{"id": "1", "worth": 1}]})),
+    );
+    let mut surviving = vec![result("lens finding ranked one", "correctness", 0)];
+    let mut aside = Vec::new();
+    let prompt = rank_prompt("acme/web-app", "12", "abc123", &surviving);
+    let s = setup();
+    let (_, summary) = rank_and_place(&fake, &s, prompt, &mut surviving, &mut aside, None).await;
+    assert!(surviving[0]["finding"].get(RANKED_BELOW_BLOCKING).is_none());
+    assert_eq!(summary["belowBlocking"], json!(0));
+}
+
+#[test]
+fn the_ranking_runs_without_questions_only_under_block_min_worth() {
+    use tribunal_pipeline::questions::{ranking_setup, QuestionOutcome};
+    let lens = setup();
+    assert!(ranking_setup(None, Some(&lens), None).is_none());
+    assert_eq!(
+        ranking_setup(None, Some(&lens), Some(5)).map(|s| s.model.as_str()),
+        Some("claude-sonnet-5-5")
+    );
+    assert!(ranking_setup(None, None, Some(5)).is_none());
+    let mut q_setup = setup();
+    q_setup.model = "question-stage-model".into();
+    let q = QuestionOutcome {
+        setup: Some(q_setup),
+        ..QuestionOutcome::default()
+    };
+    assert_eq!(
+        ranking_setup(Some(&q), Some(&lens), None).map(|s| s.model.as_str()),
+        Some("question-stage-model")
+    );
 }

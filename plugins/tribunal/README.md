@@ -363,6 +363,7 @@ your machine, or when the download fails, the review says why and stops.
 | `--full` | Re-review everything, ignoring the incremental baseline |
 | `--since <sha>` | Take this commit as the incremental baseline |
 | `--refuters` / `--no-refuters` | Run the refutation panel, which is off by default; `--codex`, `--gemini` and `--runtime-confirm` also run it, and `--no-refuters` keeps it off even with them (then no outside head, sweep or runtime case runs) |
+| `--block-min-worth <n>` | Off by default. A finding blocks only when the ranking gave it at least worth `n` (1 to 5); below it, it stays in the report without blocking. On a small pilot, worth 5 kept blockers off 10 of 14 pull requests that never broke anything, against 3 of 14 with the default rule |
 | `--max-panels <n>` | When the panel runs, raise its adjudication ceiling for a PR that deserves it (default 40) |
 | `--lens-samples <n>` | Run each lens `n` times, 1 to 4, and merge what they share. With 2, more real defects come out as blocking at about 1.3 to 1.5 times the cost of a run; worth it on a large or high-risk PR |
 | `--codex` / `--no-codex` | Run the panel with the second-opinion head, or keep that head off |
