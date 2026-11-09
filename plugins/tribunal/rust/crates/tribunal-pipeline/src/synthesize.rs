@@ -38,6 +38,7 @@ const SCOPED_RULES: &str = include_str!("synthesis/scopedRules.txt");
 const SCOPE_LINE: &str = include_str!("synthesis/scopeLine.txt");
 const CARRIED_FORMAT: &str = include_str!("synthesis/carriedFormat.txt");
 const QUESTIONS_RULE: &str = include_str!("synthesis/questionsRule.txt");
+const REFUTERS_RULE: &str = include_str!("synthesis/refutersRule.txt");
 const VERIFY_PRIOR: &str = include_str!("synthesis/verify-prior.txt");
 
 pub const PRIOR_VERIFY_CEILING: usize = 6;
@@ -1092,6 +1093,15 @@ pub fn synthesis_prompt(s: &SynthesisInput) -> String {
     } else {
         String::new()
     };
+    let refuters_rule = if s
+        .surviving
+        .iter()
+        .any(|f| js::truthy(js::get(f, crate::verify::REFUTERS_SKIPPED)))
+    {
+        REFUTERS_RULE
+    } else {
+        ""
+    };
     let questions_rule = if s.placed_aside.iter().any(|p| {
         js::get(p, "placement").and_then(Value::as_str) == Some(crate::questions::LOWER_PRIORITY)
     }) {
@@ -1171,6 +1181,7 @@ pub fn synthesis_prompt(s: &SynthesisInput) -> String {
             ("tKill", &js::number_to_string(T_KILL)),
             ("carriedFormat", &carried_format),
             ("questionsRule", questions_rule),
+            ("refutersRule", refuters_rule),
         ],
     )
 }

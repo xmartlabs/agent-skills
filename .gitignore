@@ -12,3 +12,6 @@ node_modules
 # tribunal's private test data (TRIBUNAL_HARNESS_DATA defaults here). It holds
 # real reviews of private pull requests and must never be committed.
 /review-harness-data/
+
+# Python bytecode from running the tribunal action tests
+actions/tribunal/**/__pycache__/

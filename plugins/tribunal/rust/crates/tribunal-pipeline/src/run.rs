@@ -712,7 +712,7 @@ pub async fn verify_phase<A: Agent>(
     if args.no_refuters {
         let n = crate::verify::skip_refuters(&mut gate);
         logs.push(format!(
-            "--no-refuters: {n} candidate(s) skip the refutation panel and survive."
+            "Refutation panel off: {n} candidate(s) survive without one (--refuters runs it)."
         ));
     }
 

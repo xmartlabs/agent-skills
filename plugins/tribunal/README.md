@@ -1,9 +1,12 @@
 # Tribunal
 
-Reviews an open pull request, then **attacks its own findings**. Every serious
-candidate goes to a refutation panel whose job is to kill it; only what survives
-is reported. The goal isn't to find more: it's to stop reporting things that
-turn out not to be real.
+Reviews an open pull request with several independent lenses, then checks what
+they found before reporting it: it merges duplicates, confirms claimed compile
+errors with the repository's own type check where there is one, and asks a
+completeness critic what the lenses missed. A refutation panel whose job is to
+kill each serious finding can run too (`--refuters`, or `--codex` for a second
+model). It is off by default: on measured runs it removed about 3% of what it
+saw and cost about a quarter of a run.
 
 Works on any open PR, including your own.
 
@@ -29,7 +32,8 @@ You need `gh` (logged in) and `claude`. The review runs in a binary the plugin
 downloads on first use, which needs nothing else; on a TypeScript repository it
 also runs the repository's own type check with that repository's `npm`/`npx`
 when they are there.
-The `codex` CLI is optional and adds a second model to the refutation panel.
+The `codex` CLI is optional; with `--codex` it adds a second model to the
+refutation panel and turns the panel on.
 
 **1. Install both plugins** in Claude Code. Tribunal runs its report through
 homosapiens before posting, so install it too.
