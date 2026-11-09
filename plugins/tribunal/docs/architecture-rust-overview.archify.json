@@ -306,7 +306,7 @@
       "tag": "up to 36, each answered alone; --no-scenario-questions turns it off",
       "pos": [
         40,
-        495
+        430
       ],
       "size": [
         260,
@@ -461,10 +461,10 @@
       "to": "m-posted"
     },
     {
-      "id": "lenses-questions",
-      "from": "lenses",
+      "id": "prepare-questions",
+      "from": "prepare",
       "to": "questions",
-      "label": "questions"
+      "label": "beside the lenses"
     },
     {
       "id": "questions-checks",

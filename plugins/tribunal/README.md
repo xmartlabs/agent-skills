@@ -214,8 +214,8 @@ attempt to ask those questions without knowing the answer.
 
 ## Scenario questions (on by default)
 
-A review adds a planning step after the lenses; `--no-scenario-questions`
-turns it off. One dispatch
+A review adds a planning step that runs beside the lenses;
+`--no-scenario-questions` turns it off. One dispatch
 writes three independent passes of up to 12 concrete scenarios ("if the
 provider times out after charging the card, does the retry charge it again?"),
 and each one is answered in its own dispatch by the lens that covers its file.
