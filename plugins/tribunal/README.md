@@ -170,9 +170,80 @@ Three properties worth knowing, since they explain what the machinery is for:
 - **Changes to tribunal are validated offline before they cost a run**: the
   Rust test suite and a release gate that every version has to pass.
 
+## How well it finds defects
+
+Measured against a labelled corpus: 126 pull requests from one team's backend,
+frontend and end-to-end test repositories, with 237 defects judged real at the
+commit that was reviewed. Each run is pinned to that commit and cut off from
+the review thread that later found the defect. Its findings are matched to the
+labels by word overlap, with a model judge and a person reading the cases they
+disagree on.
+
+| Mode | Pull requests | Labelled defects found per run |
+|---|---|---|
+| Normal review | 8 backend | 48% |
+| With `--scenario-questions` | the same 8 | 71% |
+| Normal review | 9 frontend and test | 36% |
+| With `--scenario-questions` | the same 9 | 87% |
+
+Found means a finding states the defect, at any severity. Both gains have
+bootstrap intervals above zero, and wide ones: +1 to +44 points on the backend
+set and +25 to +78 on the other. Those `--scenario-questions` runs used three
+generator samples.
+
+What a report holds, with every finding in its body judged against the code
+at that commit (by a model, not a person) on the 8 backend pull requests:
+
+| Per review | Normal | With `--scenario-questions` |
+|---|---|---|
+| Findings | 8.5 | 18.2 |
+| Real defects | 1.8 (21%) | 4.9 (27%) |
+| Worth reporting | 2.6 | 5.9 |
+| Not a defect | 1.6 | 5.4 |
+
+The rest are real but minor. Why the lenses miss what they miss: asked one
+pointed question about a labelled defect, a lens reported it in 62 of 64 cases;
+reviewing the same code open-ended, in about 2%. Scenario questions are an
+attempt to ask those questions without knowing the answer.
+
+## Scenario questions (opt-in)
+
+`--scenario-questions 1` adds a planning step after the lenses. One dispatch
+writes three independent passes of up to 12 concrete scenarios ("if the
+provider times out after charging the card, does the retry charge it again?"),
+and each one is answered in its own dispatch by the lens that covers its file.
+It exists because, on labelled defects the lenses almost never found, a lens
+asked one pointed question about the defect reported it nearly every time. On
+8 backend pull requests it raised the share of labelled defects seen from 48%
+to 71%, at about 1.9 times the cost.
+
+The answers add findings, many of them true but minor, so a ranking step weighs
+each question finding against the rest of the review. One ranked below the
+report's bar moves to a "Questions to review" section, outside the verdict.
+
+### How the ranking prompt was chosen
+
+The ranking's prompt came out of an evolutionary search, not from a person.
+Starting from a hand-written prompt, each generation kept the two best prompts
+and asked a model for two variants of each. The model saw the current prompt's
+worst mistakes: real defects it had ranked low and non-defects it had ranked
+high, each with the reason from its label. A prompt's fitness was how well its
+ranking separated labelled real defects from the rest, measured as AUC (the
+chance that a random real defect ranks above a random non-defect), on 7 pull
+requests with 176 labelled findings. A variant that named a project, product or
+business domain was thrown out, so the prompt stays usable on any repository.
+
+Five generations produced 18 candidates for about US$19. On 3 pull requests the
+search never saw (74 findings, 9 real defects), the winner reached an AUC of
+0.75 and 0.79 in two runs, against 0.71 and 0.72 for the hand-written prompt.
+That held-out set is small, and some defect classes the winner lists came from
+the training examples, so read the gain as measured on one team's code, not as
+a general result. The prompt is `RANK_PROMPT` in
+`rust/crates/tribunal-pipeline/src/questions.rs`.
+
 ## What it costs
 
-Cost follows PR size: from about 14k output tokens for a PR of 1 to 7 files to over a million for the most expensive run recorded, measured over 57 runs. Read the [full table](docs/cost.md) before launching a run on anything large.
+Measured on 57 recorded reviews, with the refutation panel on: a PR of 1 to 7 files had a median cost of US$0.85 and took about 2.5 minutes, one of 8 to 25 files US$1.52 and 3 minutes. Size in files is a loose guide; the most expensive of those runs, US$7.25, touched 7 files or fewer. `--scenario-questions` costs about twice as much and takes about four times as long. The panel now off by default and the 5-minute prompt cache should take roughly 40% off a normal review, an estimate from the two parts measured separately. The [full numbers](docs/cost.md) say where the money goes.
 
 ## What it records, and why that matters
 
@@ -219,6 +290,10 @@ runs only with `--portable`, which skips the client-name scan.
   gate.
 - **Gemini fails at scale** and is off by default. It works on small PRs; on a
   23-panel run, 0 of 42 dispatched slots produced a successful vote.
+- **Blocking is noisy.** On the 8 backend pull requests above, normal reviews
+  marked 68 findings blocking. 19 were real defects, and the labels would have
+  blocked 3; most of the rest were real but minor. Read Blocking as "look at
+  these first", not as a merge gate.
 - **It reads the diff, not your intent.** It can't know a suspicious-looking
   change was deliberate unless you say so with `--context`.
 
@@ -228,8 +303,8 @@ The commands are in [Quick start](#quick-start). **Developing this plugin, not
 just using it?** Don't hand-edit the installed cache: see
 [Developing it](#developing-it) for the `--plugin-dir` workflow.
 
-The `codex` CLI is optional but recommended: it powers the second-opinion
-refuter, which is on by default.
+The `codex` CLI is optional: `--codex` adds it as a second-opinion refuter and
+runs the refutation panel, which is off by default.
 
 The Codex head runs on the `model` in `~/.codex/review.config.toml`, the file
 `codex --profile review` reads, and falls back to the `model` in
@@ -274,10 +349,13 @@ your machine, or when the download fails, the review says why and stops.
 | `--context "<text>"` | Decisions reviewers must not re-litigate |
 | `--full` | Re-review everything, ignoring the incremental baseline |
 | `--since <sha>` | Take this commit as the incremental baseline |
-| `--max-panels <n>` | Raise the adjudication ceiling for a PR that deserves it (default 40) |
+| `--refuters` / `--no-refuters` | Run the refutation panel, which is off by default; `--codex` and `--gemini` also run it, and `--no-refuters` keeps it off even with them |
+| `--max-panels <n>` | When the panel runs, raise its adjudication ceiling for a PR that deserves it (default 40) |
 | `--lens-samples <n>` | Run each lens `n` times, 1 to 4, and merge what they share. With 2, more real defects come out as blocking at about 1.3 to 1.5 times the cost of a run; worth it on a large or high-risk PR |
-| `--codex` / `--no-codex` | Force the second-opinion head on or off (off is cheaper, weaker) |
-| `--gemini` | Add Google's head (off by default) |
+| `--codex` / `--no-codex` | Run the panel with the second-opinion head, or keep that head off |
+| `--gemini` | Run the panel with Google's head (off by default) |
+| `--scenario-questions <n>` | Add the scenario-question step; use 1. About twice the cost and four times the wall clock of a normal review; see *Scenario questions* |
+| `--question-model <id>` | The model that answers the scenario questions (default Haiku) |
 | `--bot-comments` | Also vet existing bot comments on the PR |
 | `--runtime-confirm` | Run the reviewers' claims about what a function returns as vitest cases before the panel. Runs PR code; see *Security* |
 | `--profile <path>` / `--rules <path>` | Try a profile before committing it |
