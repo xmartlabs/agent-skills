@@ -251,6 +251,10 @@ pub fn verdict_for(
             js::truthy(Some(f))
                 && !js::truthy(js::get(f, "verifiedByGateNote"))
                 && js::get(f, "adjudicated") != Some(&Value::Bool(false))
+                // Not from the workflow: a scenario-question finding the
+                // ranking placed below the blocking bar stays in the report
+                // but does not block (`--scenario-questions`).
+                && !js::truthy(js::get(f, "rankedBelowBlocking"))
         })
         .collect();
     let critical_survivor = blocking.iter().any(|f| severity_is(f, "critical"));
@@ -485,6 +489,14 @@ pub fn classify_prior_findings_by(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_question_finding_ranked_below_blocking_does_not_request_changes() {
+        let f = json!({"severity": "critical", "adjudicated": true, "rankedBelowBlocking": true});
+        assert_eq!(verdict_for(Some(&[f]), None), "COMMENT");
+        let g = json!({"severity": "critical", "adjudicated": true});
+        assert_eq!(verdict_for(Some(&[g]), None), "REQUEST CHANGES");
+    }
     use super::*;
 
     #[test]

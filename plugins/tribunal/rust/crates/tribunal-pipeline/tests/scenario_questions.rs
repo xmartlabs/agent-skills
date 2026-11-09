@@ -288,3 +288,37 @@ async fn a_ranking_that_returns_nothing_moves_nothing() {
     assert!(aside.is_empty());
     assert_eq!(summary["ranked"], json!(0));
 }
+
+#[tokio::test]
+async fn a_kept_question_finding_below_worth_four_cannot_block() {
+    use tribunal_pipeline::questions::{rank_and_place, rank_prompt, RANKED_BELOW_BLOCKING};
+    use tribunal_pipeline::verdict_basis::verdict_basis;
+    let fake = FakeAgent::new().answer(
+        "question-rank",
+        FakeAnswer::Structured(
+            json!({"ranking": [{"id": "1", "worth": 3}, {"id": "2", "worth": 4}]}),
+        ),
+    );
+    let mut surviving = vec![
+        result("worth three", QUESTION_LENS, 0),
+        result("worth four", QUESTION_LENS, 0),
+    ];
+    let mut aside = Vec::new();
+    let prompt = rank_prompt("acme/web-app", "12", "abc123", &surviving);
+    let s = setup();
+    let (_, summary) = rank_and_place(&fake, &s, prompt, &mut surviving, &mut aside).await;
+    assert_eq!(surviving.len(), 2, "worth 3 stays in the report");
+    assert_eq!(surviving[0]["finding"][RANKED_BELOW_BLOCKING], json!(true));
+    assert!(surviving[1]["finding"].get(RANKED_BELOW_BLOCKING).is_none());
+    assert_eq!(summary["belowBlocking"], json!(1));
+    let findings: Vec<serde_json::Value> = surviving
+        .iter()
+        .map(|r| {
+            let mut f = r["finding"].clone();
+            f["severity"] = json!("critical");
+            f
+        })
+        .collect();
+    let basis = verdict_basis(&findings).expect("the worth-four finding qualifies");
+    assert!(basis.contains("worth four") && !basis.contains("worth three"));
+}

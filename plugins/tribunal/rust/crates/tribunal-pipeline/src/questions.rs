@@ -211,6 +211,16 @@ pub const KEEP_SUPPORT: usize = 4;
 /// The `placement` a moved finding carries, which keeps it out of the verdict.
 pub const LOWER_PRIORITY: &str = "lower-priority-question";
 
+/// A question finding kept in the report blocks only when the ranking gives
+/// it at least this worth, or [`KEEP_SUPPORT`] candidates were merged into it.
+/// On 250 labelled findings, worth 4 or more was a real defect about 7 times
+/// in 10, while the answers' own severity was inflated.
+pub const BLOCKING_WORTH: u64 = 4;
+
+/// The finding field that keeps a kept question finding out of the verdict's
+/// blockers. `verdict_for`, the verdict basis and the row's `blocking` read it.
+pub const RANKED_BELOW_BLOCKING: &str = "rankedBelowBlocking";
+
 fn rank_schema() -> Value {
     json!({
         "type": "object",
@@ -309,20 +319,24 @@ pub fn keeps(worth: Option<u64>, support: usize) -> bool {
 
 /// Moves the surviving results from answered questions that rank below the
 /// bar into `placed_aside`, with a [`LOWER_PRIORITY`] placement. Lens results
-/// are never moved. Returns how many were ranked and moved.
+/// are never moved. A kept question finding below [`BLOCKING_WORTH`] is marked
+/// [`RANKED_BELOW_BLOCKING`]. Returns how many were ranked, moved and marked.
 pub fn place_lower_priority(
     surviving: &mut Vec<Value>,
     placed_aside: &mut Vec<Value>,
     worth: &[Option<u64>],
-) -> (usize, usize) {
+) -> (usize, usize, usize) {
     let ranked = worth.iter().filter(|w| w.is_some()).count();
     let mut kept = Vec::new();
     let mut moved = 0;
+    let mut below = 0;
     for (r, w) in surviving
         .drain(..)
         .zip(worth.iter().copied().chain(std::iter::repeat(None)))
     {
         let from_question = js::get(finding_of(&r), "lens") == Some(&json!(QUESTION_LENS));
+        let below_blocking =
+            from_question && w.is_some_and(|w| w < BLOCKING_WORTH) && support_of(&r) < KEEP_SUPPORT;
         if from_question && !keeps(w, support_of(&r)) {
             let mut r = r;
             if let Value::Object(m) = &mut r {
@@ -334,11 +348,18 @@ pub fn place_lower_priority(
             placed_aside.push(r);
             moved += 1;
         } else {
+            let mut r = r;
+            if below_blocking {
+                below += 1;
+                if let Some(Value::Object(f)) = r.get_mut("finding") {
+                    f.insert(RANKED_BELOW_BLOCKING.into(), json!(true));
+                }
+            }
             kept.push(r);
         }
     }
     *surviving = kept;
-    (ranked, moved)
+    (ranked, moved, below)
 }
 
 /// Ranks the results the panel kept and moves the low ones from answered
@@ -360,8 +381,8 @@ pub async fn rank_and_place<A: Agent>(
     req.timeout = setup.timeout;
     let res = agent.run(&req).await;
     let w = worths(answer_of(&res).as_ref(), surviving.len());
-    let (ranked, moved) = place_lower_priority(surviving, placed_aside, &w);
-    let summary = json!({"ranked": ranked, "movedToQuestionsToReview": moved, "keptInReport": surviving.len()});
+    let (ranked, moved, below) = place_lower_priority(surviving, placed_aside, &w);
+    let summary = json!({"ranked": ranked, "movedToQuestionsToReview": moved, "keptInReport": surviving.len(), "belowBlocking": below});
     (res, summary)
 }
 

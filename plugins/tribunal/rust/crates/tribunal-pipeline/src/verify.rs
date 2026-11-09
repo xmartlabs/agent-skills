@@ -419,12 +419,26 @@ pub struct GroundedGate {
     pub diagnostic_to_panel: usize,
 }
 
+/// The finding field `--no-refuters` sets: the run chose to skip the panel, so
+/// the finding counts as adjudicated (its blocking then follows its severity,
+/// as it would after a panel that did not refute it).
+pub const REFUTERS_SKIPPED: &str = "refutersSkipped";
+
+/// Whether a result's finding skipped the panel under `--no-refuters`.
+#[must_use]
+pub fn refuters_skipped(v: &Value) -> bool {
+    js::truthy(js::get(v, "finding").and_then(|f| js::get(f, REFUTERS_SKIPPED)))
+}
+
 /// `--no-refuters`: every candidate bound for the refutation panel survives
 /// without a panel, as a grounded-confirmed one does (`panelRan: false`).
 /// Returns how many skipped the panel.
 pub fn skip_refuters(gate: &mut GroundedGate) -> usize {
     let n = gate.panel_input.len();
-    for c in gate.panel_input.drain(..) {
+    for mut c in gate.panel_input.drain(..) {
+        if let Value::Object(m) = &mut c {
+            m.insert(REFUTERS_SKIPPED.into(), json!(true));
+        }
         gate.confirmed.push(json!({
             "finding": c,
             "grounded": {"verdict": null, "diagnostic": null}

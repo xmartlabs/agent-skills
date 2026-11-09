@@ -420,6 +420,7 @@ pub fn surviving_for_synthesis(surviving: &[Value]) -> Vec<Value> {
                 json!(
                     (js::truthy(js::get(v, "panelRan")) && !js::truthy(js::get(v, "unverified")))
                         || confirmed
+                        || crate::verify::refuters_skipped(v)
                 ),
             );
             m.insert(
