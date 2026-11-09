@@ -670,6 +670,16 @@ no subscription, for example), set `TRIBUNAL_ANTHROPIC_API_KEY`; the binary
 passes it to every child as `ANTHROPIC_API_KEY`. `TRIBUNAL_CLAUDE_BIN` names
 the `claude` binary to run.
 
+Each child also gets `CLAUDE_CODE_PROMPT_CACHE_TTL=5m` unless the operator's
+environment already sets that variable. Left unset, the CLI keeps its cache
+for 1 hour on a subscription, and a 1-hour cache write costs 2x the input
+price against 1.25x for 5 minutes. The turns of one dispatch run seconds
+apart, so 5 minutes loses almost nothing: on a measured run (BE pull request,
+2026-11-09) cache writes were 55 to 64% of the cost, and the same tokens cost
+25% less at 5 minutes, about 19% net after the shared prefix expired between
+stages. Set the variable to `1h` to keep the old behaviour, for example when
+the same pull request is reviewed again within the hour.
+
 On Windows, Rust finds a bare name in `PATH` as `<name>.exe` only and refuses
 most of these arguments for a `.cmd` (the system prompt has newlines, the
 schema has quotes), so Claude Code installed with npm or pnpm, a `claude.cmd`
