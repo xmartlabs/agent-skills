@@ -267,10 +267,10 @@ assert_ok "the data dir is the job's" grep -qx "DATA=$(job)/data" "$FX/tribunal-
 assert_ok "the plugin root is the action's own ref" grep -qx "ROOT=$PLUGIN_ROOT" "$FX/tribunal-review.env"
 assert_ok "the OAuth token reaches the binary" grep -qx "OAUTH=oauth-secret" "$FX/tribunal-review.env"
 assert_ok "no conventions token means none reaches the binary" grep -qx "CONVENTIONS=<unset>" "$FX/tribunal-review.env"
-TRIBUNAL_CONVENTIONS_TOKEN= review
+TRIBUNAL_CONVENTIONS_TOKEN='' review
 assert_ok "an empty conventions token is no token" grep -qx "CONVENTIONS=<unset>" "$FX/tribunal-review.env"
 assert_eq "an empty conventions token masks nothing" "0" \
-  "$(TRIBUNAL_CONVENTIONS_TOKEN= CLAUDE_CODE_OAUTH_TOKEN=oauth-secret bash "$RUN" review 2>/dev/null | grep -c 'add-mask')"
+  "$(TRIBUNAL_CONVENTIONS_TOKEN='' CLAUDE_CODE_OAUTH_TOKEN=oauth-secret bash "$RUN" review 2>/dev/null | grep -c 'add-mask')"
 MASK_OUT="$(TRIBUNAL_CONVENTIONS_TOKEN=docs-secret CLAUDE_CODE_OAUTH_TOKEN=oauth-secret bash "$RUN" review 2>/dev/null)"
 assert_ok "a conventions token is masked" grep -qx '::add-mask::docs-secret' <<< "$MASK_OUT"
 assert_ok "a conventions token reaches the binary" grep -qx "CONVENTIONS=docs-secret" "$FX/tribunal-review.env"
