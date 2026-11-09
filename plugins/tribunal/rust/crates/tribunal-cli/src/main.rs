@@ -310,9 +310,10 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
         ));
     }
     // The refutation panel is off unless asked for: it killed about 3% of what
-    // it saw for about a quarter of a run. Asking for an external head asks
-    // for the panel it sits on.
-    args.no_refuters = !refuters.unwrap_or(args.codex == Some(true) || args.gemini == Some(true));
+    // it saw for about a quarter of a run. Asking for an external head, or for
+    // runtime cases (evidence only a refuter reads), asks for the panel.
+    args.no_refuters = !refuters
+        .unwrap_or(args.codex == Some(true) || args.gemini == Some(true) || args.runtime_confirm);
     if policy.effort.is_none() {
         policy.effort = operator_effort();
     }
@@ -1283,6 +1284,8 @@ mod tests {
         assert!(!no_refuters(&["--refuters"]));
         assert!(!no_refuters(&["--codex"]));
         assert!(!no_refuters(&["--gemini"]));
+        assert!(!no_refuters(&["--runtime-confirm"]));
+        assert!(no_refuters(&["--runtime-confirm", "--no-refuters"]));
         assert!(no_refuters(&["--codex", "--no-refuters"]));
         assert!(!no_refuters(&["--no-refuters", "--refuters"]));
     }

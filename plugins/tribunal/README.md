@@ -136,12 +136,15 @@ To report a vulnerability, see [SECURITY.md](../../SECURITY.md).
    in code, and gives it the diff already on disk and about 20 tool calls. It also
    gets a short list of siblings: code outside the PR that calls a name the changed
    lines call, or writes a model they write, nearest directory first.
-4. **Panel** (off by default; `--refuters`, `--codex` or `--gemini` runs it):
+4. **Panel** (off by default; `--refuters`, `--codex`, `--gemini` or
+   `--runtime-confirm` runs it):
    each critical or behavior-changing candidate faces refuters that try to
    disprove it, with **Codex** as a second model family when asked for. Verdicts
    come from a weighted vote: a finding dies when it's *refuted*, not when a
    reviewer is merely unsure. Without the panel every candidate survives and
-   blocks by its severity, and the report says that no panel ran.
+   blocks by its severity, the critic's gaps included, and the report says that
+   no panel ran. The outside heads only vote on panels, so without one Codex and
+   Gemini do not run, and neither does the clean-verdict Codex sweep.
 5. **Report**: survivors, ranked, with a suggested verdict. Nothing reaches
    GitHub until you confirm.
 
@@ -355,7 +358,7 @@ your machine, or when the download fails, the review says why and stops.
 | `--context "<text>"` | Decisions reviewers must not re-litigate |
 | `--full` | Re-review everything, ignoring the incremental baseline |
 | `--since <sha>` | Take this commit as the incremental baseline |
-| `--refuters` / `--no-refuters` | Run the refutation panel, which is off by default; `--codex` and `--gemini` also run it, and `--no-refuters` keeps it off even with them |
+| `--refuters` / `--no-refuters` | Run the refutation panel, which is off by default; `--codex`, `--gemini` and `--runtime-confirm` also run it, and `--no-refuters` keeps it off even with them (then no outside head, sweep or runtime case runs) |
 | `--max-panels <n>` | When the panel runs, raise its adjudication ceiling for a PR that deserves it (default 40) |
 | `--lens-samples <n>` | Run each lens `n` times, 1 to 4, and merge what they share. With 2, more real defects come out as blocking at about 1.3 to 1.5 times the cost of a run; worth it on a large or high-risk PR |
 | `--codex` / `--no-codex` | Run the panel with the second-opinion head, or keep that head off |
@@ -363,7 +366,7 @@ your machine, or when the download fails, the review says why and stops.
 | `--scenario-questions <n>` | Add the scenario-question step; use 1. About twice the cost and four times the wall clock of a normal review; see *Scenario questions* |
 | `--question-model <id>` | The model that answers the scenario questions (default Haiku) |
 | `--bot-comments` | Also vet existing bot comments on the PR |
-| `--runtime-confirm` | Run the reviewers' claims about what a function returns as vitest cases before the panel. Runs PR code; see *Security* |
+| `--runtime-confirm` | Run the reviewers' claims about what a function returns as vitest cases before the panel, which it turns on because only a refuter reads them. Runs PR code; see *Security* |
 | `--profile <path>` / `--rules <path>` | Try a profile before committing it |
 | `--head-sha <sha>` / `--thread-before <iso>` | Pin the tree and the thread, to compare a re-run with an earlier one |
 | `--model <id>` / `--effort <level>` | Model and reasoning effort for the agents |

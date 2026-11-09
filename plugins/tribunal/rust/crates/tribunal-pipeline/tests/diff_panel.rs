@@ -461,6 +461,8 @@ fn rust_panel(c: &Value, rt: &tokio::runtime::Runtime) -> Value {
         output_ceiling: 1_200_000.0,
         spent: &spent_fn,
         spent_before: 0.0,
+        no_refuters: false,
+        raised_without_panel: &[],
     };
     let mut logs = Vec::new();
     let out = rt

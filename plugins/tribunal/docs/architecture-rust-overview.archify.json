@@ -126,7 +126,7 @@
       "type": "frontend",
       "label": "Refuter panel",
       "sublabel": "MODEL · sonnet refuters, off by default",
-      "tag": "--refuters, --codex or --gemini runs it; each tries to kill one finding",
+      "tag": "--refuters, --codex, --gemini or --runtime-confirm; each tries to kill one",
       "pos": [
         380,
         820

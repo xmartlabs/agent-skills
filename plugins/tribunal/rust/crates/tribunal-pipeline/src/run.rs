@@ -384,7 +384,7 @@ pub async fn run_review<A: Agent>(
             &mut exposure,
         )?;
         let mut task = lens_task(format!("lens:{}", i + 1), prompt);
-        if args.runtime_confirm {
+        if args.runtime_confirm && !args.no_refuters {
             task.prompt.push_str(runtime_case::LENS_PARAGRAPH);
             task.schema = schemas::findings_with_runtime_claim();
         }
@@ -709,6 +709,11 @@ pub async fn verify_phase<A: Agent>(
         }
     }
     let mut gate = grounded_gate(&dedup.panel_candidates, &grounded, pr_files, logs)?;
+    let raised_without_panel = if args.no_refuters {
+        gate.panel_input.clone()
+    } else {
+        Vec::new()
+    };
     if args.no_refuters {
         let n = crate::verify::skip_refuters(&mut gate);
         logs.push(format!(
@@ -717,11 +722,13 @@ pub async fn verify_phase<A: Agent>(
     }
 
     // The availability probe: which CLIs exist, and a tree for them to read.
+    // Outside heads only vote on panels and run the clean-verdict sweep, so
+    // with the panel off they do not run at all.
     let flags = PanelFlags {
-        force_codex: args.codex == Some(true),
-        no_codex: args.codex == Some(false),
-        force_gemini: args.gemini == Some(true),
-        no_gemini: args.gemini == Some(false),
+        force_codex: args.codex == Some(true) && !args.no_refuters,
+        no_codex: args.codex == Some(false) || args.no_refuters,
+        force_gemini: args.gemini == Some(true) && !args.no_refuters,
+        no_gemini: args.gemini == Some(false) || args.no_refuters,
         force_batch: args.batch_panels == Some(true),
         no_batch: args.batch_panels == Some(false),
         lone_refuter: true,
@@ -801,7 +808,10 @@ pub async fn verify_phase<A: Agent>(
     if vote_dir.is_none() {
         logs.push(format!("Artifact directory not resolved by the probe — falling back to {}. This path is shared by every run on this commit, so invocation counts read from it may include earlier runs.", vote_dir_path.display()));
     }
-    let runtime = if args.runtime_confirm && !args.panel_only {
+    if args.runtime_confirm && args.no_refuters {
+        logs.push("Runtime confirmation skipped: its cases are evidence for the refutation panel, which --no-refuters turned off".into());
+    }
+    let runtime = if args.runtime_confirm && !args.panel_only && !args.no_refuters {
         let checkout = match rt
             .tools
             .git(&["rev-parse", "--show-toplevel"], Some(&typecheck_cwd))
@@ -919,6 +929,8 @@ pub async fn verify_phase<A: Agent>(
         output_ceiling: policy.output_ceiling,
         spent: &spent,
         spent_before: output_of(&before),
+        no_refuters: args.no_refuters,
+        raised_without_panel: &raised_without_panel,
     };
     let mut panel = panel_phase(
         &io,
@@ -928,6 +940,12 @@ pub async fn verify_phase<A: Agent>(
         logs,
     )
     .await?;
+    for gap in std::mem::take(&mut panel.unpaneled) {
+        gate.confirmed.push(json!({
+            "finding": gap,
+            "grounded": {"verdict": null, "diagnostic": null}
+        }));
+    }
     relabel_unchanged_drops(
         &mut panel.dropped_pre_panel,
         &rc.plan.files,

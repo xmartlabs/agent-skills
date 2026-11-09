@@ -1217,3 +1217,39 @@ fn the_refuters_rule_appears_only_when_a_survivor_skipped_the_panel() {
     }]);
     assert!(!rust_synth(&c).contains(rule));
 }
+
+/// Not a port: without a panel, a question finding the ranking set aside was
+/// not kept by refuters, so the note on placed_aside must not say it was.
+#[test]
+fn the_placed_aside_note_names_the_panel_only_when_one_ran() {
+    let mut c = sample(synth_case()).into_iter().next().expect("a case");
+    let by_panel = "<placed_aside note=\"kept by the panel, not counted toward the verdict\">";
+    let without =
+        "<placed_aside note=\"kept without a refutation panel, not counted toward the verdict\">";
+    let prompt = rust_synth(&c);
+    assert!(prompt.contains(by_panel) && !prompt.contains(without));
+    c["placedAsideForSynthesis"] = json!([{
+        "title": "q", "file": "src/a.ts", "line": 3, "severity": "important",
+        "placement": "lower-priority-question",
+        "refutersSkipped": true
+    }]);
+    let prompt = rust_synth(&c);
+    assert!(prompt.contains(without) && !prompt.contains(by_panel));
+}
+
+/// Not a port: the placed-aside payload keeps `refutersSkipped` from the
+/// finding, which is what the note above reads.
+#[test]
+fn a_placed_aside_payload_keeps_refuters_skipped() {
+    let aside = json!({
+        "finding": {"title": "q", "file": "src/a.ts", "line": 3, "severity": "important",
+                    "refutersSkipped": true},
+        "placement": {"placement": "lower-priority-question", "worth": 2},
+    });
+    let side = tribunal_pipeline::synthesize::side_payloads(&[aside], &[], &[], &[]);
+    assert_eq!(side.placed_aside[0]["refutersSkipped"], json!(true));
+    assert_eq!(
+        side.placed_aside[0]["placement"],
+        json!("lower-priority-question")
+    );
+}

@@ -336,7 +336,7 @@
       "type": "cloud",
       "label": "clean-verdict sweep",
       "sublabel": "MODEL · Codex, other family",
-      "tag": "only when none reach a panel",
+      "tag": "with the panel on, when none reach it",
       "pos": [
         620,
         1320
@@ -636,7 +636,7 @@
       "type": "backend",
       "label": "runtime confirmation",
       "sublabel": "DETERMINISTIC · Rust runs the repo's vitest",
-      "tag": "--runtime-confirm: a lens claim as a case",
+      "tag": "--runtime-confirm, turns the panel on",
       "pos": [
         620,
         1450
@@ -644,6 +644,21 @@
       "size": [
         250,
         76
+      ]
+    },
+    {
+      "id": "rowfields",
+      "type": "database",
+      "label": "what a row records",
+      "sublabel": "DETERMINISTIC · per run and per finding",
+      "tag": "cache 5m/1h, thinking, rankWorth, each question",
+      "pos": [
+        40,
+        2270
+      ],
+      "size": [
+        250,
+        64
       ]
     }
   ],
@@ -697,7 +712,7 @@
     },
     {
       "kind": "region",
-      "label": "Refuter panel, per finding: off unless --refuters, --codex or --gemini",
+      "label": "Refuter panel, per finding: off unless --refuters, --codex, --gemini or --runtime-confirm",
       "wraps": [
         "codex",
         "claude",
@@ -717,7 +732,8 @@
         "persist",
         "row",
         "post",
-        "github"
+        "github",
+        "rowfields"
       ]
     },
     {
@@ -993,6 +1009,27 @@
       "from": "qrank",
       "to": "verdict",
       "label": "worth"
+    },
+    {
+      "id": "row-rowfields",
+      "from": "row",
+      "to": "rowfields",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "slate",
+      "title": "What a metrics row records",
+      "items": [
+        "agentCost: cost per call, by agent kind and by lens",
+        "cache reads, cache writes at 5 minutes and at 1 hour, thinking tokens, in total and per kind",
+        "seconds per stage, the question stage and the ranking included",
+        "scenario questions: one record per question (pass, file, answered, findings, dropped out of diff)",
+        "per finding: rankWorth on every finding the ranking scored, and where it was placed",
+        "lens health: failed dispatches and surfaces not reached, by reason",
+        "noRefuters, engineVersion and the pinned sha"
+      ]
     }
   ]
 }

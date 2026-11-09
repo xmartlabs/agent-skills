@@ -44,6 +44,24 @@ fn gap(title: &str, line: u64) -> Value {
 }
 
 fn run(critic_findings: Vec<Value>, engine_critic: bool) -> (PanelOutcome, Vec<String>) {
+    run_with(critic_findings, engine_critic, false)
+}
+
+/// The lens finding every case raises. With the panel off it reaches the
+/// panel phase as already raised, not as panel input.
+fn lens_finding() -> Value {
+    json!({
+        "title": "Retry job is never enqueued", "file": "src/widgets/retry.ts", "line": 127,
+        "severity": "important", "description": "d", "evidence": "e", "lens": "correctness",
+        "slotId": 0, "confidence": 0.7, "refutersSkipped": true,
+    })
+}
+
+fn run_with(
+    critic_findings: Vec<Value>,
+    engine_critic: bool,
+    no_refuters: bool,
+) -> (PanelOutcome, Vec<String>) {
     let mut answers = HashMap::new();
     answers.insert(
         "completeness-critic".to_owned(),
@@ -61,6 +79,11 @@ fn run(critic_findings: Vec<Value>, engine_critic: bool) -> (PanelOutcome, Vec<S
     let retest = |_: &Value| false;
     let spent = || 0.0;
     let none: [String; 0] = [];
+    let (panel_input, skipped) = if no_refuters {
+        (Vec::new(), vec![lens_finding()])
+    } else {
+        (vec![lens_finding()], Vec::new())
+    };
     let env = PanelEnv {
         pr_number: &json!(77),
         repo: "acme/widgets",
@@ -88,15 +111,12 @@ fn run(critic_findings: Vec<Value>, engine_critic: bool) -> (PanelOutcome, Vec<S
         output_ceiling: 1_200_000.0,
         spent: &spent,
         spent_before: 0.0,
+        no_refuters,
+        raised_without_panel: &skipped,
     };
-    let raised = json!({
-        "title": "Retry job is never enqueued", "file": "src/widgets/retry.ts", "line": 127,
-        "severity": "important", "description": "d", "evidence": "e", "lens": "correctness",
-        "slotId": 0, "confidence": 0.7,
-    });
     let mut logs = Vec::new();
     let out = rt
-        .block_on(panel_phase(&io, &env, vec![raised], Vec::new(), &mut logs))
+        .block_on(panel_phase(&io, &env, panel_input, Vec::new(), &mut logs))
         .unwrap();
     (out, logs)
 }
@@ -150,4 +170,54 @@ fn without_the_engine_critic_the_place_alone_drops_it_silently() {
     );
     assert_eq!(out.critic_gaps, 0);
     assert!(repeat_logs(&logs).is_empty());
+}
+
+#[test]
+fn with_the_panel_off_a_repeat_of_a_lens_finding_is_still_dropped() {
+    let (out, logs) = run_with(
+        vec![gap("The retry job never gets enqueued", 129)],
+        true,
+        true,
+    );
+    assert_eq!(out.critic_gaps, 0);
+    assert!(out.unpaneled.is_empty());
+    assert_eq!(repeat_logs(&logs).len(), 1);
+}
+
+#[test]
+fn with_the_panel_off_a_new_gap_skips_the_refuter() {
+    let (out, logs) = run_with(
+        vec![gap(
+            "Exhausted rows cannot be replayed from the failure list",
+            127,
+        )],
+        true,
+        true,
+    );
+    assert_eq!(out.critic_gaps, 1);
+    assert!(out.panel_input.is_empty());
+    assert!(out.verified.is_empty());
+    assert_eq!(out.unpaneled.len(), 1);
+    let g = &out.unpaneled[0];
+    assert_eq!(g["refutersSkipped"], json!(true));
+    assert_eq!(g["lens"], json!("completeness-critic"));
+    assert_eq!(
+        g["slotId"],
+        json!(1),
+        "numbered after the lens finding's slot"
+    );
+    assert!(logs
+        .iter()
+        .any(|l| l.contains("the refutation panel is off")));
+}
+
+#[test]
+fn with_the_panel_off_the_clean_verdict_sweep_does_not_run() {
+    let (out, logs) = run_with(Vec::new(), true, true);
+    assert_eq!(out.clean_sweep.as_ref().unwrap()["ran"], json!(false));
+    assert_eq!(
+        out.clean_sweep.as_ref().unwrap()["skippedReason"],
+        json!("refutation-panel-off")
+    );
+    assert!(logs.iter().any(|l| l.contains("refutation-panel-off")));
 }
