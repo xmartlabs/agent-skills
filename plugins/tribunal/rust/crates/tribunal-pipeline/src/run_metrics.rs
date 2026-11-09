@@ -283,6 +283,7 @@ pub fn kind_of(label: &str) -> Option<&'static str> {
         "defense" => "defense",
         "judge" => "adjudicator",
         "dedup-candidates" => "dedup",
+        "pre-decided-check" => "pre-decided",
         "bot-vetting" => "bot-vetting",
         "cache-warmup" => "warmup",
         "completeness-critic" => "critic",

@@ -145,7 +145,10 @@ To report a vulnerability, see [SECURITY.md](../../SECURITY.md).
    come from a weighted vote: a finding dies when it's *refuted*, not when a
    reviewer is merely unsure. Without the panel every candidate survives and
    blocks by its severity, the critic's gaps included, and the report says that
-   no panel ran. The outside heads only vote on panels, so without one Codex and
+   no panel ran. One check the panel made still runs without it: a candidate
+   that repeats a DEFERRED, BY-DESIGN or SPLIT-OUT decision from the PR's thread
+   goes to "Pre-decided", decided by one call and held to the refuters' citation
+   rule. The outside heads only vote on panels, so without one Codex and
    Gemini do not run, and neither does the clean-verdict Codex sweep.
 5. **Report**: survivors, ranked, with a suggested verdict. Nothing reaches
    GitHub until you confirm.
