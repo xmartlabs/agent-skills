@@ -1481,6 +1481,7 @@ pub async fn run_full<A: Agent>(
         let v = &mut verify.verdicts;
         let (res, summary) =
             rank_and_place(agent, setup, prompt, &mut v.surviving, &mut v.placed_aside).await;
+        crate::questions::sync_results(&mut v.results, &v.surviving, &v.placed_aside);
         logs.push(format!(
             "Scenario-question ranking: {} ranked, {} moved to questions to review, {} kept in the report.",
             summary["ranked"], summary["movedToQuestionsToReview"], summary["keptInReport"]

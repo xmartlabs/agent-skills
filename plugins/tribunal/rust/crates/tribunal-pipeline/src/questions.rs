@@ -362,6 +362,35 @@ pub fn place_lower_priority(
     (ranked, moved, below)
 }
 
+fn result_key(v: &Value) -> String {
+    let f = finding_of(v);
+    match js::get(f, "slotId") {
+        Some(id) if !id.is_null() => format!("slot:{id}"),
+        _ => format!(
+            "{}|{}|{}",
+            js::get(f, "title").and_then(Value::as_str).unwrap_or(""),
+            js::get(f, "file").and_then(Value::as_str).unwrap_or(""),
+            js::get(f, "line").map_or(String::new(), Value::to_string)
+        ),
+    }
+}
+
+/// Carries what the ranking changed in `surviving` and `placed_aside` back to
+/// `results`, the list the metrics row is built from, so the row records each
+/// moved finding's placement and each `rankedBelowBlocking` mark.
+pub fn sync_results(results: &mut [Value], surviving: &[Value], placed_aside: &[Value]) {
+    let changed: std::collections::HashMap<String, &Value> = surviving
+        .iter()
+        .chain(placed_aside)
+        .map(|v| (result_key(v), v))
+        .collect();
+    for r in results.iter_mut() {
+        if let Some(v) = changed.get(&result_key(r)) {
+            *r = (*v).clone();
+        }
+    }
+}
+
 /// Ranks the results the panel kept and moves the low ones from answered
 /// questions out of the verdict. One dispatch; when it returns nothing, nothing
 /// moves.
@@ -566,6 +595,21 @@ pub async fn question_stage<A: Agent>(agent: &A, input: &QuestionInputs<'_>) -> 
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn sync_results_carries_the_ranking_marks_to_the_full_list() {
+        let a = json!({"survived": true, "finding": {"title": "a", "slotId": 0, "lens": QUESTION_LENS}});
+        let b = json!({"survived": true, "finding": {"title": "b", "slotId": 1, "lens": QUESTION_LENS}});
+        let refuted = json!({"survived": false, "finding": {"title": "c", "slotId": 2}});
+        let mut results = vec![a.clone(), b.clone(), refuted.clone()];
+        let mut surviving = vec![a, b];
+        let mut aside = Vec::new();
+        place_lower_priority(&mut surviving, &mut aside, &[Some(1), Some(3)]);
+        sync_results(&mut results, &surviving, &aside);
+        assert_eq!(results[0]["placement"]["placement"], json!(LOWER_PRIORITY));
+        assert_eq!(results[1]["finding"][RANKED_BELOW_BLOCKING], json!(true));
+        assert_eq!(results[2], refuted);
+    }
     use super::*;
 
     fn q(file: &str, text: &str, sample: usize) -> Question {
