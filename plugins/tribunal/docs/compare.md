@@ -71,14 +71,23 @@ The seed defaults to 1, so the same files give the same numbers.
 
 When the runs agree with each other, say A never finds an item and B always
 does, every resample gives the same difference and the percentile interval
-collapses to a point (+100 to +100). So each bound of a recall interval is the
-wider of the bootstrap's and that of a score interval from the pooled counts: Wilson's for an
-arm's rate, Newcombe's hybrid score interval for the difference. 0 of 5
-against 5 of 5 then reads as +39 to +100 points. The score interval treats
-every observation as independent, so it is a floor on the width, not a
-replacement for the bootstrap. The JSON keeps the bootstrap's own interval in
-`difference.bootstrapCi` and says in `difference.widened` whether the score
-interval won.
+collapses to a point (+100 to +100). In that case, and whenever there are
+fewer than 5 matched units or a unit has a single run in either arm, each bound
+of a recall interval is the wider of the bootstrap's and that of a score
+interval from the pooled counts: Wilson's for an arm's rate, Newcombe's hybrid
+score interval for the difference. 0 of 5 against 5 of 5 then reads as +39 to
++100 points. The score interval treats every observation as independent, so it
+is a floor on the width, not a replacement for the bootstrap.
+
+With 5 units or more and at least 2 runs per unit in both arms, the
+bootstrap's interval stands alone. Newcombe's sees two independent samples, so
+it gives up what pairing the same items in both arms buys and is wider than it
+needs to be. In simulations from corpus detection rates (12 units, 36 items),
+the bootstrap alone gave 1 to 3% false positives at 2 or more runs per unit,
+against 6 to 7% at one run, and lifting the floor there raised how often a
+real +15 point gain was called, for instance from 30% to 40% at 12 units by 2
+runs. The JSON keeps the bootstrap's own interval in `difference.bootstrapCi`
+and says in `difference.widened` whether the score interval won.
 
 ## Reading the verdict
 
