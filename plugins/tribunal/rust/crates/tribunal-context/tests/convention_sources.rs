@@ -3,7 +3,7 @@ use common::*;
 
 use serde_json::{json, Value};
 use tribunal_context::convention_sources::{self as cs, Doc};
-use tribunal_context::exec::Tools;
+use tribunal_context::exec::{ConventionsToken, Tools};
 
 const HEAD: &str = "2222222222222222222222222222222222222222";
 const DOCS_HEAD: &str = "1111111111111111111111111111111111111111";
@@ -571,4 +571,226 @@ async fn the_pr_head_comes_from_gh_when_only_the_pr_number_is_given() {
         got.sources[0]
     );
     assert!(got.warnings.is_empty(), "{:?}", got.warnings);
+}
+
+// A separate read token for another repo's docs.
+
+/// `t` running as a job whose main token is `main-token`, logging which token
+/// each `gh` call used, optionally with a conventions token and a docs dir.
+fn with_tokens(mut t: Tools, name: &str, conventions: &str) -> (Tools, std::path::PathBuf) {
+    let dir = scratch(&format!("{name}-log"));
+    let log = dir.join("tokens.jsonl");
+    t.env.push(("GH_TOKEN".into(), "main-token".into()));
+    t.env.push(("GH_TOKEN_LOG".into(), log.clone().into()));
+    t.conventions = ConventionsToken::new(conventions);
+    t.conventions_docs_dir = Some(dir.join("docs"));
+    (t, log)
+}
+
+/// `(token, what the call touched)`, in call order.
+fn calls_by_token(log: &std::path::Path) -> Vec<(String, String)> {
+    std::fs::read_to_string(log)
+        .unwrap()
+        .lines()
+        .map(|l| {
+            let v: Value = serde_json::from_str(l).unwrap();
+            let args = v["args"].as_array().unwrap();
+            let what = args
+                .iter()
+                .map(|a| a.as_str().unwrap())
+                .find(|a| a.starts_with("repos/") || a.starts_with("query="))
+                .unwrap_or_default()
+                .to_owned();
+            (v["token"].as_str().unwrap().to_owned(), what)
+        })
+        .collect()
+}
+
+/// A convention no changed path claims, which is what the menu offers.
+const ON_DEMAND: &str =
+    "---\ntype: convention\ndescription: Job rules.\ncode:\n  - src/jobs/\n---\n";
+
+fn submodule_calls() -> Vec<Value> {
+    vec![
+        submodule_pointer(HEAD, SHA_A),
+        submodule_pointer("main", SHA_A),
+        tree(
+            "acme/handbook",
+            SHA_A,
+            "",
+            true,
+            &[("guides/jobs.md", "2", 10), ("routes.md", "1", 10)],
+        ),
+        graphql(
+            "acme/handbook",
+            SHA_A,
+            &[("guides/jobs.md", ON_DEMAND), ("routes.md", GUIDE)],
+        ),
+    ]
+}
+
+#[tokio::test]
+async fn a_submodule_pointer_keeps_the_main_token_and_its_docs_use_the_conventions_one() {
+    let (t, log) = with_tokens(
+        tools_for("cs-token-submodule", submodule_calls()),
+        "cs-token-submodule",
+        "docs-token",
+    );
+    let got = load(
+        &t,
+        json!([{"repo": "acme/handbook", "ref": "submodule:docs"}]),
+        HEAD,
+    )
+    .await;
+    assert_eq!(got.sources[0]["loaded"][0]["path"], "routes.md");
+    let calls = calls_by_token(&log);
+    assert_eq!(calls.len(), 4, "{calls:?}");
+    for (token, what) in &calls {
+        let want = if what.starts_with("repos/acme/web-app/") {
+            "main-token"
+        } else {
+            "docs-token"
+        };
+        assert_eq!(token, want, "{what}");
+    }
+}
+
+#[tokio::test]
+async fn the_menu_points_at_docs_on_disk_so_a_reviewer_needs_no_token() {
+    let (t, _) = with_tokens(
+        tools_for("cs-token-menu", submodule_calls()),
+        "cs-token-menu",
+        "docs-token",
+    );
+    let docs_dir = t.conventions_docs_dir.clone().unwrap();
+    let got = load(
+        &t,
+        json!([{"repo": "acme/handbook", "ref": "submodule:docs"}]),
+        HEAD,
+    )
+    .await;
+    assert_eq!(got.sources[0]["offered"], json!(["guides/jobs.md"]));
+    assert!(!got.text.contains("gh api"), "{}", got.text);
+    let dir = docs_dir.join("0");
+    assert!(
+        got.text.contains(&format!("read {}/<path>", dir.display())),
+        "{}",
+        got.text
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("guides/jobs.md")).unwrap(),
+        ON_DEMAND
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&dir).unwrap().permissions().mode();
+        assert_eq!(mode & 0o077, 0, "{mode:o}");
+    }
+}
+
+#[tokio::test]
+async fn a_source_in_the_reviewed_repo_keeps_the_main_token_however_it_names_it() {
+    for (name, source) in [
+        ("cs-token-own", json!({"root": "docs/"})),
+        (
+            "cs-token-named",
+            json!({"repo": "ACME/web-app", "ref": "main", "root": "docs/"}),
+        ),
+    ] {
+        let (repo, sha_ref) = if source.get("repo").is_some() {
+            ("ACME/web-app", "main")
+        } else {
+            ("acme/web-app", "main")
+        };
+        let (t, log) = with_tokens(
+            tools_for(
+                name,
+                vec![
+                    call(
+                        &[
+                            "api",
+                            &format!("repos/{repo}/commits/{sha_ref}"),
+                            "--jq",
+                            ".sha",
+                        ],
+                        &format!("{SHA_A}\n"),
+                        0,
+                    ),
+                    tree(repo, SHA_A, "docs/", true, &[("docs/routes.md", "1", 10)]),
+                    graphql(repo, SHA_A, &[("docs/routes.md", GUIDE)]),
+                ],
+            ),
+            name,
+            "docs-token",
+        );
+        let got = load(&t, json!([source]), HEAD).await;
+        assert_eq!(
+            got.sources[0]["loaded"][0]["path"], "docs/routes.md",
+            "{:?}",
+            got.sources
+        );
+        let calls = calls_by_token(&log);
+        assert_eq!(calls.len(), 3, "{calls:?}");
+        assert!(calls.iter().all(|(t, _)| t == "main-token"), "{calls:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_token_that_fails_warns_naming_it_and_the_review_goes_on() {
+    let endpoint = "repos/acme/handbook/commits/main";
+    let answer = json!({
+        "args": ["api", endpoint, "--jq", ".sha"],
+        "stdout": "", "stderr": "gh: Not Found (HTTP 404)\n", "code": 1
+    });
+    let source = json!([{"repo": "acme/handbook", "ref": "main"}]);
+    let (t, log) = with_tokens(
+        tools_for("cs-token-fail", vec![answer.clone()]),
+        "cs-token-fail",
+        "sentinel-docs-token",
+    );
+    let with = load(&t, source.clone(), HEAD).await;
+    assert_eq!(
+        calls_by_token(&log).len(),
+        1,
+        "no retry with the main token"
+    );
+    assert_eq!(
+        with.warnings,
+        ["conventionSources[0] acme/handbook: acme/handbook has no ref main. acme/handbook is read with the conventions token, and a 404 can also mean that token has no access to it. Reviewing without it."]
+    );
+    assert!(!format!("{:?}{}", with.warnings, with.text).contains("sentinel-docs-token"));
+
+    let (t, _) = with_tokens(
+        tools_for("cs-token-fail-none", vec![answer]),
+        "cs-token-fail-none",
+        "",
+    );
+    let without = load(&t, source, HEAD).await;
+    assert_eq!(
+        without.warnings,
+        ["conventionSources[0] acme/handbook: acme/handbook has no ref main. Reviewing without it."]
+    );
+    assert_eq!(without.text, with.text);
+}
+
+#[tokio::test]
+async fn without_a_token_every_call_and_all_the_output_are_as_before() {
+    let (bare, _) = (tools_for("cs-token-none-a", submodule_calls()), ());
+    let (t, log) = with_tokens(
+        tools_for("cs-token-none-b", submodule_calls()),
+        "cs-token-none-b",
+        "",
+    );
+    let source = json!([{"repo": "acme/handbook", "ref": "submodule:docs"}]);
+    let before = load(&bare, source.clone(), HEAD).await;
+    let after = load(&t, source, HEAD).await;
+    assert_eq!(before.text, after.text);
+    assert_eq!(before.warnings, after.warnings);
+    assert_eq!(before.sources, after.sources);
+    assert!(before
+        .text
+        .contains("gh api \"repos/acme/handbook/contents/<path>"));
+    assert!(calls_by_token(&log).iter().all(|(t, _)| t == "main-token"));
+    assert!(!t.conventions_docs_dir.unwrap().exists());
 }

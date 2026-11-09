@@ -215,6 +215,7 @@ tribunal() {
   # ranks a key above the login), and an older one still runs on the OAuth token.
   if [ -n "${ANTHROPIC_API_KEY:-}" ]; then export TRIBUNAL_ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY"; fi
   [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || unset CLAUDE_CODE_OAUTH_TOKEN
+  [ -n "${TRIBUNAL_CONVENTIONS_TOKEN:-}" ] || unset TRIBUNAL_CONVENTIONS_TOKEN
   unset ANTHROPIC_API_KEY
   export HOME="$JOB/home" TMPDIR="$JOB/tmp" TRIBUNAL_DATA_DIR="$JOB/data" TRIBUNAL_PLUGIN_ROOT="$PLUGIN"
   unset OPENAI_API_KEY CODEX_API_KEY INPUT_OPENAI_API_KEY
@@ -241,6 +242,8 @@ cmd_restore() {
 
 cmd_review() {
   local args=() a expected live rc
+  # Secrets are masked already; a token minted by an earlier step may not be.
+  if [ -n "${TRIBUNAL_CONVENTIONS_TOKEN:-}" ]; then echo "::add-mask::$TRIBUNAL_CONVENTIONS_TOKEN"; fi
   while IFS= read -r a; do [ -n "$a" ] && args+=("$a"); done < "$JOB/profile-args"
   while IFS= read -r a; do [ -n "$a" ] && args+=("$a"); done < "$JOB/review-args"
   : > "$JOB/review.log"

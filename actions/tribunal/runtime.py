@@ -18,6 +18,8 @@ import zipfile
 
 SOURCE_REPO = "xmartlabs/agent-skills"
 MIN_VERSION = (115, 2, 0)
+# The first engine that keeps conventions-token out of the reviewers' environment.
+MIN_CONVENTIONS_TOKEN_VERSION = (115, 4, 0)
 REVIEWERS = ("frontend", "backend", "python", "e2e")
 RESTORE_RUN_LIMIT = 30  # newest runs of this workflow on the PR branch to search for a baseline
 NUMBERS = ("concurrency", "max-panels", "max-agents", "max-output-tokens", "prior-verify", "lens-samples")
@@ -178,6 +180,8 @@ def resolve(job, action):
         homosapiens = source / "plugins/homosapiens/skills/homosapiens"
     manifest = read(plugin / ".claude-plugin/plugin.json")
     version = manifest["version"]
+    if os.environ.get("HAS_CONVENTIONS_TOKEN") == "true" and semver(version) < MIN_CONVENTIONS_TOKEN_VERSION:
+        raise ValueError(f"conventions-token needs Tribunal 115.4.0 or newer, and this run selected {version}; an older engine would ignore it and pass it to the reviewers")
     semver(version)
     if selected_version is not None and version != selected_version:
         raise ValueError("selected freeze does not contain the requested plugin version")

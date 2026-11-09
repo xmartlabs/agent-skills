@@ -15,7 +15,7 @@ pub const SCOPE_CLAUDE_RECIPIENTS: bool = false;
 pub const SELF_FETCH_INSTRUCTION: &str = r#"Fetch the diff yourself per your own "PR number provided" scope rule (gh pr view, gh pr diff)."#;
 
 /// `repo.replace(/[^A-Za-z0-9]+/g, "-")`.
-fn repo_slug(repo: &str) -> String {
+pub(crate) fn repo_slug(repo: &str) -> String {
     let mut slug = String::new();
     let mut in_run = false;
     for c in repo.chars() {

@@ -4,6 +4,7 @@
 //! `skills/review-pr/scripts/` or `lib/`, and its differential test runs the
 //! script and the port against the same recorded `gh`.
 
+pub mod anchor_checkouts;
 pub mod assemble_methodology;
 pub mod ast_bindings;
 pub mod attention_facts;

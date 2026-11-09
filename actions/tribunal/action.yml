@@ -21,6 +21,12 @@ inputs:
       Token for reading the pull request and posting the review. The job needs
       `pull-requests: write` for it.
     default: ${{ github.token }}
+  conventions-token:
+    description: >-
+      Optional read-only token for the repos a profile's `conventionSources` and `crossRepoAnchors`
+      name. Fine-grained, with `Contents: read` on those repos. Empty reads them with `github-token`.
+      `github-token` keeps everything on the reviewed repo, including posting. Store it as a secret.
+    default: ''
   label:
     description: >-
       Adding this label forces a review, ignoring `drafts`, `paths` and `once`; another label skips.
@@ -132,6 +138,7 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
+        HAS_CONVENTIONS_TOKEN: ${{ inputs.conventions-token != '' }}
         INPUT_REVIEWER: ${{ inputs.reviewer }}
         INPUT_TRIBUNAL_VERSION: ${{ inputs.tribunal-version }}
         INPUT_VERDICT: ${{ inputs.verdict }}
@@ -164,6 +171,7 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude-token }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        TRIBUNAL_CONVENTIONS_TOKEN: ${{ inputs.conventions-token }}
       run: bash "$GITHUB_ACTION_PATH/run.sh" review
 
     - id: post

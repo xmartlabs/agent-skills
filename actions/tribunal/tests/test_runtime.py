@@ -193,6 +193,18 @@ class RuntimeTests(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
         self.assertEqual(1, len(result.stderr.strip().splitlines()))
 
+    def test_conventions_token_refuses_an_engine_that_would_leak_it(self):
+        action = self.bundled_checkout(Path(self.temp.name) / "wrapper")
+        with patch.dict(os.environ, {"HAS_CONVENTIONS_TOKEN": "true"}):
+            with self.assertRaisesRegex(ValueError, "conventions-token needs Tribunal 115.4.0"):
+                runtime.resolve(self.job, action)
+        with patch.dict(os.environ, {"HAS_CONVENTIONS_TOKEN": "false"}):
+            runtime.resolve(self.job, action)
+        manifest = action.parent.parent / "plugins/tribunal/.claude-plugin/plugin.json"
+        manifest.write_text(json.dumps({"version": "115.4.0"}))
+        with patch.dict(os.environ, {"HAS_CONVENTIONS_TOKEN": "true"}):
+            runtime.resolve(self.job, action)
+
     def test_missing_freeze_never_falls_back_to_bundled(self):
         with patch.dict(os.environ, {"INPUT_TRIBUNAL_VERSION": "115.3.0"}), patch.object(runtime, "api_json", side_effect=ValueError("missing freeze")), self.assertRaisesRegex(ValueError, "missing freeze"):
             runtime.resolve(self.job, Path(__file__).resolve().parents[1])
