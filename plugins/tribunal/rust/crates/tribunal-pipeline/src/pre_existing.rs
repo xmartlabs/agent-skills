@@ -93,18 +93,36 @@ pub fn is_pre_existing_code(
     let Some(file) = js::get(finding, "file").and_then(Value::as_str) else {
         return false;
     };
-    let evidence = js::get(finding, "evidence")
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    if evidence
-        .lines()
-        .all(|l| l.trim().is_empty() || without_lens_tag(l).contains("No relevant quotes found"))
+    // A merged finding keeps each source's quote apart. Only its joined
+    // `evidence` carries `[lens] ` tags, read when a row predates the field.
+    let lines: Vec<&str> =
+        match js::get(finding, crate::verify::EVIDENCE_BY_SOURCE).and_then(Value::as_array) {
+            Some(sources) => sources
+                .iter()
+                .filter_map(|e| js::get(e, "evidence").and_then(Value::as_str))
+                .flat_map(str::lines)
+                .collect(),
+            None => {
+                let evidence = js::get(finding, "evidence")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .lines();
+                if js::get(finding, "mergedFrom").is_some() {
+                    evidence.map(without_lens_tag).collect()
+                } else {
+                    evidence.collect()
+                }
+            }
+        };
+    if lines
+        .iter()
+        .all(|l| l.trim().is_empty() || l.contains("No relevant quotes found"))
     {
         return false;
     }
-    let quoted: Vec<String> = evidence
-        .lines()
-        .map(|l| norm(without_lens_tag(l)))
+    let quoted: Vec<String> = lines
+        .iter()
+        .map(|l| norm(l))
         .filter(|l| l.len() >= MIN_QUOTE_LINE && !l.contains("No relevant quotes found"))
         .collect();
     if quoted.is_empty() {
@@ -230,7 +248,7 @@ mod tests {
         let a = added_lines(DIFF);
         let root = head("merged");
         assert!(is_pre_existing_code(
-            &finding(
+            &merged(
                 "src/a.ts",
                 "[correctness] const old = legacy(x);\n[scenario-question] const tail = 2;"
             ),
@@ -238,7 +256,7 @@ mod tests {
             &a
         ));
         assert!(!is_pre_existing_code(
-            &finding(
+            &merged(
                 "src/a.ts",
                 "[correctness] const old = legacy(x);\n[security] const added = compute(x);"
             ),
@@ -246,7 +264,7 @@ mod tests {
             &a
         ));
         assert!(is_pre_existing_code(
-            &finding(
+            &merged(
                 "src/a.ts",
                 "[correctness] const old = legacy(x);\n[security] No relevant quotes found"
             ),
@@ -254,13 +272,57 @@ mod tests {
             &a
         ));
         assert!(!is_pre_existing_code(
-            &finding(
+            &merged(
                 "src/a.ts",
                 "[correctness] No relevant quotes found\n[security] No relevant quotes found"
             ),
             &root,
             &a
         ));
+    }
+
+    fn merged(file: &str, evidence: &str) -> Value {
+        let mut f = finding(file, evidence);
+        f["mergedFrom"] = json!(["correctness", "security"]);
+        f
+    }
+
+    const BRACKET_DIFF: &str = "diff --git a/src/b.ts b/src/b.ts\n--- a/src/b.ts\n+++ b/src/b.ts\n@@ -1,2 +1,3 @@\n const x = 1;\n+[second] = pair(x);\n [first] = pair(x);\n";
+
+    fn bracket_head(name: &str) -> std::path::PathBuf {
+        let root = head(name);
+        std::fs::write(
+            root.join("src/b.ts"),
+            "const x = 1;\n[second] = pair(x);\n[first] = pair(x);\n",
+        )
+        .unwrap();
+        root
+    }
+
+    #[test]
+    fn a_quote_that_opens_with_a_bracket_keeps_it() {
+        let a = added_lines(BRACKET_DIFF);
+        let root = bracket_head("bracket");
+        assert!(is_pre_existing_code(
+            &finding("src/b.ts", "[first] = pair(x);"),
+            &root,
+            &a
+        ));
+        let mut f = merged(
+            "src/b.ts",
+            "[correctness] const x = 1;\n[first] = pair(x);\n[security] No relevant quotes found",
+        );
+        f[crate::verify::EVIDENCE_BY_SOURCE] = json!([
+            {"lens": "correctness", "evidence": "const x = 1;\n[first] = pair(x);"},
+            {"lens": "security", "evidence": "No relevant quotes found"},
+        ]);
+        assert!(is_pre_existing_code(&f, &root, &a));
+        // Without the field the tags cannot be told from code: the second
+        // line loses `[first]` and its rest is also on the added line.
+        f.as_object_mut()
+            .unwrap()
+            .shift_remove(crate::verify::EVIDENCE_BY_SOURCE);
+        assert!(!is_pre_existing_code(&f, &root, &a));
     }
 
     #[test]

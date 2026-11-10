@@ -59,6 +59,9 @@ fn severity_rank(f: &Value) -> f64 {
     }
 }
 
+/// The merged finding's field holding each source's lens and quote.
+pub const EVIDENCE_BY_SOURCE: &str = "evidenceBySource";
+
 /// Ports `mergeCandidates`: one candidate for a cluster, with the strongest
 /// severity and flags any member carried.
 #[must_use]
@@ -112,6 +115,16 @@ pub fn merge_candidates(members: &[&Value]) -> Value {
     out.insert(
         "mergedFrom".into(),
         json!(members.iter().map(|m| lens(m)).collect::<Vec<_>>()),
+    );
+    // Not from the workflow: each source's quote with its lens as data, so a
+    // reader that looks the quote up in code does not parse the `[lens] `
+    // tags out of `evidence`, and a row says which lens quoted what.
+    out.insert(
+        EVIDENCE_BY_SOURCE.into(),
+        json!(members
+            .iter()
+            .map(|m| json!({"lens": lens(m), "evidence": js::get(m, "evidence").cloned().unwrap_or(Value::Null)}))
+            .collect::<Vec<_>>()),
     );
     out.insert(
         "mergedLocations".into(),

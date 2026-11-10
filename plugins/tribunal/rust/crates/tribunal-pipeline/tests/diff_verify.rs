@@ -16,8 +16,9 @@ use proptest::prelude::*;
 use serde_json::{json, Value};
 use tribunal_core::evidence::tsc_oracle::{DiagsByFile, TscDiagnostic};
 use tribunal_pipeline::verify::{
-    apply_dedup, apply_typecheck_result, dedup_prompt, grounded_gate, needs_panel, no_panel_result,
-    panel_plan, partition_results, Grounded, GROUNDED_DIAGNOSTIC,
+    apply_dedup, apply_typecheck_result, dedup_prompt, grounded_gate, merge_candidates,
+    needs_panel, no_panel_result, panel_plan, partition_results, Grounded, EVIDENCE_BY_SOURCE,
+    GROUNDED_DIAGNOSTIC,
 };
 
 const FILES: &[&str] = &[
@@ -186,6 +187,34 @@ fn dedup_params(c: &Value) -> Value {
     })
 }
 
+/// Declared difference: a merged candidate carries `evidenceBySource`, each
+/// member's lens and quote, which the workflow never wrote. It is removed
+/// here after checking it against `mergedFrom` and the joined `evidence`.
+/// Returns how many candidates carried it. Witness:
+/// `a_merged_candidate_keeps_each_members_quote_apart`.
+fn as_the_workflow_merged(out: &mut Value) -> usize {
+    let mut n = 0;
+    for cand in out["panelCandidates"].as_array_mut().unwrap() {
+        let m = cand.as_object_mut().unwrap();
+        let Some(sources) = m.shift_remove(EVIDENCE_BY_SOURCE) else {
+            continue;
+        };
+        n += 1;
+        let sources = sources.as_array().unwrap();
+        let lenses: Vec<&Value> = sources.iter().map(|s| &s["lens"]).collect();
+        let merged_from: Vec<&Value> = m["mergedFrom"].as_array().unwrap().iter().collect();
+        assert_eq!(lenses, merged_from, "one source per merged member");
+        let evidence = m["evidence"].as_str().unwrap();
+        for s in sources {
+            if let Some(q) = s["evidence"].as_str() {
+                let tagged = format!("[{}] {q}", s["lens"].as_str().unwrap());
+                assert!(evidence.contains(&tagged), "{tagged:?} not in {evidence:?}");
+            }
+        }
+    }
+    n
+}
+
 #[test]
 fn dedup_matches_the_workflow() {
     let cases = sample(dedup_case());
@@ -198,8 +227,33 @@ fn dedup_matches_the_workflow() {
         },
         &params,
     );
-    let rust: Vec<Value> = cases.iter().map(rust_dedup).collect();
+    let mut rust: Vec<Value> = cases.iter().map(rust_dedup).collect();
+    let merged: usize = rust.iter_mut().map(as_the_workflow_merged).sum();
+    assert!(merged > 30, "merged candidates mapped: {merged}");
     assert_same("dedup", &cases, &rust, &js);
+}
+
+#[test]
+fn a_merged_candidate_keeps_each_members_quote_apart() {
+    let a = json!({"lens": "correctness", "file": "src/a.ts", "line": 3, "severity": "important",
+                   "evidence": "const x = 1;\n[first] = pair(x);"});
+    let b = json!({"file": "src/a.ts", "line": 4, "severity": "minor"});
+    let merged = merge_candidates(&[&a, &b]);
+    assert_eq!(
+        merged[EVIDENCE_BY_SOURCE],
+        json!([
+            {"lens": "correctness", "evidence": "const x = 1;\n[first] = pair(x);"},
+            {"lens": "unknown", "evidence": null},
+        ])
+    );
+    let mut out = json!({"panelCandidates": [merged]});
+    assert_eq!(as_the_workflow_merged(&mut out), 1);
+    let workflow = &out["panelCandidates"][0];
+    assert!(workflow.get(EVIDENCE_BY_SOURCE).is_none());
+    assert_eq!(
+        workflow["evidence"],
+        "[correctness] const x = 1;\n[first] = pair(x);\n[unknown] undefined"
+    );
 }
 
 #[test]
