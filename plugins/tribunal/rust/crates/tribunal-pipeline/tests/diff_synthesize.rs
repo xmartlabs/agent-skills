@@ -24,7 +24,7 @@ use tribunal_pipeline::synthesize::{
     prior_check, prior_check_by, prior_re_examined, ref_evidence, ref_evidence_targets,
     side_payloads, surviving_for_synthesis, synthesis_prompt, verdict, verified_anchors,
     verify_prior_prompt, Relay, SynthesisInput, PANEL_OFF_BY_DEFAULT, PANEL_OFF_BY_FLAG,
-    PRIOR_VERIFY_CEILING,
+    PRIOR_VERIFY_CEILING, SWEEP_OFF_BY_DEFAULT, SWEEP_OFF_BY_FLAG,
 };
 use tribunal_pipeline::verify::no_panel_result;
 
@@ -1228,6 +1228,30 @@ fn the_refuters_rule_appears_only_when_a_survivor_skipped_the_panel() {
     }]);
     assert!(!rust_synth(&c).contains(rule));
     assert!(!rust_synth_with(&c, true).contains(PANEL_OFF_BY_FLAG));
+}
+
+/// Not a port: a clean-verdict sweep that the panel being off skipped gets a
+/// fixed line naming the flag, instead of its raw skippedReason. No workflow
+/// case ran without the panel, so the golden comparison above is unchanged.
+#[test]
+fn a_sweep_skipped_because_the_panel_is_off_gets_the_fixed_line() {
+    let mut c = sample(synth_case()).into_iter().next().expect("a case");
+    let rule = "\"skippedReason\": \"refutation-panel-off\" on the clean-verdict sweep";
+    c["cleanSweep"] = json!({
+        "ran": false, "family": null, "skippedReason": "refutation-panel-off",
+        "clean": null, "unparseable": false, "candidatesRaised": 0
+    });
+    let by_default = rust_synth(&c);
+    assert!(by_default.contains(rule));
+    assert!(by_default.contains(SWEEP_OFF_BY_DEFAULT));
+    assert!(!by_default.contains(SWEEP_OFF_BY_FLAG));
+    assert!(!by_default.contains("{{sweepOffLine}}"));
+    let by_flag = rust_synth_with(&c, true);
+    assert!(by_flag.contains(SWEEP_OFF_BY_FLAG));
+    assert!(!by_flag.contains(SWEEP_OFF_BY_DEFAULT));
+    c["cleanSweep"]["skippedReason"] = json!("no-pinned-head");
+    assert!(!rust_synth(&c).contains(rule));
+    assert!(!rust_synth(&c).contains(SWEEP_OFF_BY_DEFAULT));
 }
 
 /// Not a port: a survivor the ranking kept from blocking carries
