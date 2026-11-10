@@ -27,6 +27,14 @@ own commit.
 
 Nothing yet.
 
+## v1.4.2 — bundles Tribunal 115.5.2
+
+Tag `tribunal-action-v1.4.2` (and `tribunal-action-v1`) at `98e6230`. Bundled Tribunal plugin
+`115.5.2` with binary `tribunal-rust-v115.5.2`. No change to the action itself.
+
+- Questions to review stay out of "Should fix" in the posted review, which now has a section for
+  them. Before, the review could list them under Should fix while the findings status counted none.
+
 ## v1.4.1 — bundles Tribunal 115.5.1
 
 Tag `tribunal-action-v1.4.1` (and `tribunal-action-v1`) at `9ad475d`. Bundled Tribunal plugin
