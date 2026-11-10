@@ -1,16 +1,48 @@
 # Tribunal action releases
 
-## Unreleased — separate token for other repos
+One section per action tag: the commit it freezes, the Tribunal plugin and binary it bundles, and
+what changed. The README names no exact tag or bundled version; this file is where they live.
 
-Not tagged yet. Needs a Tribunal freeze with the engine that reads the token, planned as `115.4.0`.
+## Releasing
 
+For each `tribunal-action-v1.<minor>.<patch>` tag:
+
+1. Merge through a PR; never push a branch directly to `main`.
+2. Run the action's tests (`.github/workflows/tribunal-action.yml` runs them on the PR). The
+   manifest test fails when an input or output is missing from the README's tables, or when the
+   README names an exact action tag.
+3. Read the README's examples and defaults against `action.yml`, and fix whatever the release made
+   stale. A behavior that depends on the Tribunal version says the minimum version, not the
+   bundled one.
+4. Turn "Unreleased" below into the new tag's section: the commit, the bundled plugin version and
+   binary tag (from `plugins/tribunal/.claude-plugin/plugin.json` and `rust/release.json` at that
+   commit), and the changes.
+5. With explicit publishing authorization, create the tag at the verified commit and move
+   `tribunal-action-v1` to the same commit.
+
+A plugin freeze alone does not move the action's tags: `bundled` is the plugin at the action's
+own commit.
+
+## Unreleased — findings check and a separate token for other repos
+
+Not tagged yet. To be cut after the Tribunal `115.5.0` freeze merges, so `bundled` picks it up.
+
+- Add `findings-check` (`off` by default, `inform` or `enforce`). After a posted review, a
+  "Tribunal findings" check run on the reviewed commit counts the open blocking and should-fix
+  findings, and the `blocking` and `should-fix` outputs carry the counts. On an incremental review,
+  the previous review's open findings stay open until a later review finds them fixed. The check
+  needs `checks: write`; without it the review still posts and the summary says so. With `off`
+  nothing changes and no extra API call is made.
 - Add `conventions-token`, a read-only token for the repos a profile's `conventionSources` and
   `crossRepoAnchors` name. `github-token` keeps the reviewed repo and posting, so reviews post as
   `github-actions[bot]` while conventions come from a private repo.
 - Model calls do not get the token: docs are written to the job's directory, and each anchor repo is
   shallow-cloned there.
-- Backward compatible: without the input, reads, prompts and outputs do not change. With it, a run
-  that selects an older Tribunal fails during setup.
+- Backward compatible: without the new inputs, reads, prompts and outputs do not change. With
+  `conventions-token`, a run that selects a Tribunal older than `115.4.0` fails during setup.
+- The bundled Tribunal changes defaults from `115.4.0` on: the refutation panel runs only with
+  `codex`, and a finding blocks only when the ranking rates it worth 5.
+- The README names no exact action tag or bundled version, and points here for both.
 
 ## v1.2.0 — CI parity
 
@@ -28,15 +60,4 @@ panel when the job environment has `GEMINI_API_KEY`; the action does not pass
 - Opt into suggested verdicts, Codex refutation, and verified incremental reviews.
 - Preserve a dedicated posted baseline independently of diagnostic uploads.
 
-### Maintainer release checklist
-
-- [x] Verify the checks recorded in [the SDD tasks](docs/ci-parity/tasks.md).
-- [x] Merge through a PR; never push a branch directly to `main`.
-- [x] Confirm the next unused compatible `tribunal-action-v1.<minor>.0` tag.
-- [x] With explicit publishing authorization, freeze that action tag at the
-  verified commit and update `tribunal-action-v1` to the same commit.
-- [x] State the bundled Tribunal plugin version and binary tag in release notes.
-- [x] Confirm examples use a published action ref before asking consumers to adopt.
-
-No tag or release is created by these notes. A plugin freeze alone does not
-update the action's moving major tag.
+Released with the checks recorded in [the SDD tasks](docs/ci-parity/tasks.md).

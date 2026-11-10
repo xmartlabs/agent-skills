@@ -242,6 +242,92 @@ class RuntimeTests(unittest.TestCase):
     def test_verified_baseline_is_restored(self):
         self.restore()
         self.assertEqual(self.row, json.loads((self.job / "data/metrics.jsonl").read_text()))
+        self.assertEqual(self.row, runtime.read(self.job / "prior-row.json"))
+
+    @staticmethod
+    def kept(title, file="src/a.ts", **fields):
+        return {"file": file, "line": 3, "title": title, "survived": True, "severity": "important", **fields}
+
+    def test_finding_tier_follows_the_report_sections(self):
+        kept = self.kept
+        self.assertEqual("blocking", runtime.finding_tier(kept("b", blocking=True)))
+        self.assertEqual("should-fix", runtime.finding_tier(kept("s", blocking=False, rankedBelowBlocking=True, rankWorth=4)))
+        for name, finding in (
+            ("worth 3", kept("q", blocking=False, rankedBelowBlocking=True, rankWorth=3)),
+            ("pre-existing", kept("p", blocking=False, rankedBelowBlocking=True, rankWorth=5, preExistingCode=True)),
+            ("demoted by the gate", kept("d", blocking=False, verifiedByGateNote="no anchor")),
+            ("killed", {**kept("k", blocking=True), "survived": False}),
+            ("nit", kept("n", blocking=False, severity="nit")),
+            ("boolean worth", kept("w", blocking=False, rankedBelowBlocking=True, rankWorth=True)),
+        ):
+            with self.subTest(name):
+                self.assertIsNone(runtime.finding_tier(finding))
+
+    def findings_run(self, findings, **metrics):
+        runtime.write(self.job / "run.json", {"metrics": {"headSha": "a" * 40, "reviewMode": "full", "findings": findings, **metrics}})
+
+    def check(self, mode):
+        with patch.dict(os.environ, {"INPUT_FINDINGS_CHECK": mode}):
+            return runtime.findings_check(self.job)
+
+    def test_findings_check_counts_and_concludes_by_mode(self):
+        self.findings_run([self.kept("b", blocking=True), self.kept("s", file="src/b.ts", blocking=False, rankedBelowBlocking=True, rankWorth=5)])
+        payload, blocking, should_fix = self.check("inform")
+        self.assertEqual((1, 1), (blocking, should_fix))
+        self.assertEqual(("Tribunal findings", "a" * 40, "completed", "neutral"), (payload["name"], payload["head_sha"], payload["status"], payload["conclusion"]))
+        self.assertEqual("1 blocking, 1 should fix", payload["output"]["title"])
+        self.assertIn("`src/b.ts:3`", payload["output"]["summary"])
+        self.assertEqual("failure", self.check("enforce")[0]["conclusion"])
+        self.findings_run([self.kept("n", blocking=False, severity="nit")])
+        payload, blocking, should_fix = self.check("enforce")
+        self.assertEqual(("success", 0, 0), (payload["conclusion"], blocking, should_fix))
+
+    def test_findings_check_without_a_row_is_never_green(self):
+        runtime.write(self.job / "run.json", {"report": "x", "metrics": {"headSha": "a" * 40}})
+        payload, blocking, should_fix = self.check("enforce")
+        self.assertEqual(("neutral", None, None), (payload["conclusion"], blocking, should_fix))
+        self.assertEqual("Open findings could not be counted", payload["output"]["title"])
+
+    def test_findings_check_refuses_another_head(self):
+        runtime.write(self.job / "run.json", {"metrics": {"headSha": "e" * 40, "findings": []}})
+        with self.assertRaises(ValueError):
+            self.check("inform")
+
+    def test_incremental_check_keeps_prior_findings_until_fixed(self):
+        prior = {"findings": [
+            self.kept("fixed", file="src/1.ts", blocking=True),
+            self.kept("still open", file="src/2.ts", blocking=True),
+            self.kept("unclear", file="src/3.ts", blocking=False, rankedBelowBlocking=True, rankWorth=4),
+            self.kept("carried", file="src/4.ts", blocking=True),
+            self.kept("raised again", file="src/5.ts", blocking=True),
+            self.kept("old nit", file="src/6.ts", blocking=False, severity="nit"),
+        ]}
+        runtime.write(self.job / "prior-row.json", prior)
+        verification = [
+            {"file": "src/1.ts", "title": "fixed", "blocking": True, "verdict": "FIXED"},
+            {"file": "src/2.ts", "title": "still open", "blocking": True, "verdict": "STILL_OPEN"},
+            {"file": "src/3.ts", "title": "unclear", "blocking": False, "verdict": "CANNOT_TELL"},
+        ]
+        # Raised again, now ranked below blocking: its new tier wins and it is counted once.
+        self.findings_run([self.kept("raised again", file="src/5.ts", blocking=False, rankedBelowBlocking=True, rankWorth=4)],
+                          reviewMode="incremental", priorVerification=verification)
+        payload, blocking, should_fix = self.check("inform")
+        self.assertEqual((2, 2), (blocking, should_fix))
+        summary = payload["output"]["summary"]
+        self.assertNotIn("| fixed |", summary)
+        self.assertIn("re-checked: still open", summary)
+        self.assertIn("re-checked: could not tell", summary)
+        self.assertIn("carried forward without a re-check", summary)
+        self.assertEqual(1, summary.count("raised again"))
+
+    def test_full_review_ignores_the_prior_row(self):
+        runtime.write(self.job / "prior-row.json", {"findings": [self.kept("old", blocking=True)]})
+        self.findings_run([], reviewMode="full")
+        self.assertEqual("success", self.check("inform")[0]["conclusion"])
+
+    def test_findings_check_mode_is_validated(self):
+        with patch.dict(os.environ, {"INPUT_FINDINGS_CHECK": "on"}), self.assertRaises(ValueError):
+            runtime.validate()
 
     def test_restore_rejects_incompatible_identity(self):
         for field, bad in (("repository", "other/repo"), ("pr", 13), ("version", "115.3.0"), ("base", "wrong"), ("hashes", {}), ("pluginCommit", "wrong")):

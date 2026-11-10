@@ -3,8 +3,9 @@
 Runs the [tribunal](../../plugins/tribunal) review on a pull request and posts it as a comment
 review by default. Independent reviewers read the diff, and the engine merges and checks
 what they find before reporting it. A refutation panel that tries to disprove each serious finding
-runs when `codex` is on; from Tribunal 115.4.0 it is otherwise off. A review that does not post leaves a
-"Tribunal pending" comment with the reason and a link to the run.
+runs only when `codex` is on. A review that does not post leaves a "Tribunal pending" comment with
+the reason and a link to the run. Optionally, it also leaves a check run with the findings still
+open (see [Findings check](#findings-check)).
 
 ## Setup
 
@@ -18,9 +19,8 @@ Pick one:
 - **Claude subscription (Pro or Max):** run `claude setup-token` on your machine and copy the token
   it prints. Reviews run on that account's subscription.
 - **Anthropic API key:** create one in the [Anthropic Console](https://platform.claude.com/settings/keys).
-  Billed per use, not tied to a person. The current bundled engine supports API keys.
-  Older action refs that pin `tribunal-rust-v0.1.4` still need `claude-token`; updating
-  the plugin alone does not update an action pinned to an older ref.
+  Billed per use, not tied to a person. If you pin an old action tag, check that tag's own
+  README for the credentials it accepts: updating the plugin does not update a pinned action.
 
 ### 2. Store it as a secret
 
@@ -72,9 +72,9 @@ The action is the only step: it decides by itself whether to review (see
 [When it runs](#when-it-runs)) and has nothing to set up before that, so it needs no separate
 gate.
 
-`@tribunal-action-v1` follows every compatible release. To freeze a version, use a full tag such
-as `@tribunal-action-v1.1.0`. New inputs described below require the CI-parity action
-release; see [release status](RELEASES.md). A plugin freeze does not move the action tag.
+`@tribunal-action-v1` follows every compatible release. To freeze a version, use a full
+`@tribunal-action-v1.<minor>.<patch>` tag. [The release notes](RELEASES.md) list each tag, the
+Tribunal version it bundles, and the inputs it added. A plugin freeze does not move the action tag.
 
 ### 5. Try it
 
@@ -214,6 +214,39 @@ Pass the secret in each `with:` rather than in workflow `env:`, so only the step
 read it. The review job's action checks again with the same rules, so both agree. On
 GitHub-hosted runners in a private repository the gate job bills its own minute on every event.
 
+## Findings check
+
+To see on the pull request's checks whether anything the review found is still open, set
+`findings-check` and give the job `checks: write`:
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+steps:
+  - uses: xmartlabs/agent-skills/actions/tribunal@tribunal-action-v1
+    with:
+      claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      findings-check: inform # or enforce
+```
+
+After a review posts, the action adds a "Tribunal findings" check run on the reviewed commit. It
+counts the findings under "Blocking" and "Should fix (not blocking)"; nits, questions and
+pre-existing findings do not count. The check is green when none is open. With open findings it is
+neutral under `inform` and failed under `enforce`, so a branch rule can require it once you trust
+it. When the findings cannot be counted, the check is neutral and says so: it is never green
+without a count. The `blocking` and `should-fix` outputs carry the same counts for later steps.
+
+- With `review-mode: incremental`, the previous review's open findings stay open until a later
+  review finds them fixed. A finding on a file the new commits did not touch is carried forward
+  as it was, and the check's table says where each finding's status comes from.
+- The check is on the commit the review read. A push makes a new head with no check until the
+  next review.
+- Without `checks: write` the review still posts, and the job summary names the missing
+  permission. The job does not fail.
+- With `findings-check: off`, the default, the action creates no check and makes no extra calls.
+
 ## Select a Tribunal version
 
 The action version and Tribunal version are separate. By default `tribunal-version: bundled`
@@ -222,8 +255,10 @@ uses the plugin snapshot tested with that action ref. To select another supporte
 ```yaml
 with:
   claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-  tribunal-version: '115.2.0' # or latest; bundled is the default
+  tribunal-version: latest # or an exact x.y.z version; bundled is the default
 ```
+
+[The release notes](RELEASES.md) say which Tribunal version each action tag bundles.
 
 An exact version selects `tribunal/v<version>`. `latest` finds the highest supported stable
 Tribunal freeze, not the repository's global latest release, and excludes prereleases and other
@@ -348,8 +383,17 @@ transcript).
 | `prior-verify` | empty | Positive integer: maximum prior findings verified on a re-review. |
 | `lens-samples` | empty | Integer 1–4: independent samples per lens. |
 | `bot-comments` | `false` | Also vet existing bot findings. |
+| `findings-check` | `off` | `off`, `inform` or `enforce`: leave a "Tribunal findings" check run with the open blocking and should-fix findings. Needs `checks: write`. See [Findings check](#findings-check). |
 | `upload-run` | `true` | Upload the run record, the report and the logs as an artifact (14 days). |
 | `upload-transcripts` | `false` | Also upload every model dispatch's transcript (see Security). |
+
+## Outputs
+
+| Output | Meaning |
+| --- | --- |
+| `posted` | `true` when the review was posted. |
+| `blocking` | Open blocking findings after the review. Empty when `findings-check` is `off` or they could not be counted. |
+| `should-fix` | Open should-fix findings after the review. Empty in the same cases. |
 
 ## Runner requirements
 

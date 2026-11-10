@@ -86,6 +86,9 @@ case "$*" in
   "pr comment"*)
     while [ $# -gt 0 ]; do [ "$1" = --body-file ] && cp "$2" "$FX/posted-body.md"; shift; done ;;
   "api -X DELETE"*) [ -f "$FX/label-present" ] || { echo "HTTP 404" >&2; exit 1; } ;;
+  "api -X POST repos/acme/web-app/check-runs --input "*)
+    [ -f "$FX/checks-forbidden" ] && { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
+    cp "$6" "$FX/check-posted.json" ;;
   *contents/.claude/review-profile.json*)
     case "$*" in
       *"?ref=main "*|*"?ref=main") f=base ;;
@@ -320,6 +323,49 @@ node_check() { : > "$GITHUB_OUTPUT"; bash "$RUN" node-check >/dev/null 2>&1; sed
 new_job labeled tribunal
 assert_eq "npm on the runner: no Node setup" "false" "$(node_check)"
 assert_eq "no npm on the runner: Node is set up" "true" "$(PATH="$TMP/nogh" node_check)"
+
+# --- findings check -----------------------------------------------------------------------------
+findings_check() { # MODE: run the step; RC is its exit code and COUNTS its "blocking/should-fix" outputs
+  : > "$GITHUB_OUTPUT"
+  INPUT_FINDINGS_CHECK="$1" bash "$RUN" findings-check >/dev/null 2>&1; RC=$?
+  COUNTS="$(sed -n 's/^blocking=//p' "$GITHUB_OUTPUT")/$(sed -n 's/^should-fix=//p' "$GITHUB_OUTPUT")"
+}
+check_field() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(eval(sys.argv[2],{},{"d":d}))' "$FX/check-posted.json" "$1"; }
+open_run() { # one blocking and one should-fix finding on the reviewed head
+  mkdir -p "$(job)"
+  cat > "$(job)/run.json" <<'JSON'
+{"metrics":{"headSha":"aaaa1111","reviewMode":"full","findings":[
+ {"file":"src/a.ts","line":3,"title":"Skips the last item","survived":true,"blocking":true,"severity":"important"},
+ {"file":"src/b.ts","line":9,"title":"Retries forever","survived":true,"blocking":false,"severity":"important","rankedBelowBlocking":true,"rankWorth":4},
+ {"file":"src/c.ts","line":1,"title":"Naming","survived":true,"blocking":false,"severity":"nit"}]}}
+JSON
+}
+new_job opened; open_run
+findings_check inform
+assert_eq "inform: the step outputs the open counts" "1/1" "$COUNTS"
+assert_eq "the step never fails the job" "0" "$RC"
+assert_eq "inform: open findings make the check neutral" "neutral" "$(check_field "d['conclusion']")"
+assert_eq "the check is on the reviewed head" "aaaa1111" "$(check_field "d['head_sha']")"
+assert_eq "the check is named for the findings" "Tribunal findings" "$(check_field "d['name']")"
+assert_eq "its title counts both tiers" "1 blocking, 1 should fix" "$(check_field "d['output']['title']")"
+assert_ok "it links the run" grep -qF "https://github.com/acme/web-app/actions/runs/7" "$FX/check-posted.json"
+assert_ok "the summary gets the check's line" grep -qF "Findings check: neutral: 1 blocking, 1 should fix" "$(job)/findings-line"
+new_job opened; open_run
+findings_check enforce
+assert_eq "enforce: open findings fail the check" "failure" "$(check_field "d['conclusion']")"
+new_job opened; open_run; touch "$FX/checks-forbidden"
+findings_check inform
+assert_eq "without checks: write the step still exits 0" "0" "$RC"
+assert_ok "and the summary names the missing permission" grep -qF 'Give the job `checks: write`' "$(job)/findings-line"
+new_job opened; mkdir -p "$(job)"; echo '{"report":"x","metrics":{"headSha":"aaaa1111"}}' > "$(job)/run.json"
+findings_check inform
+assert_eq "a run without findings to count outputs no numbers" "/" "$COUNTS"
+assert_eq "and leaves a neutral check, never a green one" "neutral" "$(check_field "d['conclusion']")"
+new_job opened; mkdir -p "$(job)"; echo '{"metrics":{"headSha":"bbbb2222","findings":[]}}' > "$(job)/run.json"
+findings_check inform
+assert_fail "a run for another head leaves no check" test -f "$FX/check-posted.json"
+assert_ok "and says why" grep -qF "reviewed HEAD differs" "$(job)/findings-line"
+assert_eq "even then the step exits 0" "0" "$RC"
 
 # --- summary ------------------------------------------------------------------------------------
 summary() { : > "$TMP/summary.md"; GITHUB_STEP_SUMMARY="$TMP/summary.md" bash "$RUN" summary >/dev/null 2>&1; }
