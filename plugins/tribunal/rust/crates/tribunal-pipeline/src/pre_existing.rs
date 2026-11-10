@@ -25,6 +25,26 @@ fn norm(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// A merged finding's evidence prefixes each source's quote with its lens,
+/// `[correctness] `; the prefix is not code, so it is dropped before the
+/// quote is looked up.
+fn without_lens_tag(line: &str) -> &str {
+    let t = line.trim_start();
+    if let Some(rest) = t.strip_prefix('[') {
+        if let Some(end) = rest.find(']') {
+            let tag = &rest[..end];
+            if !tag.is_empty()
+                && tag
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            {
+                return &rest[end + 1..];
+            }
+        }
+    }
+    t
+}
+
 /// The lines each file gains in a unified diff, by their number at the head.
 #[must_use]
 pub fn added_lines(diff: &str) -> HashMap<String, HashSet<u64>> {
@@ -76,13 +96,16 @@ pub fn is_pre_existing_code(
     let evidence = js::get(finding, "evidence")
         .and_then(Value::as_str)
         .unwrap_or("");
-    if evidence.contains("No relevant quotes found") {
+    if evidence
+        .lines()
+        .all(|l| l.trim().is_empty() || without_lens_tag(l).contains("No relevant quotes found"))
+    {
         return false;
     }
     let quoted: Vec<String> = evidence
         .lines()
-        .map(norm)
-        .filter(|l| l.len() >= MIN_QUOTE_LINE)
+        .map(|l| norm(without_lens_tag(l)))
+        .filter(|l| l.len() >= MIN_QUOTE_LINE && !l.contains("No relevant quotes found"))
         .collect();
     if quoted.is_empty() {
         return false;
@@ -197,6 +220,44 @@ mod tests {
         assert!(!is_pre_existing_code(&finding("src/a.ts", "x;"), &root, &a));
         assert!(!is_pre_existing_code(
             &finding("src/gone.ts", "const old = legacy(x);"),
+            &root,
+            &a
+        ));
+    }
+
+    #[test]
+    fn a_merged_finding_is_judged_on_its_quotes_without_the_lens_tags() {
+        let a = added_lines(DIFF);
+        let root = head("merged");
+        assert!(is_pre_existing_code(
+            &finding(
+                "src/a.ts",
+                "[correctness] const old = legacy(x);\n[scenario-question] const tail = 2;"
+            ),
+            &root,
+            &a
+        ));
+        assert!(!is_pre_existing_code(
+            &finding(
+                "src/a.ts",
+                "[correctness] const old = legacy(x);\n[security] const added = compute(x);"
+            ),
+            &root,
+            &a
+        ));
+        assert!(is_pre_existing_code(
+            &finding(
+                "src/a.ts",
+                "[correctness] const old = legacy(x);\n[security] No relevant quotes found"
+            ),
+            &root,
+            &a
+        ));
+        assert!(!is_pre_existing_code(
+            &finding(
+                "src/a.ts",
+                "[correctness] No relevant quotes found\n[security] No relevant quotes found"
+            ),
             &root,
             &a
         ));
