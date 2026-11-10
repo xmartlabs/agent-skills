@@ -275,6 +275,20 @@ pub const BLOCKING_WORTH: u64 = 4;
 /// blockers. `verdict_for`, the verdict basis and the row's `blocking` read it.
 pub const RANKED_BELOW_BLOCKING: &str = "rankedBelowBlocking";
 
+/// Which setup the ranking after the panel runs with: the question stage's,
+/// or, under `--block-min-worth` with no question stage, the lenses'. `None`
+/// means no ranking runs.
+#[must_use]
+pub fn ranking_setup<'a>(
+    questions: Option<&'a QuestionOutcome>,
+    lens_setup: Option<&'a ReviewerSetup>,
+    min_worth: Option<u64>,
+) -> Option<&'a ReviewerSetup> {
+    questions
+        .and_then(|q| q.setup.as_ref())
+        .or_else(|| min_worth.and(lens_setup))
+}
+
 /// The finding field holding the worth the ranking gave it, 1 to 5, on every
 /// finding the ranking scored, so a threshold can be tried again offline.
 pub const RANK_WORTH: &str = "rankWorth";
@@ -378,11 +392,15 @@ pub fn keeps(worth: Option<u64>, support: usize) -> bool {
 /// Moves the surviving results from answered questions that rank below the
 /// bar into `placed_aside`, with a [`LOWER_PRIORITY`] placement. Lens results
 /// are never moved. A kept question finding below [`BLOCKING_WORTH`] is marked
-/// [`RANKED_BELOW_BLOCKING`]. Returns how many were ranked, moved and marked.
+/// [`RANKED_BELOW_BLOCKING`], and so is any kept finding ranked below
+/// `min_worth` when it is given (`--block-min-worth`). A finding the ranking
+/// did not score is never marked. Returns how many were ranked, moved and
+/// marked.
 pub fn place_lower_priority(
     surviving: &mut Vec<Value>,
     placed_aside: &mut Vec<Value>,
     worth: &[Option<u64>],
+    min_worth: Option<u64>,
 ) -> (usize, usize, usize) {
     let ranked = worth.iter().filter(|w| w.is_some()).count();
     let mut kept = Vec::new();
@@ -397,8 +415,10 @@ pub fn place_lower_priority(
             f.insert(RANK_WORTH.into(), json!(w));
         }
         let from_question = js::get(finding_of(&r), "lens") == Some(&json!(QUESTION_LENS));
-        let below_blocking =
-            from_question && w.is_some_and(|w| w < BLOCKING_WORTH) && support_of(&r) < KEEP_SUPPORT;
+        let below_blocking = (from_question
+            && w.is_some_and(|w| w < BLOCKING_WORTH)
+            && support_of(&r) < KEEP_SUPPORT)
+            || min_worth.is_some_and(|n| w.is_some_and(|w| w < n));
         if from_question && !keeps(w, support_of(&r)) {
             if let Value::Object(m) = &mut r {
                 m.insert(
@@ -460,6 +480,7 @@ pub async fn rank_and_place<A: Agent>(
     prompt: String,
     surviving: &mut Vec<Value>,
     placed_aside: &mut Vec<Value>,
+    min_worth: Option<u64>,
 ) -> (DispatchResult, Value) {
     let mut req = DispatchRequest::new("question-rank", prompt, setup.cwd.clone());
     req.system_prompt = Some(RANK_PROMPT.to_owned());
@@ -470,7 +491,7 @@ pub async fn rank_and_place<A: Agent>(
     req.timeout = setup.timeout;
     let res = agent.run(&req).await;
     let w = worths(answer_of(&res).as_ref(), surviving.len());
-    let (ranked, moved, below) = place_lower_priority(surviving, placed_aside, &w);
+    let (ranked, moved, below) = place_lower_priority(surviving, placed_aside, &w, min_worth);
     let summary = json!({"ranked": ranked, "movedToQuestionsToReview": moved, "keptInReport": surviving.len(), "belowBlocking": below});
     (res, summary)
 }
@@ -743,7 +764,7 @@ mod tests {
         let mut results = vec![a.clone(), b.clone(), refuted.clone()];
         let mut surviving = vec![a, b];
         let mut aside = Vec::new();
-        place_lower_priority(&mut surviving, &mut aside, &[Some(1), Some(3)]);
+        place_lower_priority(&mut surviving, &mut aside, &[Some(1), Some(3)], None);
         sync_results(&mut results, &surviving, &aside);
         assert_eq!(results[0]["placement"]["placement"], json!(LOWER_PRIORITY));
         assert_eq!(results[1]["finding"][RANKED_BELOW_BLOCKING], json!(true));

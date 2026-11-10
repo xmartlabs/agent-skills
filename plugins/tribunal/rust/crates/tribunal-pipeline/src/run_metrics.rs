@@ -744,6 +744,7 @@ pub fn persist_phase(
         m
     });
     metrics["noRefuters"] = json!(args.no_refuters);
+    metrics["blockMinWorth"] = json!(args.block_min_worth);
     metrics["lensNotReachedKinds"] = kind_counts(&review.candidates.lens_gaps);
     metrics["unreadRiskFiles"] = json!(synthesis.unread_risk_files);
     metrics["lensFailures"] = lens_failures(

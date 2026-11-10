@@ -44,8 +44,8 @@ use crate::prompts::{
     LensReference, SHARED_REFERENCE_NOTICE,
 };
 use crate::questions::{
-    generator_prompt, lenses_with_questions, rank_and_place, rank_prompt, LensesAndQuestions,
-    QuestionInputs, QuestionOutcome, DEFAULT_QUESTION_MODEL,
+    generator_prompt, lenses_with_questions, rank_and_place, rank_prompt, ranking_setup,
+    LensesAndQuestions, QuestionInputs, QuestionOutcome, DEFAULT_QUESTION_MODEL,
 };
 use crate::review::{
     answer_of, bot_task, bot_vetting_prompt, check_lenses_returned, collect_candidates,
@@ -209,6 +209,9 @@ pub struct ReviewOutcome {
     pub exposure: DiffExposure,
     /// What `--scenario-questions` asked and answered; `None` without it.
     pub questions: Option<QuestionOutcome>,
+    /// The lenses' setup, for the ranking `--block-min-worth` runs when there
+    /// is no question stage. `None` on a panel-only run.
+    pub lens_setup: Option<ReviewerSetup>,
 }
 
 #[derive(Debug)]
@@ -514,6 +517,7 @@ pub async fn run_review<A: Agent>(
         evidence,
         exposure,
         questions,
+        lens_setup: Some(setup.clone()),
     })))
 }
 
@@ -1513,7 +1517,17 @@ pub async fn run_full<A: Agent>(
         }
     };
     let mut verify = verify;
-    if let Some(setup) = review.questions.as_ref().and_then(|q| q.setup.as_ref()) {
+    let rank_setup = ranking_setup(
+        review.questions.as_ref(),
+        review.lens_setup.as_ref(),
+        args.block_min_worth,
+    );
+    if let (Some(n), None) = (args.block_min_worth, rank_setup) {
+        logs.push(format!(
+            "--block-min-worth {n} not applied: no ranking can run on this run (a panel-only run has no lens setup)."
+        ));
+    }
+    if let Some(setup) = rank_setup {
         let head = js::get(&review.context.pr_context, "headRefOid")
             .and_then(Value::as_str)
             .unwrap_or(args.head_sha.as_str())
@@ -1526,14 +1540,27 @@ pub async fn run_full<A: Agent>(
         );
         let v = &mut verify.verdicts;
         let rank_started = std::time::Instant::now();
-        let (res, mut summary) =
-            rank_and_place(agent, setup, prompt, &mut v.surviving, &mut v.placed_aside).await;
+        let (res, mut summary) = rank_and_place(
+            agent,
+            setup,
+            prompt,
+            &mut v.surviving,
+            &mut v.placed_aside,
+            args.block_min_worth,
+        )
+        .await;
         summary["seconds"] = json!((rank_started.elapsed().as_secs_f64() * 10.0).round() / 10.0);
         crate::questions::sync_results(&mut v.results, &v.surviving, &v.placed_aside);
         logs.push(format!(
             "Scenario-question ranking: {} ranked, {} moved to questions to review, {} kept in the report.",
             summary["ranked"], summary["movedToQuestionsToReview"], summary["keptInReport"]
         ));
+        if let Some(n) = args.block_min_worth {
+            logs.push(format!(
+                "--block-min-worth {n}: {} kept finding(s) ranked below it or below the question bar, reported without blocking.",
+                summary["belowBlocking"]
+            ));
+        }
         verify.dispatches.push(("question-rank".into(), res));
         verify.question_rank = Some(summary);
     }
