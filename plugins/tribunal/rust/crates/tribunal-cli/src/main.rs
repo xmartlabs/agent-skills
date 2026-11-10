@@ -340,6 +340,7 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
     };
     args.no_refuters = !refuters
         .unwrap_or(args.codex == Some(true) || args.gemini == Some(true) || args.runtime_confirm);
+    args.no_refuters_by_flag = refuters == Some(false);
     if policy.effort.is_none() {
         policy.effort = operator_effort();
     }
@@ -1323,6 +1324,18 @@ mod tests {
         assert!(no_refuters(&["--runtime-confirm", "--no-refuters"]));
         assert!(no_refuters(&["--codex", "--no-refuters"]));
         assert!(!no_refuters(&["--no-refuters", "--refuters"]));
+        let by_flag = |extra: &[&str]| {
+            let a: Vec<String> = ["--pr", "12"]
+                .iter()
+                .chain(extra)
+                .map(|s| (*s).to_owned())
+                .collect();
+            parse(&a).unwrap().args.no_refuters_by_flag
+        };
+        assert!(!by_flag(&[]));
+        assert!(by_flag(&["--no-refuters"]));
+        assert!(by_flag(&["--codex", "--no-refuters"]));
+        assert!(!by_flag(&["--no-refuters", "--refuters"]));
     }
 
     #[test]

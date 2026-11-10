@@ -23,7 +23,8 @@ use tribunal_pipeline::synthesize::{
     anchored_payload, baseline_description, finish_report, graded, missing_identifiers,
     prior_check, prior_check_by, prior_re_examined, ref_evidence, ref_evidence_targets,
     side_payloads, surviving_for_synthesis, synthesis_prompt, verdict, verified_anchors,
-    verify_prior_prompt, Relay, SynthesisInput, PRIOR_VERIFY_CEILING,
+    verify_prior_prompt, Relay, SynthesisInput, PANEL_OFF_BY_DEFAULT, PANEL_OFF_BY_FLAG,
+    PRIOR_VERIFY_CEILING,
 };
 use tribunal_pipeline::verify::no_panel_result;
 
@@ -920,6 +921,10 @@ fn synth_case() -> impl Strategy<Value = Value> {
 }
 
 fn rust_synth(c: &Value) -> String {
+    rust_synth_with(c, false)
+}
+
+fn rust_synth_with(c: &Value, panel_off_by_flag: bool) -> String {
     let arr = |k: &str| c[k].as_array().unwrap().clone();
     let opt = |k: &str| (!c[k].is_null()).then_some(&c[k]);
     let prior = opt("priorReview");
@@ -953,6 +958,7 @@ fn rust_synth(c: &Value) -> String {
         cost_breaker_fired: opt("costBreakerFired"),
         cost_degraded_stages: c["costDegradedStages"].as_array().unwrap().len(),
         verdict: c["verdictGuess"].as_str().unwrap(),
+        panel_off_by_flag,
     })
 }
 
@@ -1211,11 +1217,17 @@ fn the_refuters_rule_appears_only_when_a_survivor_skipped_the_panel() {
         "adjudicated": true, "refutersSkipped": true
     }]);
     assert!(rust_synth(&c).contains(rule));
+    assert!(rust_synth(&c).contains(PANEL_OFF_BY_DEFAULT));
+    assert!(!rust_synth(&c).contains(PANEL_OFF_BY_FLAG));
+    assert!(rust_synth_with(&c, true).contains(PANEL_OFF_BY_FLAG));
+    assert!(!rust_synth_with(&c, true).contains(PANEL_OFF_BY_DEFAULT));
+    assert!(!rust_synth(&c).contains("{{panelOffLine}}"));
     c["survivingFindingsForSynthesis"] = json!([{
         "title": "t", "file": "src/a.ts", "line": 3, "severity": "important",
         "adjudicated": true
     }]);
     assert!(!rust_synth(&c).contains(rule));
+    assert!(!rust_synth_with(&c, true).contains(PANEL_OFF_BY_FLAG));
 }
 
 /// Not a port: a survivor the ranking kept from blocking carries
