@@ -39,6 +39,7 @@ const SCOPE_LINE: &str = include_str!("synthesis/scopeLine.txt");
 const CARRIED_FORMAT: &str = include_str!("synthesis/carriedFormat.txt");
 const QUESTIONS_RULE: &str = include_str!("synthesis/questionsRule.txt");
 const REFUTERS_RULE: &str = include_str!("synthesis/refutersRule.txt");
+const BELOW_BLOCKING_RULE: &str = include_str!("synthesis/belowBlockingRule.txt");
 const VERIFY_PRIOR: &str = include_str!("synthesis/verify-prior.txt");
 
 pub const PRIOR_VERIFY_CEILING: usize = 6;
@@ -1108,6 +1109,17 @@ pub fn synthesis_prompt(s: &SynthesisInput) -> String {
     } else {
         ""
     };
+    // Not from the workflow: the ranking's mark that keeps a kept finding from
+    // blocking (`--block-min-worth`, or a question finding below the bar).
+    let below_blocking_rule = if s
+        .surviving
+        .iter()
+        .any(|f| js::truthy(js::get(f, crate::questions::RANKED_BELOW_BLOCKING)))
+    {
+        BELOW_BLOCKING_RULE
+    } else {
+        ""
+    };
     // Without a panel, what sits aside was kept by the question ranking, not
     // by refuters.
     let placed_aside_note = if !refuters_rule.is_empty() || s.placed_aside.iter().any(skipped) {
@@ -1195,6 +1207,7 @@ pub fn synthesis_prompt(s: &SynthesisInput) -> String {
             ("carriedFormat", &carried_format),
             ("questionsRule", questions_rule),
             ("refutersRule", refuters_rule),
+            ("belowBlockingRule", below_blocking_rule),
             ("placedAsideNote", placed_aside_note),
         ],
     )
