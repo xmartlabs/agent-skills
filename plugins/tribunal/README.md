@@ -264,7 +264,9 @@ real pull requests, and the check on pull requests the search never saw.
 A finding blocks only when the ranking after the panel rates it worth 5 of 5
 (`--block-min-worth`, on by default since 115.4.0; `--no-block-min-worth`
 returns to severity alone). One rated 4 is listed under "Should fix (not
-blocking)". The rule came from reviewing pull requests that later had to be
+blocking)", and one that quotes only code the pull request did not change
+under "Pre-existing code", outside the verdict (`--block-pre-existing` turns
+that off). The rule came from reviewing pull requests that later had to be
 fixed in production or staging, traced back with the SZZ method, next to pull
 requests that never broke anything. With severity alone, reviews asked for
 changes on 13 of 14 broken and 11 of 14 clean pull requests; with the worth
@@ -383,6 +385,7 @@ your machine, or when the download fails, the review says why and stops.
 | `--since <sha>` | Take this commit as the incremental baseline |
 | `--refuters` / `--no-refuters` | Run the refutation panel, which is off by default; `--codex`, `--gemini` and `--runtime-confirm` also run it, and `--no-refuters` keeps it off even with them (then no outside head, sweep or runtime case runs) |
 | `--block-min-worth <n>` / `--no-block-min-worth` | On by default with 5: a finding blocks only when the ranking gave it at least worth `n` (1 to 5). Below it, it stays in the report without blocking, under "Should fix" when rated 4 and under the nits otherwise. On a small pilot it left blockers on about 3 of 14 pull requests that never broke anything, against 11 of 14 with severity alone, and on about 7 of 14 that later broke, against 13 |
+| `--block-pre-existing` | Off by default. Without it, a finding that quotes only code the pull request did not change does not block and is listed under "Pre-existing code", for a separate ticket. Decided by lines, without a model |
 | `--max-panels <n>` | When the panel runs, raise its adjudication ceiling for a PR that deserves it (default 40) |
 | `--lens-samples <n>` | Run each lens `n` times, 1 to 4, and merge what they share. With 2, more real defects come out as blocking at about 1.3 to 1.5 times the cost of a run; worth it on a large or high-risk PR |
 | `--codex` / `--no-codex` | Run the panel with the second-opinion head, or keep that head off |

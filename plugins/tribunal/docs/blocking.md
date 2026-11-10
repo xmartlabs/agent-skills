@@ -90,6 +90,24 @@ moves to "Questions to review", outside the verdict, unless four or more
 candidates were merged into it. On the pilot's runs that cut the report body
 by 38% and changed no verdict.
 
+## Code the pull request did not change
+
+A finding whose quoted code sits only on lines the pull request did not change
+does not block. It is listed under "Pre-existing code (not blocking)", worth a
+separate ticket, so the author is not asked to fix what they did not write.
+The Claude Code team tags such findings "Pre-existing" for the same reason,
+and Google's review guide asks for a bug to be filed when a change exposes a
+problem it cannot fix.
+
+The rule is decided by lines, without a model: the quote is in the file at the
+reviewed head and on no line the diff adds. That is how SonarQube separates
+new code from old, and it carries the same cost SonarQube accepts. Whether a
+defect is old is a property of behaviour, not of lines: a pull request can
+break old code by calling it in a new way, and that finding is marked too. On
+the labelled findings, 3 of 39 real defects a pull request introduced quoted
+only unchanged lines. On the pilot no verdict changed. `--block-pre-existing`
+makes such findings count again.
+
 ## Measured and not adopted
 
 - **Faster question answers.** Answering each question with effort `low` or
@@ -99,14 +117,9 @@ by 38% and changed no verdict.
 - **A second lens sample with questions.** No difference on two pull requests
   in found or blocking defects; the number of questions per run moved the cost
   more than the second sample.
-- **Telling pre-existing defects from new ones without the panel.** The
-  ranking, asked whether the pull request introduced each finding, was right
-  68% of the times it said no. A mechanical rule (the quoted code is unchanged
-  at the base and on no line the pull request touched) was right 59% of the
-  time. Neither changed a verdict on the pilot. "Pre-existing" is a property
-  of the behaviour, not of the lines: old code can break because of a new
-  caller, and moved code can carry an old bug. Only running the case at the
-  base and at the head would settle it.
+- **Asking a model whether a defect is pre-existing.** The ranking, asked
+  whether the pull request introduced each finding, was right 68% of the times
+  it said no, and filed 2 of 39 real defects as old. It is not used.
 
 ## Limits
 

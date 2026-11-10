@@ -255,6 +255,9 @@ pub fn verdict_for(
                 // ranking placed below the blocking bar stays in the report
                 // but does not block (`--scenario-questions`).
                 && !js::truthy(js::get(f, "rankedBelowBlocking"))
+                // Not from the workflow: every line the finding quotes is
+                // code this pull request did not change.
+                && !js::truthy(js::get(f, "preExistingCode"))
         })
         .collect();
     let critical_survivor = blocking.iter().any(|f| severity_is(f, "critical"));

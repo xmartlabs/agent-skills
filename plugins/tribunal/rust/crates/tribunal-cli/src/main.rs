@@ -5,7 +5,7 @@
 //!   tribunal review --pr <n> [--repo <owner/name>] [--head-sha <sha>]
 //!     [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>]
 //!     [--scenario-questions <n>|--no-scenario-questions] [--question-model <id>] [--refuters|--no-refuters]
-//!     [--block-min-worth <n>|--no-block-min-worth]
+//!     [--block-min-worth <n>|--no-block-min-worth] [--block-pre-existing]
 //!     [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight]
 //!     [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>]
 //!     [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]
@@ -51,7 +51,7 @@ fn usage() -> ExitCode {
     eprintln!("usage: tribunal override --ts <row ts> --title <finding title prefix> (--direction reinstated|rejected|withdrawn | --severity nit|important) --reason <how it was checked> [--by <login>] [--verified-at <sha>] [--dry-run]");
     eprintln!("usage: tribunal selfcheck [--apply] [--no-battery] [--model <id>] [--effort <level>] [--out <file>]");
     eprintln!("usage: tribunal post --from <run.json> [--verdict approve|request-changes|comment] [--delta|--edit-existing] [--over-own-review] [--over-standing-review] [--model <id>] [--effort <level>]");
-    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>] [--scenario-questions <n>|--no-scenario-questions] [--question-model <id>] [--refuters|--no-refuters] [--block-min-worth <n>|--no-block-min-worth] [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight] [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
+    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>] [--scenario-questions <n>|--no-scenario-questions] [--question-model <id>] [--refuters|--no-refuters] [--block-min-worth <n>|--no-block-min-worth] [--block-pre-existing] [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight] [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
     eprintln!("usage: tribunal panel --pr <n> --repo <owner/name> --head-sha <sha> --findings <file.json> [--thread-before <iso>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--model <id>] [--effort <level>] [--out <file>]");
     ExitCode::from(2)
 }
@@ -265,6 +265,7 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
                 block_min_worth = Some(n);
             }
             "--no-block-min-worth" => block_min_worth = None,
+            "--block-pre-existing" => args.block_pre_existing = true,
             "--context" => args.context = Some(value(&mut it, a)?),
             "--model" => args.review_model = value(&mut it, a)?,
             "--concurrency" => {
@@ -1363,6 +1364,17 @@ mod tests {
             .map(|s| s.to_string())
             .collect();
         assert_eq!(parse(&off).unwrap().args.block_min_worth, None);
+    }
+
+    #[test]
+    fn block_pre_existing_is_off_by_default() {
+        let none: Vec<String> = ["--pr", "12"].iter().map(|s| s.to_string()).collect();
+        assert!(!parse(&none).unwrap().args.block_pre_existing);
+        let on: Vec<String> = ["--pr", "12", "--block-pre-existing"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert!(parse(&on).unwrap().args.block_pre_existing);
     }
 
     #[test]
