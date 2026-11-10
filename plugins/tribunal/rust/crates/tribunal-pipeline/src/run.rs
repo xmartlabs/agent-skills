@@ -1564,6 +1564,32 @@ pub async fn run_full<A: Agent>(
         verify.dispatches.push(("question-rank".into(), res));
         verify.question_rank = Some(summary);
     }
+    if !args.block_pre_existing {
+        let head = &review.context.head_pin;
+        let pinned = js::truthy(js::get(head, "ok"))
+            .then(|| js::get(head, "path").and_then(Value::as_str))
+            .flatten();
+        let diff = review
+            .context
+            .delivery
+            .diff_path
+            .as_deref()
+            .and_then(|p| std::fs::read_to_string(p).ok());
+        if let (Some(root), Some(diff)) = (pinned, diff) {
+            let v = &mut verify.verdicts;
+            let marked = crate::pre_existing::mark_pre_existing(
+                &mut v.surviving,
+                std::path::Path::new(root),
+                &diff,
+            );
+            crate::questions::sync_results(&mut v.results, &v.surviving, &v.placed_aside);
+            if marked > 0 {
+                logs.push(format!(
+                    "Pre-existing code: {marked} kept finding(s) quote only lines this pull request did not change; reported apart, not blocking."
+                ));
+            }
+        }
+    }
     let synthesis = synthesize_phase(agent, rt, args, policy, &review, &verify, logs).await;
     let persisted = match &synthesis {
         Ok(s) => {

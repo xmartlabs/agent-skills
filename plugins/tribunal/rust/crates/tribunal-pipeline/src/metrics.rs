@@ -241,6 +241,10 @@ fn blocking(v: &Value, f: &Value) -> Option<Value> {
     if js::truthy(get(f, crate::questions::RANKED_BELOW_BLOCKING)) {
         return Some(json!(false));
     }
+    // Not from the workflow: about code the pull request did not change.
+    if js::truthy(get(f, crate::pre_existing::PRE_EXISTING_CODE)) {
+        return Some(json!(false));
+    }
     // Not from the workflow: moved to "Questions to review", outside the
     // verdict, under `--scenario-questions`.
     if get(v, "placement").and_then(|p| get(p, "placement"))

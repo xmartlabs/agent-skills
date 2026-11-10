@@ -40,6 +40,8 @@ const CARRIED_FORMAT: &str = include_str!("synthesis/carriedFormat.txt");
 const QUESTIONS_RULE: &str = include_str!("synthesis/questionsRule.txt");
 const REFUTERS_RULE: &str = include_str!("synthesis/refutersRule.txt");
 const BELOW_BLOCKING_RULE: &str = include_str!("synthesis/belowBlockingRule.txt");
+const PRE_EXISTING_RULE: &str = include_str!("synthesis/preExistingRule.txt");
+const PRE_EXISTING_SECTION: &str = "### Pre-existing code (not blocking)\n- <issue> — <file:line> — <why> — in code this PR did not change; worth a separate ticket\n\n";
 const SHOULD_FIX_SECTION: &str = "### Should fix (not blocking)\n- <issue> — <file:line> — <why> — ranked below the blocking bar (worth <rankWorth>)\n\n";
 const VERIFY_PRIOR: &str = include_str!("synthesis/verify-prior.txt");
 
@@ -1125,6 +1127,7 @@ pub fn synthesis_prompt(s: &SynthesisInput) -> String {
     // still rated worth 4 or more gets its own section above the nits.
     let should_fix_section = if s.surviving.iter().any(|f| {
         js::truthy(js::get(f, crate::questions::RANKED_BELOW_BLOCKING))
+            && !js::truthy(js::get(f, crate::pre_existing::PRE_EXISTING_CODE))
             && js::get(f, crate::questions::RANK_WORTH)
                 .and_then(Value::as_u64)
                 .is_some_and(|w| w >= crate::questions::BLOCKING_WORTH)
@@ -1132,6 +1135,17 @@ pub fn synthesis_prompt(s: &SynthesisInput) -> String {
         SHOULD_FIX_SECTION
     } else {
         ""
+    };
+    // Not from the workflow: findings that quote only code the pull request
+    // did not change (`crate::pre_existing`).
+    let pre_existing = s
+        .surviving
+        .iter()
+        .any(|f| js::truthy(js::get(f, crate::pre_existing::PRE_EXISTING_CODE)));
+    let (pre_existing_rule, pre_existing_section) = if pre_existing {
+        (PRE_EXISTING_RULE, PRE_EXISTING_SECTION)
+    } else {
+        ("", "")
     };
     // Without a panel, what sits aside was kept by the question ranking, not
     // by refuters.
@@ -1222,6 +1236,8 @@ pub fn synthesis_prompt(s: &SynthesisInput) -> String {
             ("refutersRule", refuters_rule),
             ("belowBlockingRule", below_blocking_rule),
             ("shouldFixSection", should_fix_section),
+            ("preExistingRule", pre_existing_rule),
+            ("preExistingSection", pre_existing_section),
             ("placedAsideNote", placed_aside_note),
         ],
     )

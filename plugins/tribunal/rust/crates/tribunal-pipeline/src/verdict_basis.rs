@@ -30,6 +30,7 @@ pub fn verdict_basis(findings: &[Value]) -> Option<String> {
             && !flag(f, "verifiedByGateNote")
             && js::get(f, "adjudicated") != Some(&Value::Bool(false))
             && !flag(f, crate::questions::RANKED_BELOW_BLOCKING)
+            && !flag(f, crate::pre_existing::PRE_EXISTING_CODE)
     }) {
         let mut why: Vec<&str> = Vec::new();
         match js::get(f, "severity").and_then(Value::as_str) {

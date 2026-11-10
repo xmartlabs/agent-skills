@@ -1263,6 +1263,27 @@ fn the_should_fix_section_opens_only_for_a_marked_finding_of_worth_four_or_more(
     assert!(!rust_synth(&c).contains(section));
 }
 
+/// Not a port: a survivor about code the pull request did not change opens
+/// the pre-existing section and its rule, and the verdict ignores it.
+#[test]
+fn pre_existing_code_opens_its_section_and_does_not_request_changes() {
+    use tribunal_core::report::carry_forward::verdict_for;
+    let mut c = sample(synth_case()).into_iter().next().expect("a case");
+    let section = "### Pre-existing code (not blocking)";
+    let rule = "\"preExistingCode\": true on a finding means every line of the code it quotes";
+    let prompt = rust_synth(&c);
+    assert!(!prompt.contains(section) && !prompt.contains(rule));
+    let f = json!({"title": "t", "file": "src/a.ts", "line": 3, "severity": "critical",
+        "adjudicated": true, "preExistingCode": true});
+    c["survivingFindingsForSynthesis"] = json!([f.clone()]);
+    let prompt = rust_synth(&c);
+    assert!(prompt.contains(section) && prompt.contains(rule));
+    assert_eq!(verdict_for(Some(std::slice::from_ref(&f)), None), "COMMENT");
+    let mut unmarked = f;
+    unmarked.as_object_mut().unwrap().remove("preExistingCode");
+    assert_eq!(verdict_for(Some(&[unmarked]), None), "REQUEST CHANGES");
+}
+
 /// Not a port: the survivors handed to the report keep the ranking's mark and
 /// worth, which the rule above reads.
 #[test]

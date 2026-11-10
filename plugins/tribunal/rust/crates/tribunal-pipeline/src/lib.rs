@@ -19,6 +19,7 @@ pub mod persist;
 pub mod plan;
 pub mod post;
 pub mod pre_decided;
+pub mod pre_existing;
 pub mod prompts;
 pub mod questions;
 pub mod review;

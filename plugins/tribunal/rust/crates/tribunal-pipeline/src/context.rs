@@ -87,6 +87,10 @@ pub struct RunArgs {
     /// Below it, it stays in the report without blocking. `None` keeps the
     /// rule of severity alone (and worth 4 for question findings).
     pub block_min_worth: Option<u64>,
+    /// `--block-pre-existing`: a finding about code the pull request did not
+    /// change counts toward the verdict as before. `false` marks it
+    /// `preExistingCode` and keeps it from blocking (`crate::pre_existing`).
+    pub block_pre_existing: bool,
 }
 
 /// Where the run executes.
