@@ -441,6 +441,48 @@ async fn standing_review(
     Ok((id, verdict))
 }
 
+/// The report the posted body is composed from: the operator's report less
+/// what only the operator acts on. The panel-off and sweep-off lines name a
+/// command-line flag for whoever ran the review, and a suggestion to approve
+/// reads as an approval on a review posted in another state. The operator's
+/// own copy of the report keeps both.
+#[must_use]
+pub fn posted_report(report: &str, posted_verdict: &str) -> String {
+    use crate::synthesize::{
+        PANEL_OFF_BY_DEFAULT, PANEL_OFF_BY_FLAG, SWEEP_OFF_BY_DEFAULT, SWEEP_OFF_BY_FLAG,
+    };
+    let operator_only = [
+        PANEL_OFF_BY_DEFAULT,
+        PANEL_OFF_BY_FLAG,
+        SWEEP_OFF_BY_DEFAULT,
+        SWEEP_OFF_BY_FLAG,
+    ];
+    let unposted_approval = |line: &str| {
+        posted_verdict != "APPROVE"
+            && line
+                .trim_start_matches('#')
+                .trim()
+                .strip_prefix("Verdict suggestion:")
+                .is_some_and(|v| v.trim() == "APPROVE")
+    };
+    let mut out: Vec<&str> = Vec::new();
+    for line in report.lines() {
+        let kept = line.trim();
+        if operator_only.contains(&kept) || unposted_approval(line) {
+            continue;
+        }
+        if kept.is_empty() && out.last().is_some_and(|l| l.trim().is_empty()) {
+            continue;
+        }
+        out.push(line);
+    }
+    let mut text = out.join("\n");
+    if report.ends_with('\n') {
+        text.push('\n');
+    }
+    text
+}
+
 /// Step 4 for a run the operator asked to post.
 #[allow(clippy::too_many_lines)]
 pub async fn post_phase<A: Agent>(
@@ -484,7 +526,7 @@ pub async fn post_phase<A: Agent>(
     let report_file = dir.join("report.md");
     let body_file = dir.join("body.md");
     let footer_file = dir.join("footer.txt");
-    if let Err(e) = std::fs::write(&report_file, input.report) {
+    if let Err(e) = std::fs::write(&report_file, posted_report(input.report, verdict)) {
         return PostOutcome::Held(format!("cannot write the report: {e}"));
     }
 
@@ -610,6 +652,10 @@ pub async fn post_phase<A: Agent>(
         body_file.to_string_lossy().into_owned(),
         "--footer-file".to_owned(),
         footer_file.to_string_lossy().into_owned(),
+        // The review belongs to the commit it read, not to whatever head the
+        // pull request has once the body is composed.
+        "--commit".to_owned(),
+        input.head_sha.to_owned(),
     ];
     post_argv.extend(post_args);
     let posted = post_review::run(&post_argv, &rt.tools, &post_env(rt)).await;
