@@ -275,6 +275,13 @@ pub const LOWER_PRIORITY: &str = "lower-priority-question";
 /// in 10, while the answers' own severity was inflated.
 pub const BLOCKING_WORTH: u64 = 4;
 
+/// The `--block-min-worth` the CLI applies when neither it nor
+/// `--no-block-min-worth` is given. On a pilot of 14 pull requests that later
+/// broke and 14 that never did, worth 5 left a blocker on about 7 broken
+/// and 3 clean pull requests across three ranking draws, against 13 and 11
+/// with severity alone.
+pub const DEFAULT_BLOCK_MIN_WORTH: u64 = 5;
+
 /// The finding field that keeps a kept question finding out of the verdict's
 /// blockers. `verdict_for`, the verdict basis and the row's `blocking` read it.
 pub const RANKED_BELOW_BLOCKING: &str = "rankedBelowBlocking";

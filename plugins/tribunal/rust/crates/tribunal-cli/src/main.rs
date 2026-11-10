@@ -5,7 +5,7 @@
 //!   tribunal review --pr <n> [--repo <owner/name>] [--head-sha <sha>]
 //!     [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>]
 //!     [--scenario-questions <n>|--no-scenario-questions] [--question-model <id>] [--refuters|--no-refuters]
-//!     [--block-min-worth <n>]
+//!     [--block-min-worth <n>|--no-block-min-worth]
 //!     [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight]
 //!     [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>]
 //!     [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]
@@ -27,7 +27,7 @@ use tribunal_context::fetch_pr_context::default_tmpdir;
 use tribunal_context::operator::OperatorEnv;
 use tribunal_pipeline::context::{RunArgs, Runtime};
 use tribunal_pipeline::post::PostMode;
-use tribunal_pipeline::questions::MAX_QUESTION_SAMPLES;
+use tribunal_pipeline::questions::{DEFAULT_BLOCK_MIN_WORTH, MAX_QUESTION_SAMPLES};
 
 /// Generator dispatches when `--scenario-questions` is not given: one, which
 /// writes three passes and found as much as three dispatches.
@@ -51,7 +51,7 @@ fn usage() -> ExitCode {
     eprintln!("usage: tribunal override --ts <row ts> --title <finding title prefix> (--direction reinstated|rejected|withdrawn | --severity nit|important) --reason <how it was checked> [--by <login>] [--verified-at <sha>] [--dry-run]");
     eprintln!("usage: tribunal selfcheck [--apply] [--no-battery] [--model <id>] [--effort <level>] [--out <file>]");
     eprintln!("usage: tribunal post --from <run.json> [--verdict approve|request-changes|comment] [--delta|--edit-existing] [--over-own-review] [--over-standing-review] [--model <id>] [--effort <level>]");
-    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>] [--scenario-questions <n>|--no-scenario-questions] [--question-model <id>] [--refuters|--no-refuters] [--block-min-worth <n>] [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight] [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
+    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--lens-samples <n>] [--scenario-questions <n>|--no-scenario-questions] [--question-model <id>] [--refuters|--no-refuters] [--block-min-worth <n>|--no-block-min-worth] [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight] [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
     eprintln!("usage: tribunal panel --pr <n> --repo <owner/name> --head-sha <sha> --findings <file.json> [--thread-before <iso>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--model <id>] [--effort <level>] [--out <file>]");
     ExitCode::from(2)
 }
@@ -209,6 +209,7 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
     let mut policy = DispatchPolicy::default();
     let mut out = None;
     let mut refuters = None;
+    let mut block_min_worth = Some(DEFAULT_BLOCK_MIN_WORTH);
     let mut questions: Option<u32> = None;
     let mut it = argv.iter();
     let value = |it: &mut std::slice::Iter<String>, flag: &str| {
@@ -261,8 +262,9 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
                 if !(1..=5).contains(&n) {
                     return Err("--block-min-worth takes a whole number from 1 to 5".into());
                 }
-                args.block_min_worth = Some(n);
+                block_min_worth = Some(n);
             }
+            "--no-block-min-worth" => block_min_worth = None,
             "--context" => args.context = Some(value(&mut it, a)?),
             "--model" => args.review_model = value(&mut it, a)?,
             "--concurrency" => {
@@ -330,6 +332,7 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
     // runtime cases (evidence only a refuter reads), asks for the panel.
     // Scenario questions are on unless turned off: on labelled BE pull
     // requests they found most of what the lenses alone missed.
+    args.block_min_worth = block_min_worth;
     args.scenario_questions = match questions.unwrap_or(DEFAULT_QUESTION_SAMPLES) {
         0 => None,
         n => Some(n),
@@ -1340,7 +1343,7 @@ mod tests {
     }
 
     #[test]
-    fn block_min_worth_takes_a_worth_from_one_to_five_and_is_off_by_default() {
+    fn block_min_worth_takes_a_worth_from_one_to_five_and_is_on_at_five_by_default() {
         let parse_with = |v: &str| {
             let a: Vec<String> = ["--pr", "12", "--block-min-worth", v]
                 .iter()
@@ -1354,7 +1357,12 @@ mod tests {
             assert!(parse_with(bad).is_err(), "{bad} must be refused");
         }
         let none: Vec<String> = ["--pr", "12"].iter().map(|s| s.to_string()).collect();
-        assert_eq!(parse(&none).unwrap().args.block_min_worth, None);
+        assert_eq!(parse(&none).unwrap().args.block_min_worth, Some(5));
+        let off: Vec<String> = ["--pr", "12", "--no-block-min-worth"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(parse(&off).unwrap().args.block_min_worth, None);
     }
 
     #[test]
