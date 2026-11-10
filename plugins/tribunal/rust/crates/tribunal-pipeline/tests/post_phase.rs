@@ -108,6 +108,7 @@ printf '%s\n' "$*" >> '{log}'
 case "$*" in
   *headRefOid*) cat '{head}'; exit 0 ;;
   *"reviews/5 -X PUT"*) exit 0 ;;
+  *"reviews -X POST"*) for a in "$@"; do case "$a" in body=@*) cp "${{a#body=@}}" '{posted}' ;; esac; done; exit 0 ;;
 esac
 case "$1 $2" in
   "pr review") prev=; for a in "$@"; do [ "$prev" = --body-file ] && cp "$a" '{posted}'; prev=$a; done; exit 0 ;;
@@ -222,8 +223,8 @@ async fn a_clear_gate_posts_with_footer_and_patches_the_row() {
         }
     );
     let log = gh_log(&w);
-    assert!(log.contains("pr review 77 --repo o/r --body-file"), "{log}");
-    assert!(log.contains("--request-changes"), "{log}");
+    assert!(log.contains("api repos/o/r/pulls/77/reviews -X POST -f commit_id=abc -f event=REQUEST_CHANGES -F body=@"), "{log}");
+    assert!(log.contains("event=REQUEST_CHANGES"), "{log}");
     let ledger = std::fs::read_to_string(w.rt.data_dir.join("metrics.jsonl")).unwrap();
     let patched: Value = serde_json::from_str(ledger.trim()).unwrap();
     assert_eq!(patched["posted"], json!(true));
@@ -517,7 +518,7 @@ async fn a_saved_run_posts_only_at_the_commit_it_reviewed() {
         matches!(out, PostOutcome::Posted { .. }),
         "{out:?} {logs:?}"
     );
-    assert!(gh_log(&w).contains("--request-changes"));
+    assert!(gh_log(&w).contains("event=REQUEST_CHANGES"));
 
     let w = world("saved-moved", &r);
     std::fs::write(w.root.join("head"), "def\n").unwrap();
@@ -532,7 +533,7 @@ async fn a_saved_run_posts_only_at_the_commit_it_reviewed() {
         "{out:?}"
     );
     assert!(agent.labels.lock().unwrap().is_empty());
-    assert!(!gh_log(&w).contains("pr review"));
+    assert!(!gh_log(&w).contains("-X POST"));
 }
 
 /// `tribunal post --verdict` posts the review state the operator picked at
@@ -557,8 +558,8 @@ async fn a_saved_run_posts_the_verdict_the_operator_picked() {
         "{out:?} {logs:?}"
     );
     let log = gh_log(&w);
-    assert!(log.contains("--comment"), "{log}");
-    assert!(!log.contains("--request-changes"), "{log}");
+    assert!(log.contains("event=COMMENT"), "{log}");
+    assert!(!log.contains("event=REQUEST_CHANGES"), "{log}");
 }
 
 /// A run with no metrics row cannot carry a footer, so nothing is posted.
@@ -621,7 +622,7 @@ async fn over_standing_review_posts_the_full_review_past_any_gate() {
         };
         let (out, logs) = post_with(&w, &agent, &r, choice).await;
         assert!(matches!(out, PostOutcome::Posted { .. }), "{gate}: {out:?}");
-        assert!(gh_log(&w).contains("--request-changes"), "{gate}");
+        assert!(gh_log(&w).contains("event=REQUEST_CHANGES"), "{gate}");
         assert!(
             logs.iter().any(|l| l.contains("over the standing review")),
             "{logs:?}"
@@ -650,8 +651,8 @@ async fn a_delta_is_a_comment_checked_only_for_the_findings_it_carries() {
         "{logs:?}"
     );
     let log = gh_log(&w);
-    assert!(log.contains("--comment"), "{log}");
-    assert!(!log.contains("--request-changes"), "{log}");
+    assert!(log.contains("event=COMMENT"), "{log}");
+    assert!(!log.contains("event=REQUEST_CHANGES"), "{log}");
     assert_eq!(*agent.labels.lock().unwrap(), ["compose-post"]);
     let ledger = std::fs::read_to_string(w.rt.data_dir.join("metrics.jsonl")).unwrap();
     let patched: Value = serde_json::from_str(ledger.trim()).unwrap();
@@ -717,9 +718,39 @@ async fn an_edit_overwrites_your_latest_review_and_keeps_its_state() {
         log.contains("api repos/o/r/pulls/77/reviews/5 -X PUT"),
         "{log}"
     );
-    assert!(!log.contains("pr review"), "{log}");
+    assert!(!log.contains("-X POST"), "{log}");
     let ledger = std::fs::read_to_string(w.rt.data_dir.join("metrics.jsonl")).unwrap();
     let patched: Value = serde_json::from_str(ledger.trim()).unwrap();
     assert_eq!(patched["posted"], json!(true));
     assert_eq!(patched["verdict"], json!("APPROVE"));
+}
+
+/// The posted body is composed from the report less what only the operator
+/// acts on: the panel-off and sweep-off lines, and a suggestion to approve
+/// when the review is posted in another state.
+#[test]
+fn the_posted_report_drops_operator_lines_and_an_unposted_approval() {
+    use tribunal_pipeline::post::posted_report;
+    use tribunal_pipeline::synthesize::{
+        PANEL_OFF_BY_DEFAULT, PANEL_OFF_BY_FLAG, SWEEP_OFF_BY_DEFAULT, SWEEP_OFF_BY_FLAG,
+    };
+    let report = format!(
+        "## Peer review\n\n### Verdict suggestion: APPROVE\n\n{SWEEP_OFF_BY_DEFAULT}\n\n{PANEL_OFF_BY_FLAG}\n\n### 🔴 Blocking\nNone.\n"
+    );
+    let posted = posted_report(&report, "COMMENT");
+    assert_eq!(posted, "## Peer review\n\n### 🔴 Blocking\nNone.\n");
+    for line in [
+        PANEL_OFF_BY_DEFAULT,
+        PANEL_OFF_BY_FLAG,
+        SWEEP_OFF_BY_DEFAULT,
+        SWEEP_OFF_BY_FLAG,
+    ] {
+        let report = format!("a\n\n{line}\n\nb\n");
+        assert_eq!(posted_report(&report, "APPROVE"), "a\n\nb\n", "{line}");
+    }
+    // Posted as an approval, the suggestion matches the state and stays.
+    assert!(posted_report(&report, "APPROVE").contains("### Verdict suggestion: APPROVE"));
+    // A suggestion to request changes is information on a comment, and stays.
+    let changes = "### Verdict suggestion: REQUEST CHANGES\n\nOne blocker.\n";
+    assert_eq!(posted_report(changes, "COMMENT"), changes);
 }

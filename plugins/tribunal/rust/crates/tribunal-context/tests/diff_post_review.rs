@@ -1101,3 +1101,53 @@ fn a_date_only_submitted_at_is_a_declared_difference() {
     assert_eq!(js.out.stdout, "1\n");
     assert_eq!(rs.out.stdout, "2\n");
 }
+
+/// With `--commit`, the port creates the review on that commit through the
+/// API, so a push while the body was composed cannot move it to a head the
+/// review never read. Port-only: the script had no such option.
+#[test]
+fn a_commit_pins_the_new_review_to_the_commit_it_read() {
+    let root = scratch("post-review-commit");
+    let list = reviews(&[json!({"id": 99, "body": "{{BODY}}"})]);
+    for (flag, event) in [
+        ("--approve", "APPROVE"),
+        ("--request-changes", "REQUEST_CHANGES"),
+        ("--comment", "COMMENT"),
+    ] {
+        let api_post: Vec<String> = [
+            "api",
+            "repos/acme/widgets/pulls/42/reviews",
+            "-X",
+            "POST",
+            "-f",
+            "commit_id=abc123",
+            "-f",
+        ]
+        .iter()
+        .map(|s| (*s).to_owned())
+        .chain([format!("event={event}"), "-F".into(), "body=@<BODY>".into()])
+        .collect();
+        let case = Case::new(
+            &format!("commit-{event}"),
+            &["--commit", "abc123", flag],
+            vec![
+                json!({"args": api_post, "stdout": "{}", "stderr": "", "code": 0}),
+                rule(&reviews_call(), &list, 0),
+                rule(&view_call(), URL, 0),
+            ],
+        );
+        let d = setup(&root, &case.name, &case);
+        let rs = run_rs(&d, &case);
+        assert_eq!(rs.out.code, 0, "{event}: {:?}", rs.out);
+        assert_eq!(rs.out.stdout, URL, "{event}");
+        assert_eq!(rs.calls[0]["args"], json!(api_post), "{event}");
+        assert!(
+            !rs.calls
+                .iter()
+                .any(|c| c["args"][0] == "pr" && c["args"][1] == "review"),
+            "{event}: {:?}",
+            rs.calls
+        );
+        assert_eq!(rs.left, 0, "{event}");
+    }
+}

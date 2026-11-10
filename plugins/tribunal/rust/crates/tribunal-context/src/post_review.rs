@@ -77,6 +77,16 @@ impl Verdict {
             Verdict::Comment => "### 💬 Comment",
         }
     }
+
+    /// The `event` the REST API takes for this state.
+    #[must_use]
+    pub fn event(self) -> &'static str {
+        match self {
+            Verdict::Approve => "APPROVE",
+            Verdict::RequestChanges => "REQUEST_CHANGES",
+            Verdict::Comment => "COMMENT",
+        }
+    }
 }
 
 /// Ports `composeBody`: banner, the report without its draft comments and
@@ -337,7 +347,8 @@ enum Mode {
 
 /// The script's command line: `node post-review.mjs --pr <n> --repo <o/r>
 /// (--find-review-id <login> | --report-file <f> --footer-file <f>
-/// (--approve|--request-changes|--comment|--overwrite <id>))`.
+/// (--approve|--request-changes|--comment|--overwrite <id>))`, plus the
+/// port's own `--commit <sha>`: a new review is created on that commit.
 pub async fn run(argv: &[String], tools: &Tools, env: &PostEnv) -> CliOutput {
     let args = parse_args(argv);
     let mut stderr = String::new();
@@ -451,7 +462,18 @@ async fn main(
     let body_file = format!("{tmp}/post-review-body-{}.md", std::process::id());
     std::fs::write(&body_file, &body).map_err(|e| node_fs_message(&e, "open", Some(&body_file)))?;
 
-    let posted = post_and_check(tools, env, &mode, &pr, &repo, &body_file, stderr).await;
+    let commit = args.get("commit").filter(|a| a.truthy()).map(Arg::text);
+    let posted = post_and_check(
+        tools,
+        env,
+        &mode,
+        commit.as_deref(),
+        &pr,
+        &repo,
+        &body_file,
+        stderr,
+    )
+    .await;
     match posted {
         Ok(Some(url)) => {
             let _ = std::fs::remove_file(&body_file);
@@ -470,11 +492,16 @@ async fn main(
 }
 
 /// Posts, re-fetches, checks for the leak, reads the URL. `Ok(None)` is the
-/// leak.
+/// leak. With `commit`, a new review is created on that commit through the
+/// API: `gh pr review` has no commit option and files the review on whatever
+/// head the pull request has when it posts, which after a push during the
+/// post is a commit the review never read.
+#[allow(clippy::too_many_arguments)]
 async fn post_and_check(
     tools: &Tools,
     env: &PostEnv,
     mode: &Mode,
+    commit: Option<&str>,
     pr: &str,
     repo: &str,
     body_file: &str,
@@ -492,6 +519,29 @@ async fn post_and_check(
                     "PUT",
                     "-F",
                     &field,
+                ],
+                env,
+                stderr,
+            )
+            .await?;
+        }
+        Mode::Post(verdict, _) if commit.is_some() => {
+            let commit_field = format!("commit_id={}", commit.unwrap_or_default());
+            let event_field = format!("event={}", verdict.event());
+            let body_field = format!("body=@{body_file}");
+            gh(
+                tools,
+                &[
+                    "api",
+                    &format!("repos/{repo}/pulls/{pr}/reviews"),
+                    "-X",
+                    "POST",
+                    "-f",
+                    &commit_field,
+                    "-f",
+                    &event_field,
+                    "-F",
+                    &body_field,
                 ],
                 env,
                 stderr,
