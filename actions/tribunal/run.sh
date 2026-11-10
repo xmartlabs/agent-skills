@@ -64,12 +64,13 @@ changed_files() { # FILE
 # own_reviews FILE: the ids of the pull request's reviews that carry the footer the binary signs
 # its posts with, written by the action's own identities: github-actions[bot] and the
 # github-token's user when it can read one (a PAT or an App's user token; the Actions token cannot).
-own_reviews() {
-  local own=("github-actions[bot]") login logins
+own_reviews() { # FILE [STATE]: with STATE, only the reviews in that state (CHANGES_REQUESTED)
+  local own=("github-actions[bot]") login logins state=""
   login="$(gh api user --jq .login 2>/dev/null)" && [ -n "$login" ] && own+=("$login")
   logins="$(python3 -c 'import json,sys;print(json.dumps(sys.argv[1:]))' "${own[@]}")"
+  [ -z "${2:-}" ] || state=" and .state == \"$2\""
   gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$(pr_number)/reviews?per_page=100" \
-    --jq ".[] | select((.user.login as \$l | $logins | index(\$l)) and ((.body // \"\") | contains(\"<sub>tribunal v\"))) | .id" \
+    --jq ".[] | select((.user.login as \$l | $logins | index(\$l)) and ((.body // \"\") | contains(\"<sub>tribunal v\"))$state) | .id" \
     > "$1"
 }
 
@@ -267,8 +268,9 @@ cmd_review() {
 # Keep existing standing-review behavior. The verdict is opt-in; HEAD checks are not.
 cmd_post() {
   python3 "$ACTION_DIR/runtime.py" check-head 2>&1 | tee "$JOB/post.log" || return 1
-  local args=(--from "$JOB/run.json" --over-standing-review)
-  if [ "$(cat "$JOB/verdict")" = comment ]; then args+=(--verdict comment); fi
+  local args=(--from "$JOB/run.json" --over-standing-review) state rc
+  state="$(python3 "$ACTION_DIR/runtime.py" post-state)" || return 1
+  [ -z "$state" ] || args+=(--verdict "$state")
   # The same model/effort applies to review and report composition.
   local name value
   for name in model effort; do
@@ -281,6 +283,28 @@ PYARG
     [ -z "$value" ] || args+=("--$name" "$value")
   done
   tribunal post "${args[@]}" 2>&1 | tee -a "$JOB/post.log"
+  rc=$?
+  [ "$rc" -eq 0 ] || return "$rc"
+  if [ "$(cat "$JOB/verdict")" = no-approve ] && [ "$state" = comment ]; then dismiss_change_requests; fi
+}
+
+# A comment does not clear the action's earlier change request, which would keep blocking the merge
+# after the findings it asked for are fixed. Best effort: a failure is logged, never fatal.
+dismiss_change_requests() {
+  local id
+  own_reviews "$JOB/change-requests" CHANGES_REQUESTED 2>> "$JOB/post.log" || {
+    echo "::warning::tribunal: could not list earlier change requests to dismiss"; return 0; }
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    if gh api -X PUT "repos/$GITHUB_REPOSITORY/pulls/$(pr_number)/reviews/$id/dismissals" \
+        -f event=DISMISS -f message="Superseded by tribunal's review of $(event pull_request.head.sha | cut -c1-8), which does not request changes." \
+        > /dev/null 2>> "$JOB/post.log"; then
+      log "dismissed the earlier change request $id" 2>&1 | tee -a "$JOB/post.log" >&2
+    else
+      echo "::warning::tribunal: could not dismiss the earlier change request $id"
+    fi
+  done < "$JOB/change-requests"
+  return 0
 }
 
 cmd_baseline() {
@@ -292,20 +316,21 @@ cmd_baseline() {
   fi
 }
 
-# The "Tribunal findings" check run on the reviewed head. Best effort: a missing `checks: write`
-# or a count that cannot be made never fails the job, and the summary says what happened.
+# The "Tribunal findings" commit status on the reviewed head. Best effort: a missing
+# `statuses: write` or a count that cannot be made never fails the job, and the summary says what
+# happened.
 cmd_findings_check() {
   local line
   if ! line="$(python3 "$ACTION_DIR/runtime.py" findings-check 2> "$JOB/findings-check.err")"; then
-    printf 'Findings check not created: %s\n' "$(tail -n 1 "$JOB/findings-check.err")" | tee "$JOB/findings-line" >&2
+    printf 'Findings status not created: %s\n' "$(tail -n 1 "$JOB/findings-check.err")" | tee "$JOB/findings-line" >&2
     return 0
   fi
-  if gh api -X POST "repos/$GITHUB_REPOSITORY/check-runs" --input "$JOB/check.json" > /dev/null 2> "$JOB/findings-check.err"; then
-    printf 'Findings check: %s\n' "$line" | tee "$JOB/findings-line" >&2
+  if gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$(event pull_request.head.sha)" --input "$JOB/status.json" > /dev/null 2> "$JOB/findings-check.err"; then
+    printf 'Findings status: %s\n' "$line" | tee "$JOB/findings-line" >&2
   else
-    printf 'Findings check not created (%s). Give the job `checks: write`.\n' "$(tail -n 1 "$JOB/findings-check.err")" \
+    printf 'Findings status not created (%s). Give the job `statuses: write`.\n' "$(tail -n 1 "$JOB/findings-check.err")" \
       | tee "$JOB/findings-line" >&2
-    echo "::warning::tribunal: the findings check was not created; give the job checks: write"
+    echo "::warning::tribunal: the findings status was not created; give the job statuses: write"
   fi
   return 0
 }
@@ -389,6 +414,7 @@ if fallback:
 PYMODE
     fi
     [ ! -f "$JOB/findings-line" ] || { echo; cat "$JOB/findings-line"; }
+    [ ! -f "$JOB/findings-table.md" ] || { echo; cat "$JOB/findings-table.md"; }
     [ ! -f "$JOB/baseline-reason" ] || cat "$JOB/baseline-reason"
     [ ! -f "$JOB/baseline-save-reason" ] || cat "$JOB/baseline-save-reason"
     echo

@@ -86,9 +86,10 @@ case "$*" in
   "pr comment"*)
     while [ $# -gt 0 ]; do [ "$1" = --body-file ] && cp "$2" "$FX/posted-body.md"; shift; done ;;
   "api -X DELETE"*) [ -f "$FX/label-present" ] || { echo "HTTP 404" >&2; exit 1; } ;;
-  "api -X POST repos/acme/web-app/check-runs --input "*)
-    [ -f "$FX/checks-forbidden" ] && { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
-    cp "$6" "$FX/check-posted.json" ;;
+  "api -X POST repos/acme/web-app/statuses/"*" --input "*)
+    [ -f "$FX/statuses-forbidden" ] && { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
+    printf '%s\n' "${4##*/}" > "$FX/status-sha"
+    cp "$6" "$FX/status-posted.json" ;;
   *contents/.claude/review-profile.json*)
     case "$*" in
       *"?ref=main "*|*"?ref=main") f=base ;;
@@ -140,12 +141,12 @@ gate() {
   sed -n 's/^run=//p' "$GITHUB_OUTPUT"
 }
 files() { python3 -c 'import json,sys;print(json.dumps([{"filename": f} for f in sys.argv[1:]]))' "$@" > "$FX/files.json"; }
-review_by() { # LOGIN BODY: append a review to the pull request's reviews
-  python3 - "$FX/reviews.json" "$1" "$2" <<'PY'
+review_by() { # LOGIN BODY [STATE]: append a review to the pull request's reviews
+  python3 - "$FX/reviews.json" "$1" "$2" "${3:-COMMENTED}" <<'PY'
 import json, os, sys
-path, login, body = sys.argv[1:]
+path, login, body, state = sys.argv[1:]
 r = json.load(open(path)) if os.path.exists(path) else []
-r.append({"id": len(r) + 1, "user": {"login": login}, "body": body, "state": "COMMENTED"})
+r.append({"id": len(r) + 1, "user": {"login": login}, "body": body, "state": state})
 json.dump(r, open(path, "w"))
 PY
 }
@@ -330,7 +331,7 @@ findings_check() { # MODE: run the step; RC is its exit code and COUNTS its "blo
   INPUT_FINDINGS_CHECK="$1" bash "$RUN" findings-check >/dev/null 2>&1; RC=$?
   COUNTS="$(sed -n 's/^blocking=//p' "$GITHUB_OUTPUT")/$(sed -n 's/^should-fix=//p' "$GITHUB_OUTPUT")"
 }
-check_field() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(eval(sys.argv[2],{},{"d":d}))' "$FX/check-posted.json" "$1"; }
+status_field() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(eval(sys.argv[2],{},{"d":d}))' "$FX/status-posted.json" "$1"; }
 open_run() { # one blocking and one should-fix finding on the reviewed head
   mkdir -p "$(job)"
   cat > "$(job)/run.json" <<'JSON'
@@ -344,26 +345,27 @@ new_job opened; open_run
 findings_check inform
 assert_eq "inform: the step outputs the open counts" "1/1" "$COUNTS"
 assert_eq "the step never fails the job" "0" "$RC"
-assert_eq "inform: open findings make the check neutral" "neutral" "$(check_field "d['conclusion']")"
-assert_eq "the check is on the reviewed head" "aaaa1111" "$(check_field "d['head_sha']")"
-assert_eq "the check is named for the findings" "Tribunal findings" "$(check_field "d['name']")"
-assert_eq "its title counts both tiers" "1 blocking, 1 should fix" "$(check_field "d['output']['title']")"
-assert_ok "it links the run" grep -qF "https://github.com/acme/web-app/actions/runs/7" "$FX/check-posted.json"
-assert_ok "the summary gets the check's line" grep -qF "Findings check: neutral: 1 blocking, 1 should fix" "$(job)/findings-line"
+assert_eq "inform: open findings leave the status green" "success" "$(status_field "d['state']")"
+assert_eq "with the counts and that they are not enforced" "1 blocking, 1 should fix open (not enforced)" "$(status_field "d['description']")"
+assert_eq "the status is on the reviewed head" "aaaa1111" "$(cat "$FX/status-sha")"
+assert_eq "the status is named for the findings" "Tribunal findings" "$(status_field "d['context']")"
+assert_eq "it links the run" "https://github.com/acme/web-app/actions/runs/7" "$(status_field "d['target_url']")"
+assert_ok "the summary gets the status's line" grep -qF "Findings status: success: 1 blocking, 1 should fix open (not enforced)" "$(job)/findings-line"
+assert_ok "and the table of open findings" grep -qF '| Blocking | `src/a.ts:3` | Skips the last item | this review |' "$(job)/findings-table.md"
 new_job opened; open_run
 findings_check enforce
-assert_eq "enforce: open findings fail the check" "failure" "$(check_field "d['conclusion']")"
-new_job opened; open_run; touch "$FX/checks-forbidden"
+assert_eq "enforce: open findings fail the status" "failure" "$(status_field "d['state']")"
+new_job opened; open_run; touch "$FX/statuses-forbidden"
 findings_check inform
-assert_eq "without checks: write the step still exits 0" "0" "$RC"
-assert_ok "and the summary names the missing permission" grep -qF 'Give the job `checks: write`' "$(job)/findings-line"
+assert_eq "without statuses: write the step still exits 0" "0" "$RC"
+assert_ok "and the summary names the missing permission" grep -qF 'Give the job `statuses: write`' "$(job)/findings-line"
 new_job opened; mkdir -p "$(job)"; echo '{"report":"x","metrics":{"headSha":"aaaa1111"}}' > "$(job)/run.json"
 findings_check inform
 assert_eq "a run without findings to count outputs no numbers" "/" "$COUNTS"
-assert_eq "and leaves a neutral check, never a green one" "neutral" "$(check_field "d['conclusion']")"
+assert_eq "and leaves an error status, never a green one" "error" "$(status_field "d['state']")"
 new_job opened; mkdir -p "$(job)"; echo '{"metrics":{"headSha":"bbbb2222","findings":[]}}' > "$(job)/run.json"
 findings_check inform
-assert_fail "a run for another head leaves no check" test -f "$FX/check-posted.json"
+assert_fail "a run for another head leaves no status" test -f "$FX/status-posted.json"
 assert_ok "and says why" grep -qF "reviewed HEAD differs" "$(job)/findings-line"
 assert_eq "even then the step exits 0" "0" "$RC"
 
@@ -455,6 +457,35 @@ done
 post
 assert_fail "suggested verdict does not override engine verdict" grep -qF -- '--verdict' "$FX/tribunal-post.env"
 assert_ok "model reaches report composition" grep -qF -- '--model claude-model --effort high' "$FX/tribunal-post.env"
+
+# no-approve: a change request when the engine asks for one, a comment otherwise, never an approval.
+no_approve_post() { # ENGINE_VERDICT
+  new_job labeled tribunal; INPUT_VERDICT=no-approve prepare
+  printf '{"report":"x","verdict":"%s","metrics":{"headSha":"aaaa1111"}}' "$1" > "$FX/run.json"
+  review >/dev/null 2>&1
+  review_by 'github-actions[bot]' "Blocking. $FOOTER" CHANGES_REQUESTED
+  review_by dev "Please fix" CHANGES_REQUESTED
+  review_by 'github-actions[bot]' "Earlier. $FOOTER" COMMENTED
+  post; RC=$?
+}
+no_approve_post APPROVE
+assert_eq "no-approve: the post succeeds" "0" "$RC"
+assert_ok "an engine APPROVE is posted as a comment" grep -qF -- '--verdict comment' "$FX/tribunal-post.env"
+assert_ok "and the action's earlier change request is dismissed" \
+  grep -qF "api -X PUT repos/acme/web-app/pulls/12/reviews/1/dismissals" "$FX/gh.log"
+assert_fail "a person's change request is not" grep -qF "reviews/2/dismissals" "$FX/gh.log"
+assert_fail "nor the action's earlier comment" grep -qF "reviews/3/dismissals" "$FX/gh.log"
+no_approve_post "REQUEST CHANGES"
+assert_ok "an engine change request is posted as one" grep -qF -- '--verdict request-changes' "$FX/tribunal-post.env"
+assert_fail "and dismisses nothing" grep -qF "dismissals" "$FX/gh.log"
+no_approve_post COMMENT
+assert_ok "an engine COMMENT is posted as a comment" grep -qF -- '--verdict comment' "$FX/tribunal-post.env"
+new_job labeled tribunal; prepare
+printf '{"report":"x","verdict":"APPROVE","metrics":{"headSha":"aaaa1111"}}' > "$FX/run.json"
+review >/dev/null 2>&1
+review_by 'github-actions[bot]' "Blocking. $FOOTER" CHANGES_REQUESTED
+post
+assert_fail "the default comment verdict dismisses nothing" grep -qF "dismissals" "$FX/gh.log"
 
 new_job labeled tribunal; prepare
 LIVE_HEAD=bbbb2222 review; RC=$?

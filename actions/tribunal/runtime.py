@@ -47,7 +47,7 @@ def validate():
     if version not in ("bundled", "latest"):
         semver(version)
     for name, choices, default in (
-        ("verdict", ("comment", "suggested"), "comment"),
+        ("verdict", ("comment", "suggested", "no-approve"), "comment"),
         ("review-mode", ("full", "incremental"), "full"),
         ("codex", ("true", "false"), "false"),
         ("bot-comments", ("true", "false"), "false"),
@@ -431,8 +431,26 @@ def open_findings(run, prior_row=None):
     return found
 
 
+def post_state(job):
+    """The `tribunal post --verdict` value for the job's `verdict`, or None to post the engine's own.
+
+    `no-approve` posts a change request when the engine asks for one and a comment otherwise, so
+    the action never approves however clean the review is.
+    """
+    mode = (job / "verdict").read_text().strip()
+    if mode == "suggested":
+        return None
+    if mode == "no-approve" and read(job / "run.json").get("verdict") == "REQUEST CHANGES":
+        return "request-changes"
+    return "comment"
+
+
 def findings_check(job):
-    """The check run for the reviewed head, as a GitHub API payload, and the two counts."""
+    """The commit status for the reviewed head, the table for the job summary, and the two counts.
+
+    A commit status, not a check run: a check run created with the job's token lands in whichever
+    workflow's group GitHub picks, while a status shows on the pull request under its own name.
+    """
     mode = setting("findings-check", "off")
     run = read(job / "run.json")
     head = event()["head"]["sha"]
@@ -440,22 +458,21 @@ def findings_check(job):
         raise ValueError("reviewed HEAD differs from the triggering event")
     prior = read(job / "prior-row.json") if (job / "prior-row.json").is_file() else None
     run_url = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
-    payload = {"name": CHECK_NAME, "head_sha": head, "status": "completed", "details_url": run_url}
+    status = {"context": CHECK_NAME, "target_url": run_url}
+    heading = f"### {CHECK_NAME}\n\nOpen findings after the tribunal review of `{head[:8]}` ({'enforced' if mode == 'enforce' else 'informative'})."
     try:
         found = open_findings(run, prior)
     except ValueError as error:
-        payload.update(conclusion="neutral", output={
-            "title": "Open findings could not be counted",
-            "summary": f"{error}. This is not a clean review: read the review on the pull request."})
-        return payload, None, None
+        status.update(state="error", description="Open findings could not be counted: read the review")
+        return status, f"{heading}\n\n{error}. This is not a clean review: read the review on the pull request.\n", None, None
     blocking = sum(1 for f in found if f["tier"] == "blocking")
     should_fix = sum(1 for f in found if f["tier"] == "should-fix")
     if blocking or should_fix:
-        conclusion = "failure" if mode == "enforce" else "neutral"
-        title = f"{blocking} blocking, {should_fix} should fix"
+        counts = f"{blocking} blocking, {should_fix} should fix open"
+        state, description = ("failure", counts) if mode == "enforce" else ("success", f"{counts} (not enforced)")
     else:
-        conclusion, title = "success", "No blocking or should-fix findings open"
-    lines = [f"Open findings after the tribunal review of `{head[:8]}` ({'enforced' if mode == 'enforce' else 'informative'}).", ""]
+        state, description = "success", "No blocking or should-fix findings open"
+    lines = [heading, ""]
     if found:
         lines += ["| Tier | Where | Finding | Status from |", "| --- | --- | --- | --- |"]
         for f in found:
@@ -464,8 +481,8 @@ def findings_check(job):
             lines.append(f"| {'Blocking' if f['tier'] == 'blocking' else 'Should fix'} | `{where}` | {title_cell} | {f['source']} |")
     else:
         lines.append("Nothing open. Nits, questions and pre-existing findings do not count.")
-    payload.update(conclusion=conclusion, output={"title": title, "summary": "\n".join(lines)[:60000]})
-    return payload, blocking, should_fix
+    status.update(state=state, description=description[:140])
+    return status, "\n".join(lines) + "\n", blocking, should_fix
 
 
 def main():
@@ -484,11 +501,14 @@ def main():
     elif command == "save":
         save_baseline(job)
     elif command == "findings-check":
-        payload, blocking, should_fix = findings_check(job)
-        write(job / "check.json", payload)
+        status, table, blocking, should_fix = findings_check(job)
+        write(job / "status.json", status)
+        (job / "findings-table.md").write_text(table)
         with open(os.environ.get("GITHUB_OUTPUT", os.devnull), "a") as outputs:
             outputs.write(f"blocking={'' if blocking is None else blocking}\nshould-fix={'' if should_fix is None else should_fix}\n")
-        print(f"{payload['conclusion']}: {payload['output']['title']}")
+        print(f"{status['state']}: {status['description']}")
+    elif command == "post-state":
+        print(post_state(job) or "")
     elif command == "check-head":
         run = read(job / "run.json")
         if run.get("skipped"):
