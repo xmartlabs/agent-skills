@@ -138,6 +138,14 @@ const CROSS_REPO_READ: &str = "When a claim depends on another repo, read it bef
 
 /// The last sentence of the template step: what the body says about its own
 /// limits, in plain prose and in the review's voice.
+/// The posted body's sections. The report's "Questions to review" do not
+/// count toward the verdict or the findings status a CI run leaves; without a
+/// section of their own the composer filed them under Should fix.
+const SECTIONS: &str = "`### 🔴 Blocking`, `### 🟡 Should fix, not blocking`, `### 🟣 Pre-existing, not blocking` (the report's pre-existing code: problems in code this PR did not change, each worth a separate ticket rather than a change to this PR), `### 🔵 Nits` (say when a nit did not go through the panel) and `### ⚪ Questions to review, not counted` (the report's questions to review, which were placed aside without a panel).";
+
+/// Keeps each finding in the section the report gave it.
+const SECTION_RULE: &str = "Keep each finding in the report's own section: only the report's Blocking items go under Blocking and only its Should fix items under Should fix. An item from the report's questions to review, pre-existing or nits never moves up to Blocking or Should fix, whatever severity its text names.";
+
 const CLOSING_NOTE: &str = "Close the body with one short paragraph in plain prose, with no label or heading, saying what you read to check it (name any other repo and its ref) and what you did not check.";
 
 /// The compose step's prompt.
@@ -148,7 +156,7 @@ pub fn compose_prompt(pr: &str, repo: &str, head: &str, report: &Path, out: &Pat
 
 1. Continuity. Run `gh pr view {pr} --repo {repo} --json reviews` and `gh api --paginate repos/{repo}/issues/{pr}/comments`. If either holds content, open the body with a short status section naming each earlier review or comment (author and date) and, for each of its Blocking or should-fix items, whether it is fixed, still open or disputed. Decide that from the code at {head} in this checkout, not from GitHub's review state and not from a commit message. {cross_repo}
 2. Author refutations. For every reply by the PR author that dismisses or explains away a standing finding, check the claim against the code and say whether it is confirmed, refuted or narrower than claimed. Skip a claim an earlier review by the same reviewer already answered. The same rule on other repos applies here.
-3. Template. Put what this review contributes under `### 🔴 Blocking`, `### 🟡 Should fix, not blocking`, `### 🟣 Pre-existing, not blocking` (the report's pre-existing code: problems in code this PR did not change, each worth a separate ticket rather than a change to this PR) and `### 🔵 Nits` (say when a nit did not go through the panel). Each item: a short bold title, the exact `file:line`, then the explanation. Move out of Blocking anything whose own verified text calls it non-blocking. {closing}
+3. Template. Put what this review contributes under {sections} Each item: a short bold title, the exact `file:line`, then the explanation. Move out of Blocking anything whose own verified text calls it non-blocking. {section_rule} {closing}
 4. Mentions. Use `@handle` only to address someone; a passing reference uses the bare handle.
 5. Keep, exactly as in the report: every `(found by: ...)` annotation, every `also at:` location, every kill-reason category, every typecheck diagnostic, the `Verdict suggestion:` line and the whole `### Draft comments` section.
 6. Run the homosapiens skill over the body in embedded mode (`homosapiens:homosapiens` when that plugin is installed, else `homosapiens`). If neither skill exists, write nothing and answer exactly NO-HOMOSAPIENS.
@@ -158,6 +166,8 @@ Write the final body to {out} with the Write tool, then answer with the single w
         out = out.display(),
         cross_repo = CROSS_REPO_READ,
         closing = CLOSING_NOTE,
+        sections = SECTIONS,
+        section_rule = SECTION_RULE,
     )
 }
 
@@ -192,7 +202,7 @@ pub fn delta_prompt(pr: &str, repo: &str, head: &str, report: &Path, out: &Path)
 1. The standing review. Run `gh api user --jq .login` for the operator's login, then `gh pr view {pr} --repo {repo} --json reviews`, and take that login's most recent review. Open the comment with one line naming it, its state and its date, and saying this comment covers what is new since.
 2. What is new. Compare the report's findings with that review, reading the code at {head} in this checkout. Keep a finding only when the review does not carry it, or carries it in a form this run changes: a new location, another severity, or now fixed. Say which of those applies to each finding you keep. When nothing is new, write the opening line and one sentence saying so. {cross_repo}
 3. Author refutations. For every reply by the PR author since that review that dismisses or explains away one of its findings, check the claim against the code and say whether it is confirmed, refuted or narrower than claimed. The same rule on other repos applies here.
-4. Template. Put the findings you keep under `### 🔴 Blocking`, `### 🟡 Should fix, not blocking`, `### 🟣 Pre-existing, not blocking` (the report's pre-existing code: problems in code this PR did not change, each worth a separate ticket rather than a change to this PR) and `### 🔵 Nits` (say when a nit did not go through the panel). Each item: its bold title exactly as the report words it, the exact `file:line`, then the explanation. {closing}
+4. Template. Put the findings you keep under {sections} Each item: its bold title exactly as the report words it, the exact `file:line`, then the explanation. {section_rule} {closing}
 5. Mentions. Use `@handle` only to address someone; a passing reference uses the bare handle.
 6. Keep, exactly as in the report, for every finding you keep: its `(found by: ...)` annotation, its `also at:` locations, its kill-reason category and its typecheck diagnostic. Keep the whole `### Draft comments` section.
 7. Run the homosapiens skill over the body in embedded mode (`homosapiens:homosapiens` when that plugin is installed, else `homosapiens`). If neither skill exists, write nothing and answer exactly NO-HOMOSAPIENS.
@@ -202,6 +212,8 @@ Write the final body to {out} with the Write tool, then answer with the single w
         out = out.display(),
         cross_repo = CROSS_REPO_READ,
         closing = CLOSING_NOTE,
+        sections = SECTIONS,
+        section_rule = SECTION_RULE,
     )
 }
 

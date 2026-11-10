@@ -754,3 +754,37 @@ fn the_posted_report_drops_operator_lines_and_an_unposted_approval() {
     let changes = "### Verdict suggestion: REQUEST CHANGES\n\nOne blocker.\n";
     assert_eq!(posted_report(changes, "COMMENT"), changes);
 }
+
+/// The posted body has a section for the report's questions to review, and
+/// the composer is told to keep each finding in the report's own section:
+/// without both, questions landed under Should fix while the findings status
+/// counted none.
+#[test]
+fn the_compose_prompts_keep_questions_out_of_should_fix() {
+    use std::path::Path;
+    use tribunal_pipeline::post::{compose_prompt, delta_prompt, edit_prompt};
+    let (r, o) = (Path::new("/r.md"), Path::new("/o.md"));
+    for prompt in [
+        compose_prompt("1", "o/r", "abc", r, o),
+        edit_prompt("1", "o/r", "abc", r, o),
+        delta_prompt("1", "o/r", "abc", r, o),
+    ] {
+        assert!(
+            prompt.contains("`### ⚪ Questions to review, not counted`"),
+            "{prompt}"
+        );
+        assert!(prompt.contains("only the report's Blocking items go under Blocking and only its Should fix items under Should fix"), "{prompt}");
+        assert!(
+            prompt.contains("never moves up to Blocking or Should fix"),
+            "{prompt}"
+        );
+        assert!(
+            prompt.contains("`### 🟣 Pre-existing, not blocking`"),
+            "{prompt}"
+        );
+        assert!(
+            !prompt.contains("{sections}") && !prompt.contains("{section_rule}"),
+            "{prompt}"
+        );
+    }
+}

@@ -1127,7 +1127,7 @@ dependencies = [
 
 [[package]]
 name = "tribunal-cli"
-version = "115.5.1"
+version = "115.5.2"
 dependencies = [
  "serde_json",
  "tokio",
