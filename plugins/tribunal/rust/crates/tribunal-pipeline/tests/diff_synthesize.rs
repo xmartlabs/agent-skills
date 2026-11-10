@@ -1239,6 +1239,30 @@ fn the_below_blocking_rule_appears_only_when_a_survivor_carries_the_mark() {
     assert!(!rust_synth(&c).contains(rule));
 }
 
+/// Not a port: a finding kept from blocking that the ranking still rated
+/// worth 4 or more gets a "Should fix" section above the nits; worth 3 and
+/// unmarked findings do not open it.
+#[test]
+fn the_should_fix_section_opens_only_for_a_marked_finding_of_worth_four_or_more() {
+    let mut c = sample(synth_case()).into_iter().next().expect("a case");
+    let section = "### Should fix (not blocking)";
+    assert!(!rust_synth(&c).contains(section));
+    let with = |worth: u64, marked: bool| {
+        let mut f = json!({"title": "t", "file": "src/a.ts", "line": 3,
+            "severity": "critical", "adjudicated": true, "rankWorth": worth});
+        if marked {
+            f["rankedBelowBlocking"] = json!(true);
+        }
+        json!([f])
+    };
+    c["survivingFindingsForSynthesis"] = with(4, true);
+    assert!(rust_synth(&c).contains(section));
+    c["survivingFindingsForSynthesis"] = with(3, true);
+    assert!(!rust_synth(&c).contains(section));
+    c["survivingFindingsForSynthesis"] = with(5, false);
+    assert!(!rust_synth(&c).contains(section));
+}
+
 /// Not a port: the survivors handed to the report keep the ranking's mark and
 /// worth, which the rule above reads.
 #[test]

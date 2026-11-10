@@ -68,7 +68,7 @@ Produce the report in this format:
 ### Blocking
 1. <issue> — <file:line> — <why> (found by: <lens>, <lens> — only when mergedFrom has 2+ entries; panel: refuteFraction N.NN vs kill {{tKill}}; debate: held/flipped if fired; append "panel degraded: <slots> did not respond" when failedSlots is non-empty, or "UNVERIFIED — no refuter returned a verdict" when unverified is true; "confirmed by typecheck: <TScode>" instead of panel stats when grounded.verdict is "confirmed")
 
-### Non-blocking / nits
+{{shouldFixSection}}### Non-blocking / nits
 - ...
 
 ### Repeat (already open in the thread)
