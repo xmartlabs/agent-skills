@@ -143,15 +143,17 @@ To report a vulnerability, see [SECURITY.md](../../SECURITY.md).
    each critical or behavior-changing candidate faces refuters that try to
    disprove it, with **Codex** as a second model family when asked for. Verdicts
    come from a weighted vote: a finding dies when it's *refuted*, not when a
-   reviewer is merely unsure. Without the panel every candidate survives and
-   blocks by its severity, the critic's gaps included, and the report says that
-   no panel ran. One check the panel made still runs without it: a candidate
+   reviewer is merely unsure. Without the panel every candidate survives, the
+   critic's gaps included, and the report says that no panel ran. One check the panel made still runs without it: a candidate
    that repeats a DEFERRED, BY-DESIGN or SPLIT-OUT decision from the PR's thread
    goes to "Pre-decided", decided by one call and held to the refuters' citation
    rule. The outside heads only vote on panels, so without one Codex and
    Gemini do not run, and neither does the clean-verdict Codex sweep.
-5. **Report**: survivors, ranked, with a suggested verdict. Nothing reaches
-   GitHub until you confirm.
+5. **Rank and report**: one dispatch rates every survivor against the others,
+   worth 1 to 5. A survivor blocks only at worth 5 (`--block-min-worth`, see
+   [What blocks a pull request](docs/blocking.md)); one at worth 4 is listed
+   under "Should fix". The report carries a suggested verdict built from that.
+   Nothing reaches GitHub until you confirm.
 
 **A Rust binary runs the review.** Judgement stays with the model: every lens,
 refuter, critic and the report writer is a `claude -p` call on your own login.
@@ -257,9 +259,23 @@ Promptbreeder (2023) and the reflective mutation of GEPA (2025). What is
 particular here is the task, ranking code-review findings against labels from
 real pull requests, and the check on pull requests the search never saw.
 
+## What blocks a pull request
+
+A finding blocks only when the ranking after the panel rates it worth 5 of 5
+(`--block-min-worth`, on by default since 115.4.0; `--no-block-min-worth`
+returns to severity alone). One rated 4 is listed under "Should fix (not
+blocking)". The rule came from reviewing pull requests that later had to be
+fixed in production or staging, traced back with the SZZ method, next to pull
+requests that never broke anything. With severity alone, reviews asked for
+changes on 13 of 14 broken and 11 of 14 clean pull requests; with the worth
+gate, on about 7 and 3. About half of the broken ones then get no REQUEST
+CHANGES, with their defect still in the report. [What blocks a pull
+request](docs/blocking.md) has the method, the numbers, what else was tried and
+the limits.
+
 ## What it costs
 
-Measured on 57 recorded reviews, with the refutation panel on: a PR of 1 to 7 files had a median cost of US$0.85 and took about 2.5 minutes, one of 8 to 25 files US$1.52 and 3 minutes. Size in files is a loose guide; the most expensive of those runs, US$7.25, touched 7 files or fewer. Those reviews ran without scenario questions; with them, the default since 2026-11-09, a review costs about twice as much and takes about four times as long. The panel now off by default and the 5-minute prompt cache should take roughly 40% off a normal review, an estimate from the two parts measured separately. The [full numbers](docs/cost.md) say where the money goes.
+Measured on 57 recorded reviews, with the refutation panel on: a PR of 1 to 7 files had a median cost of US$0.85 and took about 2.5 minutes, one of 8 to 25 files US$1.52 and 3 minutes. Size in files is a loose guide; the most expensive of those runs, US$7.25, touched 7 files or fewer. Those reviews ran without scenario questions. With the defaults of 115.4.0 (questions on, panel off), 28 reviews of pull requests up to about 1,500 changed lines had a median cost of US$1.02 and took a median of 6 minutes (90th percentile US$1.49 and 7.5 minutes); the largest pull requests cost more, US$5.65 for one of about 8,800 lines. The [full numbers](docs/cost.md) say where the money goes.
 
 ## What it records, and why that matters
 

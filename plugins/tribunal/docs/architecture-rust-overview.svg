@@ -617,8 +617,8 @@ svg[data-preset="editorial"] { --flow-halo-peak: 0.07; --flow-glow-peak: 0.28; -
   15.761%, 100% { stroke-dashoffset: var(--flow-shift, 0px); opacity: 0; }
 }
 @keyframes archify-relay-wake-19 { 
-  0%, 3.826% { opacity: 0; }
-  12.753% { opacity: var(--flow-peak, 0.3); }
+  0% { stroke-dashoffset: var(--flow-len, 0px); opacity: var(--flow-peak, 0.3); animation-timing-function: cubic-bezier(0.45, 0.05, 0.35, 1); }
+  12.753% { stroke-dashoffset: 0px; opacity: var(--flow-peak, 0.3); }
   29.671%, 100% { stroke-dashoffset: 0px; opacity: 0; }
 }
 @keyframes archify-relay-comet-20 { 
@@ -906,7 +906,7 @@ rect.c-bg-rect { fill: var(--bg); }
         </g>
         <g data-graph-role="automatic-crossover" style="--step:19">
           <path data-graph-role="automatic-crossover-underlay" d="M 380 865 L 348 865 Q 340 865 340 873 L 340 973 Q 340 981 332 981 L 300 981" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="panel" data-edge-to="rank" data-edge-label="question findings" data-edge-key="19" data-edge-id="panel-rank" data-composition-points="380,865;340,865;340,981;300,981" data-composition-crossover="halo" data-composition-independent="true" d="M 380 865 L 348 865 Q 340 865 340 873 L 340 973 Q 340 981 332 981 L 300 981" class="a-dashed" data-animate="edge" style="--step: 12;" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+          <path data-edge-from="panel" data-edge-to="rank" data-edge-label="kept findings" data-edge-key="19" data-edge-id="panel-rank" data-composition-points="380,865;340,865;340,981;300,981" data-composition-crossover="halo" data-composition-independent="true" d="M 380 865 L 348 865 Q 340 865 340 873 L 340 973 Q 340 981 332 981 L 300 981" class="a-default" data-animate="edge" style="--step: 12;" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:20">
           <path data-graph-role="automatic-crossover-underlay" d="M 300 995 L 380 995" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
@@ -1020,8 +1020,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="170" y="888" class="t-cloud" font-size="7" text-anchor="middle">a second model family</text>
         </g>
 
-        <g id="node-decide" data-node-id="decide" data-node-label="Tally and verdict" tabindex="0" role="button" aria-label="Focus Tally and verdict, DETERMINISTIC · Rust, The review" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · Rust" data-node-tag="weighted vote, or all survive with no panel; an unread risk path blocks APPROVE" data-node-context="The review">
-          <title>Tally and verdict · DETERMINISTIC · Rust · The review · weighted vote, or all survive with no panel; an unread risk path blocks APPROVE</title>
+        <g id="node-decide" data-node-id="decide" data-node-label="Tally and verdict" tabindex="0" role="button" aria-label="Focus Tally and verdict, DETERMINISTIC · Rust, The review" aria-pressed="false" data-node-kind="backend" data-node-sublabel="DETERMINISTIC · Rust" data-node-tag="blocks at worth 5; an unread risk path blocks APPROVE" data-node-context="The review">
+          <title>Tally and verdict · DETERMINISTIC · Rust · The review · blocks at worth 5; an unread risk path blocks APPROVE</title>
           <rect x="380" y="950" width="300" height="76" rx="8" class="c-mask"/>
           <rect x="380" y="950" width="300" height="76" rx="8" class="c-backend" data-animate="node" style="--step: 8; --flow-node-name: archify-relay-node-5;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(386 956) scale(0.6875)">
@@ -1029,7 +1029,7 @@ rect.c-bg-rect { fill: var(--bg); }
           </g>
           <text data-node-label="" x="530" y="986" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Tally and verdict</text>
         <text x="530" y="1002" class="t-muted" font-size="9" text-anchor="middle">DETERMINISTIC · Rust</text>
-        <text x="530" y="1018" class="t-backend" font-size="6.1" text-anchor="middle">weighted vote, or all survive with no panel; an unread risk path blocks APPROVE</text>
+        <text x="530" y="1018" class="t-backend" font-size="7" text-anchor="middle">blocks at worth 5; an unread risk path blocks APPROVE</text>
         </g>
 
         <g id="node-report" data-node-id="report" data-node-label="Write the report" tabindex="0" role="button" aria-label="Focus Write the report, MODEL · sonnet, The review" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet" data-node-tag="around a verdict it cannot change; says when no panel ran" data-node-context="The review">
@@ -1164,8 +1164,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="170" y="498" class="t-messagebus" font-size="6.2" text-anchor="middle">up to 36, each answered alone; --no-scenario-questions turns it off</text>
         </g>
 
-        <g id="node-rank" data-node-id="rank" data-node-label="Rank question findings" tabindex="0" role="button" aria-label="Focus Rank question findings, MODEL · sonnet, The review" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet" data-node-tag="worth kept per finding; low worth goes to Questions to review" data-node-context="The review">
-          <title>Rank question findings · MODEL · sonnet · The review · worth kept per finding; low worth goes to Questions to review</title>
+        <g id="node-rank" data-node-id="rank" data-node-label="Rank findings" tabindex="0" role="button" aria-label="Focus Rank findings, MODEL · sonnet, The review" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="MODEL · sonnet" data-node-tag="worth 1 to 5; blocks at 5, 4 is Should fix" data-node-context="The review">
+          <title>Rank findings · MODEL · sonnet · The review · worth 1 to 5; blocks at 5, 4 is Should fix</title>
           <rect x="40" y="950" width="260" height="76" rx="8" class="c-mask"/>
           <rect x="40" y="950" width="260" height="76" rx="8" class="c-frontend" data-animate="node" style="--step: 12; --flow-node-name: archify-relay-node-7;" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(46 956) scale(0.6875)">
@@ -1174,9 +1174,9 @@ rect.c-bg-rect { fill: var(--bg); }
             <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
             <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
           </g>
-          <text data-node-label="" x="170" y="986" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Rank question findings</text>
+          <text data-node-label="" x="170" y="986" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Rank findings</text>
         <text x="170" y="1002" class="t-muted" font-size="9" text-anchor="middle">MODEL · sonnet</text>
-        <text x="170" y="1018" class="t-frontend" font-size="6.8" text-anchor="middle">worth kept per finding; low worth goes to Questions to review</text>
+        <text x="170" y="1018" class="t-frontend" font-size="7" text-anchor="middle">worth 1 to 5; blocks at 5, 4 is Should fix</text>
         </g>
 
         <!-- Connection labels -->
@@ -1232,9 +1232,9 @@ rect.c-bg-rect { fill: var(--bg); }
           <rect x="307.8" y="556" width="48.4" height="14" rx="3" class="c-mask"/>
           <text x="332" y="566" class="t-edge-default" font-size="8" text-anchor="middle">findings</text>
         </g>
-        <g data-edge-from="panel" data-edge-to="rank" data-edge-label="question findings" data-edge-key="19" data-edge-id="panel-rank">
-          <rect x="294.2" y="903" width="91.6" height="14" rx="3" class="c-mask"/>
-          <text x="340" y="913" class="t-edge-dashed" font-size="8" text-anchor="middle">question findings</text>
+        <g data-edge-from="panel" data-edge-to="rank" data-edge-label="kept findings" data-edge-key="19" data-edge-id="panel-rank">
+          <rect x="303.8" y="903" width="72.4" height="14" rx="3" class="c-mask"/>
+          <text x="340" y="913" class="t-edge-default" font-size="8" text-anchor="middle">kept findings</text>
         </g>
         <g data-edge-from="rank" data-edge-to="decide" data-edge-label="worth" data-edge-key="20" data-edge-id="rank-decide">
           <rect x="323" y="1005" width="34" height="14" rx="3" class="c-mask"/>
