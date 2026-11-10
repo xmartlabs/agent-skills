@@ -39,6 +39,10 @@ const SCOPE_LINE: &str = include_str!("synthesis/scopeLine.txt");
 const CARRIED_FORMAT: &str = include_str!("synthesis/carriedFormat.txt");
 const QUESTIONS_RULE: &str = include_str!("synthesis/questionsRule.txt");
 const REFUTERS_RULE: &str = include_str!("synthesis/refutersRule.txt");
+/// The line the report prints under the verdict when the panel did not run.
+pub const PANEL_OFF_BY_DEFAULT: &str =
+    "Refutation panel: off by default; run with `--refuters` to turn it on.";
+pub const PANEL_OFF_BY_FLAG: &str = "Refutation panel: off (`--no-refuters`).";
 const BELOW_BLOCKING_RULE: &str = include_str!("synthesis/belowBlockingRule.txt");
 const PRE_EXISTING_RULE: &str = include_str!("synthesis/preExistingRule.txt");
 const PRE_EXISTING_SECTION: &str = "### Pre-existing code (not blocking)\n- <issue> — <file:line> — <why> — in code this PR did not change; worth a separate ticket\n\n";
@@ -948,6 +952,8 @@ pub struct SynthesisInput<'a> {
     pub cost_breaker_fired: Option<&'a Value>,
     pub cost_degraded_stages: usize,
     pub verdict: &'a str,
+    /// The panel is off because of `--no-refuters`, not by default.
+    pub panel_off_by_flag: bool,
 }
 
 fn pretty(v: &[Value], indent: &str) -> String {
@@ -1108,9 +1114,16 @@ pub fn synthesis_prompt(s: &SynthesisInput) -> String {
             )
     };
     let refuters_rule = if s.surviving.iter().any(skipped) {
-        REFUTERS_RULE
+        REFUTERS_RULE.replace(
+            "{{panelOffLine}}",
+            if s.panel_off_by_flag {
+                PANEL_OFF_BY_FLAG
+            } else {
+                PANEL_OFF_BY_DEFAULT
+            },
+        )
     } else {
-        ""
+        String::new()
     };
     // Not from the workflow: the ranking's mark that keeps a kept finding from
     // blocking (`--block-min-worth`, or a question finding below the bar).
@@ -1233,7 +1246,7 @@ pub fn synthesis_prompt(s: &SynthesisInput) -> String {
             ("tKill", &js::number_to_string(T_KILL)),
             ("carriedFormat", &carried_format),
             ("questionsRule", questions_rule),
-            ("refutersRule", refuters_rule),
+            ("refutersRule", &refuters_rule),
             ("belowBlockingRule", below_blocking_rule),
             ("shouldFixSection", should_fix_section),
             ("preExistingRule", pre_existing_rule),

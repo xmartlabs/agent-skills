@@ -1311,6 +1311,7 @@ pub async fn synthesize_phase<A: Agent>(
         cost_breaker_fired: verify.panel.cost_breaker_fired.as_ref(),
         cost_degraded_stages: verify.panel.cost_degraded_stages.len(),
         verdict: verdict.guess,
+        panel_off_by_flag: args.no_refuters_by_flag,
     });
     let scribe = agent_def::load(&rt.plugin_root, "tribunal-scribe")?;
     let res = dispatch_one(

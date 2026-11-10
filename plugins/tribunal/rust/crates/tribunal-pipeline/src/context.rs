@@ -82,6 +82,9 @@ pub struct RunArgs {
     /// `--no-refuters`: candidates skip the refutation panel and all survive;
     /// with `--scenario-questions`, the ranking after it is then the filter.
     pub no_refuters: bool,
+    /// The panel is off because the operator passed `--no-refuters`, not by
+    /// default; the report names the flag.
+    pub no_refuters_by_flag: bool,
     /// `--block-min-worth`: a finding kept in the report blocks only when the
     /// ranking after the panel gave it at least this worth, whatever its lens.
     /// Below it, it stays in the report without blocking. `None` keeps the
