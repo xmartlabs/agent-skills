@@ -93,7 +93,7 @@ for v in GH_TOKEN INPUT_LABEL INPUT_PATHS INPUT_ONCE INPUT_DRAFTS; do
 done
 
 # Structured settings are supplied only to trusted setup; review uses saved validated args.
-for input in tribunal-version verdict review-mode codex openai-api-key codex-model bot-comments model effort concurrency max-panels max-agents max-output-tokens prior-verify lens-samples; do
+for input in tribunal-version verdict review-mode codex openai-api-key codex-model bot-comments findings-check model effort concurrency max-panels max-agents max-output-tokens prior-verify lens-samples; do
   env_name="INPUT_$(printf '%s' "$input" | tr '[:lower:]-' '[:upper:]_')"
   assert_ok "the action declares $input" grep -q "^  $input:" "$ACTION"
   assert_ok "setup receives $input" grep -qF "$env_name: \${{ inputs.$input }}" "$ACTION"
@@ -109,5 +109,23 @@ assert_eq "Codex remains opt-in" "codex='false'" "$(defaults "$ACTION" | grep '^
 assert_eq "bundled is the version default" "tribunal-version='bundled'" "$(defaults "$ACTION" | grep '^tribunal-version=')"
 assert_eq "comment is the verdict default" "verdict='comment'" "$(defaults "$ACTION" | grep '^verdict=')"
 assert_eq "full is the review default" "review-mode='full'" "$(defaults "$ACTION" | grep '^review-mode=')"
+# The findings check is opt-in, and only a posted review leaves one.
+assert_eq "the findings check is off by default" "findings-check='off'" "$(defaults "$ACTION" | grep '^findings-check=')"
+assert_ok "the findings check follows a successful post only, and not when off" \
+  grep -qF "if: steps.gate.outputs.run == 'true' && steps.post.outcome == 'success' && inputs.findings-check != 'off'" "$ACTION"
+assert_ok "the findings check is wired" grep -qF 'run: bash "$GITHUB_ACTION_PATH/run.sh" findings-check' "$ACTION"
+assert_ok "the action outputs the blocking count" grep -qF 'value: ${{ steps.findings.outputs.blocking }}' "$ACTION"
+assert_ok "the action outputs the should-fix count" grep -qF 'value: ${{ steps.findings.outputs.should-fix }}' "$ACTION"
+
+# The README documents every input and output, and names no exact action tag: tags and the
+# Tribunal version each one bundles live in RELEASES.md, so a release does not leave the README stale.
+README="$HERE/../README.md"
+for input in $(defaults "$ACTION" | cut -d= -f1); do
+  assert_ok "the README's inputs table has $input" grep -qF "| \`$input\` |" "$README"
+done
+for output in $(awk '/^outputs:/ { o = 1; next } /^[^ ]/ { o = 0 } o && /^  [a-z-]+:$/ { sub(/^  /, ""); sub(/:$/, ""); print }' "$ACTION"); do
+  assert_ok "the README's outputs table has $output" grep -qF "| \`$output\` |" "$README"
+done
+assert_fail "the README names no exact action tag" grep -qE 'tribunal-action-v1\.[0-9]+\.[0-9]+' "$README"
 
 finish_tests

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run.sh gate|node-check|validate|prepare|restore|review|post|baseline|fallback|summary|cleanup — the steps of the tribunal action.
+# run.sh gate|node-check|validate|prepare|restore|review|post|findings-check|baseline|fallback|summary|cleanup — the steps of the tribunal action.
 #
 # Each step is a subcommand so it can be tested on its own. Everything a run writes lives in one
 # job directory under RUNNER_TEMP: HOME (Claude's config and the homosapiens skill), TMPDIR (the
@@ -292,6 +292,24 @@ cmd_baseline() {
   fi
 }
 
+# The "Tribunal findings" check run on the reviewed head. Best effort: a missing `checks: write`
+# or a count that cannot be made never fails the job, and the summary says what happened.
+cmd_findings_check() {
+  local line
+  if ! line="$(python3 "$ACTION_DIR/runtime.py" findings-check 2> "$JOB/findings-check.err")"; then
+    printf 'Findings check not created: %s\n' "$(tail -n 1 "$JOB/findings-check.err")" | tee "$JOB/findings-line" >&2
+    return 0
+  fi
+  if gh api -X POST "repos/$GITHUB_REPOSITORY/check-runs" --input "$JOB/check.json" > /dev/null 2> "$JOB/findings-check.err"; then
+    printf 'Findings check: %s\n' "$line" | tee "$JOB/findings-line" >&2
+  else
+    printf 'Findings check not created (%s). Give the job `checks: write`.\n' "$(tail -n 1 "$JOB/findings-check.err")" \
+      | tee "$JOB/findings-line" >&2
+    echo "::warning::tribunal: the findings check was not created; give the job checks: write"
+  fi
+  return 0
+}
+
 # Why nothing was posted: the post's own line, else the last line the binary printed, else the
 # setup failed before either ran.
 not_posted_reason() {
@@ -370,6 +388,7 @@ if fallback:
     print('Incremental fallback: ' + str(fallback).replace('\n', ' '))
 PYMODE
     fi
+    [ ! -f "$JOB/findings-line" ] || { echo; cat "$JOB/findings-line"; }
     [ ! -f "$JOB/baseline-reason" ] || cat "$JOB/baseline-reason"
     [ ! -f "$JOB/baseline-save-reason" ] || cat "$JOB/baseline-save-reason"
     echo
@@ -415,10 +434,11 @@ case "${1:-}" in
   prepare) cmd_prepare ;;
   restore) cmd_restore ;;
   baseline) cmd_baseline ;;
+  findings-check) cmd_findings_check ;;
   review) cmd_review ;;
   post) cmd_post ;;
   fallback) cmd_fallback ;;
   summary) cmd_summary ;;
   cleanup) cmd_cleanup ;;
-  *) echo "usage: run.sh gate|node-check|validate|prepare|restore|review|post|baseline|fallback|summary|cleanup" >&2; exit 2 ;;
+  *) echo "usage: run.sh gate|node-check|validate|prepare|restore|review|post|findings-check|baseline|fallback|summary|cleanup" >&2; exit 2 ;;
 esac

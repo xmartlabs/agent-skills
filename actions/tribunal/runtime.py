@@ -23,6 +23,10 @@ MIN_CONVENTIONS_TOKEN_VERSION = (115, 4, 0)
 REVIEWERS = ("frontend", "backend", "python", "e2e")
 RESTORE_RUN_LIMIT = 30  # newest runs of this workflow on the PR branch to search for a baseline
 NUMBERS = ("concurrency", "max-panels", "max-agents", "max-output-tokens", "prior-verify", "lens-samples")
+CHECK_NAME = "Tribunal findings"
+# The engine's `questions::BLOCKING_WORTH`: a finding kept from blocking at this worth or more is
+# reported under "Should fix (not blocking)".
+SHOULD_FIX_WORTH = 4
 
 
 def setting(name, default=""):
@@ -47,6 +51,7 @@ def validate():
         ("review-mode", ("full", "incremental"), "full"),
         ("codex", ("true", "false"), "false"),
         ("bot-comments", ("true", "false"), "false"),
+        ("findings-check", ("off", "inform", "enforce"), "off"),
         ("effort", ("", "low", "medium", "high", "max"), ""),
     ):
         if setting(name, default) not in choices:
@@ -364,6 +369,103 @@ def restore_baseline(job):
     if not check_review(row, review, own_logins()):
         raise ValueError("baseline review is unverified or carries no findings")
     (job / "data/metrics.jsonl").write_text(json.dumps(row) + "\n")
+    # The engine appends this run's row to the same ledger; the findings check needs the prior one.
+    write(job / "prior-row.json", row)
+
+
+def finding_tier(finding):
+    """`blocking`, `should-fix` or None: the section of the posted report a kept finding lands in.
+
+    Mirrors the engine's own sort: `blocking` is its final flag, after the evidence gate; a finding
+    kept from blocking by the ranking but rated worth 4 or more is "Should fix (not blocking)",
+    unless it is about code the pull request did not change.
+    """
+    if not isinstance(finding, dict) or finding.get("survived") is not True:
+        return None
+    if finding.get("blocking") is True:
+        return "blocking"
+    worth = finding.get("rankWorth")
+    if (finding.get("rankedBelowBlocking") is True and finding.get("preExistingCode") is not True
+            and isinstance(worth, int) and not isinstance(worth, bool) and worth >= SHOULD_FIX_WORTH):
+        return "should-fix"
+    return None
+
+
+def open_findings(run, prior_row=None):
+    """The open blocking and should-fix findings after this run, each with where its status comes from.
+
+    On an incremental run a prior finding stays open unless this run raised it again (its new tier
+    wins) or a verifier found it FIXED; a prior finding on a file this run did not re-read is
+    carried forward as it was.
+    """
+    metrics = run.get("metrics")
+    if not isinstance(metrics, dict) or not isinstance(metrics.get("findings"), list):
+        raise ValueError("the run has no metrics row to count findings from")
+
+    def item(finding, tier, source):
+        return {"tier": tier, "file": finding.get("file"), "line": finding.get("line"),
+                "title": finding.get("title"), "source": source}
+
+    def key(finding):
+        return (finding.get("file"), finding.get("title"))
+
+    found = [item(f, finding_tier(f), "this review") for f in metrics["findings"] if finding_tier(f)]
+    if metrics.get("reviewMode") != "incremental" or not prior_row:
+        return found
+    raised = {key(f) for f in metrics["findings"] if isinstance(f, dict)}
+    checked = {key(p): p.get("verdict") for p in metrics.get("priorVerification") or [] if isinstance(p, dict)}
+    for prior in prior_row.get("findings") or []:
+        tier = finding_tier(prior)
+        if not tier or key(prior) in raised:
+            continue
+        verdict = checked.get(key(prior))
+        if verdict == "FIXED":
+            continue
+        if verdict == "STILL_OPEN":
+            source = "earlier review, re-checked: still open"
+        elif verdict:
+            source = "earlier review, re-checked: could not tell"
+        else:
+            source = "earlier review, carried forward without a re-check"
+        found.append(item(prior, tier, source))
+    return found
+
+
+def findings_check(job):
+    """The check run for the reviewed head, as a GitHub API payload, and the two counts."""
+    mode = setting("findings-check", "off")
+    run = read(job / "run.json")
+    head = event()["head"]["sha"]
+    if run.get("metrics", {}).get("headSha") != head:
+        raise ValueError("reviewed HEAD differs from the triggering event")
+    prior = read(job / "prior-row.json") if (job / "prior-row.json").is_file() else None
+    run_url = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+    payload = {"name": CHECK_NAME, "head_sha": head, "status": "completed", "details_url": run_url}
+    try:
+        found = open_findings(run, prior)
+    except ValueError as error:
+        payload.update(conclusion="neutral", output={
+            "title": "Open findings could not be counted",
+            "summary": f"{error}. This is not a clean review: read the review on the pull request."})
+        return payload, None, None
+    blocking = sum(1 for f in found if f["tier"] == "blocking")
+    should_fix = sum(1 for f in found if f["tier"] == "should-fix")
+    if blocking or should_fix:
+        conclusion = "failure" if mode == "enforce" else "neutral"
+        title = f"{blocking} blocking, {should_fix} should fix"
+    else:
+        conclusion, title = "success", "No blocking or should-fix findings open"
+    lines = [f"Open findings after the tribunal review of `{head[:8]}` ({'enforced' if mode == 'enforce' else 'informative'}).", ""]
+    if found:
+        lines += ["| Tier | Where | Finding | Status from |", "| --- | --- | --- | --- |"]
+        for f in found:
+            where = f"{f['file']}:{f['line']}" if f.get("line") is not None else str(f["file"])
+            title_cell = str(f["title"] or "").replace("|", "\\|").replace("\n", " ")
+            lines.append(f"| {'Blocking' if f['tier'] == 'blocking' else 'Should fix'} | `{where}` | {title_cell} | {f['source']} |")
+    else:
+        lines.append("Nothing open. Nits, questions and pre-existing findings do not count.")
+    payload.update(conclusion=conclusion, output={"title": title, "summary": "\n".join(lines)[:60000]})
+    return payload, blocking, should_fix
 
 
 def main():
@@ -381,6 +483,12 @@ def main():
         restore_baseline(job)
     elif command == "save":
         save_baseline(job)
+    elif command == "findings-check":
+        payload, blocking, should_fix = findings_check(job)
+        write(job / "check.json", payload)
+        with open(os.environ.get("GITHUB_OUTPUT", os.devnull), "a") as outputs:
+            outputs.write(f"blocking={'' if blocking is None else blocking}\nshould-fix={'' if should_fix is None else should_fix}\n")
+        print(f"{payload['conclusion']}: {payload['output']['title']}")
     elif command == "check-head":
         run = read(job / "run.json")
         if run.get("skipped"):
