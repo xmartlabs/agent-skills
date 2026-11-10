@@ -46,11 +46,19 @@ fn evidence_anchor(finding: &Value) -> Option<Value> {
         Some(Value::String(s)) if !s.is_empty() => s,
         _ => return None,
     };
+    let first_source = js::get(finding, crate::verify::EVIDENCE_BY_SOURCE)
+        .and_then(|s| s.get(0))
+        .and_then(|e| js::get(e, "evidence"))
+        .and_then(Value::as_str);
     let Some(Value::String(evidence)) = js::get(finding, "evidence") else {
         return None;
     };
-    let evidence = match js::get(finding, "mergedFrom").and_then(|m| m.get(0)) {
-        Some(Value::String(lens)) => evidence
+    let evidence = match (
+        first_source,
+        js::get(finding, "mergedFrom").and_then(|m| m.get(0)),
+    ) {
+        (Some(quote), _) => quote,
+        (None, Some(Value::String(lens))) => evidence
             .strip_prefix(&format!("[{lens}] "))
             .unwrap_or(evidence),
         _ => evidence,
@@ -426,5 +434,19 @@ mod tests {
             by_of(&v[0])[0]["quote"],
             "const prisma = new PrismaClient({"
         );
+    }
+
+    #[test]
+    fn a_merged_finding_anchors_on_its_first_sources_own_quote() {
+        let mut v = vec![evidenced("important", "shifted", json!(41), None)];
+        let f = &mut v[0].as_mut().unwrap()["finding"];
+        f["evidence"] = json!("[correctness] stale joined text\n[errorHandling] other()");
+        f["mergedFrom"] = json!(["correctness", "errorHandling"]);
+        f[crate::verify::EVIDENCE_BY_SOURCE] = json!([
+            {"lens": "correctness", "evidence": "[first] = new PrismaClient({"},
+            {"lens": "errorHandling", "evidence": "other()"},
+        ]);
+        assert_eq!(anchor_from_evidence(&mut v), 1);
+        assert_eq!(by_of(&v[0])[0]["quote"], "[first] = new PrismaClient({");
     }
 }

@@ -415,6 +415,10 @@ fn finding_row(v: &Value, s: &MetricsScope) -> Result<Value, String> {
     put("lens", or(fg("lens"), json!("unknown")));
     put("reanchored", or_null(fg("reanchored")));
     put("evidence", or(fg("evidence"), Value::Null));
+    // Not from the workflow: present only on a merged finding.
+    if let Some(sources) = fg(crate::verify::EVIDENCE_BY_SOURCE) {
+        put(crate::verify::EVIDENCE_BY_SOURCE, sources.clone());
+    }
     put("line", or_null(fg("line")));
     let gate_note = verified_gate_note(v);
     let unexamined_wording = unexamined_wording_in_report_text(
