@@ -1,0 +1,1 @@
+- "skippedReason": "refutation-panel-off" on the clean-verdict sweep means the review ran without the refutation panel, which turns the sweep off with it. For that reason only, do not give the skippedReason and do not say the clean verdict went unchecked; write this line instead, word for word, under the verdict: {{sweepOffLine}}

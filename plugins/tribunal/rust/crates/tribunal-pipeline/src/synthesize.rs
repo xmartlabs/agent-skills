@@ -43,6 +43,12 @@ const REFUTERS_RULE: &str = include_str!("synthesis/refutersRule.txt");
 pub const PANEL_OFF_BY_DEFAULT: &str =
     "Refutation panel: off by default; run with `--refuters` to turn it on.";
 pub const PANEL_OFF_BY_FLAG: &str = "Refutation panel: off (`--no-refuters`).";
+const SWEEP_OFF_RULE: &str = include_str!("synthesis/sweepOffRule.txt");
+/// The line the report prints for a clean-verdict sweep the panel being off skipped.
+pub const SWEEP_OFF_BY_DEFAULT: &str =
+    "Clean-verdict sweep: off with the refutation panel; run with `--refuters` to turn it on.";
+pub const SWEEP_OFF_BY_FLAG: &str =
+    "Clean-verdict sweep: off with the refutation panel (`--no-refuters`).";
 const BELOW_BLOCKING_RULE: &str = include_str!("synthesis/belowBlockingRule.txt");
 const PRE_EXISTING_RULE: &str = include_str!("synthesis/preExistingRule.txt");
 const PRE_EXISTING_SECTION: &str = "### Pre-existing code (not blocking)\n- <issue> — <file:line> — <why> — in code this PR did not change; worth a separate ticket\n\n";
@@ -1082,6 +1088,22 @@ pub fn synthesis_prompt(s: &SynthesisInput) -> String {
     } else {
         ""
     };
+    let sweep_off_rule = if clean_sweep
+        .and_then(|c| js::get(c, "skippedReason"))
+        .and_then(Value::as_str)
+        == Some("refutation-panel-off")
+    {
+        SWEEP_OFF_RULE.replace(
+            "{{sweepOffLine}}",
+            if s.panel_off_by_flag {
+                SWEEP_OFF_BY_FLAG
+            } else {
+                SWEEP_OFF_BY_DEFAULT
+            },
+        )
+    } else {
+        String::new()
+    };
     let scoped_rules = if scope.is_some() { SCOPED_RULES } else { "" };
     let scope_line = if scope.is_some() {
         render(
@@ -1240,6 +1262,7 @@ pub fn synthesis_prompt(s: &SynthesisInput) -> String {
             ("refineRule", refine_rule),
             ("costRule", &cost_rule),
             ("sweepRule", sweep_rule),
+            ("sweepOffRule", &sweep_off_rule),
             ("scopedRules", scoped_rules),
             ("verdict", s.verdict),
             ("scopeLine", &scope_line),
