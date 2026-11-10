@@ -23,10 +23,14 @@ For each `tribunal-action-v1.<minor>.<patch>` tag:
 A plugin freeze alone does not move the action's tags: `bundled` is the plugin at the action's
 own commit.
 
-## Unreleased — findings check and a separate token for other repos
+## Unreleased
 
-Not tagged yet. Cut from a commit that already has the Tribunal `115.5.0` freeze, so `bundled`
-runs that version.
+Nothing yet.
+
+## v1.3.0 — findings check and a separate token for other repos
+
+Tag `tribunal-action-v1.3.0` (and `tribunal-action-v1`) at `50ea79b`. Bundled Tribunal plugin
+`115.5.0` with binary `tribunal-rust-v115.5.0`.
 
 - Add `findings-check` (`off` by default, `inform` or `enforce`). After a posted review, a
   "Tribunal findings" check run on the reviewed commit counts the open blocking and should-fix
@@ -42,7 +46,8 @@ runs that version.
 - Backward compatible: without the new inputs, reads, prompts and outputs do not change. With
   `conventions-token`, a run that selects a Tribunal older than `115.4.0` fails during setup.
 - The bundled Tribunal changes defaults from `115.4.0` on: the refutation panel runs only with
-  `codex`, and a finding blocks only when the ranking rates it worth 5.
+  `codex`, and a finding blocks only when the ranking rates it worth 5. From `115.5.0` on, a
+  finding about code the pull request did not change does not block.
 - The README names no exact action tag or bundled version, and points here for both.
 
 ## v1.2.0 — CI parity
