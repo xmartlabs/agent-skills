@@ -258,8 +258,12 @@ pub const RANK_PROMPT: &str = "You rank the findings of one code review of a pul
 
 /// A finding from an answered question stays in the report when the ranking
 /// gives it at least this worth, or when this many candidates were merged into
-/// it; below both it moves to the report's "questions to review" section.
-pub const KEEP_WORTH: u64 = 3;
+/// it; below both it moves to the report's "questions to review" section. It
+/// equals [`BLOCKING_WORTH`]: a kept question finding below it could not block
+/// anyway, and on 28 runs of a pilot against pull requests that later broke
+/// and ones that never did, moving worth 3 out too cut the report body by 38%
+/// and changed no verdict.
+pub const KEEP_WORTH: u64 = 4;
 pub const KEEP_SUPPORT: usize = 4;
 
 /// The `placement` a moved finding carries, which keeps it out of the verdict.
@@ -764,12 +768,12 @@ mod tests {
         let mut results = vec![a.clone(), b.clone(), refuted.clone()];
         let mut surviving = vec![a, b];
         let mut aside = Vec::new();
-        place_lower_priority(&mut surviving, &mut aside, &[Some(1), Some(3)], None);
+        place_lower_priority(&mut surviving, &mut aside, &[Some(1), Some(4)], Some(5));
         sync_results(&mut results, &surviving, &aside);
         assert_eq!(results[0]["placement"]["placement"], json!(LOWER_PRIORITY));
         assert_eq!(results[1]["finding"][RANKED_BELOW_BLOCKING], json!(true));
         assert_eq!(results[0]["finding"][RANK_WORTH], json!(1));
-        assert_eq!(results[1]["finding"][RANK_WORTH], json!(3));
+        assert_eq!(results[1]["finding"][RANK_WORTH], json!(4));
         assert_eq!(results[2], refuted);
     }
     use super::*;
