@@ -1218,6 +1218,40 @@ fn the_refuters_rule_appears_only_when_a_survivor_skipped_the_panel() {
     assert!(!rust_synth(&c).contains(rule));
 }
 
+/// Not a port: a survivor the ranking kept from blocking carries
+/// `rankedBelowBlocking`, and only then does the prompt tell the report to list
+/// it as non-blocking. No workflow case has the mark, so the golden comparison
+/// above is unchanged.
+#[test]
+fn the_below_blocking_rule_appears_only_when_a_survivor_carries_the_mark() {
+    let mut c = sample(synth_case()).into_iter().next().expect("a case");
+    let rule = "\"rankedBelowBlocking\": true on a finding means the ranking after the panel put it below the bar";
+    assert!(!rust_synth(&c).contains(rule));
+    c["survivingFindingsForSynthesis"] = json!([{
+        "title": "t", "file": "src/a.ts", "line": 3, "severity": "critical",
+        "adjudicated": true, "rankWorth": 4, "rankedBelowBlocking": true
+    }]);
+    assert!(rust_synth(&c).contains(rule));
+    c["survivingFindingsForSynthesis"] = json!([{
+        "title": "t", "file": "src/a.ts", "line": 3, "severity": "critical",
+        "adjudicated": true, "rankWorth": 5
+    }]);
+    assert!(!rust_synth(&c).contains(rule));
+}
+
+/// Not a port: the survivors handed to the report keep the ranking's mark and
+/// worth, which the rule above reads.
+#[test]
+fn surviving_for_synthesis_keeps_the_ranking_mark() {
+    use tribunal_pipeline::synthesize::surviving_for_synthesis;
+    let survivors = vec![json!({"survived": true, "finding": {
+        "title": "t", "file": "src/a.ts", "severity": "critical",
+        "rankWorth": 4, "rankedBelowBlocking": true}})];
+    let out = surviving_for_synthesis(&survivors);
+    assert_eq!(out[0]["rankedBelowBlocking"], json!(true));
+    assert_eq!(out[0]["rankWorth"], json!(4));
+}
+
 /// Not a port: without a panel, a question finding the ranking set aside was
 /// not kept by refuters, so the note on placed_aside must not say it was.
 #[test]
