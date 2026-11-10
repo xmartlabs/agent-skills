@@ -25,7 +25,8 @@ own commit.
 
 ## Unreleased — findings check and a separate token for other repos
 
-Not tagged yet. To be cut after the Tribunal `115.5.0` freeze merges, so `bundled` picks it up.
+Not tagged yet. Cut from a commit that already has the Tribunal `115.5.0` freeze, so `bundled`
+runs that version.
 
 - Add `findings-check` (`off` by default, `inform` or `enforce`). After a posted review, a
   "Tribunal findings" check run on the reviewed commit counts the open blocking and should-fix
