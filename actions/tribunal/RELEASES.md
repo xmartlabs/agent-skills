@@ -27,6 +27,17 @@ own commit.
 
 Nothing yet.
 
+## v1.4.1 — bundles Tribunal 115.5.1
+
+Tag `tribunal-action-v1.4.1` (and `tribunal-action-v1`) at `9ad475d`. Bundled Tribunal plugin
+`115.5.1` with binary `tribunal-rust-v115.5.1`. No change to the action itself.
+
+- The review is posted on the commit it read. Before, a push while the review's body was being
+  composed (an "Update branch" merge, for example) filed the review on the new head.
+- The posted review leaves out the "Refutation panel: off" and "Clean-verdict sweep: off" lines,
+  and the "Verdict suggestion: APPROVE" line when the review is posted as a comment, as
+  `verdict: comment` and `verdict: no-approve` do. The run's report keeps them.
+
 ## v1.4.0 — a commit status for findings, and a verdict that never approves
 
 Tag `tribunal-action-v1.4.0` (and `tribunal-action-v1`) at `4ee9289`. Bundled Tribunal plugin
