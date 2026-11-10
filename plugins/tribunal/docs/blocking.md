@@ -104,7 +104,7 @@ reviewed head and on no line the diff adds. That is how SonarQube separates
 new code from old, and it carries the same cost SonarQube accepts. Whether a
 defect is old is a property of behaviour, not of lines: a pull request can
 break old code by calling it in a new way, and that finding is marked too. On
-the labelled findings, 3 of 39 real defects a pull request introduced quoted
+the labelled findings, 3 of 53 real defects a pull request introduced quoted
 only unchanged lines. On the pilot no verdict changed. `--block-pre-existing`
 makes such findings count again.
 
@@ -119,7 +119,7 @@ makes such findings count again.
   more than the second sample.
 - **Asking a model whether a defect is pre-existing.** The ranking, asked
   whether the pull request introduced each finding, was right 68% of the times
-  it said no, and filed 2 of 39 real defects as old. It is not used.
+  it said no, and filed 2 of 35 real defects as old. It is not used.
 
 ## Limits
 
