@@ -546,6 +546,10 @@ fn finding_row(v: &Value, s: &MetricsScope) -> Result<Value, String> {
     if js::truthy(fg(crate::questions::RANKED_BELOW_BLOCKING)) {
         put(crate::questions::RANKED_BELOW_BLOCKING, json!(true));
     }
+    // Not from the workflow: marked after ranking, in `run_full`.
+    if js::truthy(fg(crate::pre_existing::PRE_EXISTING_CODE)) {
+        put(crate::pre_existing::PRE_EXISTING_CODE, json!(true));
+    }
     put("discardedVotes", or(get(v, "discardedVotes"), json!([])));
     put("votes", vote_rows(v));
     put("debate", debate_row(v));
