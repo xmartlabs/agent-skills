@@ -23,7 +23,14 @@ For each `tribunal-action-v1.<minor>.<patch>` tag:
 A plugin freeze alone does not move the action's tags: `bundled` is the plugin at the action's
 own commit.
 
-## Unreleased — a commit status for findings, and a verdict that never approves
+## Unreleased
+
+Nothing yet.
+
+## v1.4.0 — a commit status for findings, and a verdict that never approves
+
+Tag `tribunal-action-v1.4.0` (and `tribunal-action-v1`) at `4ee9289`. Bundled Tribunal plugin
+`115.5.0` with binary `tribunal-rust-v115.5.0`.
 
 - Add `verdict: no-approve`. The action posts a change request when the engine's verdict is
   REQUEST CHANGES and a comment otherwise, an engine APPROVE included. When a later review no
