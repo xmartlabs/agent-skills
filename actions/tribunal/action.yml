@@ -54,7 +54,10 @@ inputs:
     description: 'Tribunal freeze to run: bundled, latest stable Tribunal freeze, or an exact x.y.z version (115.2.0+).'
     default: 'bundled'
   verdict:
-    description: 'Publish comment (default) or suggested to use the engine verdict.'
+    description: >-
+      `comment` (default) always posts a comment; `suggested` posts the engine's verdict, approvals
+      included; `no-approve` posts a change request when the engine asks for one and a comment
+      otherwise, and dismisses the action's earlier change request once a review no longer asks for one.
     default: 'comment'
   review-mode:
     description: 'full (default), or incremental using a verified compatible baseline artifact.'
@@ -98,9 +101,10 @@ inputs:
   findings-check:
     description: >-
       `off` (default), `inform` or `enforce`. Other than `off`, a posted review also leaves a
-      "Tribunal findings" check run on the reviewed commit with the open blocking and should-fix
-      findings: `inform` marks it neutral when any is open, `enforce` marks it failed. Needs
-      `checks: write`; without it the review still posts and the summary says the check is missing.
+      "Tribunal findings" commit status on the reviewed commit with the count of open blocking and
+      should-fix findings: `inform` keeps it green and says the count is not enforced, `enforce`
+      marks it failed when any is open. Needs `statuses: write`; without it the review still posts
+      and the summary says the status is missing.
     default: 'off'
   upload-run:
     description: Upload the run record, the report and the logs as a workflow artifact.

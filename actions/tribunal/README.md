@@ -4,8 +4,8 @@ Runs the [tribunal](../../plugins/tribunal) review on a pull request and posts i
 review by default. Independent reviewers read the diff, and the engine merges and checks
 what they find before reporting it. A refutation panel that tries to disprove each serious finding
 runs only when `codex` is on. A review that does not post leaves a "Tribunal pending" comment with
-the reason and a link to the run. Optionally, it also leaves a check run with the findings still
-open (see [Findings check](#findings-check)).
+the reason and a link to the run. Optionally, it also leaves a commit status with the count of
+findings still open (see [Findings check](#findings-check)).
 
 ## Setup
 
@@ -171,8 +171,10 @@ and the `github-token` user when that token can read its own user (a PAT or an A
 - Each run writes a job summary on its Actions page: whether the review was posted (with a link),
   skipped or held and why, followed by the report itself.
 - By default the review is a comment and the report's suggestion is in the body. Opt into
-  approvals and change requests with `verdict: suggested`. Each run posts a new review and
-  never replaces or dismisses an earlier one. A comment does not clear a previous change request.
+  change requests without approvals with `verdict: no-approve`, or into both with
+  `verdict: suggested` (see [Optional verdicts and Codex](#optional-verdicts-and-codex)). Each
+  run posts a new review and never replaces an earlier one. A comment does not clear a previous
+  change request; only `no-approve` dismisses the action's own.
 
 ### Decide in a separate job
 
@@ -217,13 +219,13 @@ GitHub-hosted runners in a private repository the gate job bills its own minute 
 ## Findings check
 
 To see on the pull request's checks whether anything the review found is still open, set
-`findings-check` and give the job `checks: write`:
+`findings-check` and give the job `statuses: write`:
 
 ```yaml
 permissions:
   contents: read
   pull-requests: write
-  checks: write
+  statuses: write
 steps:
   - uses: xmartlabs/agent-skills/actions/tribunal@tribunal-action-v1
     with:
@@ -231,21 +233,31 @@ steps:
       findings-check: inform # or enforce
 ```
 
-After a review posts, the action adds a "Tribunal findings" check run on the reviewed commit. It
-counts the findings under "Blocking" and "Should fix (not blocking)"; nits, questions and
-pre-existing findings do not count. The check is green when none is open. With open findings it is
-neutral under `inform` and failed under `enforce`, so a branch rule can require it once you trust
-it. When the findings cannot be counted, the check is neutral and says so: it is never green
-without a count. The `blocking` and `should-fix` outputs carry the same counts for later steps.
+After a review posts, the action sets a "Tribunal findings" commit status on the reviewed commit.
+It counts the findings under "Blocking" and "Should fix (not blocking)"; nits, questions and
+pre-existing findings do not count. The status's description gives the counts, and its link opens
+the run, whose job summary lists each open finding.
+
+| | No finding open | Findings open | Findings could not be counted |
+| --- | --- | --- | --- |
+| `inform` | success | success, "… open (not enforced)" | error |
+| `enforce` | success | failure | error |
+
+A branch rule can require the status once you trust it, with `enforce`. It is never green without
+a count. The `blocking` and `should-fix` outputs carry the same counts for later steps.
+
+It is a commit status rather than a check run because GitHub files a check run created with the
+job's token under whichever workflow it picks, so it shows on the pull request inside another
+workflow's group. A status shows under its own name.
 
 - With `review-mode: incremental`, the previous review's open findings stay open until a later
   review finds them fixed. A finding on a file the new commits did not touch is carried forward
-  as it was, and the check's table says where each finding's status comes from.
-- The check is on the commit the review read. A push makes a new head with no check until the
+  as it was, and the summary's table says where each finding's status comes from.
+- The status is on the commit the review read. A push makes a new head with no status until the
   next review.
-- Without `checks: write` the review still posts, and the job summary names the missing
+- Without `statuses: write` the review still posts, and the job summary names the missing
   permission. The job does not fail.
-- With `findings-check: off`, the default, the action creates no check and makes no extra calls.
+- With `findings-check: off`, the default, the action sets no status and makes no extra calls.
 
 ## Select a Tribunal version
 
@@ -288,9 +300,15 @@ with:
 
 These features are independent: suggested verdicts do not require Codex. `verdict: suggested`
 allows approvals and requests for changes to affect GitHub's review state, subject to your
-repository's rules and token permissions. Keep the default `comment` if only humans should
-approve. Posting retains the existing standing-review override; it does not dismiss earlier
-reviews or bypass head/fidelity checks.
+repository's rules and token permissions. Posting retains the existing standing-review override;
+it does not dismiss earlier reviews or bypass head/fidelity checks.
+
+If only humans should approve but a blocking finding should still hold the merge, use
+`verdict: no-approve`. The action posts a change request when the engine's verdict is REQUEST
+CHANGES and a comment otherwise, an engine APPROVE included. When a later review no longer asks
+for changes, the action dismisses its own earlier change requests, so a fixed pull request is not
+left blocked; a dismissal that fails is logged and the job goes on. A person's reviews are never
+touched. Keep the default `comment` if the action should never change the review state.
 
 Codex is off by default. When enabled, the action installs a pinned CLI and requires an explicit
 API key; it does not borrow the runner's login. Authentication stays in the temporary job
@@ -369,7 +387,7 @@ transcript).
 | `drafts` | `false` | Also review draft pull requests. |
 | `reviewer` | `frontend` | `frontend`, `backend`, `python`, or `e2e`: the generic profile used when the repository has none. |
 | `tribunal-version` | `bundled` | Use the action's tested snapshot, `latest`, or a stable exact version starting at `115.2.0`. |
-| `verdict` | `comment` | `comment` or `suggested` (the engine's approve/request-changes/comment verdict). |
+| `verdict` | `comment` | `comment`, `suggested` (the engine's approve/request-changes/comment verdict) or `no-approve` (request changes or comment, never approve). |
 | `review-mode` | `full` | `full` or `incremental`; an unavailable/incompatible baseline causes an explicit full review. |
 | `codex` | `false` | Install and enable the optional second model family. Gemini has no input: when the panel runs (with `codex` on, or on Tribunal before 115.4.0) the engine adds a Gemini head on its own when the job environment has `GEMINI_API_KEY`, so leave it unset for Claude-only reviews. |
 | `openai-api-key` | empty | API key required when `codex: true`. Supply through a secret. |
@@ -383,7 +401,7 @@ transcript).
 | `prior-verify` | empty | Positive integer: maximum prior findings verified on a re-review. |
 | `lens-samples` | empty | Integer 1–4: independent samples per lens. |
 | `bot-comments` | `false` | Also vet existing bot findings. |
-| `findings-check` | `off` | `off`, `inform` or `enforce`: leave a "Tribunal findings" check run with the open blocking and should-fix findings. Needs `checks: write`. See [Findings check](#findings-check). |
+| `findings-check` | `off` | `off`, `inform` or `enforce`: set a "Tribunal findings" commit status with the count of open blocking and should-fix findings. Needs `statuses: write`. See [Findings check](#findings-check). |
 | `upload-run` | `true` | Upload the run record, the report and the logs as an artifact (14 days). |
 | `upload-transcripts` | `false` | Also upload every model dispatch's transcript (see Security). |
 

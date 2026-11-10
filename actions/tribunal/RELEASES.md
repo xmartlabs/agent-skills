@@ -23,9 +23,22 @@ For each `tribunal-action-v1.<minor>.<patch>` tag:
 A plugin freeze alone does not move the action's tags: `bundled` is the plugin at the action's
 own commit.
 
-## Unreleased
+## Unreleased — a commit status for findings, and a verdict that never approves
 
-Nothing yet.
+- Add `verdict: no-approve`. The action posts a change request when the engine's verdict is
+  REQUEST CHANGES and a comment otherwise, an engine APPROVE included. When a later review no
+  longer asks for changes, it dismisses the action's own earlier change requests so a fixed pull
+  request is not left blocked. `comment` and `suggested` behave as before.
+
+- `findings-check` now sets a "Tribunal findings" commit status instead of creating a check run.
+  GitHub filed the check run, created with the job's token, inside another workflow's group on the
+  pull request, so it was easy to miss; a status shows under its own name. The job needs
+  `statuses: write` instead of `checks: write`.
+- A status has no neutral state. With open findings, `inform` sets success and the description
+  says the count is not enforced; `enforce` sets failure. Findings that cannot be counted set
+  error in both modes. The table of open findings moves to the job summary, which the status links.
+- A workflow that still grants only `checks: write` keeps getting reviews; the summary says the
+  status is missing and asks for `statuses: write`.
 
 ## v1.3.0 — findings check and a separate token for other repos
 

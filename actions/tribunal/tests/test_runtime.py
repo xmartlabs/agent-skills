@@ -272,21 +272,29 @@ class RuntimeTests(unittest.TestCase):
 
     def test_findings_check_counts_and_concludes_by_mode(self):
         self.findings_run([self.kept("b", blocking=True), self.kept("s", file="src/b.ts", blocking=False, rankedBelowBlocking=True, rankWorth=5)])
-        payload, blocking, should_fix = self.check("inform")
+        status, table, blocking, should_fix = self.check("inform")
         self.assertEqual((1, 1), (blocking, should_fix))
-        self.assertEqual(("Tribunal findings", "a" * 40, "completed", "neutral"), (payload["name"], payload["head_sha"], payload["status"], payload["conclusion"]))
-        self.assertEqual("1 blocking, 1 should fix", payload["output"]["title"])
-        self.assertIn("`src/b.ts:3`", payload["output"]["summary"])
-        self.assertEqual("failure", self.check("enforce")[0]["conclusion"])
+        self.assertEqual(("Tribunal findings", "success"), (status["context"], status["state"]))
+        self.assertEqual("1 blocking, 1 should fix open (not enforced)", status["description"])
+        self.assertIn("`src/b.ts:3`", table)
+        status = self.check("enforce")[0]
+        self.assertEqual(("failure", "1 blocking, 1 should fix open"), (status["state"], status["description"]))
         self.findings_run([self.kept("n", blocking=False, severity="nit")])
-        payload, blocking, should_fix = self.check("enforce")
-        self.assertEqual(("success", 0, 0), (payload["conclusion"], blocking, should_fix))
+        status, table, blocking, should_fix = self.check("enforce")
+        self.assertEqual(("success", 0, 0), (status["state"], blocking, should_fix))
+        self.assertEqual("No blocking or should-fix findings open", status["description"])
 
     def test_findings_check_without_a_row_is_never_green(self):
         runtime.write(self.job / "run.json", {"report": "x", "metrics": {"headSha": "a" * 40}})
-        payload, blocking, should_fix = self.check("enforce")
-        self.assertEqual(("neutral", None, None), (payload["conclusion"], blocking, should_fix))
-        self.assertEqual("Open findings could not be counted", payload["output"]["title"])
+        for mode in ("inform", "enforce"):
+            status, table, blocking, should_fix = self.check(mode)
+            self.assertEqual(("error", None, None), (status["state"], blocking, should_fix))
+            self.assertIn("could not be counted", status["description"])
+            self.assertIn("not a clean review", table)
+
+    def test_status_description_fits_github_limit(self):
+        self.findings_run([self.kept(str(i), file=f"src/{i}.ts", blocking=True) for i in range(3)])
+        self.assertLessEqual(len(self.check("inform")[0]["description"]), 140)
 
     def test_findings_check_refuses_another_head(self):
         runtime.write(self.job / "run.json", {"metrics": {"headSha": "e" * 40, "findings": []}})
@@ -311,9 +319,8 @@ class RuntimeTests(unittest.TestCase):
         # Raised again, now ranked below blocking: its new tier wins and it is counted once.
         self.findings_run([self.kept("raised again", file="src/5.ts", blocking=False, rankedBelowBlocking=True, rankWorth=4)],
                           reviewMode="incremental", priorVerification=verification)
-        payload, blocking, should_fix = self.check("inform")
+        status, summary, blocking, should_fix = self.check("inform")
         self.assertEqual((2, 2), (blocking, should_fix))
-        summary = payload["output"]["summary"]
         self.assertNotIn("| fixed |", summary)
         self.assertIn("re-checked: still open", summary)
         self.assertIn("re-checked: could not tell", summary)
@@ -323,7 +330,23 @@ class RuntimeTests(unittest.TestCase):
     def test_full_review_ignores_the_prior_row(self):
         runtime.write(self.job / "prior-row.json", {"findings": [self.kept("old", blocking=True)]})
         self.findings_run([], reviewMode="full")
-        self.assertEqual("success", self.check("inform")[0]["conclusion"])
+        self.assertEqual("No blocking or should-fix findings open", self.check("inform")[0]["description"])
+
+    def test_no_approve_never_posts_an_approval(self):
+        for mode, verdict, expected in (
+            ("no-approve", "APPROVE", "comment"),
+            ("no-approve", "COMMENT", "comment"),
+            ("no-approve", "REQUEST CHANGES", "request-changes"),
+            ("no-approve", None, "comment"),
+            ("comment", "REQUEST CHANGES", "comment"),
+            ("suggested", "APPROVE", None),
+        ):
+            with self.subTest(mode=mode, verdict=verdict):
+                (self.job / "verdict").write_text(mode + "\n")
+                runtime.write(self.job / "run.json", {"verdict": verdict})
+                self.assertEqual(expected, runtime.post_state(self.job))
+        with patch.dict(os.environ, {"INPUT_VERDICT": "no-approve"}):
+            runtime.validate()
 
     def test_findings_check_mode_is_validated(self):
         with patch.dict(os.environ, {"INPUT_FINDINGS_CHECK": "on"}), self.assertRaises(ValueError):
