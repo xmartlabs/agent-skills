@@ -304,27 +304,37 @@ async fn a_ranking_that_returns_nothing_moves_nothing() {
 }
 
 #[tokio::test]
-async fn a_kept_question_finding_below_worth_four_cannot_block() {
-    use tribunal_pipeline::questions::{rank_and_place, rank_prompt, RANKED_BELOW_BLOCKING};
+async fn a_question_finding_below_worth_four_leaves_the_body_unless_many_raised_it() {
+    use tribunal_pipeline::questions::{
+        rank_and_place, rank_prompt, LOWER_PRIORITY, RANKED_BELOW_BLOCKING,
+    };
     use tribunal_pipeline::verdict_basis::verdict_basis;
     let fake = FakeAgent::new().answer(
         "question-rank",
-        FakeAnswer::Structured(
-            json!({"ranking": [{"id": "1", "worth": 3}, {"id": "2", "worth": 4}]}),
-        ),
+        FakeAnswer::Structured(json!({"ranking": [
+            {"id": "1", "worth": 3}, {"id": "2", "worth": 4}, {"id": "3", "worth": 2}
+        ]})),
     );
     let mut surviving = vec![
         result("worth three", QUESTION_LENS, 0),
         result("worth four", QUESTION_LENS, 0),
+        result("worth two raised by five", QUESTION_LENS, 5),
     ];
     let mut aside = Vec::new();
     let prompt = rank_prompt("acme/web-app", "12", "abc123", &surviving);
     let s = setup();
     let (_, summary) = rank_and_place(&fake, &s, prompt, &mut surviving, &mut aside, None).await;
-    assert_eq!(surviving.len(), 2, "worth 3 stays in the report");
-    assert_eq!(surviving[0]["finding"][RANKED_BELOW_BLOCKING], json!(true));
-    assert!(surviving[1]["finding"].get(RANKED_BELOW_BLOCKING).is_none());
-    assert_eq!(summary["belowBlocking"], json!(1));
+    let moved: Vec<&str> = aside
+        .iter()
+        .map(|r| r["finding"]["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(moved, ["worth three"]);
+    assert_eq!(aside[0]["placement"]["placement"], json!(LOWER_PRIORITY));
+    assert_eq!(surviving.len(), 2);
+    assert!(surviving
+        .iter()
+        .all(|r| r["finding"].get(RANKED_BELOW_BLOCKING).is_none()));
+    assert_eq!(summary["belowBlocking"], json!(0));
     let findings: Vec<serde_json::Value> = surviving
         .iter()
         .map(|r| {
@@ -333,8 +343,8 @@ async fn a_kept_question_finding_below_worth_four_cannot_block() {
             f
         })
         .collect();
-    let basis = verdict_basis(&findings).expect("the worth-four finding qualifies");
-    assert!(basis.contains("worth four") && !basis.contains("worth three"));
+    let basis = verdict_basis(&findings).expect("the kept findings qualify");
+    assert!(basis.contains("worth four") && basis.contains("worth two raised by five"));
 }
 
 /// The ranking's worth reaches the metrics row on every finding it scored,
