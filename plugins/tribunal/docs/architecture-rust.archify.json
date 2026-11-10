@@ -456,7 +456,7 @@
       "type": "backend",
       "label": "verdictFor",
       "sublabel": "DETERMINISTIC · Rust, fixed rules",
-      "tag": "APPROVE, COMMENT or REQUEST CHANGES; an unread risk path blocks APPROVE",
+      "tag": "a finding blocks at worth 5; an unread risk path blocks APPROVE",
       "pos": [
         330,
         1910
@@ -619,9 +619,9 @@
     {
       "id": "qrank",
       "type": "frontend",
-      "label": "question-rank",
+      "label": "rank",
       "sublabel": "MODEL · sonnet, evolved prompt",
-      "tag": "worth on every finding; low worth to Questions to review",
+      "tag": "worth on every finding; question findings under 4 aside",
       "pos": [
         920,
         1740
@@ -1000,8 +1000,7 @@
       "id": "tally-qrank",
       "from": "tally",
       "to": "qrank",
-      "label": "question findings",
-      "variant": "dashed"
+      "label": "kept findings"
     },
     {
       "id": "qrank-verdict",

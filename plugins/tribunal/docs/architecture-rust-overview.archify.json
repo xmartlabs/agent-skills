@@ -156,7 +156,7 @@
       "type": "backend",
       "label": "Tally and verdict",
       "sublabel": "DETERMINISTIC · Rust",
-      "tag": "weighted vote, or all survive with no panel; an unread risk path blocks APPROVE",
+      "tag": "blocks at worth 5; an unread risk path blocks APPROVE",
       "pos": [
         380,
         950
@@ -316,9 +316,9 @@
     {
       "id": "rank",
       "type": "frontend",
-      "label": "Rank question findings",
+      "label": "Rank findings",
       "sublabel": "MODEL · sonnet",
-      "tag": "worth kept per finding; low worth goes to Questions to review",
+      "tag": "worth 1 to 5; blocks at 5, 4 is Should fix",
       "pos": [
         40,
         950
@@ -476,8 +476,7 @@
       "id": "panel-rank",
       "from": "panel",
       "to": "rank",
-      "label": "question findings",
-      "variant": "dashed"
+      "label": "kept findings"
     },
     {
       "id": "rank-decide",
