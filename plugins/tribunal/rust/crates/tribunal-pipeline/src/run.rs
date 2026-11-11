@@ -1584,9 +1584,16 @@ pub async fn run_full<A: Agent>(
                 &diff,
             );
             crate::questions::sync_results(&mut v.results, &v.surviving, &v.placed_aside);
-            if marked > 0 {
+            if marked.pre_existing > 0 {
                 logs.push(format!(
-                    "Pre-existing code: {marked} kept finding(s) quote only lines this pull request did not change; reported apart, not blocking."
+                    "Pre-existing code: {} kept finding(s) quote only lines this pull request did not change; reported apart, not blocking.",
+                    marked.pre_existing
+                ));
+            }
+            if marked.newly_called > 0 {
+                logs.push(format!(
+                    "Pre-existing code: {} kept finding(s) quote only unchanged lines in code this pull request newly calls; they still count.",
+                    marked.newly_called
                 ));
             }
         }
