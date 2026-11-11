@@ -27,6 +27,16 @@ own commit.
 
 Nothing yet.
 
+## v1.4.3 — bundles Tribunal 115.5.3
+
+Tag `tribunal-action-v1.4.3` (and `tribunal-action-v1`) at `10d351e`. Bundled Tribunal plugin
+`115.5.3` with binary `tribunal-rust-v115.5.3`. No change to the action itself.
+
+- A review is posted when the compose step answers with the body instead of writing it to the
+  file. Before, the run ended with "the compose step wrote no body" and posted nothing, although
+  the body was in the answer. When the answer carries no body either, the compose step runs once
+  more before the post is held.
+
 ## v1.4.2 — bundles Tribunal 115.5.2
 
 Tag `tribunal-action-v1.4.2` (and `tribunal-action-v1`) at `98e6230`. Bundled Tribunal plugin
