@@ -60,6 +60,55 @@ impl Agent for Scribe {
     }
 }
 
+/// One compose dispatch: write this body to the file, or only answer with it.
+enum Compose {
+    Write(&'static str),
+    Answer(&'static str),
+}
+
+/// A composer that does not always write the file: each compose dispatch
+/// takes the next step, and every patch round writes `patched`.
+struct Talker {
+    steps: Mutex<Vec<Compose>>,
+    patched: Option<&'static str>,
+    labels: Mutex<Vec<String>>,
+}
+
+impl Talker {
+    fn new(mut steps: Vec<Compose>, patched: Option<&'static str>) -> Self {
+        steps.reverse();
+        Self {
+            steps: Mutex::new(steps),
+            patched,
+            labels: Mutex::default(),
+        }
+    }
+}
+
+impl Agent for Talker {
+    async fn run(&self, req: &DispatchRequest) -> DispatchResult {
+        self.labels.lock().unwrap().push(req.label.clone());
+        let answer = if req.label.starts_with("compose-post") {
+            match self.steps.lock().unwrap().pop().expect("a compose step") {
+                Compose::Write(text) => {
+                    std::fs::write(body_path(&req.prompt).unwrap(), text).unwrap();
+                    "DONE"
+                }
+                Compose::Answer(text) => text,
+            }
+        } else {
+            if let (Some(p), Some(text)) = (patched_path(&req.prompt), self.patched) {
+                std::fs::write(p, text).unwrap();
+            }
+            "DONE"
+        };
+        FakeAgent::new()
+            .otherwise(FakeAnswer::Text(answer.into()))
+            .run(req)
+            .await
+    }
+}
+
 struct World {
     root: PathBuf,
     rt: Runtime,
@@ -174,9 +223,9 @@ async fn post_over(
     post_with(w, agent, metrics, choice).await
 }
 
-async fn post_with(
+async fn post_with<A: Agent>(
     w: &World,
-    agent: &Scribe,
+    agent: &A,
     metrics: &Value,
     choice: PostChoice,
 ) -> (PostOutcome, Vec<String>) {
@@ -334,6 +383,106 @@ async fn a_body_that_stays_short_is_never_posted() {
     );
     assert_eq!(gh_log(&w), "");
     assert_eq!(agent.labels.lock().unwrap().len(), 4);
+}
+
+/// A composer that answers with the body instead of writing it: the answer
+/// becomes the body, and the fidelity gate still patches what it lacks.
+#[tokio::test]
+async fn a_body_given_as_the_answer_is_posted_through_the_fidelity_gate() {
+    let r = row("clear");
+    let w = world("answered", &r);
+    let agent = Talker::new(
+        vec![Compose::Answer(
+            "## Peer review\n\n### 🔴 Blocking\n**Lost write** `a.ts:1`\n\nDONE",
+        )],
+        Some(GOOD_BODY),
+    );
+    let (out, logs) = post_with(&w, &agent, &r, PostChoice::default()).await;
+    assert!(
+        matches!(out, PostOutcome::Posted { .. }),
+        "{out:?} {logs:?}"
+    );
+    assert_eq!(
+        *agent.labels.lock().unwrap(),
+        ["compose-post", "patch-post:1"]
+    );
+    assert!(
+        logs.iter()
+            .any(|l| l.contains("compose-post answered with the body")),
+        "{logs:?}"
+    );
+    let posted = std::fs::read_to_string(w.root.join("posted-body.md")).unwrap();
+    assert!(
+        posted.contains("**Lost write** `a.ts:1` also at: b.ts:9"),
+        "{posted}"
+    );
+}
+
+/// The answered body is posted as answered when it already passes the gate,
+/// without the `DONE` the composer ended it with.
+#[tokio::test]
+async fn an_answered_body_that_passes_the_gate_is_posted_as_answered() {
+    let r = row("clear");
+    let w = world("answered-clean", &r);
+    let agent = Talker::new(
+        vec![Compose::Answer(
+            "### 🔴 Blocking\n**Lost write** `a.ts:1` also at: b.ts:9\n\n### Draft comments\n- x\nDONE",
+        )],
+        None,
+    );
+    let (out, _) = post_with(&w, &agent, &r, PostChoice::default()).await;
+    assert!(matches!(out, PostOutcome::Posted { .. }), "{out:?}");
+    assert_eq!(*agent.labels.lock().unwrap(), ["compose-post"]);
+    let posted = std::fs::read_to_string(w.root.join("posted-body.md")).unwrap();
+    assert!(
+        posted.contains("**Lost write** `a.ts:1` also at: b.ts:9"),
+        "{posted}"
+    );
+    assert!(!posted.contains("DONE"), "{posted}");
+}
+
+/// A compose step that neither writes a body nor answers with one is asked
+/// once more, and the second attempt's file is posted.
+#[tokio::test]
+async fn a_compose_step_without_a_body_is_asked_once_more() {
+    let r = row("clear");
+    let w = world("retried", &r);
+    let agent = Talker::new(
+        vec![Compose::Answer("DONE"), Compose::Write(GOOD_BODY)],
+        None,
+    );
+    let (out, _) = post_with(&w, &agent, &r, PostChoice::default()).await;
+    assert!(matches!(out, PostOutcome::Posted { .. }), "{out:?}");
+    assert_eq!(
+        *agent.labels.lock().unwrap(),
+        ["compose-post", "compose-post:2"]
+    );
+}
+
+/// Two compose attempts with no body and no body in the answers: nothing is
+/// posted, and the hold carries both answers.
+#[tokio::test]
+async fn no_body_after_two_compose_attempts_is_never_posted() {
+    let r = row("clear");
+    let w = world("nobody", &r);
+    let agent = Talker::new(
+        vec![
+            Compose::Answer("DONE"),
+            Compose::Answer("I could not write the file."),
+        ],
+        None,
+    );
+    let (out, _) = post_with(&w, &agent, &r, PostChoice::default()).await;
+    assert!(
+        matches!(&out, PostOutcome::Held(why)
+            if why.contains("wrote no body in 2 attempts") && why.contains("I could not write the file.")),
+        "{out:?}"
+    );
+    assert_eq!(gh_log(&w), "");
+    assert_eq!(
+        *agent.labels.lock().unwrap(),
+        ["compose-post", "compose-post:2"]
+    );
 }
 
 fn demoted_row() -> Value {

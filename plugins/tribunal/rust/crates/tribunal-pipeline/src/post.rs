@@ -25,6 +25,9 @@ use crate::context::{RunArgs, Runtime};
 /// Rounds of the fidelity gate's patch step before the post is refused.
 pub const FIDELITY_ROUNDS: usize = 3;
 
+/// Dispatches of the compose step before the post is refused for want of a body.
+pub const COMPOSE_ATTEMPTS: usize = 2;
+
 /// What the post step did.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PostOutcome {
@@ -215,6 +218,36 @@ Write the final body to {out} with the Write tool, then answer with the single w
         sections = SECTIONS,
         section_rule = SECTION_RULE,
     )
+}
+
+/// The compose step's answer read as the body, for a composer that answered
+/// with the body instead of writing it to the file: markdown with at least one
+/// heading, less a trailing `DONE` and a code fence around the whole answer.
+/// Anything else (`DONE` alone, an explanation) is not a body.
+#[must_use]
+pub fn answer_as_body(answer: &str) -> Option<String> {
+    let mut lines: Vec<&str> = answer.trim().lines().collect();
+    while lines
+        .last()
+        .is_some_and(|l| l.trim().is_empty() || l.trim() == "DONE")
+    {
+        lines.pop();
+    }
+    if lines.len() >= 2
+        && lines[0].trim_start().starts_with("```")
+        && lines.last().is_some_and(|l| l.trim() == "```")
+    {
+        lines.remove(0);
+        lines.pop();
+    }
+    let heading = |l: &&str| {
+        let rest = l.trim_start_matches('#');
+        (1..=6).contains(&(l.len() - rest.len())) && rest.starts_with(' ')
+    };
+    if !lines.iter().any(heading) {
+        return None;
+    }
+    Some(format!("{}\n", lines.join("\n").trim()))
 }
 
 /// The findings a delta body carries, by their title. A delta leaves out what
@@ -555,24 +588,49 @@ pub async fn post_phase<A: Agent>(
         &body_file,
     );
     let compose = with_cross_repo_note(input.cross_repo_note, compose);
-    let answer = ask(
-        agent,
-        "compose-post",
-        compose,
-        &args.review_model,
-        input.effort,
-        input.cwd,
-    )
-    .await;
-    if answer.as_deref() == Some("NO-HOMOSAPIENS") {
-        return PostOutcome::Held(
-            "the homosapiens skill is not installed; install the homosapiens plugin before posting"
-                .into(),
-        );
+    let mut composed = None;
+    let mut answers = Vec::new();
+    for attempt in 1..=COMPOSE_ATTEMPTS {
+        let label = if attempt == 1 {
+            "compose-post".to_owned()
+        } else {
+            format!("compose-post:{attempt}")
+        };
+        let answer = ask(
+            agent,
+            &label,
+            compose.clone(),
+            &args.review_model,
+            input.effort,
+            input.cwd,
+        )
+        .await;
+        if answer.as_deref() == Some("NO-HOMOSAPIENS") {
+            return PostOutcome::Held(
+                "the homosapiens skill is not installed; install the homosapiens plugin before posting"
+                    .into(),
+            );
+        }
+        if let Ok(text) = std::fs::read_to_string(&body_file) {
+            composed = Some(text);
+            break;
+        }
+        // The patch rounds edit the file, so an answered body goes there first.
+        if let Some(text) = answer.as_deref().and_then(answer_as_body) {
+            if let Err(e) = std::fs::write(&body_file, &text) {
+                return PostOutcome::Held(format!("cannot write the body: {e}"));
+            }
+            logs.push(format!(
+                "{label} answered with the body instead of writing it; using that answer"
+            ));
+            composed = Some(text);
+            break;
+        }
+        answers.push(answer);
     }
-    let Ok(mut body) = std::fs::read_to_string(&body_file) else {
+    let Some(mut body) = composed else {
         return PostOutcome::Held(format!(
-            "the compose step wrote no body (answer: {answer:?})"
+            "the compose step wrote no body in {COMPOSE_ATTEMPTS} attempts (answers: {answers:?})"
         ));
     };
 
@@ -864,6 +922,30 @@ mod tests {
             findings_in_body(&findings, body),
             [json!({"title": "Lost write"})]
         );
+    }
+
+    #[test]
+    fn an_answer_with_a_heading_is_a_body_and_anything_else_is_not() {
+        let body = "## Peer review: PR #7\n\n### 🔴 Blocking\nNone.\n";
+        assert_eq!(answer_as_body(body).as_deref(), Some(body));
+        assert_eq!(
+            answer_as_body(&format!("{body}\nDONE")).as_deref(),
+            Some(body)
+        );
+        assert_eq!(
+            answer_as_body(&format!("```markdown\n{body}```\n\nDONE")).as_deref(),
+            Some(body)
+        );
+        for not_a_body in [
+            "",
+            "DONE",
+            "NO-HOMOSAPIENS",
+            "I could not write the file.\nDONE",
+            "#7 is ready\nDONE",
+            "####### seven\ntext",
+        ] {
+            assert_eq!(answer_as_body(not_a_body), None, "{not_a_body:?}");
+        }
     }
 
     #[test]
