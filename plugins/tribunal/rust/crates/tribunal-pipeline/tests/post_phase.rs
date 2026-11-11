@@ -937,3 +937,37 @@ fn the_compose_prompts_keep_questions_out_of_should_fix() {
         );
     }
 }
+
+/// The typecheck banner for a review run outside a checkout of the repo is
+/// for the operator: it leaves the posted body, rule included. A banner for
+/// another reason stays.
+#[test]
+fn the_posted_report_drops_the_typecheck_setup_banner_only() {
+    use tribunal_context::repo_locator::RepoCwd;
+    use tribunal_pipeline::coverage_report::typecheck_banner;
+    use tribunal_pipeline::post::posted_report;
+    let unresolved = RepoCwd::Unresolved {
+        cwd_origin: None,
+        searched: 0,
+    };
+    let setup = typecheck_banner(
+        Some("DEGRADED_WRONG_REPO"),
+        "acme/widgets",
+        &unresolved,
+        true,
+    );
+    assert!(!setup.is_empty());
+    let report = format!("## Peer review\n\n### 🔴 Blocking\nNone.{setup}\n");
+    assert_eq!(
+        posted_report(&report, "COMMENT"),
+        "## Peer review\n\n### 🔴 Blocking\nNone.\n"
+    );
+    let drift = typecheck_banner(
+        Some("DEGRADED_SCHEMA_DRIFT"),
+        "acme/widgets",
+        &unresolved,
+        true,
+    );
+    let report = format!("## Peer review{drift}\n");
+    assert_eq!(posted_report(&report, "COMMENT"), report);
+}

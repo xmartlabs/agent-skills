@@ -486,11 +486,17 @@ async fn standing_review(
     Ok((id, verdict))
 }
 
+/// How `coverage_report::typecheck_banner` opens for `DEGRADED_WRONG_REPO`.
+const TYPECHECK_SETUP_BANNER: &str = "⚠️ **The typecheck did not run** (`DEGRADED_WRONG_REPO`).";
+
 /// The report the posted body is composed from: the operator's report less
 /// what only the operator acts on. The panel-off and sweep-off lines name a
 /// command-line flag for whoever ran the review, and a suggestion to approve
-/// reads as an approval on a review posted in another state. The operator's
-/// own copy of the report keeps both.
+/// reads as an approval on a review posted in another state. The typecheck
+/// banner for `DEGRADED_WRONG_REPO` tells whoever ran the review to run it
+/// from a checkout, which a reader of the pull request cannot act on; in CI
+/// it was on every review. The operator's own copy of the report keeps all of
+/// them.
 #[must_use]
 pub fn posted_report(report: &str, posted_verdict: &str) -> String {
     use crate::synthesize::{
@@ -514,6 +520,19 @@ pub fn posted_report(report: &str, posted_verdict: &str) -> String {
     for line in report.lines() {
         let kept = line.trim();
         if operator_only.contains(&kept) || unposted_approval(line) {
+            continue;
+        }
+        if kept.starts_with(TYPECHECK_SETUP_BANNER) {
+            // The banner opens with a rule of its own: drop it with the banner.
+            while out.last().is_some_and(|l| l.trim().is_empty()) {
+                out.pop();
+            }
+            if out.last().is_some_and(|l| l.trim() == "---") {
+                out.pop();
+                while out.last().is_some_and(|l| l.trim().is_empty()) {
+                    out.pop();
+                }
+            }
             continue;
         }
         if kept.is_empty() && out.last().is_some_and(|l| l.trim().is_empty()) {
