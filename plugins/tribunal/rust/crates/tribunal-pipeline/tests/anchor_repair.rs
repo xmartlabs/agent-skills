@@ -427,7 +427,7 @@ async fn both_lists_keep_their_order_and_length() {
                "grounded": {}}),
     ];
     let mut logs = Vec::new();
-    repair_anchors(
+    let counts = repair_anchors(
         &s.tools,
         Some(HEAD),
         REPO,
@@ -437,6 +437,10 @@ async fn both_lists_keep_their_order_and_length() {
         &mut logs,
     )
     .await;
+    assert_eq!(
+        counts,
+        json!({"anchoredFromEvidence": 0, "linesNeeded": 2, "linesCompleted": 2})
+    );
     assert_eq!(verified.len(), 2);
     assert!(verified[1].is_none());
     assert_eq!(

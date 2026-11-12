@@ -206,7 +206,8 @@ pub fn apply_lines(verified: &mut [Option<Value>], targets: &[Target], results: 
 /// `verified` and the `confirmed` results that skipped the panel (grounded,
 /// `--no-refuters`, which is the default, and the critic's gaps). Both lists
 /// keep their order and length. Before this, only `verified` was repaired, so
-/// with the panel off no anchor was ever completed.
+/// with the panel off no anchor was ever completed. Returns the counts the
+/// metrics row records as `verifiedByRepair`.
 pub async fn repair_anchors(
     tools: &Tools,
     head: Option<&str>,
@@ -215,7 +216,7 @@ pub async fn repair_anchors(
     verified: &mut Vec<Option<Value>>,
     confirmed: &mut Vec<Value>,
     logs: &mut Vec<String>,
-) {
+) -> Value {
     let split = verified.len();
     let mut all = std::mem::take(verified);
     all.extend(std::mem::take(confirmed).into_iter().map(Some));
@@ -225,11 +226,17 @@ pub async fn repair_anchors(
             "verifiedBy: anchored {anchored} finding(s) written without one from their evidence"
         ));
     }
-    if let Some(head) = head.filter(|h| !h.is_empty()) {
-        repair_anchor_lines(tools, head, repo, cross_repo, &mut all, logs).await;
-    }
+    let (completed, needed) = match head.filter(|h| !h.is_empty()) {
+        Some(head) => repair_anchor_lines(tools, head, repo, cross_repo, &mut all, logs).await,
+        None => (0, 0),
+    };
     *confirmed = all.split_off(split).into_iter().flatten().collect();
     *verified = all;
+    json!({
+        "anchoredFromEvidence": anchored,
+        "linesNeeded": needed,
+        "linesCompleted": completed,
+    })
 }
 
 /// Completes the lines of the panel's findings in place and logs what it did.
@@ -242,10 +249,10 @@ pub async fn repair_anchor_lines(
     cross_repo: &[String],
     verified: &mut [Option<Value>],
     logs: &mut Vec<String>,
-) {
+) -> (usize, usize) {
     let (targets, payload) = broken_anchors(verified);
     if targets.is_empty() {
-        return;
+        return (0, 0);
     }
     let total: usize = targets.iter().map(|t| t.anchors.len()).sum();
     let mut argv: Vec<&str> = vec!["-", head, "--repo", repo, "--relay"];
@@ -260,13 +267,20 @@ pub async fn repair_anchor_lines(
                 "verifiedBy lines: completed {n} of {total} anchor(s) written without a line from their quote at {}",
                 head.chars().take(8).collect::<String>()
             ));
+            (n, total)
         }
-        Ok(_) => logs.push(format!(
-            "verifiedBy lines: the resolver did not run, {total} anchor(s) keep the line they had"
-        )),
-        Err(e) => logs.push(format!(
-            "verifiedBy lines: the resolver failed ({e}), {total} anchor(s) keep the line they had"
-        )),
+        Ok(_) => {
+            logs.push(format!(
+                "verifiedBy lines: the resolver did not run, {total} anchor(s) keep the line they had"
+            ));
+            (0, total)
+        }
+        Err(e) => {
+            logs.push(format!(
+                "verifiedBy lines: the resolver failed ({e}), {total} anchor(s) keep the line they had"
+            ));
+            (0, total)
+        }
     }
 }
 

@@ -209,6 +209,20 @@ cmd_prepare() {
   log "tribunal $tag ($asset)"
 }
 
+# The ref this action runs at, `<owner>/<repo>@<ref>`, read from the path GitHub checks a used action
+# out to (`.../_actions/<owner>/<repo>/<ref>/actions/tribunal`); the engine records it as `actionRef`.
+# Empty (and so not recorded) when the action runs from the repository itself (`uses: ./`).
+action_ref() {
+  case "${GITHUB_ACTION_PATH:-}" in
+    */_actions/*/*/*/actions/tribunal) ;;
+    *) return 0 ;;
+  esac
+  local rest=${GITHUB_ACTION_PATH#*/_actions/}
+  rest=${rest%/actions/tribunal}
+  local owner=${rest%%/*} tail=${rest#*/}
+  printf '%s/%s@%s' "$owner" "${tail%%/*}" "${tail#*/}"
+}
+
 # Run the binary with the job's isolated environment and one Claude credential.
 tribunal() {
   # The binary uses an API key only when it comes as TRIBUNAL_ANTHROPIC_API_KEY, and drops any
@@ -222,6 +236,7 @@ tribunal() {
   unset OPENAI_API_KEY CODEX_API_KEY INPUT_OPENAI_API_KEY
   export CODEX_HOME="$JOB/home/.codex"
   export PATH="$JOB/tools/bin:$PATH"
+  TRIBUNAL_ACTION_REF=$(action_ref) && export TRIBUNAL_ACTION_REF
   cd "$JOB/work" || return 1
   "$(cat "$JOB/bin-path")" "$@"
 }

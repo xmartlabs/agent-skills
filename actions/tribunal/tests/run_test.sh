@@ -18,7 +18,8 @@ sub="$1"; shift
   echo "DATA=$TRIBUNAL_DATA_DIR"; echo "ROOT=$TRIBUNAL_PLUGIN_ROOT"
   echo "TRIBUNAL_KEY=${TRIBUNAL_ANTHROPIC_API_KEY-<unset>}"; echo "OAUTH=${CLAUDE_CODE_OAUTH_TOKEN-<unset>}"
   echo "API_KEY=${ANTHROPIC_API_KEY-<unset>}"; echo "CODEX_HOME=$CODEX_HOME"; echo "CONVENTIONS=${TRIBUNAL_CONVENTIONS_TOKEN-<unset>}";
-  echo "OPENAI_KEY=${OPENAI_API_KEY-<unset>}"; echo "CODEX_KEY=${CODEX_API_KEY-<unset>}"; } > "$FX/tribunal-$sub.env"
+  echo "OPENAI_KEY=${OPENAI_API_KEY-<unset>}"; echo "CODEX_KEY=${CODEX_API_KEY-<unset>}";
+  echo "ACTION_REF=${TRIBUNAL_ACTION_REF-<unset>}"; } > "$FX/tribunal-$sub.env"
 if [ "$sub" = review ]; then
   out=""; while [ $# -gt 0 ]; do [ "$1" = --out ] && out="$2"; shift; done
   if [ -f "$FX/run.json" ]; then cp "$FX/run.json" "$out"; else printf '{"report":"x","metrics":{"headSha":"%s"}}' "$HEAD_SHA" > "$out"; fi
@@ -534,6 +535,14 @@ mkdir -p "$(job)/selected-plugin"
 printf '%s' "$(job)/selected-plugin" > "$(job)/plugin-path"
 review
 assert_ok "review uses the selected plugin root" grep -qx "ROOT=$(job)/selected-plugin" "$FX/tribunal-review.env"
+rm -f "$FX/tribunal-review.env"
+# The engine records the action's ref (actionRef), read from where GitHub checked the action out.
+GITHUB_ACTION_PATH=/runner/_work/_actions/xmartlabs/agent-skills/v1.4.3/actions/tribunal review
+assert_ok "action ref reaches the engine" grep -qx 'ACTION_REF=xmartlabs/agent-skills@v1.4.3' "$FX/tribunal-review.env"
+GITHUB_ACTION_PATH=/runner/_work/_actions/acme/tools/feat/x/actions/tribunal review
+assert_ok "a branch ref keeps its slash" grep -qx 'ACTION_REF=acme/tools@feat/x' "$FX/tribunal-review.env"
+GITHUB_ACTION_PATH=/runner/_work/repo/repo/./actions/tribunal review
+assert_ok "a local action records no ref" grep -qx 'ACTION_REF=' "$FX/tribunal-review.env"
 INPUT_LABEL=tribunal bash "$RUN" cleanup >/dev/null 2>&1
 assert_fail "cleanup removes Codex authentication" test -f "$(job)/home/.codex/auth.json"
 
