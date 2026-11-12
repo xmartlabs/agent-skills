@@ -1,0 +1,20 @@
+---
+name: design-space-preview
+description: Open the prototype in the browser so the designer can click through it. Use when the designer wants to see the current prototype.
+disable-model-invocation: true
+---
+
+# Preview the prototype
+
+1. Start the preview with `npm run design-space:dev` from the design space folder, unless it is
+   already running.
+2. Tell the designer to open http://127.0.0.1:4100/ and pick their prototype from the home page.
+3. Explain what to look at: each screen, and each state of it (loading, empty, error, success)
+   through the state switcher in the toolbar, and each role if the prototype has more than one.
+4. If the page does not load, or a mock fails to start, say so in plain words, fix it if it is
+   inside the prototype, and otherwise ask an engineer.
+5. Ask what they would change. To leave notes directly on the page, they can use the feedback
+   toolbar on the preview.
+
+Next step: run `design-space-change` to apply changes and notes. When they are happy, run
+`design-space-ready`.

@@ -8,13 +8,14 @@ A collection of general-purpose skills used at Xmartlabs to support everyday wor
 | --- | --- |
 | [`pr-evidence`](skills/pr-evidence) | Captures visual evidence (screenshot, GIF, rendered email) of a UI change against a local/test instance and posts it on the PR. See its [README](skills/pr-evidence/README.md). |
 | [`release-notes`](skills/release-notes) | Aggregates merged PRs in a range into release notes that embed their already-captured evidence. |
+| [`design-space`](skills/design-space) | Bootstraps and maintains a repository's design space: a second app where designers and their agent build prototypes on fake data with the product's real components and tokens, then hand them to engineers as a pull request. Its four pillars (tokens, components, prototypes and report-only audits) are set up when an engineer bootstraps it once; publishing previews is not available yet. It runs on any harness: Enforced where an adapter's denials are proven and Advisory elsewhere. Bootstrap writes the repository's `.design-space.json`. It is not for product UI work, Figma-to-code, or connecting real data. See its [README](skills/design-space/README.md). |
 
 ## Install
 
 Works with any [Agent Skills](https://agentskills.io) harness (Claude Code, Codex, OpenCode, Cursor, Copilot, …):
 
 ```bash
-npx skills add xmartlabs/agent-skills --skill pr-evidence --skill release-notes
+npx skills add xmartlabs/agent-skills --skill pr-evidence --skill release-notes --skill design-space
 ```
 
 ## Use in CI

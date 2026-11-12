@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(Bash|apply_patch)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/{{FOLDER}}/guard/adapters/codex/hook.mjs\"",
+            "timeout": 30,
+            "statusMessage": "Checking the design-space guard"
+          }
+        ]
+      }
+    ]
+  }
+}

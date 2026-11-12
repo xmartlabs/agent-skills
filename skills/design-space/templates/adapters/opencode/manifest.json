@@ -1,0 +1,13 @@
+{
+  "harness": "opencode",
+  "level": "advisory",
+  "advisoryReason": "OpenCode plugins can reject a tool call, but the plugin API is moving from V1 to V2 with different tool names and inputs, and V2 plugins import a package outside Node built-ins; OpenCode was not available to prove a denial.",
+  "limits": [
+    "Nothing blocks a change while working; the written rules, the scope check on the pull request and code-owner review protect the product.",
+    "The generated opencode.json uses the V2 MCP format (mcp.servers); OpenCode V1 expects servers directly under mcp."
+  ],
+  "skillsDir": ".agents/skills",
+  "files": [],
+  "mcpFile": "opencode.json",
+  "mcpFormat": "opencode-json"
+}

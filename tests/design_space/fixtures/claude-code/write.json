@@ -1,0 +1,1 @@
+{"session_id":"s1","transcript_path":"/tmp/t.jsonl","cwd":"{ROOT}/design-space","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"{ROOT}/src/widgets.ts","content":"x"},"tool_use_id":"toolu_1"}

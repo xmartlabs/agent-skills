@@ -1,0 +1,40 @@
+name: design-space-scope
+
+# A pull request from a proto/* branch may only change designer-owned files in {{FOLDER}}/.
+# The check runs from a checkout of the base commit, so a pull request cannot change the rule
+# that judges it. The pull request head is fetched only to list its changed files; nothing from
+# it is ever executed. Not path-filtered on purpose: a proto/* PR that only touches product
+# files must still run (and fail) this check.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scope:
+    if: startsWith(github.head_ref, 'proto/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the base commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch the pull request head (diff only)
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Checkout keeps no credentials; authenticate only this one fetch (read-only token).
+          AUTH="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          echo "::add-mask::$AUTH"
+          git -c "http.extraheader=AUTHORIZATION: basic $AUTH" fetch --no-tags origin "refs/pull/${PR_NUMBER}/head"
+      - name: Check changed files are designer-owned
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git cat-file -e "${HEAD_SHA}^{commit}"
+          node {{FOLDER}}/checks/check-scope.mjs "$BASE_SHA" "$HEAD_SHA"

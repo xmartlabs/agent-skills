@@ -1,0 +1,29 @@
+---
+name: design-space-help
+description: Explain the design space, the available steps and how well this setup protects the product. Use when the designer is unsure what to do next.
+disable-model-invocation: true
+---
+
+# Design space help
+
+1. Read the protection level from the "Protection level" part of `AGENTS.md` and explain it in
+   plain words:
+   - Enforced once a condition holds: when that condition holds, the tooling blocks changes
+     outside the design space, so the designer cannot touch product code by accident. Read the
+     condition out in plain words (for example, which folder to start the tool in, or a one-time
+     approval). Until it holds, the level is Advisory.
+   - Advisory: nothing blocks such changes while working; only the written rules, the automatic
+     check on the pull request and code-owner review protect the product. Be extra careful to stay
+     inside the prototype.
+   If the designer is not sure the condition holds, tell them to ask an engineer to confirm it,
+   and to treat this session as Advisory until then. If several tools are listed, explain each.
+2. List the steps in plain words:
+   - `design-space-new`: start a prototype.
+   - `design-space-preview`: look at it in the browser.
+   - `design-space-change`: apply changes and notes from the preview.
+   - `design-space-ready`: hand it to engineers.
+3. Ask where the designer is now and recommend the single next step. If they have no prototype yet,
+   that is `design-space-new`.
+4. Never run anything on this step; only explain.
+
+Next step: whichever of the above you recommended.

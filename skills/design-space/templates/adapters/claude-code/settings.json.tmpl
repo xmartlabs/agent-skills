@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/guard/adapters/claude-code/hook.mjs\""
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": ["Bash(npm run design-space*)"],
+    "deny": ["Bash(npm install*)", "Bash(npm i *)", "Bash(git push --force*)", "Bash(git push -f*)"]
+  }
+}

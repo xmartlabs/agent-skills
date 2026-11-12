@@ -1,0 +1,1 @@
+{"session_id":"s1","turn_id":"t1","transcript_path":"/tmp/t.jsonl","cwd":"{ROOT}/design-space","hook_event_name":"PreToolUse","model":"m1","permission_mode":"default","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: {ROOT}/src/widgets.ts\n@@\n-export const widgets = 1;\n+export const widgets = 2;\n*** End Patch"},"tool_use_id":"call_1"}

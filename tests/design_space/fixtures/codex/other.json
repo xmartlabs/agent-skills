@@ -1,0 +1,1 @@
+{"session_id":"s1","turn_id":"t1","transcript_path":"/tmp/t.jsonl","cwd":"{ROOT}/design-space","hook_event_name":"PreToolUse","model":"m1","permission_mode":"default","tool_name":"update_plan","tool_input":{"plan":[{"step":"look","status":"pending"}]},"tool_use_id":"call_1"}

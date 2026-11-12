@@ -1,0 +1,17 @@
+{
+  "harness": "claude-code",
+  "level": "enforced",
+  "activation": "Claude Code is started in the {{FOLDER}} folder",
+  "limits": [
+    "A hook that cannot start (for example when node is missing) may let the call through.",
+    "Project hooks load only when Claude Code is started in the design space folder."
+  ],
+  "instructionsFile": "CLAUDE.md",
+  "instructionsContent": "@AGENTS.md\n",
+  "skillsDir": ".claude/skills",
+  "files": [
+    { "from": "hook.mjs", "to": "guard/adapters/claude-code/hook.mjs" },
+    { "from": "settings.json.tmpl", "to": ".claude/settings.json" }
+  ],
+  "mcpFile": ".mcp.json"
+}

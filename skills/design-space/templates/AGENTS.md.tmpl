@@ -1,0 +1,36 @@
+# Design space
+
+This folder (`{{FOLDER}}/`) is a sandbox where designers build clickable prototypes with real
+product components and tokens. A finished prototype is handed off as a pull request that
+follows the team's review workflow; engineers move it into the product when ready.
+
+## Protection level
+
+{{HARNESS_LEVELS}}
+
+The level above is how strongly the tooling protects the product. The `help` step explains it.
+
+## Hard rules
+
+1. Edit only inside this design space, and only in the designer-owned folders (`flows/`,
+   `library/` and `specimens/`).
+2. Use only real components and tokens from the product. Do not invent colors, spacing or
+   components that the product does not have.
+3. Add no new dependencies. Never install packages or edit `package.json` or `.npmrc`.
+   Write no test files (`*.test.*`, `*.spec.*`, `__tests__/`); the checks and smoke test verify
+   prototypes.
+4. Use no real backend. Data comes from fixtures and mock handlers.
+5. Cover loading, empty, error and success states for every screen that shows data.
+6. Do only what the brief asks. No extra screens, refactors or cleanups.
+7. Never edit engineer-owned files: the guard, checks, scripts, stubs, app shell, audits and their
+   settings, the prototype template, Vite config and these instruction files.
+8. To change a product component, propose instead: add a `*-proposal` component in the prototype
+   and list it in the prototype's `proposals`. Never change the product component itself.
+
+## Steps
+
+`new` starts a prototype, `preview` shows it, `change` applies feedback, `ready` hands it to
+engineers, `help` explains where you are.
+
+Commit and push only on a `proto/*` branch, and never push to a shared branch. Hand-off goes
+through the `ready` step.

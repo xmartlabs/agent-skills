@@ -1,0 +1,11 @@
+{
+  "harness": "cursor",
+  "level": "advisory",
+  "advisoryReason": "Cursor hooks can deny shell, read and MCP calls, but Cursor has no hook that runs before a file edit and documents no file path for its edit tools, so edits cannot be checked; Cursor was not available to prove a denial.",
+  "limits": [
+    "Nothing blocks a change while working; the written rules, the scope check on the pull request and code-owner review protect the product."
+  ],
+  "skillsDir": ".agents/skills",
+  "files": [],
+  "mcpFile": ".cursor/mcp.json"
+}

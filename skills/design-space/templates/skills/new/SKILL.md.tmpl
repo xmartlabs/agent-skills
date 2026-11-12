@@ -1,0 +1,23 @@
+---
+name: design-space-new
+description: Start a new prototype in the design space. Use when the designer wants to begin a new flow or idea.
+disable-model-invocation: true
+---
+
+# Start a new prototype
+
+Help the designer start a prototype. Speak in terms of screens and states, never file paths.
+
+1. Ask what the prototype is about in one sentence, and which screens or states it needs
+   (for example: the list, an empty list, an error). Ask who uses it (the roles) if that is unclear.
+2. Pick a short name for it: lowercase words joined by dashes, like `checkout-redesign`. Confirm it
+   with the designer.
+3. Run `npm run design-space:new -- <name>` from the design space folder. It creates your own
+   working copy of the project and a starter prototype to build on. If it refuses the name or says
+   the prototype already exists, pick another name.
+4. Build the first version of the screens the designer described, using only real product
+   components and tokens, and cover loading, empty, error and success states. Follow the rules in
+   `AGENTS.md`.
+5. Tell the designer, in plain words, what screens now exist and which states each one has.
+
+Next step: run `design-space-preview` to look at it in the browser.

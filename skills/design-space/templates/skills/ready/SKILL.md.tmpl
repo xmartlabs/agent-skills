@@ -1,0 +1,31 @@
+---
+name: design-space-ready
+description: Hand the finished prototype to engineers by opening a pull request. Use when the designer says the prototype is done.
+disable-model-invocation: true
+---
+
+# Hand off to engineers
+
+1. Ask the designer to confirm the prototype is finished and every screen has its loading, empty,
+   error and success states. If a note is still pending, finish it first with `design-space-change`.
+2. If the prototype proposes a change to a product component, make sure the proposal is described
+   in the prototype and says which product component it replaces.
+3. Run `npm run design-space:ready -- <name>` from the design space folder. It marks the prototype
+   ready, saves the work, sends it, and opens a pull request.
+4. If it refuses, read the reason to the designer in plain words:
+   - "not on a proto branch": the work was not started with `design-space-new`.
+   - "cannot be handed off by a designer": a listed file is outside the prototype folders, or is
+     a test file. Each file shows the reason. Do not work around it; remove a file you added by
+     mistake, otherwise ask an engineer.
+   - "not ready yet": say which part of the prototype is missing and fix it.
+5. When it succeeds, share the link it prints. Running it again after more changes updates the
+   same pull request and prints "updated the existing pull request" with its link; no second one
+   is opened.
+6. Tell the designer the pull request now follows the team's usual review: whoever the team
+   names reviews it, and it is merged once its checks pass and GitHub allows it. If the check
+   fails, read its message in plain words and do not work around it; ask an engineer.
+
+Merging hands the prototype to engineering. It waits as "ready for dev" until engineers move it
+into the product, which they do when they are ready.
+
+Next step: run `design-space-new` for the next prototype, or `design-space-help` for guidance.

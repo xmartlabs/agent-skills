@@ -1,0 +1,39 @@
+---
+name: design-space-change
+description: Apply the designer's changes or pending notes from the preview to the prototype. Use when the designer wants to adjust screens, states or styles.
+disable-model-invocation: true
+---
+
+# Change the prototype
+
+Work from what the designer asks for, and from the notes they left on the preview.
+
+## Where the changes come from
+
+1. First try to read the pending notes from Agentation through its MCP connection.
+2. If there is no connection, say so plainly and ask the designer to use Agentation's copy button on
+   the preview and paste the copied notes here. Never invent notes.
+3. A note can also be a plain request typed in the chat.
+
+## Apply each note
+
+1. Match the note to the screen, state and element it points at.
+2. For a change to one component on one screen, change it where the prototype uses it. Do not
+   restyle or change the product component for everyone.
+3. For a color, spacing or text style, use an existing token. Use the closest existing token only
+   when it is clearly the same intent; otherwise ask the designer before inventing anything new.
+4. If a note asks for a brand decision, a change in how the product really behaves, or a component
+   the product does not have, do not do it here. Say so and offer to describe it as a proposal for
+   engineers.
+5. Do only what the note asks.
+
+## Verify, then resolve
+
+1. Check the result in the preview: every affected screen and state, in each theme and screen size
+   the prototype supports.
+2. Resolve a note only after that check passes, and only through Agentation's own resolve action.
+   Until then it stays pending. Never resolve a note you did not verify.
+3. Tell the designer which screens and states changed and which notes are resolved or still open.
+
+Next step: run `design-space-preview` to look again, or `design-space-ready` when the prototype is
+finished.

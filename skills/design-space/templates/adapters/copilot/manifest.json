@@ -1,0 +1,11 @@
+{
+  "harness": "copilot",
+  "level": "advisory",
+  "advisoryReason": "Copilot CLI preToolUse hooks can deny a call, but they load only from the repository root, so a guard hook would also bind every engineer's session, and the file path field of its edit tools is not documented; Copilot CLI was not available to prove a denial.",
+  "limits": [
+    "Nothing blocks a change while working; the written rules, the scope check on the pull request and code-owner review protect the product."
+  ],
+  "skillsDir": ".agents/skills",
+  "files": [],
+  "mcpFile": ".mcp.json"
+}

@@ -1,0 +1,17 @@
+{
+  "harness": "codex",
+  "level": "enforced",
+  "activation": "the project is trusted, the design-space hook is approved in /hooks, and Codex is started in the {{FOLDER}} folder",
+  "limits": [
+    "A hook that cannot start (for example when node or git is missing, or there is no POSIX shell) may let the call through; Codex does not document what a failing or timed-out hook does.",
+    "Until the project is trusted and the hook approved in /hooks, Codex skips the hook without blocking anything, and any change to the hook needs a new approval.",
+    "The hook never sees hosted tools such as WebSearch, nor write_stdin sending input to a command that is already running."
+  ],
+  "skillsDir": ".agents/skills",
+  "files": [
+    { "from": "hook.mjs", "to": "guard/adapters/codex/hook.mjs" },
+    { "from": "hooks.json.tmpl", "to": ".codex/hooks.json" }
+  ],
+  "mcpFile": ".codex/config.toml",
+  "mcpFormat": "codex-toml"
+}

@@ -1,0 +1,27 @@
+{
+  "folder": "design-space",
+  "designerOwned": ["flows/**", "library/**", "specimens/**"],
+  "engineerOwned": [
+    "guard/**",
+    "stubs/**",
+    "stubs.config.mjs",
+    "src/**",
+    "checks/**",
+    "scripts/**",
+    "audits/**",
+    "build/**",
+    "flow-template/**",
+    "vite.config.ts",
+    "index.html",
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".claude/**",
+    ".agents/**",
+    ".mcp.json",
+    ".codex/**",
+    ".cursor/**",
+    "opencode.json"
+  ],
+  "sharedBranches": ["main", "master", "development", "staging", "uat", "production"],
+  "scriptPrefix": "design-space:"
+}

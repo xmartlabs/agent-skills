@@ -1,0 +1,1168 @@
+/*
+ * The design space shell. Engineer-owned. Every rule sits under .ds-shell and targets the shell's
+ * own classes, so nothing reaches the product's components: specimens render inside .ds-canvas,
+ * which this file never styles. Colors, radius and fonts come from the --ds-* variables that
+ * theme-map.css maps to the product's tokens (with neutral fallbacks for light and dark).
+ */
+
+.ds-shell {
+  --ds-sidebar-width: 272px;
+  --ds-sidebar-bg: color-mix(in srgb, var(--ds-muted) 55%, var(--ds-bg));
+  --ds-hover: color-mix(in srgb, var(--ds-muted) 70%, var(--ds-bg));
+  --ds-active: var(--ds-muted);
+  --ds-tint: color-mix(in srgb, var(--ds-primary) 12%, var(--ds-bg));
+  --ds-ring: color-mix(in srgb, var(--ds-primary) 55%, transparent);
+  --ds-radius-sm: calc(var(--ds-radius) * 0.75);
+  box-sizing: border-box;
+}
+
+/*
+ * Text properties inherit, so they are set only on the shell's own blocks, never on an ancestor
+ * of .ds-canvas (.ds-layout, .ds-main, .ds-content, .ds-page, .ds-section, .ds-canvas-card): a
+ * specimen inherits the product's body text, as it does in an audit frame.
+ */
+.ds-shell :is(.ds-sidebar, .ds-mobilebar, .ds-page-head, .ds-home, .ds-token-section, .ds-summary, .ds-list, .ds-note, .ds-link-card, .ds-pill-row, .ds-section-title, .ds-table, .ds-empty, .ds-muted-text, .ds-input, .ds-section-lede, .ds-playground-controls, .ds-snippet, .ds-playground-error) {
+  font-family: var(--ds-font);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ds-fg);
+  -webkit-font-smoothing: antialiased;
+}
+
+.ds-shell :where(.ds-layout, .ds-sidebar, .ds-main, .ds-content, .ds-card, .ds-search, .ds-input) {
+  box-sizing: border-box;
+}
+
+/* Layout: the index on the left, the page on the right; each scrolls on its own. */
+.ds-shell.ds-layout {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-columns: var(--ds-sidebar-width) minmax(0, 1fr);
+  background: var(--ds-bg);
+}
+
+.ds-shell .ds-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--ds-sidebar-bg);
+  border-right: 1px solid var(--ds-border);
+}
+
+.ds-shell.ds-main {
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--ds-bg);
+}
+
+.ds-shell .ds-content {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 48px 56px 96px;
+}
+
+/* Sidebar header and brand. */
+.ds-shell .ds-sidebar-head {
+  display: flex;
+  align-items: center;
+  padding: 18px 16px 12px;
+}
+
+.ds-shell .ds-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--ds-fg);
+  text-decoration: none;
+}
+
+.ds-shell .ds-brand-mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-primary);
+  color: var(--ds-primary-fg);
+  font-family: var(--ds-font-heading);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.ds-shell .ds-brand-mark-lg {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--ds-radius);
+  font-size: 24px;
+}
+
+.ds-shell .ds-brand-name {
+  overflow: hidden;
+  font-family: var(--ds-font-heading);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Search. */
+.ds-shell .ds-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 4px 12px 12px;
+  color: var(--ds-muted-fg);
+}
+
+.ds-shell .ds-search > .ds-icon {
+  position: absolute;
+  left: 10px;
+  pointer-events: none;
+}
+
+.ds-shell .ds-search-input,
+.ds-shell .ds-input {
+  width: 100%;
+  height: 34px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-bg);
+  color: var(--ds-fg);
+  font-family: var(--ds-font);
+  font-size: 13px;
+  outline: none;
+  appearance: none;
+}
+
+.ds-shell .ds-search-input {
+  padding: 0 52px 0 32px;
+}
+
+.ds-shell .ds-input {
+  max-width: 360px;
+  margin-bottom: 24px;
+}
+
+.ds-shell .ds-search-input::placeholder,
+.ds-shell .ds-input::placeholder {
+  color: var(--ds-muted-fg);
+}
+
+.ds-shell .ds-search-input:focus-visible,
+.ds-shell .ds-input:focus-visible {
+  border-color: var(--ds-primary);
+  box-shadow: 0 0 0 3px var(--ds-ring);
+}
+
+.ds-shell .ds-kbd {
+  position: absolute;
+  right: 8px;
+  padding: 1px 5px;
+  border: 1px solid var(--ds-border);
+  border-radius: 4px;
+  background: var(--ds-sidebar-bg);
+  color: var(--ds-muted-fg);
+  font-family: var(--ds-font);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* Index. */
+.ds-shell .ds-nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 12px 16px;
+}
+
+.ds-shell .ds-nav-section + .ds-nav-section {
+  margin-top: 2px;
+}
+
+.ds-shell .ds-nav-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--ds-radius-sm);
+  background: transparent;
+  color: var(--ds-fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ds-shell .ds-nav-toggle > .ds-icon {
+  flex: none;
+  color: var(--ds-muted-fg);
+}
+
+.ds-shell .ds-nav-toggle-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.ds-shell .ds-nav-chevron {
+  display: inline-flex;
+  color: var(--ds-muted-fg);
+  transition: transform 120ms ease;
+}
+
+.ds-shell .ds-nav-chevron[data-open="true"] {
+  transform: rotate(90deg);
+}
+
+.ds-shell .ds-nav-list {
+  margin: 2px 0 8px 15px;
+  padding: 0 0 0 10px;
+  border-left: 1px solid var(--ds-border);
+  list-style: none;
+}
+
+.ds-shell .ds-nav-link {
+  display: block;
+  overflow: hidden;
+  padding: 5px 10px;
+  border-radius: var(--ds-radius-sm);
+  color: var(--ds-muted-fg);
+  font-size: 13.5px;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ds-shell .ds-nav-toggle:hover,
+.ds-shell .ds-nav-link:hover {
+  background: var(--ds-hover);
+  color: var(--ds-fg);
+}
+
+.ds-shell .ds-nav-link[aria-current="page"] {
+  background: var(--ds-active);
+  color: var(--ds-fg);
+  font-weight: 500;
+}
+
+.ds-shell .ds-nav-empty {
+  margin: 8px;
+  color: var(--ds-muted-fg);
+  font-size: 13px;
+}
+
+/* Sidebar footer: branch and theme switch. */
+.ds-shell .ds-sidebar-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 10px 12px 10px 16px;
+  border-top: 1px solid var(--ds-border);
+}
+
+.ds-shell .ds-branch {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ds-muted-fg);
+  font-family: var(--ds-font-mono);
+  font-size: 12px;
+}
+
+.ds-shell .ds-branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ds-shell .ds-foot-note {
+  flex: 1;
+  color: var(--ds-muted-fg);
+  font-size: 12px;
+}
+
+.ds-shell .ds-theme-switch {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  margin: 0 0 0 auto;
+  padding: 2px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-bg);
+  color: var(--ds-muted-fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ds-shell .ds-theme-option {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  border-radius: calc(var(--ds-radius-sm) - 2px);
+}
+
+.ds-shell .ds-theme-option[data-active="true"] {
+  background: var(--ds-muted);
+  color: var(--ds-fg);
+}
+
+/* Focus, for every interactive shell element. */
+.ds-shell :is(.ds-nav-toggle, .ds-nav-link, .ds-theme-switch, .ds-brand, .ds-link, .ds-link-row, .ds-icon-button):focus-visible {
+  outline: 2px solid var(--ds-ring);
+  outline-offset: 1px;
+}
+
+/* Narrow screens: the index opens over the page from the menu button. */
+.ds-shell .ds-mobilebar {
+  display: none;
+}
+
+.ds-shell .ds-icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-bg);
+  color: var(--ds-fg);
+  cursor: pointer;
+}
+
+@media (max-width: 860px) {
+  .ds-shell.ds-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .ds-shell .ds-mobilebar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--ds-border);
+    background: var(--ds-sidebar-bg);
+  }
+
+  .ds-shell .ds-sidebar {
+    position: fixed;
+    top: 55px;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    width: min(var(--ds-sidebar-width), 85vw);
+    box-shadow: 0 12px 32px rgb(0 0 0 / 0.18);
+    visibility: hidden;
+    transform: translateX(-100%);
+    transition: transform 160ms ease, visibility 160ms;
+  }
+
+  .ds-shell.ds-layout[data-nav-open="true"] .ds-sidebar {
+    visibility: visible;
+    transform: none;
+  }
+
+  .ds-shell .ds-sidebar-head {
+    display: none;
+  }
+
+  .ds-shell .ds-content {
+    padding: 28px 20px 64px;
+  }
+}
+
+/* Page building blocks. */
+.ds-shell .ds-page-head {
+  margin-bottom: 32px;
+}
+
+.ds-shell .ds-page-title,
+.ds-shell .ds-home-title {
+  margin: 0;
+  color: var(--ds-fg);
+  font-family: var(--ds-font-heading);
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.ds-shell .ds-lede {
+  max-width: 64ch;
+  margin: 8px 0 0;
+  color: var(--ds-muted-fg);
+  font-size: 15px;
+}
+
+.ds-shell .ds-section {
+  margin-top: 40px;
+}
+
+.ds-shell .ds-section-title {
+  margin: 0 0 14px;
+  color: var(--ds-fg);
+  font-family: var(--ds-font-heading);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ds-shell .ds-card {
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--ds-card);
+}
+
+.ds-shell .ds-canvas-card {
+  padding: 24px;
+  overflow-x: auto;
+}
+
+.ds-shell .ds-empty {
+  padding: 20px;
+}
+
+.ds-shell .ds-table-card {
+  overflow-x: auto;
+}
+
+.ds-shell .ds-muted-text,
+.ds-shell .ds-card-empty {
+  color: var(--ds-muted-fg);
+}
+
+.ds-shell .ds-link {
+  color: var(--ds-primary);
+  text-decoration: none;
+}
+
+.ds-shell .ds-link:hover {
+  text-decoration: underline;
+}
+
+.ds-shell .ds-code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--ds-muted);
+  font-family: var(--ds-font-mono);
+  font-size: 0.88em;
+}
+
+.ds-shell .ds-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.ds-shell .ds-table th {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--ds-border);
+  color: var(--ds-muted-fg);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.ds-shell .ds-table td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--ds-border);
+}
+
+.ds-shell .ds-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.ds-shell .ds-empty .ds-table {
+  margin-top: 12px;
+}
+
+/* Home. */
+.ds-shell .ds-home {
+  padding-top: 32px;
+}
+
+.ds-shell .ds-home-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 40px;
+  text-align: center;
+}
+
+.ds-shell .ds-home-head .ds-lede {
+  margin-top: 0;
+}
+
+.ds-shell .ds-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 16px;
+}
+
+.ds-shell .ds-home-card {
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+}
+
+.ds-shell .ds-icon-tile {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 14px;
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-tint);
+  color: var(--ds-primary);
+}
+
+.ds-shell .ds-card-title {
+  margin: 0 0 6px;
+  font-family: var(--ds-font-heading);
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ds-shell .ds-card-text {
+  margin: 0;
+  color: var(--ds-muted-fg);
+  font-size: 13.5px;
+}
+
+.ds-shell .ds-card-empty {
+  margin: auto 0 0;
+  padding-top: 16px;
+  font-size: 13px;
+}
+
+.ds-shell .ds-link-list {
+  margin: auto 0 0;
+  padding: 16px 0 0;
+  list-style: none;
+}
+
+.ds-shell .ds-link-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--ds-border);
+  color: var(--ds-fg);
+  font-size: 13.5px;
+  text-decoration: none;
+}
+
+.ds-shell .ds-link-row > .ds-icon {
+  color: var(--ds-muted-fg);
+  transition: transform 120ms ease;
+}
+
+.ds-shell .ds-link-row:hover {
+  color: var(--ds-primary);
+}
+
+.ds-shell .ds-link-row:hover > .ds-icon {
+  color: var(--ds-primary);
+  transform: translateX(2px);
+}
+
+/* Token pages: one per kind. No specimen renders here, so .ds-token-section carries the shell's text. */
+.ds-shell .ds-token-section + .ds-token-section {
+  margin-top: 36px;
+}
+
+.ds-shell .ds-token-section .ds-section-title {
+  font-size: 18px;
+}
+
+.ds-shell .ds-count {
+  margin-left: 4px;
+  color: var(--ds-muted-fg);
+  font-family: var(--ds-font);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.ds-shell :is(.ds-swatch-grid, .ds-font-grid, .ds-box-grid, .ds-scale-list) {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ds-shell .ds-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 10px;
+}
+
+.ds-shell .ds-swatch {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--ds-card);
+}
+
+.ds-shell .ds-swatch-color {
+  height: 64px;
+  border-bottom: 1px solid var(--ds-border);
+}
+
+.ds-shell .ds-swatch-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 10px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ds-shell :is(.ds-swatch-name, .ds-token-name) {
+  overflow: hidden;
+  color: var(--ds-fg);
+  font-family: var(--ds-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ds-shell :is(.ds-swatch-meta, .ds-token-value) {
+  overflow: hidden;
+  color: var(--ds-muted-fg);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ds-shell .ds-swatch-hex {
+  color: var(--ds-fg);
+  font-family: var(--ds-font-mono);
+  font-size: 11.5px;
+}
+
+.ds-shell :is(.ds-swatch-note, .ds-token-note) {
+  color: var(--ds-muted-fg);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.ds-shell .ds-token-value .ds-token-note {
+  margin-left: 6px;
+}
+
+.ds-shell .ds-font-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.ds-shell .ds-font-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px 18px;
+}
+
+.ds-shell .ds-font-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ds-shell .ds-font-family {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ds-shell .ds-font-head .ds-token-name {
+  color: var(--ds-muted-fg);
+  font-weight: 400;
+}
+
+.ds-shell .ds-font-sample {
+  overflow: hidden;
+  font-size: 26px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ds-shell .ds-scale-list {
+  padding: 6px 0;
+}
+
+.ds-shell .ds-scale-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr) minmax(80px, auto);
+  align-items: center;
+  gap: 20px;
+  padding: 10px 20px;
+}
+
+.ds-shell .ds-scale-row + .ds-scale-row {
+  border-top: 1px solid var(--ds-border);
+}
+
+.ds-shell .ds-scale-row .ds-token-name {
+  color: var(--ds-muted-fg);
+  font-weight: 400;
+}
+
+.ds-shell .ds-scale-sample {
+  overflow: hidden;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ds-shell .ds-scale-row .ds-token-value {
+  text-align: right;
+}
+
+.ds-shell .ds-bar-track {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ds-shell .ds-visual {
+  display: block;
+  box-sizing: border-box;
+}
+
+.ds-shell .ds-visual-spacing {
+  max-width: 100%;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--ds-primary);
+}
+
+.ds-shell .ds-box-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 14px;
+}
+
+.ds-shell .ds-box-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 0 12px;
+  overflow: hidden;
+}
+
+.ds-shell .ds-box-tile > :is(.ds-token-name, .ds-token-value, .ds-token-note) {
+  padding: 0 12px;
+}
+
+.ds-shell .ds-box-stage {
+  display: grid;
+  place-items: center;
+  height: 112px;
+  margin-bottom: 8px;
+  background: var(--ds-bg);
+  border-bottom: 1px solid var(--ds-border);
+}
+
+.ds-shell :is(.ds-visual-radius, .ds-visual-shadow) {
+  width: 64px;
+  height: 64px;
+  background: var(--ds-card);
+}
+
+.ds-shell .ds-visual-radius {
+  border: 2px solid var(--ds-primary);
+  background: var(--ds-tint);
+}
+
+.ds-shell .ds-empty.ds-card {
+  margin: 0;
+}
+
+/*
+ * Audit and prototype pages. No specimen renders here, so their blocks carry the shell's text.
+ * Status badges use fixed semantic hues mixed with the theme's own colors: the tint with the card,
+ * the text with the foreground, so each badge gets its dark variant from the active theme.
+ */
+.ds-shell .ds-back {
+  display: inline-block;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.ds-shell .ds-head-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 0;
+  color: var(--ds-muted-fg);
+  font-size: 13px;
+}
+
+.ds-shell .ds-summary {
+  margin: 0 0 16px;
+  color: var(--ds-muted-fg);
+}
+
+.ds-shell .ds-badge {
+  --ds-badge-hue: var(--ds-muted-fg);
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--ds-badge-hue) 28%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ds-badge-hue) 12%, var(--ds-card));
+  color: color-mix(in srgb, var(--ds-badge-hue) 62%, var(--ds-fg));
+  font-family: var(--ds-font);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.ds-shell .ds-badge::first-letter {
+  text-transform: uppercase;
+}
+
+.ds-shell .ds-badge-ok {
+  --ds-badge-hue: #16a34a;
+}
+
+.ds-shell .ds-badge-warn {
+  --ds-badge-hue: #d97706;
+}
+
+.ds-shell .ds-badge-bad {
+  --ds-badge-hue: #dc2626;
+}
+
+.ds-shell .ds-badge .ds-count {
+  margin: 0 0 0 6px;
+  font-size: 12px;
+}
+
+.ds-shell .ds-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ds-shell .ds-cell-main {
+  display: block;
+  font-weight: 500;
+}
+
+.ds-shell .ds-cell-sub {
+  display: block;
+  color: var(--ds-muted-fg);
+  font-family: var(--ds-font-mono);
+  font-size: 11.5px;
+}
+
+.ds-shell .ds-num {
+  font-family: var(--ds-font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ds-shell .ds-nowrap {
+  white-space: nowrap;
+}
+
+.ds-shell .ds-sample {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-sm);
+  font-family: var(--ds-font);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ds-shell .ds-cvd-swatch {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  margin-right: 6px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-sm);
+  vertical-align: middle;
+}
+
+.ds-shell .ds-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ds-shell .ds-list > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+}
+
+.ds-shell .ds-list > li + li {
+  border-top: 1px solid var(--ds-border);
+}
+
+.ds-shell .ds-note {
+  margin-bottom: 24px;
+  padding: 14px 16px;
+  border-color: color-mix(in srgb, #d97706 40%, var(--ds-border));
+  background: color-mix(in srgb, #d97706 8%, var(--ds-card));
+}
+
+.ds-shell .ds-note-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ds-shell .ds-note-text {
+  margin: 0;
+  color: var(--ds-muted-fg);
+}
+
+.ds-shell .ds-empty > p {
+  margin: 0;
+}
+
+.ds-shell .ds-empty > p + p {
+  margin-top: 6px;
+}
+
+.ds-shell .ds-link-grid {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ds-shell .ds-link-card {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px;
+  color: var(--ds-fg);
+  text-decoration: none;
+  transition: border-color 120ms ease;
+}
+
+.ds-shell .ds-link-card:hover {
+  border-color: var(--ds-primary);
+}
+
+.ds-shell .ds-link-card:focus-visible {
+  outline: 2px solid var(--ds-ring);
+  outline-offset: 2px;
+}
+
+.ds-shell .ds-link-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--ds-font-heading);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.ds-shell .ds-link-card-title > .ds-icon {
+  color: var(--ds-muted-fg);
+}
+
+.ds-shell .ds-link-card:hover .ds-link-card-title > .ds-icon {
+  color: var(--ds-primary);
+}
+
+.ds-shell .ds-section-title .ds-code {
+  font-size: 0.72em;
+  font-weight: 500;
+  vertical-align: 0.1em;
+}
+
+.ds-shell .ds-status-title {
+  text-transform: capitalize;
+}
+
+/*
+ * Component pages: the Playground. Its controls are the shell's own form elements. The preview
+ * frame and the stage are ancestors of .ds-canvas, so they set no text properties.
+ */
+.ds-shell .ds-section-lede {
+  margin: -8px 0 16px;
+  color: var(--ds-muted-fg);
+}
+
+.ds-shell .ds-playground {
+  display: grid;
+  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.ds-shell .ds-playground-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+}
+
+.ds-shell .ds-control-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.ds-shell .ds-playground-controls .ds-input {
+  max-width: none;
+  margin: 0;
+}
+
+.ds-shell .ds-select {
+  position: relative;
+  display: block;
+}
+
+.ds-shell .ds-select .ds-input {
+  padding-right: 32px;
+  cursor: pointer;
+}
+
+.ds-shell .ds-select-chevron {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  display: inline-flex;
+  color: var(--ds-muted-fg);
+  pointer-events: none;
+  transform: translateY(-50%) rotate(90deg);
+}
+
+.ds-shell .ds-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ds-shell .ds-checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--ds-primary);
+  cursor: pointer;
+}
+
+.ds-shell .ds-checkbox:focus-visible {
+  outline: 2px solid var(--ds-ring);
+  outline-offset: 2px;
+}
+
+.ds-shell .ds-playground-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.ds-shell .ds-playground-preview {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  padding: 32px;
+  overflow: auto;
+  border: 1px dashed var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--ds-bg);
+}
+
+.ds-shell .ds-playground-error {
+  margin: 0;
+  color: var(--ds-muted-fg);
+}
+
+.ds-shell .ds-snippet {
+  position: relative;
+  border-radius: var(--ds-radius);
+  background: var(--ds-muted);
+}
+
+.ds-shell .ds-snippet-code {
+  margin: 0;
+  padding: 16px 88px 16px 16px;
+  overflow-x: auto;
+  color: var(--ds-fg);
+  font-family: var(--ds-font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.ds-shell .ds-copy-button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  height: 28px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-bg);
+  color: var(--ds-fg);
+  font-family: var(--ds-font);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ds-shell .ds-copy-button:hover {
+  background: var(--ds-hover);
+}
+
+.ds-shell .ds-copy-button:focus-visible {
+  outline: 2px solid var(--ds-ring);
+  outline-offset: 1px;
+}
+
+@media (max-width: 860px) {
+  .ds-shell .ds-playground {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -1,0 +1,51 @@
+import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import react from "@vitejs/plugin-react";
+import { defineConfig, type Plugin, type UserConfig } from "vite";
+import stubs from "./stubs.config.mjs";
+import { catalogPlugin } from "./build/catalog-plugin.mjs";
+import { stubPlugin } from "./stubs/plugin.mjs";
+{{VITE_IMPORTS}}
+
+const appRoot = dirname(fileURLToPath(import.meta.url));
+
+// The repository root is the closest folder above this one with a package.json or a .design-space.json.
+function findRepoRoot(from: string): string {
+  for (let dir = dirname(from); ; dir = dirname(dir)) {
+    if (existsSync(join(dir, ".design-space.json")) || existsSync(join(dir, "package.json"))) return dir;
+    if (dirname(dir) === dir) return dirname(from);
+  }
+}
+const root = findRepoRoot(appRoot);
+
+// Serves and emits msw's worker script, so there is no copy of it to keep in sync with the msw version.
+function mswWorker(): Plugin {
+  const file = createRequire(join(root, "package.json")).resolve("msw/mockServiceWorker.js");
+  return {
+    name: "design-space:msw-worker",
+    configureServer(server) {
+      server.middlewares.use("/mockServiceWorker.js", (_request, response) => {
+        response.setHeader("Content-Type", "text/javascript");
+        response.end(readFileSync(file));
+      });
+    },
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: "mockServiceWorker.js", source: readFileSync(file) });
+    },
+  };
+}
+
+{{VITE_FUNCTIONS}}
+export default defineConfig(({{VITE_CONFIG_PARAMS}}): UserConfig => ({
+  root: appRoot,
+  base: "./",
+  publicDir: false,
+  plugins: [stubPlugin(stubs, { root, appRoot }), react(), mswWorker(), catalogPlugin({ root, appRoot }){{VITE_PLUGINS}}],
+{{VITE_CSS}}
+{{VITE_DEFINE}}
+  resolve: { {{VITE_ALIAS}}dedupe: ["react", "react-dom"] },
+  server: { host: "127.0.0.1", port: 4100, strictPort: true, fs: { allow: [root] } },
+  build: { outDir: "dist", emptyOutDir: true },
+}));
