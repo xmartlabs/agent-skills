@@ -179,10 +179,23 @@ Write the final body to {out} with the Write tool, then answer with the single w
 fn with_cross_repo_note(note: &str, prompt: String) -> String {
     if note.is_empty() {
         prompt
+    } else if note.starts_with(PUBLIC_NOTE_START) {
+        // On a public repository the composer reads no other repository, so
+        // the instruction to read one goes.
+        format!(
+            "{note}\n\n{}",
+            prompt.replace(CROSS_REPO_READ, NO_CROSS_REPO_READ)
+        )
     } else {
         format!("{note}\n\n{prompt}")
     }
 }
+
+/// How [`crate::context::public_repo_note`] starts.
+const PUBLIC_NOTE_START: &str = "PUBLIC REPOSITORY:";
+
+/// [`CROSS_REPO_READ`]'s place on a public repository.
+const NO_CROSS_REPO_READ: &str = "Read no other repository, as the note above says: a claim that depends on one is reported as unchecked.";
 
 /// The compose prompt for [`PostMode::Edit`]: the full body, written to
 /// replace the operator's own latest review, which step 1 must not report on.
@@ -965,6 +978,23 @@ mod tests {
         ] {
             assert_eq!(answer_as_body(not_a_body), None, "{not_a_body:?}");
         }
+    }
+
+    #[test]
+    fn on_a_public_repository_the_composer_is_not_told_to_read_other_repos() {
+        let p = compose_prompt(
+            "7",
+            "acme/widgets",
+            "abc",
+            Path::new("r.md"),
+            Path::new("o.md"),
+        );
+        assert!(p.contains(CROSS_REPO_READ));
+        let note = crate::context::public_repo_note("acme/widgets", "");
+        let out = with_cross_repo_note(&note, p);
+        assert!(out.starts_with("PUBLIC REPOSITORY: acme/widgets"));
+        assert!(!out.contains(CROSS_REPO_READ), "{out}");
+        assert!(out.contains(NO_CROSS_REPO_READ));
     }
 
     #[test]

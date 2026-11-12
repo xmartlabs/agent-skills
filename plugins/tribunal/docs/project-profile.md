@@ -97,6 +97,16 @@ fields it reads), and every field is optional except that `ref` goes with
   docs points at files the engine already wrote, and each anchor repo is
   shallow-cloned for them to read, which adds its clone time to the run. A read
   that fails is a warning naming the token, and the review goes on without it.
+- On a public repository, or one whose visibility `gh api repos/<repo>` does
+  not answer, the review is posted where anyone reads it. There the engine
+  reads no other repository that it cannot confirm is public: it drops those
+  `conventionSources` and `crossRepoAnchors` entries before anything reads
+  them, logs which repos it dropped, and tells every reviewer and the composer
+  to read no other repository. A sibling that is itself public is still read.
+  The rule binds the engine's own reads. A reviewer runs with the operator's
+  `gh` login, so on a public repository give the run a login that reaches no
+  private repository you would not publish (in GitHub Actions the default
+  `GITHUB_TOKEN` reads only the repository it runs in).
 - `root` limits the source to a folder, written with a trailing `/` such as
   `docs/`. Paths stay relative to the repo root.
 - `ref`, with `repo`, is a git ref of the docs repo, or `submodule:<path>`:

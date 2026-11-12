@@ -127,6 +127,13 @@ pub struct Prepared {
     pub profile_source: Value,
     pub project_rules_sha256: Value,
     pub project_rules_source: Value,
+    /// Whether the reviewed repository is private; `None` when unknown, which
+    /// counts as public. Recorded as `repoPrivate`.
+    pub repo_private: Option<bool>,
+    /// Other repositories the profile names whose sources and anchors were
+    /// not read because the reviewed one is public. Recorded as
+    /// `foreignReposDropped`.
+    pub foreign_repos_dropped: Vec<String>,
     pub logs: Vec<String>,
 }
 
@@ -231,7 +238,24 @@ pub async fn prepare(rt: &Runtime, args: &RunArgs) -> Result<Prepared, String> {
         logs.push(format!("profile warning: {}", to_js_string(Some(w))));
     }
     let repo = to_js_string(loaded.get("repo"));
-    let profile = loaded.get("profile").cloned().unwrap_or(Value::Null);
+    let mut profile = loaded.get("profile").cloned().unwrap_or(Value::Null);
+    // A public repository's review is posted where anyone reads it, so nothing
+    // from another private repository may reach a prompt (`foreign_reads`).
+    let repo_private = repo_private(&rt.tools, &repo).await;
+    let foreign_repos_dropped = if repo_private == Some(true) {
+        Vec::new()
+    } else {
+        let dropped = drop_private_foreign_sources(&rt.tools, &mut profile, &repo).await;
+        if !dropped.is_empty() {
+            std::fs::write(&profile_file, persist_profile(&profile))
+                .map_err(|e| format!("cannot write {profile_file}: {e}"))?;
+            logs.push(format!(
+                "{repo} is public (or its visibility could not be read): the profile's sources and anchors in {} are not read, so nothing from a private repository reaches the review",
+                dropped.join(", ")
+            ));
+        }
+        dropped
+    };
     let reviewer = to_js_string(js::get(&profile, "reviewer"));
 
     let methodology = methodology_path(&repo, &args.pr);
@@ -348,7 +372,10 @@ pub async fn prepare(rt: &Runtime, args: &RunArgs) -> Result<Prepared, String> {
             .iter()
             .map(|w| format!("conventions warning: {w}")),
     );
-    let cross_repo_note = anchor_checkouts::note(&cloned.checkouts);
+    let mut cross_repo_note = anchor_checkouts::note(&cloned.checkouts);
+    if repo_private != Some(true) {
+        cross_repo_note = public_repo_note(&repo, &cross_repo_note);
+    }
     let conventions =
         conventions_channel(&conventions_args, &profile)?.with_anchor_note(&cross_repo_note);
     let text = |v: Option<&Value>| v.filter(|x| x.is_string()).cloned().unwrap_or(Value::Null);
@@ -363,8 +390,100 @@ pub async fn prepare(rt: &Runtime, args: &RunArgs) -> Result<Prepared, String> {
         profile_source: text(loaded.get("source")),
         project_rules_sha256: text(rules.and_then(|r| js::get(r, "sha256"))),
         project_rules_source: text(rules.and_then(|r| js::get(r, "source"))),
+        repo_private,
+        foreign_repos_dropped,
         logs,
     })
+}
+
+/// Whether `repo` is private, from `gh api repos/<repo>`: `None` when that
+/// could not be read, which every caller treats as public.
+pub async fn repo_private(tools: &Tools, repo: &str) -> Option<bool> {
+    if repo.is_empty() {
+        return None;
+    }
+    let out = tools
+        .gh(&["api", &format!("repos/{repo}"), "--jq", ".private"], None)
+        .await
+        .ok()?;
+    if !out.ok() {
+        return None;
+    }
+    match out.stdout.trim() {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
+}
+
+/// The other repositories `conventionSources` and `crossRepoAnchors` name.
+#[must_use]
+pub fn foreign_repos(profile: &Value, repo: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for key in ["conventionSources", "crossRepoAnchors"] {
+        for entry in js::get(profile, key)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(r) = js::get(entry, "repo").and_then(Value::as_str) {
+                if !r.eq_ignore_ascii_case(repo) && !out.iter().any(|o| o.eq_ignore_ascii_case(r)) {
+                    out.push(r.to_owned());
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Removes from `profile` every `conventionSources` and `crossRepoAnchors`
+/// entry in a repository other than `repo` that is not confirmed public, and
+/// returns those repositories. Run when `repo` itself is public.
+pub async fn drop_private_foreign_sources(
+    tools: &Tools,
+    profile: &mut Value,
+    repo: &str,
+) -> Vec<String> {
+    let mut dropped = Vec::new();
+    for r in foreign_repos(profile, repo) {
+        if repo_private(tools, &r).await != Some(false) {
+            dropped.push(r);
+        }
+    }
+    if dropped.is_empty() {
+        return dropped;
+    }
+    for key in ["conventionSources", "crossRepoAnchors"] {
+        if let Some(Value::Array(entries)) = profile.get_mut(key) {
+            entries.retain(|e| {
+                js::get(e, "repo")
+                    .and_then(Value::as_str)
+                    .is_none_or(|r| !dropped.iter().any(|d| d.eq_ignore_ascii_case(r)))
+            });
+        }
+    }
+    dropped
+}
+
+fn persist_profile(profile: &Value) -> String {
+    serde_json::to_string_pretty(profile).unwrap_or_default() + "\n"
+}
+
+/// The note every reviewer and the composer read on a public repository, in
+/// place of (or ahead of) the checkout note: no other repository is read.
+#[must_use]
+pub fn public_repo_note(repo: &str, checkouts_note: &str) -> String {
+    let note = format!(
+        "PUBLIC REPOSITORY: {repo} is public (or its visibility could not be read), and this review is posted where anyone can read it. \
+         Read no other repository: no `gh api repos/<other>/...`, no `gh search code` outside {repo}, no clone, \
+         except a checkout listed below. Code you read can end up quoted in a public review. \
+         A claim that depends on another repository stays unchecked, and you say so."
+    );
+    if checkouts_note.is_empty() {
+        note
+    } else {
+        format!("{note}\n{checkouts_note}")
+    }
 }
 
 /// `process.platform` for this machine.
