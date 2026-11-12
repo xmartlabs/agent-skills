@@ -254,6 +254,18 @@ the training examples, so read the gain as measured on one team's code, not as
 a general result. The prompt is `RANK_PROMPT` in
 `rust/crates/tribunal-pipeline/src/questions.rs`.
 
+The search's list of defect classes to rank 4-5 has since been replaced by a
+rubric about consequence: 5 when a traced path leads to a wrong outcome a user,
+the stored data or another system would see, 4 when that path depends on a
+condition the ranking could not confirm. The method and refutation paragraphs
+are the search's. The rubric was tested offline, re-ranking with the engine's
+own dispatch the findings of 52 pull requests that later had to be fixed and
+52 matched ones that did not, two draws each. With blocking at worth 5, the
+defect that had to be fixed blocked in more draws on 6 of those pull requests
+and in fewer on none (21 of 52 per draw before, 24 and 25 after), and the clean
+pull requests that block stayed level (11 and 12 before, 11 and 11 after). The
+AUC the search optimised was not measured again.
+
 The method follows published work on evolving prompts, such as EvoPrompt and
 Promptbreeder (2023) and the reflective mutation of GEPA (2025). What is
 particular here is the task, ranking code-review findings against labels from
