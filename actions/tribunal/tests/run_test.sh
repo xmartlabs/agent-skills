@@ -21,6 +21,7 @@ sub="$1"; shift
   echo "OPENAI_KEY=${OPENAI_API_KEY-<unset>}"; echo "CODEX_KEY=${CODEX_API_KEY-<unset>}";
   echo "ACTION_REF=${TRIBUNAL_ACTION_REF-<unset>}"; } > "$FX/tribunal-$sub.env"
 if [ "$sub" = review ]; then
+  echo "REPORT-BODY-ON-STDOUT"
   out=""; while [ $# -gt 0 ]; do [ "$1" = --out ] && out="$2"; shift; done
   if [ -f "$FX/run.json" ]; then cp "$FX/run.json" "$out"; else printf '{"report":"x","metrics":{"headSha":"%s"}}' "$HEAD_SHA" > "$out"; fi
 fi
@@ -124,11 +125,12 @@ new_job() {
   rm -rf "$TMP/runner" "${FX:?}"/*; mkdir -p "$TMP/runner"
   export RUNNER_TEMP="$TMP/runner" GITHUB_OUTPUT="$TMP/runner/out" GITHUB_PATH="$TMP/runner/path"
   export GITHUB_EVENT_PATH="$TMP/runner/event.json"
-  python3 - "$GITHUB_EVENT_PATH" "$1" "${2:-}" "${3:-acme/web-app}" "${DRAFT:-false}" <<'PY'
+  python3 - "$GITHUB_EVENT_PATH" "$1" "${2:-}" "${3:-acme/web-app}" "${DRAFT:-false}" "${PRIVATE-true}" <<'PY'
 import json, sys
-path, action, label, head, draft = sys.argv[1:]
+path, action, label, head, draft, private = sys.argv[1:]
 e = {"action": action, "pull_request": {"number": 12, "base": {"ref": "main"}, "draft": draft == "true",
      "head": {"sha": "aaaa1111", "repo": {"full_name": head}}}}
+if private: e["repository"] = {"private": private == "true"}
 if label: e["label"] = {"name": label}
 json.dump(e, open(path, "w"))
 PY
@@ -536,6 +538,10 @@ printf '%s' "$(job)/selected-plugin" > "$(job)/plugin-path"
 review
 assert_ok "review uses the selected plugin root" grep -qx "ROOT=$(job)/selected-plugin" "$FX/tribunal-review.env"
 rm -f "$FX/tribunal-review.env"
+# A private repository keeps the review's output in the job log; a public one, or an event that does not
+# say, keeps it in the file only and marks the gate's output public.
+CLAUDE_CODE_OAUTH_TOKEN=oauth-secret bash "$RUN" review > "$TMP/console.txt" 2>&1
+assert_ok "a private repository's job log shows the review output" grep -qF REPORT-BODY-ON-STDOUT "$TMP/console.txt"
 # The engine records the action's ref (actionRef), read from where GitHub checked the action out.
 GITHUB_ACTION_PATH=/runner/_work/_actions/xmartlabs/agent-skills/v1.4.3/actions/tribunal review
 assert_ok "action ref reaches the engine" grep -qx 'ACTION_REF=xmartlabs/agent-skills@v1.4.3' "$FX/tribunal-review.env"
@@ -545,5 +551,15 @@ GITHUB_ACTION_PATH=/runner/_work/repo/repo/./actions/tribunal review
 assert_ok "a local action records no ref" grep -qx 'ACTION_REF=' "$FX/tribunal-review.env"
 INPUT_LABEL=tribunal bash "$RUN" cleanup >/dev/null 2>&1
 assert_fail "cleanup removes Codex authentication" test -f "$(job)/home/.codex/auth.json"
+
+PRIVATE=true new_job labeled tribunal; gate >/dev/null 2>&1
+assert_ok "the gate marks a private repository" grep -qx 'public=false' "$GITHUB_OUTPUT"
+for vis in false ""; do
+  PRIVATE="$vis" new_job labeled tribunal; touch "$FX/profile-head"; gate >/dev/null 2>&1; prepare
+  assert_ok "the gate marks a repository with private=${vis:-<missing>} public" grep -qx 'public=true' "$GITHUB_OUTPUT"
+  CLAUDE_CODE_OAUTH_TOKEN=oauth-secret bash "$RUN" review > "$TMP/console.txt" 2>&1
+  assert_fail "a public repository's job log hides the review output" grep -qF REPORT-BODY-ON-STDOUT "$TMP/console.txt"
+  assert_ok "the review output is still kept in the file" grep -qF REPORT-BODY-ON-STDOUT "$(job)/review.log"
+done
 
 finish_tests
