@@ -25,6 +25,13 @@ own commit.
 
 ## Unreleased
 
+Nothing yet.
+
+## v1.4.4 — bundles Tribunal 115.5.3
+
+Tag `tribunal-action-v1.4.4` (and `tribunal-action-v1`) at `f41ccd0`. Bundled Tribunal plugin
+`115.5.3` with binary `tribunal-rust-v115.5.3`.
+
 - On a public repository, or when the event does not say the repository is private, the action
   publishes nothing the review produced beyond the posted review: no artifacts (run record, report,
   logs, transcripts or incremental baseline, whatever `upload-run` and `upload-transcripts` say), no
