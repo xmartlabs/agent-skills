@@ -1284,6 +1284,27 @@ anyway. Rows written by 115.3.0 counted only the files in the run's scope, so
 an incremental row from that version can show `filesOpened: 0` and
 `prFilesNotOpened: []` for lenses that did read PR files.
 
+## Fields added 2026-11-12 (how the run was configured, and what questions and repairs did) (Rust rows only)
+
+A run in CI and a run on a laptop could not be told apart from their rows:
+the effort the dispatches ran at came from the operator's settings, a flag or
+the CLI's own default, and none was recorded, nor was the CLI's version. On
+2026-11-11 the effort of CI runs had to be inferred from their cost. The
+scenario questions were counted but not kept, so a question set could not be
+checked against a defect it missed without rerunning the generator. None of
+these fields changes what is reviewed or the verdict.
+
+| Field | Meaning |
+|---|---|
+| `effort` | The effort every non-mechanical dispatch ran at, as passed to the CLI, or `null` when the run set none and the CLI's default applied. |
+| `effortSource` | Where `effort` came from: `flag` (`--effort`), `operator-settings` (`effortLevel` in the operator's `~/.claude/settings.json`) or `cli-default` (neither; the CLI chose). |
+| `claudeCliVersion` | The first line `claude --version` printed before the run, such as `2.1.316 (Claude Code)`, or `null` when it could not be read. The CLI's defaults change between versions, and the GitHub Action installs it unpinned. |
+| `actionRef` | The GitHub Action that ran the review, as `<owner>/<repo>@<ref>`, read from the path GitHub checked the action out to (`TRIBUNAL_ACTION_REF`, set by `actions/tribunal/run.sh`). `null` outside the Action and when the action runs from the repository itself. |
+| `verifiedByRepair` | What the repairs did before the evidence gate (`anchor_repair`): `{anchoredFromEvidence, linesNeeded, linesCompleted}`, the findings given an anchor from their located evidence, the anchors that had no valid line, and how many of those got one from their quote. |
+| `lensCost[].filesRead` | The PR files behind `filesOpened`, as a list; `null` when the lens left no transcript. |
+| `scenarioQuestions.questions[].line`, `.text` | The line the generator anchored the question to (or `null`) and the question itself, its first 300 characters. |
+| `scenarioQuestions.questions[].filesRead` | The PR files the dispatch that answered the question named in a tool call, by the same rule as `lensCost[].filesOpened`. Absent when the question was not asked or its dispatch left no transcript. |
+
 ## The posted-comment footer reads this row, it does not extend it
 
 Every posted GitHub comment ends with one `<sub>...</sub>` metadata line —

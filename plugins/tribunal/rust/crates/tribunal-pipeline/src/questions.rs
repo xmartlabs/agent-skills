@@ -54,6 +54,14 @@ Write each scenario as one question with the concrete trigger and the observable
 /// What an answering dispatch gets after its lens's own prompt.
 pub const ANSWER_PARAGRAPH: &str = "\n\nOne more question for this pass. Answer it from the code, reading whatever you need. If the answer shows a defect, report it as a finding like any other; if it does not, report nothing for it.\nQuestion: ";
 
+/// How much of a question's text the metrics row keeps.
+pub const QUESTION_TEXT_CHARS: usize = 300;
+
+/// The first `max` characters of `s`, on a character boundary.
+fn clip(s: &str, max: usize) -> String {
+    s.chars().take(max).collect()
+}
+
 /// One scenario question, as the generator wrote it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Question {
@@ -646,6 +654,7 @@ pub async fn question_stage<A: Agent>(agent: &A, input: &QuestionInputs<'_>) -> 
         .enumerate()
         .map(|(i, q)| {
             json!({"position": i + 1, "sample": q.sample, "pass": q.pass, "file": q.file,
+                   "line": q.line, "text": clip(&q.text, QUESTION_TEXT_CHARS),
                    "routed": false, "answered": false, "findings": 0, "droppedOutOfDiff": 0})
         })
         .collect();
@@ -684,6 +693,12 @@ pub async fn question_stage<A: Agent>(agent: &A, input: &QuestionInputs<'_>) -> 
     let answer_concurrency = setup.concurrency.max(1) * ANSWER_CONCURRENCY_FACTOR;
     let results = run_all(agent, answer_concurrency, asks).await;
     for ((label, res), qi) in labels.into_iter().zip(results).zip(routed) {
+        if let Some(path) = res.transcript.as_deref() {
+            out.records[qi]["filesRead"] = json!(crate::coverage_report::files_opened(
+                &crate::coverage_report::calls_in_transcript(path),
+                input.pr_files,
+            ));
+        }
         let q = &out.questions[qi];
         if let Some(Value::Array(findings)) = answer_of(&res)
             .as_ref()
@@ -766,6 +781,19 @@ fn bump(record: &mut Value, key: &str) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_question_text_is_clipped_on_a_character_boundary() {
+        assert_eq!(super::clip("¿Qué pasa?", 4), "¿Qué");
+        assert_eq!(super::clip("short", super::QUESTION_TEXT_CHARS), "short");
+        let long = "x".repeat(super::QUESTION_TEXT_CHARS + 50);
+        assert_eq!(
+            super::clip(&long, super::QUESTION_TEXT_CHARS)
+                .chars()
+                .count(),
+            super::QUESTION_TEXT_CHARS
+        );
+    }
 
     #[test]
     fn sync_results_carries_the_ranking_marks_to_the_full_list() {

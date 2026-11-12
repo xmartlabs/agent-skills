@@ -171,6 +171,7 @@ async fn questions_are_generated_merged_routed_and_answered_one_per_dispatch() {
     assert_eq!(
         records[0],
         json!({"position": 1, "sample": 1, "pass": null, "file": "src/jobs/sync.ts",
+               "line": 40, "text": "If the provider returns 503 for an hour, does the job ever retry?",
                "routed": true, "answered": true, "findings": 1, "droppedOutOfDiff": 0})
     );
     assert_eq!(records[1]["pass"], json!(2));

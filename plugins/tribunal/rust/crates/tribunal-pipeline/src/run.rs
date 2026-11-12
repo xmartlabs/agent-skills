@@ -168,6 +168,10 @@ pub struct DispatchPolicy {
     pub prior_verify: usize,
     /// See [`ReviewerSetup::effort`].
     pub effort: Option<String>,
+    /// Where `effort` came from: `flag` (`--effort`) or `operator-settings`
+    /// (`effortLevel` in the operator's settings). `None` when it was not set
+    /// here, and then the CLI's own default applies.
+    pub effort_source: Option<String>,
     /// The cost breaker's output-token ceiling.
     pub output_ceiling: f64,
 }
@@ -181,6 +185,7 @@ impl Default for DispatchPolicy {
             max_agents: MAX_AGENTS_DEFAULT,
             prior_verify: PRIOR_VERIFY_CEILING,
             effort: None,
+            effort_source: None,
             output_ceiling: OUTPUT_CEILING_DEFAULT,
         }
     }
@@ -579,6 +584,9 @@ pub struct VerifyOutcome {
     /// What the scenario-question ranking did after the panel; `None` when
     /// it did not run.
     pub question_rank: Option<Value>,
+    /// What the verifiedBy repairs did before the evidence gate, for the row's
+    /// `verifiedByRepair`.
+    pub anchor_repair: Value,
 }
 
 fn output_of(results: &[&DispatchResult]) -> f64 {
@@ -990,7 +998,7 @@ pub async fn verify_phase<A: Agent>(
     panel
         .verified
         .extend(decided_without_panel.into_iter().map(Some));
-    crate::anchor_repair::repair_anchors(
+    let anchor_repair = crate::anchor_repair::repair_anchors(
         &rt.tools,
         js::get(&review.context.pr_context, "headRefOid").and_then(Value::as_str),
         &review.prepared.repo,
@@ -1027,6 +1035,7 @@ pub async fn verify_phase<A: Agent>(
         external_cwd: external_cwd.map(|(p, _)| p),
         exposure,
         question_rank: None,
+        anchor_repair,
     })
 }
 

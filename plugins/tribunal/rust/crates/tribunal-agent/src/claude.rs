@@ -132,6 +132,23 @@ impl ClaudeAgent {
         agent
     }
 
+    /// The first line `claude --version` prints, such as `2.1.316 (Claude
+    /// Code)`, for the metrics row. `None` when the CLI cannot be started or
+    /// prints nothing; a run does not depend on it.
+    #[must_use]
+    pub fn cli_version(&self) -> Option<String> {
+        let out = std::process::Command::new(&self.bin)
+            .arg("--version")
+            .env_clear()
+            .envs(self.env(std::env::vars_os()))
+            .stdin(Stdio::null())
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        let line = text.lines().next()?.trim();
+        (out.status.success() && !line.is_empty()).then(|| line.to_owned())
+    }
+
     /// On Windows, points `bin` at what an npm or pnpm `claude.cmd` starts,
     /// since that launcher cannot carry the CLI's arguments (see
     /// [`crate::launch`]). Elsewhere it changes nothing. An error says why
@@ -442,6 +459,32 @@ fn tail(s: &str) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[cfg(unix)]
+    #[test]
+    fn cli_version_is_the_first_line_the_cli_prints() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("tribunal-cli-version-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = |name: &str, body: &str| {
+            let p = dir.join(name);
+            std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+            p
+        };
+        let ok = script(
+            "claude-ok",
+            "echo '2.1.316 (Claude Code)'; echo second line",
+        );
+        let failing = script("claude-fail", "echo 'oops'; exit 1");
+        assert_eq!(
+            ClaudeAgent::new(&ok).cli_version().as_deref(),
+            Some("2.1.316 (Claude Code)")
+        );
+        assert_eq!(ClaudeAgent::new(&failing).cli_version(), None);
+        assert_eq!(ClaudeAgent::new(dir.join("missing")).cli_version(), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn req() -> DispatchRequest {
         let mut r = DispatchRequest::new("lens:1", "review this", "/tmp");

@@ -92,7 +92,10 @@ fn parse_panel(argv: &[String]) -> Result<PanelCli, (String, bool)> {
             "--findings" => findings_path = value()?,
             "--thread-before" => args.thread_before = value()?,
             "--model" => args.review_model = value()?,
-            "--effort" => policy.effort = Some(value()?),
+            "--effort" => {
+                policy.effort = Some(value()?);
+                policy.effort_source = Some("flag".into());
+            }
             "--out" => out = Some(value()?),
             "--codex" => args.codex = Some(true),
             "--no-codex" => args.codex = Some(false),
@@ -131,6 +134,7 @@ fn parse_panel(argv: &[String]) -> Result<PanelCli, (String, bool)> {
         .map_err(|e| (format!("{findings_path}: {e}"), false))?;
     if policy.effort.is_none() {
         policy.effort = operator_effort();
+        policy.effort_source = policy.effort.as_ref().map(|_| "operator-settings".into());
     }
     Ok(PanelCli {
         args,
@@ -310,7 +314,10 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
                     policy.output_ceiling = n.floor();
                 }
             }
-            "--effort" => policy.effort = Some(value(&mut it, a)?),
+            "--effort" => {
+                policy.effort = Some(value(&mut it, a)?);
+                policy.effort_source = Some("flag".into());
+            }
             "--out" => out = Some(value(&mut it, a)?),
             "--full" => args.full = true,
             "--bot-comments" => args.bot_comments = true,
@@ -343,6 +350,7 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
     args.no_refuters_by_flag = refuters == Some(false);
     if policy.effort.is_none() {
         policy.effort = operator_effort();
+        policy.effort_source = policy.effort.as_ref().map(|_| "operator-settings".into());
     }
     Ok(Cli { args, policy, out })
 }
@@ -1190,7 +1198,7 @@ async fn run() -> ExitCode {
         }
         _ => return usage(),
     }
-    let cli = match parse(&argv[1..]) {
+    let mut cli = match parse(&argv[1..]) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("tribunal: {e}");
@@ -1202,6 +1210,7 @@ async fn run() -> ExitCode {
         Ok(a) => a,
         Err(code) => return code,
     };
+    cli.args.claude_cli_version = agent.cli_version();
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
@@ -1266,6 +1275,17 @@ mod tests {
         assert!(!is_utc_instant("2026-10-14T18:02:11.Z"));
         assert!(!is_utc_instant("2026-10-14 18:02:11Z"));
         assert!(!is_utc_instant("2026-10-14T18:02:11+00:00"));
+    }
+
+    #[test]
+    fn an_effort_flag_is_recorded_as_its_source() {
+        let a: Vec<String> = ["--pr", "12", "--effort", "high"]
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect();
+        let parsed = parse(&a).unwrap();
+        assert_eq!(parsed.policy.effort.as_deref(), Some("high"));
+        assert_eq!(parsed.policy.effort_source.as_deref(), Some("flag"));
     }
 
     #[test]

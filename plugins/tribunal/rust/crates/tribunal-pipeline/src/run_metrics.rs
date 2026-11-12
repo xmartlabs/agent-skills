@@ -396,6 +396,7 @@ pub fn lens_cost(
                 .and_then(Value::as_str)
                 .unwrap_or("unknown");
             let output: u64 = d.model_usage().values().map(|u| u.output_tokens).sum();
+            let opened = opened_by(d, pr_files);
             json!({
                 "lens": lens,
                 "why": if forced.contains(lens) { "forced" } else { "default" },
@@ -404,11 +405,35 @@ pub fn lens_cost(
                 "toolUses": d.tool_calls.len(),
                 "turns": d.output.as_ref().map_or(0, |o| o.num_turns),
                 "outputTokens": output,
-                "filesOpened": opened_by(d, pr_files).map(|o| o.len()),
+                "filesOpened": opened.as_ref().map(Vec::len),
+                "filesRead": opened,
             })
         })
         .collect();
     Value::Array(rows)
+}
+
+/// `effort` (null when the run set none and the CLI's default applied),
+/// `effortSource` (`flag`, `operator-settings` or `cli-default`),
+/// `claudeCliVersion`, and `actionRef`, the GitHub Action ref that ran the
+/// review (`TRIBUNAL_ACTION_REF`, which the Action sets), null elsewhere.
+#[must_use]
+pub fn effort_metrics(
+    policy: &DispatchPolicy,
+    args: &RunArgs,
+    action_ref: Option<String>,
+) -> [(&'static str, Value); 4] {
+    let source = match (&policy.effort, &policy.effort_source) {
+        (None, _) => "cli-default".to_owned(),
+        (Some(_), Some(s)) => s.clone(),
+        (Some(_), None) => "unknown".to_owned(),
+    };
+    [
+        ("effort", json!(policy.effort)),
+        ("effortSource", json!(source)),
+        ("claudeCliVersion", json!(args.claude_cli_version)),
+        ("actionRef", json!(action_ref.filter(|r| !r.is_empty()))),
+    ]
 }
 
 /// The PR files a lens's saved transcript names in a tool call, or `None`
@@ -744,6 +769,10 @@ pub fn persist_phase(
         m
     });
     metrics["noRefuters"] = json!(args.no_refuters);
+    for (k, v) in effort_metrics(policy, args, std::env::var("TRIBUNAL_ACTION_REF").ok()) {
+        metrics[k] = v;
+    }
+    metrics["verifiedByRepair"] = verify.anchor_repair.clone();
     metrics["blockMinWorth"] = json!(args.block_min_worth);
     metrics["lensNotReachedKinds"] = kind_counts(&review.candidates.lens_gaps);
     metrics["unreadRiskFiles"] = json!(synthesis.unread_risk_files);
@@ -1072,12 +1101,51 @@ mod tests {
             rows,
             json!([
                 {"lens": "migration", "why": "forced", "overBudget": false, "costUsd": 0.3,
-                 "toolUses": 8, "turns": 3, "outputTokens": 100, "filesOpened": null},
+                 "toolUses": 8, "turns": 3, "outputTokens": 100, "filesOpened": null, "filesRead": null},
                 {"lens": "security", "why": "default", "overBudget": false, "costUsd": 0.2,
-                 "toolUses": 5, "turns": 3, "outputTokens": 50, "filesOpened": null},
+                 "toolUses": 5, "turns": 3, "outputTokens": 50, "filesOpened": null, "filesRead": null},
                 {"lens": "correctness", "why": "default", "overBudget": true, "costUsd": 0.1112,
-                 "toolUses": 21, "turns": 3, "outputTokens": 70, "filesOpened": null},
+                 "toolUses": 21, "turns": 3, "outputTokens": 70, "filesOpened": null, "filesRead": null},
             ])
+        );
+    }
+
+    #[test]
+    fn effort_metrics_name_where_the_effort_came_from() {
+        let args = RunArgs {
+            claude_cli_version: Some("2.1.316 (Claude Code)".into()),
+            ..RunArgs::default()
+        };
+        let row = |effort: Option<&str>, source: Option<&str>, action: Option<&str>| {
+            let policy = DispatchPolicy {
+                effort: effort.map(str::to_owned),
+                effort_source: source.map(str::to_owned),
+                ..DispatchPolicy::default()
+            };
+            effort_metrics(&policy, &args, action.map(str::to_owned))
+                .into_iter()
+                .map(|(k, v)| (k.to_owned(), v))
+                .collect::<BTreeMap<String, Value>>()
+        };
+        let flag = row(
+            Some("high"),
+            Some("flag"),
+            Some("xmartlabs/agent-skills@v1.4.3"),
+        );
+        assert_eq!(flag["effort"], json!("high"));
+        assert_eq!(flag["effortSource"], json!("flag"));
+        assert_eq!(flag["claudeCliVersion"], json!("2.1.316 (Claude Code)"));
+        assert_eq!(flag["actionRef"], json!("xmartlabs/agent-skills@v1.4.3"));
+        let settings = row(Some("medium"), Some("operator-settings"), None);
+        assert_eq!(settings["effortSource"], json!("operator-settings"));
+        assert_eq!(settings["actionRef"], Value::Null);
+        let default = row(None, None, Some(""));
+        assert_eq!(default["effort"], Value::Null);
+        assert_eq!(default["effortSource"], json!("cli-default"));
+        assert_eq!(
+            default["actionRef"],
+            Value::Null,
+            "an empty ref is not recorded"
         );
     }
 
@@ -1112,7 +1180,9 @@ mod tests {
             &[read.clone(), unsaved.clone()],
         );
         assert_eq!(rows[0]["filesOpened"], json!(1));
+        assert_eq!(rows[0]["filesRead"], json!(["src/a.ts"]));
         assert_eq!(rows[1]["filesOpened"], Value::Null);
+        assert_eq!(rows[1]["filesRead"], Value::Null);
         assert_eq!(
             pr_files_not_opened(&files, &[read.clone(), unsaved.clone()]),
             json!(["src/b.ts"])

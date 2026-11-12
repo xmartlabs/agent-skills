@@ -94,6 +94,9 @@ pub struct RunArgs {
     /// change counts toward the verdict as before. `false` marks it
     /// `preExistingCode` and keeps it from blocking (`crate::pre_existing`).
     pub block_pre_existing: bool,
+    /// `claude --version` of the CLI the run dispatches with, as it printed it;
+    /// `None` when it could not be read. Recorded as `claudeCliVersion`.
+    pub claude_cli_version: Option<String>,
 }
 
 /// Where the run executes.
