@@ -107,12 +107,15 @@ inputs:
       and the summary says the status is missing.
     default: 'off'
   upload-run:
-    description: Upload the run record, the report and the logs as a workflow artifact.
+    description: >-
+      Upload the run record, the report and the logs as a workflow artifact. Never on a public
+      repository (or one whose visibility the event does not state): they can quote code, and that
+      repository's artifacts can be downloaded by anyone signed in.
     default: 'true'
   upload-transcripts:
     description: >-
       Also upload every model dispatch's transcript. Off by default: transcripts keep tool output
-      verbatim, and artifacts of a public repository can be downloaded by anyone signed in.
+      verbatim. Never on a public repository, whatever this says.
     default: 'false'
 
 outputs:
@@ -216,7 +219,7 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
       run: bash "$GITHUB_ACTION_PATH/run.sh" baseline
 
-    - if: steps.baseline.outputs.saved == 'true'
+    - if: steps.baseline.outputs.saved == 'true' && steps.gate.outputs.public == 'false'
       uses: actions/upload-artifact@v7
       with:
         name: tribunal-baseline-pr-${{ github.event.pull_request.number }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -236,7 +239,7 @@ runs:
       shell: bash
       run: bash "$GITHUB_ACTION_PATH/run.sh" summary
 
-    - if: ${{ always() && steps.gate.outputs.run == 'true' && inputs.upload-run == 'true' }}
+    - if: ${{ always() && steps.gate.outputs.run == 'true' && steps.gate.outputs.public == 'false' && inputs.upload-run == 'true' }}
       uses: actions/upload-artifact@v7
       with:
         name: tribunal-pr-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
@@ -247,7 +250,7 @@ runs:
         if-no-files-found: ignore
         retention-days: 14
 
-    - if: ${{ always() && steps.gate.outputs.run == 'true' && inputs.upload-transcripts == 'true' }}
+    - if: ${{ always() && steps.gate.outputs.run == 'true' && steps.gate.outputs.public == 'false' && inputs.upload-transcripts == 'true' }}
       uses: actions/upload-artifact@v7
       with:
         name: tribunal-pr-${{ github.event.pull_request.number }}-${{ github.run_attempt }}-transcripts

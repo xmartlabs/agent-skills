@@ -25,7 +25,13 @@ own commit.
 
 ## Unreleased
 
-Nothing yet.
+- On a public repository, or when the event does not say the repository is private, the action
+  publishes nothing the review produced beyond the posted review: no artifacts (run record, report,
+  logs, transcripts or incremental baseline, whatever `upload-run` and `upload-transcripts` say), no
+  report or findings table in the job summary, and no engine output in the job log. The run record
+  and report quote code, including code `conventions-token` read from other private repositories.
+- `run.sh` passes the action's ref to the engine as `TRIBUNAL_ACTION_REF`, recorded as `actionRef`
+  in the metrics row from the next Tribunal release on.
 
 ## v1.4.3 — bundles Tribunal 115.5.3
 

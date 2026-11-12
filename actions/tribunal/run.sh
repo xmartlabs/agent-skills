@@ -77,8 +77,20 @@ own_reviews() { # FILE [STATE]: with STATE, only the reviews in that state (CHAN
 # The rules, in order: no pull request, a fork or no credential skips; the action's label forces a
 # review and another label skips; any other event (the caller's `on:` chose it) runs unless the
 # pull request is a draft, no changed file matches `paths`, or `once` and the action reviewed it.
+# A repository counts as private only when the event says so. Anything else, a public repository or an
+# event without the field, is treated as public: what the review produced (run record, report, logs,
+# transcripts, baseline) can quote code, including another private repository's through the conventions
+# token, and a public repository's artifacts and job summaries can be read by anyone signed in.
+public_repo() { [ "$(event repository.private)" != true ]; }
+
 cmd_gate() {
   decide() { log "gate: $1"; out run "$2"; }
+  if public_repo; then
+    out public true
+    log "gate: public repository (or visibility unknown): no review artifacts and no report in the job summary"
+  else
+    out public false
+  fi
   [ -n "$(pr_number)" ] || { decide "not a pull_request event" false; return 0; }
   [ "$(event pull_request.head.repo.full_name)" = "$GITHUB_REPOSITORY" ] \
     || { decide "fork pull request (no secrets)" false; return 0; }
@@ -274,8 +286,16 @@ cmd_review() {
     args+=(--head-sha "$expected" --full)
   fi
   HOME="$JOB/home" gh auth setup-git >&2 || return 1
-  tribunal review --pr "$(pr_number)" --repo "$GITHUB_REPOSITORY" --no-post --out "$JOB/run.json" "${args[@]}" 2>&1 | tee -a "$JOB/review.log"
-  rc=$?
+  if public_repo; then
+    # The engine prints the report on stdout and its log on stderr; a public repository's job log is
+    # public, so both go only to the file.
+    tribunal review --pr "$(pr_number)" --repo "$GITHUB_REPOSITORY" --no-post --out "$JOB/run.json" "${args[@]}" >> "$JOB/review.log" 2>&1
+    rc=$?
+    log "public repository: the review's output stays out of the job log"
+  else
+    tribunal review --pr "$(pr_number)" --repo "$GITHUB_REPOSITORY" --no-post --out "$JOB/run.json" "${args[@]}" 2>&1 | tee -a "$JOB/review.log"
+    rc=$?
+  fi
   [ "$rc" -eq 0 ] || return "$rc"
   python3 "$ACTION_DIR/runtime.py" check-head 2>&1 | tee -a "$JOB/review.log"
 }
@@ -429,11 +449,19 @@ if fallback:
 PYMODE
     fi
     [ ! -f "$JOB/findings-line" ] || { echo; cat "$JOB/findings-line"; }
-    [ ! -f "$JOB/findings-table.md" ] || { echo; cat "$JOB/findings-table.md"; }
+    if public_repo; then
+      echo
+      echo "This repository is public (or its visibility is unknown), so the findings table, the report and the"
+      echo "run artifacts are withheld: they can quote code. The review itself is on the pull request."
+    else
+      [ ! -f "$JOB/findings-table.md" ] || { echo; cat "$JOB/findings-table.md"; }
+    fi
     [ ! -f "$JOB/baseline-reason" ] || cat "$JOB/baseline-reason"
     [ ! -f "$JOB/baseline-save-reason" ] || cat "$JOB/baseline-save-reason"
     echo
-    if [ -f "$report" ]; then
+    if public_repo; then
+      :
+    elif [ -f "$report" ]; then
       head -c 900000 "$report"
       [ "$(wc -c < "$report")" -gt 900000 ] && printf '\n\n*Report cut to fit the job summary; the full one is in the run artifact.*\n'
     else

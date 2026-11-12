@@ -343,7 +343,7 @@ Adding the Tribunal label still forces another review with the normal defaults.
 
 With `review-mode: incremental`, a successful post saves a dedicated
 `tribunal-baseline-pr-<PR>-<run_id>-<attempt>` artifact for 14 days, even with
-`upload-run: 'false'`. Full-mode runs save none. It contains posted metrics and provenance, not HOME,
+`upload-run: 'false'`, except on a public repository (see Security). Full-mode runs save none. It contains posted metrics and provenance, not HOME,
 authentication files, or transcripts. Restoration looks only at the newest 30 runs of the same workflow on the PR branch, then checks the repository, PR, source workflow/run,
 Tribunal version, base commit, and profile/rules hashes, then verifies the posted review's
 identity and commit through GitHub.
@@ -371,7 +371,8 @@ PR and label-triggered re-reviews instead.
 
 The run record, the report and the logs are attached to each run as the
 `tribunal-pr-<number>-<attempt>` artifact (`upload-transcripts: true` adds every model call's
-transcript).
+transcript). A public repository gets none of these, and its job log has no review output (see
+Security).
 
 ## Inputs
 
@@ -402,8 +403,8 @@ transcript).
 | `lens-samples` | empty | Integer 1–4: independent samples per lens. |
 | `bot-comments` | `false` | Also vet existing bot findings. |
 | `findings-check` | `off` | `off`, `inform` or `enforce`: set a "Tribunal findings" commit status with the count of open blocking and should-fix findings. Needs `statuses: write`. See [Findings check](#findings-check). |
-| `upload-run` | `true` | Upload the run record, the report and the logs as an artifact (14 days). |
-| `upload-transcripts` | `false` | Also upload every model dispatch's transcript (see Security). |
+| `upload-run` | `true` | Upload the run record, the report and the logs as an artifact (14 days). Never on a public repository (see Security). |
+| `upload-transcripts` | `false` | Also upload every model dispatch's transcript. Never on a public repository (see Security). |
 
 ## Outputs
 
@@ -437,7 +438,16 @@ The review's model calls run shell commands in a checkout of the pull request wi
 and the Claude credential in their environment, and they read the pull request's text. Run it on
 same-repository pull requests whose code you would run with those tokens. Transcripts keep that
 tool output verbatim and workflow artifacts are not masked, which is why `upload-transcripts` is
-off: on a public repository anyone signed in can download a run's artifacts.
+off by default.
+
+On a public repository, or when the event does not say the repository is private, the action
+publishes nothing the review produced beyond the review it posts. It uploads no artifacts (run
+record, report, logs, transcripts or incremental baseline, whatever `upload-run` and
+`upload-transcripts` say), leaves the report and the findings table out of the job summary, and
+keeps the engine's output out of the job log. Anyone signed in can read a public repository's
+artifacts, summaries and logs, and the run record and report quote code, including code that
+`conventions-token` read from other private repositories. Incremental re-reviews therefore have no
+baseline on a public repository and run in full.
 
 With `codex: true`, the OpenAI key is stored as a Codex login in the job's temporary HOME, which
 those same model calls can read, so a pull request that steers them could expose it as it could
