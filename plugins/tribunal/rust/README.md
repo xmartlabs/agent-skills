@@ -627,7 +627,10 @@ Pipeline differences from the Workflow it replaced, on purpose:
   they read without line numbers, and the gate used to demote a finding the
   panel upheld for that. A quote that is not in the file, or a failed read,
   leaves the anchor as it was, so the gate still demotes it. The run's `logs`
-  say how many anchors were completed.
+  say how many anchors were completed. The repair covers every result the
+  gate judges: the panel's verdicts and the findings that skip the panel
+  (grounded, the critic's gaps, and every candidate when the panel is off,
+  which is the default).
 - The wrong-ref audit greps the pinned checkout natively (no symlink below
   it is followed, as `grep -r` does not). It keeps the workflow's
   `file: v.file`, which reads a field results do not have, so a suspect's
