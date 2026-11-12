@@ -29,7 +29,9 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(out.status.success(), "{args:?}: {out:?}");
 }
 
-fn runtime(name: &str, token: &str) -> (Runtime, RunArgs, PathBuf) {
+/// `visibility` answers `gh api repos/<repo> --jq .private` for each repo it
+/// names; a repo it leaves out has no answer, so its visibility is unknown.
+fn runtime(name: &str, token: &str, visibility: &[(&str, &str)]) -> (Runtime, RunArgs, PathBuf) {
     let root =
         std::env::temp_dir().join(format!("tribunal-conv-token-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
@@ -72,15 +74,17 @@ fn runtime(name: &str, token: &str) -> (Runtime, RunArgs, PathBuf) {
     )
     .unwrap();
     let recordings = root.join("gh.json");
-    std::fs::write(
-        &recordings,
-        json!({"calls": [{
-            "args": ["pr", "view", "7", "--repo", "acme/widgets", "--json", "baseRefName", "--jq", ".baseRefName"],
-            "stdout": "main\n", "stderr": "", "code": 0
-        }]})
-        .to_string(),
-    )
-    .unwrap();
+    let mut calls = vec![json!({
+        "args": ["pr", "view", "7", "--repo", "acme/widgets", "--json", "baseRefName", "--jq", ".baseRefName"],
+        "stdout": "main\n", "stderr": "", "code": 0
+    })];
+    for (repo, private) in visibility {
+        calls.push(json!({
+            "args": ["api", format!("repos/{repo}"), "--jq", ".private"],
+            "stdout": format!("{private}\n"), "stderr": "", "code": 0
+        }));
+    }
+    std::fs::write(&recordings, json!({ "calls": calls }).to_string()).unwrap();
     let tmp = root.join("tmp");
     std::fs::create_dir_all(&tmp).unwrap();
     let rt = Runtime {
@@ -117,8 +121,10 @@ fn runtime(name: &str, token: &str) -> (Runtime, RunArgs, PathBuf) {
 
 #[tokio::test]
 async fn with_a_token_reviewers_are_pointed_at_a_checkout_and_never_see_the_token() {
-    let (rt, args, tmp) = runtime("on", SENTINEL);
+    let (rt, args, tmp) = runtime("on", SENTINEL, &[("acme/widgets", "true")]);
     let prepared = prepare(&rt, &args).await.unwrap();
+    assert_eq!(prepared.repo_private, Some(true));
+    assert!(prepared.foreign_repos_dropped.is_empty());
     let checkout = tmp.join("tribunal-private-acme-widgets-7/anchors/api");
     assert_eq!(
         std::fs::read_to_string(checkout.join("route.ts")).unwrap(),
@@ -142,10 +148,79 @@ async fn with_a_token_reviewers_are_pointed_at_a_checkout_and_never_see_the_toke
 
 #[tokio::test]
 async fn without_a_token_nothing_is_cloned_and_the_prompts_are_unchanged() {
-    let (rt, args, tmp) = runtime("off", "");
+    let (rt, args, tmp) = runtime("off", "", &[("acme/widgets", "true")]);
     let prepared = prepare(&rt, &args).await.unwrap();
     assert_eq!(prepared.cross_repo_note, "");
     assert!(!tmp.join("tribunal-private-acme-widgets-7").exists());
     assert_eq!(prepared.conventions.reviewer_prompt("M", "R"), "M\n\nR");
     assert_eq!(prepared.conventions.with_conventions("R"), "R");
+}
+
+/// On a public repository (or one whose visibility gh does not answer), a
+/// private or unknown sibling is neither cloned nor offered, the saved profile
+/// no longer names it, and every prompt says to read no other repository.
+async fn public_case(name: &str, visibility: &[(&str, &str)]) {
+    let (rt, args, tmp) = runtime(name, SENTINEL, visibility);
+    let prepared = prepare(&rt, &args).await.unwrap();
+    assert_ne!(prepared.repo_private, Some(true));
+    assert_eq!(prepared.foreign_repos_dropped, vec!["acme/api".to_owned()]);
+    assert!(!tmp
+        .join("tribunal-private-acme-widgets-7/anchors/api")
+        .exists());
+    assert!(
+        prepared
+            .cross_repo_note
+            .starts_with("PUBLIC REPOSITORY: acme/widgets"),
+        "{}",
+        prepared.cross_repo_note
+    );
+    assert!(!prepared.cross_repo_note.contains("CROSS-REPO CHECKOUTS:"));
+    assert!(prepared
+        .profile
+        .get("crossRepoAnchors")
+        .and_then(|a| a.as_array())
+        .is_some_and(Vec::is_empty));
+    let saved = std::fs::read_to_string(tmp.join("review-profile-7.json")).unwrap();
+    assert!(!saved.contains("acme/api"), "{saved}");
+    for prompt in [
+        prepared.conventions.reviewer_prompt("M", "R"),
+        prepared.conventions.with_conventions("R"),
+    ] {
+        assert!(prompt.contains("PUBLIC REPOSITORY:"), "{prompt}");
+    }
+    assert!(
+        prepared
+            .logs
+            .iter()
+            .any(|l| l.contains("acme/api are not read")),
+        "{:?}",
+        prepared.logs
+    );
+}
+
+#[tokio::test]
+async fn a_public_repository_reads_no_private_sibling() {
+    public_case("public", &[("acme/widgets", "false"), ("acme/api", "true")]).await;
+}
+
+#[tokio::test]
+async fn unknown_visibility_counts_as_public_and_an_unknown_sibling_as_private() {
+    public_case("unknown", &[]).await;
+}
+
+#[tokio::test]
+async fn a_public_repository_still_reads_a_public_sibling() {
+    let (rt, args, tmp) = runtime(
+        "public-sibling",
+        SENTINEL,
+        &[("acme/widgets", "false"), ("acme/api", "false")],
+    );
+    let prepared = prepare(&rt, &args).await.unwrap();
+    assert_eq!(prepared.repo_private, Some(false));
+    assert!(prepared.foreign_repos_dropped.is_empty());
+    assert!(tmp
+        .join("tribunal-private-acme-widgets-7/anchors/api/route.ts")
+        .exists());
+    assert!(prepared.cross_repo_note.starts_with("PUBLIC REPOSITORY:"));
+    assert!(prepared.cross_repo_note.contains("CROSS-REPO CHECKOUTS:"));
 }

@@ -214,6 +214,10 @@ fn world(name: &str) -> World {
         ),
         call(&["api", "user", "--jq", ".login"], "dev\n"),
         call(
+            &["api", &format!("repos/{REPO}"), "--jq", ".private"],
+            "true\n",
+        ),
+        call(
             &[
                 "api",
                 "-H",

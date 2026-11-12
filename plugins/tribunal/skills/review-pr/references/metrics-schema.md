@@ -1304,6 +1304,8 @@ these fields changes what is reviewed or the verdict.
 | `lensCost[].filesRead` | The PR files behind `filesOpened`, as a list; `null` when the lens left no transcript. |
 | `scenarioQuestions.questions[].line`, `.text` | The line the generator anchored the question to (or `null`) and the question itself, its first 300 characters. |
 | `scenarioQuestions.questions[].filesRead` | The PR files the dispatch that answered the question named in a tool call, by the same rule as `lensCost[].filesOpened`. Absent when the question was not asked or its dispatch left no transcript. |
+| `repoPrivate` | Whether the reviewed repository is private, from `gh api repos/<repo>`: `true`, `false`, or `null` when that could not be read. Anything but `true` counts as public: the engine then reads no other repository it cannot confirm is public (`docs/project-profile.md`). |
+| `foreignReposDropped` | The other repositories in the profile's `conventionSources` and `crossRepoAnchors` that a public run did not read, because they are private or their visibility is unknown. `[]` otherwise. |
 
 ## The posted-comment footer reads this row, it does not extend it
 

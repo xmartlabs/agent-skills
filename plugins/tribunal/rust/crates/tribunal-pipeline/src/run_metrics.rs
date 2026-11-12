@@ -769,6 +769,8 @@ pub fn persist_phase(
         m
     });
     metrics["noRefuters"] = json!(args.no_refuters);
+    metrics["repoPrivate"] = json!(review.prepared.repo_private);
+    metrics["foreignReposDropped"] = json!(review.prepared.foreign_repos_dropped);
     for (k, v) in effort_metrics(policy, args, std::env::var("TRIBUNAL_ACTION_REF").ok()) {
         metrics[k] = v;
     }
