@@ -202,6 +202,36 @@ pub fn apply_lines(verified: &mut [Option<Value>], targets: &[Target], results: 
     written
 }
 
+/// Runs both repairs over every result the report gate will judge: the panel's
+/// `verified` and the `confirmed` results that skipped the panel (grounded,
+/// `--no-refuters`, which is the default, and the critic's gaps). Both lists
+/// keep their order and length. Before this, only `verified` was repaired, so
+/// with the panel off no anchor was ever completed.
+pub async fn repair_anchors(
+    tools: &Tools,
+    head: Option<&str>,
+    repo: &str,
+    cross_repo: &[String],
+    verified: &mut Vec<Option<Value>>,
+    confirmed: &mut Vec<Value>,
+    logs: &mut Vec<String>,
+) {
+    let split = verified.len();
+    let mut all = std::mem::take(verified);
+    all.extend(std::mem::take(confirmed).into_iter().map(Some));
+    let anchored = anchor_from_evidence(&mut all);
+    if anchored > 0 {
+        logs.push(format!(
+            "verifiedBy: anchored {anchored} finding(s) written without one from their evidence"
+        ));
+    }
+    if let Some(head) = head.filter(|h| !h.is_empty()) {
+        repair_anchor_lines(tools, head, repo, cross_repo, &mut all, logs).await;
+    }
+    *confirmed = all.split_off(split).into_iter().flatten().collect();
+    *verified = all;
+}
+
 /// Completes the lines of the panel's findings in place and logs what it did.
 /// `cross_repo` is the profile's `--cross-repo` flags, as the resolver takes
 /// them for the report's own anchor check.

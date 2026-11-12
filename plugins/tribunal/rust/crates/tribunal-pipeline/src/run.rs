@@ -990,26 +990,16 @@ pub async fn verify_phase<A: Agent>(
     panel
         .verified
         .extend(decided_without_panel.into_iter().map(Some));
-    let anchored = crate::anchor_repair::anchor_from_evidence(&mut panel.verified);
-    if anchored > 0 {
-        logs.push(format!(
-            "verifiedBy: anchored {anchored} finding(s) written without one from their evidence"
-        ));
-    }
-    if let Some(head) = js::get(&review.context.pr_context, "headRefOid")
-        .and_then(Value::as_str)
-        .filter(|h| !h.is_empty())
-    {
-        crate::anchor_repair::repair_anchor_lines(
-            &rt.tools,
-            head,
-            &review.prepared.repo,
-            &cross_repo_flags(&review.prepared.profile),
-            &mut panel.verified,
-            logs,
-        )
-        .await;
-    }
+    crate::anchor_repair::repair_anchors(
+        &rt.tools,
+        js::get(&review.context.pr_context, "headRefOid").and_then(Value::as_str),
+        &review.prepared.repo,
+        &cross_repo_flags(&review.prepared.profile),
+        &mut panel.verified,
+        &mut gate.confirmed,
+        logs,
+    )
+    .await;
     let verdicts = partition_results(
         &panel.verified,
         &gate.confirmed,

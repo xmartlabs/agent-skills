@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Value};
 use tribunal_context::exec::Tools;
 use tribunal_core::verified_gate::finding_problems;
-use tribunal_pipeline::anchor_repair::{anchor_from_evidence, repair_anchor_lines};
+use tribunal_pipeline::anchor_repair::{anchor_from_evidence, repair_anchor_lines, repair_anchors};
 use tribunal_pipeline::synthesize::surviving_for_synthesis;
-use tribunal_pipeline::verify::merge_candidates;
+use tribunal_pipeline::verify::{confirmed_result, merge_candidates, skip_refuters, GroundedGate};
 
 const REPO: &str = "acme/widgets";
 const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -351,4 +351,100 @@ async fn evidence_outside_the_diff_with_a_failed_read_stays_demoted() {
     let (out, _) = outside_the_diff("outside-unread", None).await;
     assert_eq!(out[0]["adjudicated"], json!(false));
     assert!(note_of(&out[0]).is_some());
+}
+
+/// The default run skips the refutation panel: every candidate goes to the
+/// gate's `confirmed` list through `skip_refuters`, and the report gate judges
+/// those rows too. The repairs must reach them, not only the panel's verdicts.
+async fn without_the_panel(
+    name: &str,
+    serve_file: bool,
+    finding: Value,
+) -> (Vec<Value>, Vec<Value>, Vec<String>) {
+    let s = setup(name, serve_file);
+    let mut gate = GroundedGate {
+        panel_input: vec![finding],
+        ..GroundedGate::default()
+    };
+    assert_eq!(skip_refuters(&mut gate), 1);
+    let before: Vec<Value> = gate.confirmed.iter().map(confirmed_result).collect();
+    let before = surviving_for_synthesis(&before);
+    let mut verified = Vec::new();
+    let mut logs = Vec::new();
+    repair_anchors(
+        &s.tools,
+        Some(HEAD),
+        REPO,
+        &[],
+        &mut verified,
+        &mut gate.confirmed,
+        &mut logs,
+    )
+    .await;
+    assert!(verified.is_empty());
+    assert_eq!(gate.confirmed.len(), 1);
+    let rows: Vec<Value> = gate.confirmed.iter().map(confirmed_result).collect();
+    (before, surviving_for_synthesis(&rows), logs)
+}
+
+#[tokio::test]
+async fn with_the_panel_off_a_line_zero_anchor_is_completed_and_passes_the_gate() {
+    let finding = json!({
+        "title": "t", "severity": "important", "file": "src/limit.ts",
+        "verifiedBy": [{"file": "src/limit.ts", "line": 0, "quote": QUOTE}],
+    });
+    let (before, after, logs) = without_the_panel("no-panel-line", true, finding).await;
+    assert!(note_of(&before[0])
+        .unwrap()
+        .contains("verifiedBy[0].line is not a positive integer"));
+    assert_eq!(after[0]["adjudicated"], json!(true), "{logs:?}");
+    assert_eq!(note_of(&after[0]), None);
+    assert_eq!(after[0]["verifiedBy"][0]["line"], json!(2));
+    assert!(logs[0].contains("completed 1 of 1"), "{logs:?}");
+}
+
+#[tokio::test]
+async fn with_the_panel_off_located_evidence_anchors_a_finding_without_verified_by() {
+    let finding = evidenced_verdict("important", "exact", json!(2))["finding"].clone();
+    let (before, after, logs) = without_the_panel("no-panel-evidence", false, finding).await;
+    assert!(note_of(&before[0])
+        .unwrap()
+        .contains("verifiedBy is missing or empty"));
+    assert_eq!(after[0]["adjudicated"], json!(true), "{logs:?}");
+    assert_eq!(note_of(&after[0]), None);
+    assert!(logs[0].contains("anchored 1 finding"), "{logs:?}");
+}
+
+#[tokio::test]
+async fn both_lists_keep_their_order_and_length() {
+    let s = setup("both-lists", true);
+    let mut verified = verified(QUOTE);
+    verified.push(None);
+    let mut confirmed = vec![
+        json!({"finding": {"title": "a", "severity": "nit"}, "grounded": {}}),
+        json!({"finding": {"title": "b", "severity": "important", "adjudicated": true,
+                            "verifiedBy": [{"file": "src/limit.ts", "line": 0, "quote": QUOTE}]},
+               "grounded": {}}),
+    ];
+    let mut logs = Vec::new();
+    repair_anchors(
+        &s.tools,
+        Some(HEAD),
+        REPO,
+        &[],
+        &mut verified,
+        &mut confirmed,
+        &mut logs,
+    )
+    .await;
+    assert_eq!(verified.len(), 2);
+    assert!(verified[1].is_none());
+    assert_eq!(
+        verified[0].as_ref().unwrap()["finding"]["verifiedBy"][0]["line"],
+        2
+    );
+    assert_eq!(confirmed.len(), 2);
+    assert_eq!(confirmed[0]["finding"]["title"], "a");
+    assert_eq!(confirmed[1]["finding"]["verifiedBy"][0]["line"], 2);
+    assert!(logs[0].contains("completed 2 of 2"), "{logs:?}");
 }
