@@ -1415,3 +1415,27 @@ fn a_placed_aside_payload_names_distinct_merged_lenses() {
     );
     assert!(side.placed_aside[1].get("mergedFrom").is_none());
 }
+
+/// Not a port: the report writer does not see how the harness located a
+/// finding's line, so it cannot turn a low-confidence locator into doubt
+/// about the finding.
+#[test]
+fn the_writer_does_not_see_the_line_locator() {
+    let f = json!({"title": "t", "file": "a.py", "line": 1316, "lineCorrectedFrom": 9,
+        "lineCorrected": true,
+        "evidenceResolution": {"matchKind": "shifted", "lowConfidence": true, "resolvedLine": 1327}});
+    let out = tribunal_pipeline::synthesize::for_the_writer(std::slice::from_ref(&f));
+    assert_eq!(out, [json!({"title": "t", "file": "a.py", "line": 1316})]);
+    let mut c = sample(synth_case()).into_iter().next().expect("a case");
+    c["survivingFindingsForSynthesis"] = json!([f]);
+    let prompt = rust_synth(&c);
+    assert!(prompt.contains("\"line\": 1316"), "{prompt}");
+    for k in [
+        "lowConfidence",
+        "evidenceResolution",
+        "lineCorrectedFrom",
+        "1327",
+    ] {
+        assert!(!prompt.contains(k), "{k} reached the writer");
+    }
+}

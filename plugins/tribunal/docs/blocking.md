@@ -69,6 +69,18 @@ posted as a comment. On the 76 runs of the 2026-11-12 measurement this changes
 no verdict: every run with a blocker already asked for changes. A `nit` never
 blocks, whatever its worth.
 
+From 115.6.1 the ranking also rates at most 4 a finding whose path needs the
+infrastructure to fail at one moment: the database, the network, a queue or a
+third-party service failing between two steps the code takes. It can still
+rate it 5 when the pull request makes that failure likely. A review in another
+repository had blocked on a write committed outside the transaction of the step
+after it, which could only go wrong if the database failed between the two.
+Re-ranked twice with and without the line, the three labelled defects that
+block today (an un-awaited write inside a transaction, a date conversion that
+always throws, an amount forced to null) kept worth 5 in every draw of both.
+The stored findings of this kind already ranked 3 or 4, so the gain rests on
+that one case.
+
 Recomputed on the pilot's runs, and on two more ranking draws of each to see
 how much one draw decides:
 
