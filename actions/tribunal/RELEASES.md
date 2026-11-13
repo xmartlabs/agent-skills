@@ -27,6 +27,24 @@ own commit.
 
 Nothing yet.
 
+## v1.4.6 — bundles Tribunal 115.6.1
+
+Tag `tribunal-action-v1.4.6` (and `tribunal-action-v1`) at `95dc478`. Bundled Tribunal plugin
+`115.6.1` with binary `tribunal-rust-v115.6.1`.
+
+No change to the action itself. The bundled engine changes what a review does:
+
+- A review no longer fails the job when its posted body misses an annotation. The `(found by: ...)`
+  annotation is required only for a finding merged from two or more different lenses, a question
+  to review can carry it, and a gap the patch rounds cannot close is posted with a note naming it.
+- An important finding the ranking rates at the blocking bar asks for changes on its own.
+- The ranking rates at most 4 a finding that needs the infrastructure to fail at one moment (the
+  database, the network, a queue or a third-party service between two steps), unless the pull
+  request makes that failure likely. Such a finding is listed under "Should fix" and does not block.
+- The posted body no longer calls a finding low-confidence because of how its line was located,
+  and leaves out the panel's numbers (refuteFraction, the kill threshold, vote counts), keeping
+  the panel's reasons in words.
+
 ## v1.4.5 — bundles Tribunal 115.6.0
 
 Tag `tribunal-action-v1.4.5` (and `tribunal-action-v1`) at `9ab961a`. Bundled Tribunal plugin
