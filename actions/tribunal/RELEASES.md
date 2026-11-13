@@ -27,6 +27,24 @@ own commit.
 
 Nothing yet.
 
+## v1.4.5 — bundles Tribunal 115.6.0
+
+Tag `tribunal-action-v1.4.5` (and `tribunal-action-v1`) at `9ab961a`. Bundled Tribunal plugin
+`115.6.0` with binary `tribunal-rust-v115.6.0`.
+
+No change to the action itself. The bundled engine changes what a review does:
+
+- On a public repository the engine reads no private sibling repository: it keeps only sibling
+  sources confirmed public and tells the agents to read no other repository. This closes, inside
+  the engine, the leak path that v1.4.4 closed in the action's artifacts and job summary.
+- The metrics row records the effort and its source, the Claude CLI version, the action ref passed
+  as `TRIBUNAL_ACTION_REF` since v1.4.4, the anchor repair counts, the files each lens read and the
+  text of each question.
+- The ranking step scores 4 and 5 by what goes wrong if the pull request merges as it is, the
+  verifiedBy anchor repairs run again on findings that skip the panel, a finding on unchanged code
+  that the pull request newly calls counts toward the verdict, and the posted body no longer carries
+  the banner asking the reader to run the review from a checkout.
+
 ## v1.4.4 — bundles Tribunal 115.5.3
 
 Tag `tribunal-action-v1.4.4` (and `tribunal-action-v1`) at `f41ccd0`. Bundled Tribunal plugin
