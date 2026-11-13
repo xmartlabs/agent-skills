@@ -361,6 +361,30 @@ fn votes_of(v: &Value) -> &[Value] {
         .map_or(&[], Vec::as_slice)
 }
 
+/// Fields that record how the harness located a finding's line, not what the
+/// finding claims. Shown to the report writer they came back as prose about
+/// the defect: "anchored at 1316, low confidence" read as doubt about a
+/// finding the review then blocked on. The writer gets the line as it stands.
+pub const LOCATOR_FIELDS: [&str; 3] = ["evidenceResolution", "lineCorrectedFrom", "lineCorrected"];
+
+/// The surviving findings as the report writer reads them: without
+/// [`LOCATOR_FIELDS`].
+#[must_use]
+pub fn for_the_writer(surviving: &[Value]) -> Vec<Value> {
+    surviving
+        .iter()
+        .map(|f| {
+            let mut f = f.clone();
+            if let Some(m) = f.as_object_mut() {
+                for k in LOCATOR_FIELDS {
+                    m.remove(k);
+                }
+            }
+            f
+        })
+        .collect()
+}
+
 /// `survivingFindingsForSynthesis`: each survivor's finding with what its
 /// panel recorded, through the VERIFIED-GATE.
 #[must_use]
@@ -1250,7 +1274,7 @@ pub fn synthesis_prompt(s: &SynthesisInput) -> String {
             ("repo", s.repo),
             ("fallbackBlock", &fallback),
             ("scopeBlock", &scope_block),
-            ("surviving", &pretty(s.surviving, "  ")),
+            ("surviving", &pretty(&for_the_writer(s.surviving), "  ")),
             ("priorReviews", &js::stringify(s.prior_reviews, "  ")),
             ("preDecided", &pretty(s.pre_decided, "  ")),
             ("placedAside", &pretty(s.placed_aside, "  ")),
