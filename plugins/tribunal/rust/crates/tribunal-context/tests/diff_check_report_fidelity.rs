@@ -37,6 +37,7 @@ use tribunal_context::check_report_fidelity::{apply_fidelity_checks, run};
 use tribunal_context::harness_version::sha256_hex;
 use tribunal_context::operator::CliOutput;
 use tribunal_core::js::stringify;
+use tribunal_core::report::js_ext::to_js_string;
 
 const SCRIPT: &str = "lib/check-report-fidelity.mjs";
 const WORKFLOW: &str = "workflows/tribunal.js";
@@ -661,9 +662,86 @@ fn outcomes() -> &'static [Outcome] {
 fn check_report_fidelity_matches_js_on_generated_cases() {
     let out = outcomes();
     let inputs: Vec<Value> = out.iter().map(|o| o.input.clone()).collect();
-    let rust: Vec<Value> = out.iter().map(|o| o.rust.clone()).collect();
-    let js: Vec<Value> = out.iter().map(|o| o.js.clone()).collect();
+    let (rust, js): (Vec<Value>, Vec<Value>) = out
+        .iter()
+        .map(|o| distinct_lens_rule(&o.input, &o.rust, &o.js))
+        .unzip();
+    let changed = out.iter().zip(&js).filter(|(o, j)| o.js != **j).count();
+    assert!(
+        changed > 0,
+        "no generated case repeats a lens in mergedFrom"
+    );
     assert_same("check-report-fidelity", &inputs, &rust, &js);
+}
+
+/// Not a port: the script counts `mergedFrom` entries and asks for
+/// "(found by: x, x)" when one lens is repeated; the port counts distinct
+/// lenses (#169). The golden is final, so for a finding whose `mergedFrom`
+/// repeats an entry the script's `mergedFromAnnotationMissingFromReport` is
+/// read under the new rule: empty under two distinct lenses, else each item
+/// once. Both sides are then printed the same way, so only that field moves.
+fn distinct_lens_rule(input: &Value, rust: &Value, js: &Value) -> (Value, Value) {
+    let key = |v: &Value| to_js_string(Some(v));
+    let parse = |o: &Value| {
+        o["stdout"]
+            .as_str()
+            .and_then(|t| serde_json::from_str::<Value>(t).ok())
+    };
+    let stdin = input["stdin"]
+        .as_str()
+        .and_then(|t| serde_json::from_str::<Value>(t).ok());
+    let repeats: Vec<(usize, usize)> = stdin
+        .as_ref()
+        .and_then(|s| s.get("findings"))
+        .and_then(Value::as_array)
+        .map(|fs| {
+            fs.iter()
+                .enumerate()
+                .filter_map(|(i, f)| {
+                    let all = f.get("mergedFrom")?.as_array()?;
+                    let mut seen: Vec<String> = Vec::new();
+                    for l in all {
+                        if !seen.contains(&key(l)) {
+                            seen.push(key(l));
+                        }
+                    }
+                    (seen.len() < all.len()).then_some((i, seen.len()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let (Some(mut j), Some(r)) = (parse(js), parse(rust)) else {
+        return (rust.clone(), js.clone());
+    };
+    if repeats.is_empty() || js["code"] != 0 {
+        return (rust.clone(), js.clone());
+    }
+    for (i, distinct) in repeats {
+        let Some(field) = j["findings"]
+            .get_mut(i)
+            .and_then(|f| f.get_mut("mergedFromAnnotationMissingFromReport"))
+        else {
+            continue;
+        };
+        let Some(items) = field.as_array() else {
+            continue;
+        };
+        let mut kept: Vec<Value> = Vec::new();
+        if distinct >= 2 {
+            for it in items {
+                if !kept.iter().any(|k| key(k) == key(it)) {
+                    kept.push(it.clone());
+                }
+            }
+        }
+        *field = Value::Array(kept);
+    }
+    let reprint = |o: &Value, v: &Value| {
+        let mut o = o.clone();
+        o["stdout"] = Value::String(stringify(v, ""));
+        o
+    };
+    (reprint(rust, &r), reprint(js, &j))
 }
 
 #[test]

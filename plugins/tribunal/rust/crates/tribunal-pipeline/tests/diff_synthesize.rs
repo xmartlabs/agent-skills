@@ -965,6 +965,13 @@ fn rust_synth_with(c: &Value, panel_off_by_flag: bool) -> String {
 const GROUNDED_RULE: &str = "A finding's \"grounded.verdict\" of \"confirmed\" means the finding claims a compile error and the repository's own typecheck reported a diagnostic (its \"grounded.diagnostic\" string) within 5 lines of its line, so it skipped the panel. That is checker evidence, not a vote.";
 const GROUNDED_RULE_WORKFLOW: &str = "A finding's \"grounded.verdict\" of \"confirmed\" means a real tsc --noEmit diagnostic (its \"grounded.diagnostic\" string) landed on its changed line, so it skipped the panel \u{2014} ground truth, not a vote.";
 
+/// Declared difference (#169): the found-by rule counts different lenses,
+/// where the workflow counted `mergedFrom` entries.
+const FOUND_BY_RULE: &str = "When \"mergedFrom\" names 2 or more different lenses, note it in that finding's line as \"(found by: <lens>, <lens>)\", each lens once \u{2014} omit this note entirely when \"mergedFrom\" names 0 or 1 different lenses (the same lens repeated counts as one).";
+const FOUND_BY_RULE_WORKFLOW: &str = "When \"mergedFrom\" has 2 or more entries, note it in that finding's line as \"(found by: <lens>, <lens>)\" \u{2014} omit this note entirely when \"mergedFrom\" has 0 or 1 entries.";
+const FOUND_BY_FORMAT: &str = "only when mergedFrom names 2+ different lenses;";
+const FOUND_BY_FORMAT_WORKFLOW: &str = "only when mergedFrom has 2+ entries;";
+
 #[test]
 fn the_report_prompt_is_the_workflows() {
     let cases = sample(synth_case());
@@ -990,9 +997,17 @@ fn the_report_prompt_is_the_workflows() {
     // changed line". Witness: every generated prompt carries the new sentence.
     let raw: Vec<String> = cases.iter().map(rust_synth).collect();
     assert!(raw.iter().all(|r| r.contains(GROUNDED_RULE)));
+    assert!(raw
+        .iter()
+        .all(|r| r.contains(FOUND_BY_RULE) && r.contains(FOUND_BY_FORMAT)));
     let rust: Vec<Value> = raw
         .iter()
-        .map(|r| json!(r.replace(GROUNDED_RULE, GROUNDED_RULE_WORKFLOW)))
+        .map(|r| {
+            json!(r
+                .replace(GROUNDED_RULE, GROUNDED_RULE_WORKFLOW)
+                .replace(FOUND_BY_RULE, FOUND_BY_RULE_WORKFLOW)
+                .replace(FOUND_BY_FORMAT, FOUND_BY_FORMAT_WORKFLOW))
+        })
         .collect();
     assert_same("synthesis prompt", &cases, &rust, &js);
     let has = |s: &str| {
@@ -1367,4 +1382,36 @@ fn a_placed_aside_payload_keeps_refuters_skipped() {
         side.placed_aside[0]["placement"],
         json!("lower-priority-question")
     );
+}
+
+/// Not a port: a question line can carry "(found by: ...)" only if its
+/// payload names the lenses. It names the distinct ones, and only two or more,
+/// which is when the fidelity gate asks for the annotation.
+#[test]
+fn a_placed_aside_payload_names_distinct_merged_lenses() {
+    let aside = |merged: Value| {
+        json!({
+            "finding": {"title": "q", "file": "src/a.ts", "line": 3, "severity": "important",
+                        "mergedFrom": merged},
+            "placement": {"placement": "lower-priority-question", "worth": 3},
+        })
+    };
+    let side = tribunal_pipeline::synthesize::side_payloads(
+        &[
+            aside(json!(["correctness", "security", "correctness"])),
+            aside(json!([
+                "scenario-question",
+                "scenario-question",
+                "scenario-question"
+            ])),
+        ],
+        &[],
+        &[],
+        &[],
+    );
+    assert_eq!(
+        side.placed_aside[0]["mergedFrom"],
+        json!(["correctness", "security"])
+    );
+    assert!(side.placed_aside[1].get("mergedFrom").is_none());
 }

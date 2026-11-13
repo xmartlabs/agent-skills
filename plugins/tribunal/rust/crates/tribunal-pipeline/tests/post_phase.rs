@@ -367,7 +367,7 @@ async fn a_body_missing_a_location_is_patched_before_posting() {
 }
 
 #[tokio::test]
-async fn a_body_that_stays_short_is_never_posted() {
+async fn a_body_that_stays_short_is_posted_with_a_note() {
     let r = row("clear");
     let w = world("short", &r);
     let short = "### 🔴 Blocking\n**Lost write** `a.ts:1`\n".to_owned();
@@ -376,13 +376,18 @@ async fn a_body_that_stays_short_is_never_posted() {
         patched: Some(short),
         labels: Mutex::default(),
     };
-    let (out, _) = post(&w, &agent, &r).await;
-    assert!(
-        matches!(&out, PostOutcome::Held(why) if why.contains("b.ts:9")),
-        "{out:?}"
-    );
-    assert_eq!(gh_log(&w), "");
+    let (out, logs) = post(&w, &agent, &r).await;
+    assert!(matches!(out, PostOutcome::Posted { .. }), "{out:?}");
     assert_eq!(agent.labels.lock().unwrap().len(), 4);
+    assert!(
+        logs.iter().any(|l| l.contains("posting it with a note")),
+        "{logs:?}"
+    );
+    let posted = std::fs::read_to_string(w.root.join("posted-body.md")).unwrap();
+    assert!(
+        posted.contains("**Note:**") && posted.contains("- missing: Lost write: also at b.ts:9"),
+        "{posted}"
+    );
 }
 
 /// A composer that answers with the body instead of writing it: the answer
@@ -524,7 +529,7 @@ async fn the_unexamined_marker_on_a_gate_demoted_finding_is_patched_out() {
 }
 
 #[tokio::test]
-async fn a_review_that_keeps_the_unexamined_marker_is_held() {
+async fn a_review_that_keeps_the_unexamined_marker_is_posted_with_a_note() {
     let r = demoted_row();
     let w = world("unexamined-kept", &r);
     let agent = Scribe {
@@ -533,13 +538,13 @@ async fn a_review_that_keeps_the_unexamined_marker_is_held() {
         labels: Mutex::default(),
     };
     let (out, _) = post(&w, &agent, &r).await;
-    assert!(
-        matches!(&out, PostOutcome::Held(why)
-            if why.contains("Demoted write") && why.contains("NOT ADJUDICATED")),
-        "{out:?}"
-    );
-    assert_eq!(gh_log(&w), "");
+    assert!(matches!(out, PostOutcome::Posted { .. }), "{out:?}");
     assert_eq!(agent.labels.lock().unwrap().len(), 4);
+    let posted = std::fs::read_to_string(w.root.join("posted-body.md")).unwrap();
+    assert!(
+        posted.contains("- called unexamined although its panel voted: Demoted write"),
+        "{posted}"
+    );
 }
 
 #[test]

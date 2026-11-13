@@ -368,7 +368,51 @@ fn report_fidelity_checks_matches_js() {
         &[],
         &calls,
     );
+    let js = distinct_lens_rule(&calls, js);
     assert_same("REPORT-FIDELITY-CHECKS", &calls, &rust, &js);
+}
+
+/// Declared difference (#169): the region asks for "(found by: ...)" when
+/// `mergedFrom` has two entries, the port when it names two different lenses,
+/// each once. For an argument that repeats an entry the region's answer is
+/// read under the new rule; the witness is that some sampled call does.
+fn distinct_lens_rule(calls: &[Value], js: Vec<Value>) -> Vec<Value> {
+    use tribunal_core::report::js_ext::to_js_string;
+    let key = |v: &Value| to_js_string(Some(v));
+    let mut moved = 0;
+    let out = calls
+        .iter()
+        .zip(js)
+        .map(|(c, j)| {
+            if c["fn"] != "mergedFromAnnotationMissingFromReportText" {
+                return j;
+            }
+            let Some(all) = c["args"][0].as_array() else {
+                return j;
+            };
+            let mut seen: Vec<String> = Vec::new();
+            for l in all {
+                if !seen.contains(&key(l)) {
+                    seen.push(key(l));
+                }
+            }
+            if seen.len() == all.len() {
+                return j;
+            }
+            moved += 1;
+            let mut kept: Vec<Value> = Vec::new();
+            if seen.len() >= 2 {
+                for it in j.as_array().into_iter().flatten() {
+                    if !kept.iter().any(|k| key(k) == key(it)) {
+                        kept.push(it.clone());
+                    }
+                }
+            }
+            Value::Array(kept)
+        })
+        .collect();
+    assert!(moved > 0, "no sampled mergedFrom repeats an entry");
+    out
 }
 
 fn gated_finding() -> impl Strategy<Value = Value> {

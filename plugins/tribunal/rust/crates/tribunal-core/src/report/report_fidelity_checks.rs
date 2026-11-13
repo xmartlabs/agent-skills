@@ -33,15 +33,14 @@ pub fn kill_reason_missing_from_report_text(
 }
 
 /// Ports `mergedFromAnnotationMissingFromReportText`. Applies only to a
-/// finding merged from two or more lenses.
+/// finding merged from two or more distinct lenses: candidates merged from one
+/// source (three scenario-question candidates) carry its label once per entry,
+/// and "(found by: x, x, x)" says nothing, so the report leaves it out.
 pub fn merged_from_annotation_missing_from_report_text(
     merged_from: Option<&Value>,
     report_text: &str,
 ) -> Vec<Value> {
-    let lenses: &[Value] = match merged_from {
-        Some(Value::Array(a)) => a,
-        _ => &[],
-    };
+    let lenses = distinct_lenses(merged_from);
     if lenses.len() < 2 {
         return Vec::new();
     }
@@ -53,6 +52,24 @@ pub fn merged_from_annotation_missing_from_report_text(
         missing.extend(missing_if_absent(lens, report_text));
     }
     missing
+}
+
+/// The entries of `mergedFrom`, first occurrence of each, compared as the
+/// text the report would print.
+pub fn distinct_lenses(merged_from: Option<&Value>) -> Vec<&Value> {
+    let Some(Value::Array(all)) = merged_from else {
+        return Vec::new();
+    };
+    let mut seen = Vec::new();
+    let mut out = Vec::new();
+    for lens in all {
+        let key = js_ext::to_js_string(Some(lens));
+        if !seen.contains(&key) {
+            seen.push(key);
+            out.push(lens);
+        }
+    }
+    out
 }
 
 /// Ports `groundedDiagnosticMissingFromReportText`. Applies only to a
@@ -155,6 +172,21 @@ mod tests {
         assert_eq!(
             merged_from_annotation_missing_from_report_text(Some(&json!(["a", "b"])), "a"),
             [json!("(found by:"), json!("b")]
+        );
+    }
+
+    #[test]
+    fn one_lens_repeated_needs_no_annotation() {
+        let same = json!([
+            "scenario-question",
+            "scenario-question",
+            "scenario-question"
+        ]);
+        assert!(merged_from_annotation_missing_from_report_text(Some(&same), "").is_empty());
+        let two = json!(["a", "b", "a"]);
+        assert_eq!(
+            merged_from_annotation_missing_from_report_text(Some(&two), ""),
+            [json!("(found by:"), json!("a"), json!("b")]
         );
     }
 
