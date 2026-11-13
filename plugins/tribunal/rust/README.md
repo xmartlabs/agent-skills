@@ -400,7 +400,7 @@ Each has a witness input asserted in its group's test file.
   every other dispatch stays isolated. An isolated child does not see the
   homosapiens skill, which held the first live post. The fidelity gate
   is `check_report_fidelity` over the body with up to three patch dispatches;
-  a body still missing an item is not posted. Then the footer
+  a body still missing an item is posted with a note that names it. Then the footer
   (`post_footer`, workflow mode, off the row this run wrote), `post_review`
   with the harness verdict's flag, and `review_record` with `--posted true`
   and the body. `--run-id` is not passed: the native row already carries
@@ -508,6 +508,11 @@ Each has a witness input asserted in its group's test file.
   about JS and TS lives in `typescript_fallback`. Blast radius reads only JS
   and TS sources, so another language needs its own parser and its own
   facts, not a branch in this fallback.
+- check-report-fidelity asks for `(found by: ...)` only when `mergedFrom`
+  names two or more different lenses, and lists each once; the script counted
+  entries, so three candidates from one source asked for `(found by: x, x, x)`
+  and held the post (#169). `check_report_fidelity_matches_js_on_generated_cases`
+  reads the golden's answer for such a finding under the new rule.
 
 ### Known gaps
 

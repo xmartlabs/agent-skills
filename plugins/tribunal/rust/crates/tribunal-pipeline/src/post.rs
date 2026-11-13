@@ -18,11 +18,14 @@ use tribunal_context::post_review::PostEnv;
 use tribunal_context::{post_footer, post_review, review_record};
 use tribunal_core::js;
 use tribunal_core::lens::js_ext::to_js_string;
-use tribunal_core::report::draft_comments_strip::strip_draft_comments_from_body;
+use tribunal_core::report::draft_comments_strip::{
+    is_draft_heading, strip_draft_comments_from_body,
+};
 
 use crate::context::{RunArgs, Runtime};
 
-/// Rounds of the fidelity gate's patch step before the post is refused.
+/// Rounds of the fidelity gate's patch step before the review is posted
+/// with a note naming what is still missing.
 pub const FIDELITY_ROUNDS: usize = 3;
 
 /// Dispatches of the compose step before the post is refused for want of a body.
@@ -280,6 +283,21 @@ pub fn findings_in_body(findings: &[Value], body: &str) -> Vec<Value> {
         .collect()
 }
 
+/// The body with `note` placed before its `### Draft comments` section, which
+/// the post step turns into inline comments, or at its end when it has none.
+#[must_use]
+pub fn with_note(body: &str, note: &str) -> String {
+    let lines: Vec<&str> = body.split('\n').collect();
+    match lines.iter().position(|l| is_draft_heading(l)) {
+        Some(i) => format!(
+            "{}\n\n{note}\n\n{}",
+            lines[..i].join("\n").trim_end(),
+            lines[i..].join("\n")
+        ),
+        None => format!("{}\n\n{note}\n", body.trim_end()),
+    }
+}
+
 /// What the fidelity checks find wrong with a posted body.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct FidelityGaps {
@@ -312,6 +330,23 @@ impl FidelityGaps {
             ));
         }
         parts.join(", and ")
+    }
+
+    /// The note appended to a body the patch rounds could not complete. A
+    /// review held back for one missing annotation is lost to the pull
+    /// request, so it is posted with the gap named instead.
+    #[must_use]
+    pub fn note(&self) -> String {
+        let mut lines = vec![format!(
+            "**Note:** after {FIDELITY_ROUNDS} attempts this review still differs from the run's report:"
+        )];
+        lines.extend(self.missing.iter().map(|m| format!("- missing: {m}")));
+        lines.extend(
+            self.unexamined
+                .iter()
+                .map(|u| format!("- called unexamined although its panel voted: {u}")),
+        );
+        lines.join("\n")
     }
 }
 
@@ -685,10 +720,15 @@ pub async fn post_phase<A: Agent>(
             break;
         }
         if round == FIDELITY_ROUNDS {
-            return PostOutcome::Held(format!(
-                "after {FIDELITY_ROUNDS} patch rounds the body still {}",
+            body = with_note(&body, &gaps.note());
+            if let Err(e) = std::fs::write(&body_file, &body) {
+                return PostOutcome::Held(format!("cannot write the body: {e}"));
+            }
+            logs.push(format!(
+                "Fidelity gate: after {FIDELITY_ROUNDS} patch rounds the body still {}; posting it with a note",
                 gaps.describe()
             ));
+            break;
         }
         round += 1;
         let removing = if gaps.unexamined.is_empty() {
@@ -911,6 +951,38 @@ pub async fn post_saved_run<A: Agent>(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_question_merged_from_one_lens_needs_no_found_by() {
+        let f = json!({
+            "title": "Form logs a name on failure",
+            "mergedFrom": ["scenario-question", "scenario-question", "scenario-question"],
+        });
+        let body = "### Questions to review (not counted toward the verdict)\n- Form logs a name on failure — `src/a.ts:89` (important) → QUESTION TO REVIEW";
+        assert!(fidelity_gaps(&[f], body).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_note_goes_before_the_draft_comments() {
+        let gaps = FidelityGaps {
+            missing: vec!["t: found by (found by:".into()],
+            unexamined: vec![],
+        };
+        let note = gaps.note();
+        assert!(
+            note.contains("after 3 attempts") && note.contains("- missing: t: found by (found by:")
+        );
+        let body = "### Blocking\nNone.\n\n### Draft comments\n- src/a.ts:3 x\n";
+        let out = with_note(body, &note);
+        let at_note = out.find(&note).unwrap();
+        assert!(at_note < out.find("### Draft comments").unwrap());
+        assert!(!strip_draft_comments_from_body(&out).contains("src/a.ts:3"));
+        assert!(strip_draft_comments_from_body(&out).contains(&note));
+        assert_eq!(
+            with_note("### Blocking\nNone.\n", "N"),
+            "### Blocking\nNone.\n\nN\n"
+        );
+    }
 
     #[test]
     fn only_a_clear_gate_posts() {

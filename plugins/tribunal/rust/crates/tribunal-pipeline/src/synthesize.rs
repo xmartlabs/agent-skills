@@ -23,6 +23,7 @@ use tribunal_core::report::carry_forward::{
 use tribunal_core::report::draft_comments_strip::{
     is_draft_heading, strip_draft_comments_from_body,
 };
+use tribunal_core::report::report_fidelity_checks::distinct_lenses;
 use tribunal_core::report_verdict::{pin_report_verdict, Correction};
 use tribunal_core::verified_gate::demote_unanchored;
 
@@ -615,6 +616,14 @@ fn vote_with<'a>(v: &'a Value, key: &str, value: &str) -> Option<&'a Value> {
         .find(|vote| js::get(vote, key) == Some(&json!(value)))
 }
 
+/// The lenses a question line names in "(found by: ...)": the distinct ones,
+/// and only when there are two or more, which is when the fidelity gate asks
+/// for the annotation.
+fn found_by(merged_from: Option<&Value>) -> Option<Value> {
+    let lenses = distinct_lenses(merged_from);
+    (lenses.len() >= 2).then(|| Value::Array(lenses.into_iter().cloned().collect()))
+}
+
 #[must_use]
 pub fn side_payloads(
     placed_aside: &[Value],
@@ -651,6 +660,7 @@ pub fn side_payloads(
                     crate::verify::REFUTERS_SKIPPED,
                     get(finding_field(v, crate::verify::REFUTERS_SKIPPED)),
                 ),
+                ("mergedFrom", found_by(finding_field(v, "mergedFrom"))),
             ])
         })
         .collect();
