@@ -60,6 +60,15 @@ README). From 115.4.0 a finding blocks only when its worth reaches
 `--block-min-worth`, 5 by default, whatever its lens and on top of its
 severity.
 
+From 115.6.1 reaching the bar is also enough for an `important` finding to
+block. Before, it still needed a lens to mark it as changing behaviour or
+touching a high-risk surface, so a finding the report listed under "Blocking"
+could leave the verdict at COMMENT: on one backend pull request the review
+listed a test the change broke, CI failed on that test, and the review was
+posted as a comment. On the 76 runs of the 2026-11-12 measurement this changes
+no verdict: every run with a blocker already asked for changes. A `nit` never
+blocks, whatever its worth.
+
 Recomputed on the pilot's runs, and on two more ranking draws of each to see
 how much one draw decides:
 

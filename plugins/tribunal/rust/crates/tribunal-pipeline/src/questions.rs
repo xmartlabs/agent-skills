@@ -294,6 +294,12 @@ pub const DEFAULT_BLOCK_MIN_WORTH: u64 = 5;
 /// blockers. `verdict_for`, the verdict basis and the row's `blocking` read it.
 pub const RANKED_BELOW_BLOCKING: &str = "rankedBelowBlocking";
 
+/// The finding field that marks a kept finding the ranking put at or above
+/// `--block-min-worth`. `verdict_for` counts an important one as a blocker
+/// even when no lens flag escalates it, so a finding the report lists under
+/// "Blocking" also turns the verdict into REQUEST CHANGES.
+pub const RANKED_AT_BLOCKING: &str = "rankedAtBlocking";
+
 /// Which setup the ranking after the panel runs with: the question stage's,
 /// or, under `--block-min-worth` with no question stage, the lenses'. `None`
 /// means no ranking runs.
@@ -452,6 +458,10 @@ pub fn place_lower_priority(
                 below += 1;
                 if let Some(Value::Object(f)) = r.get_mut("finding") {
                     f.insert(RANKED_BELOW_BLOCKING.into(), json!(true));
+                }
+            } else if min_worth.is_some_and(|n| w.is_some_and(|w| w >= n)) {
+                if let Some(Value::Object(f)) = r.get_mut("finding") {
+                    f.insert(RANKED_AT_BLOCKING.into(), json!(true));
                 }
             }
             kept.push(r);
@@ -810,6 +820,27 @@ mod tests {
         assert_eq!(results[0]["finding"][RANK_WORTH], json!(1));
         assert_eq!(results[1]["finding"][RANK_WORTH], json!(4));
         assert_eq!(results[2], refuted);
+    }
+
+    #[test]
+    fn a_finding_ranked_at_the_bar_is_marked_only_under_block_min_worth() {
+        let f = |t: &str| json!({"survived": true, "finding": {"title": t, "lens": "correctness"}});
+        let mut surviving = vec![f("five"), f("four"), f("unranked")];
+        let mut aside = Vec::new();
+        place_lower_priority(
+            &mut surviving,
+            &mut aside,
+            &[Some(5), Some(4), None],
+            Some(5),
+        );
+        assert_eq!(surviving[0]["finding"][RANKED_AT_BLOCKING], json!(true));
+        assert!(surviving[1]["finding"].get(RANKED_AT_BLOCKING).is_none());
+        assert_eq!(surviving[1]["finding"][RANKED_BELOW_BLOCKING], json!(true));
+        assert!(surviving[2]["finding"].get(RANKED_AT_BLOCKING).is_none());
+
+        let mut no_gate = vec![f("five")];
+        place_lower_priority(&mut no_gate, &mut aside, &[Some(5)], None);
+        assert!(no_gate[0]["finding"].get(RANKED_AT_BLOCKING).is_none());
     }
     use super::*;
 

@@ -58,6 +58,15 @@ fn findings_that_do_not_qualify_leave_no_line() {
 }
 
 #[test]
+fn an_important_finding_at_the_blocking_bar_is_named_with_its_worth() {
+    let mut f = finding("important", false, false);
+    f["rankedAtBlocking"] = json!(true);
+    f["rankWorth"] = json!(5);
+    let b = verdict_basis(&[f]).unwrap();
+    assert!(b.contains("(ranked worth 5, at the blocking bar)"), "{b}");
+}
+
+#[test]
 fn findings_the_verdict_skips_are_skipped_here_too() {
     let mut gated = finding("critical", true, true);
     gated["verifiedByGateNote"] = json!("not cited");
@@ -97,6 +106,16 @@ fn the_basis_exists_exactly_when_verdict_for_asks_for_changes() {
             finding("important", false, false),
             finding("important", true, false),
         ],
+        vec![{
+            let mut f = finding("important", false, false);
+            f["rankedAtBlocking"] = json!(true);
+            f
+        }],
+        vec![{
+            let mut f = finding("nit", false, false);
+            f["rankedAtBlocking"] = json!(true);
+            f
+        }],
     ];
     for c in cases {
         let asks = verdict_for(Some(&c), Some(&[])) == "REQUEST CHANGES";
