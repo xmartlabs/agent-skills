@@ -275,7 +275,8 @@ real pull requests, and the check on pull requests the search never saw.
 
 A finding blocks only when the ranking after the panel rates it worth 5 of 5
 (`--block-min-worth`, on by default since 115.4.0; `--no-block-min-worth`
-returns to severity alone). One rated 4 is listed under "Should fix (not
+returns to severity alone), and from 115.6.1 any `important` or `critical`
+finding rated 5 asks for changes. One rated 4 is listed under "Should fix (not
 blocking)", and one that quotes only code the pull request did not change
 under "Pre-existing code", outside the verdict (`--block-pre-existing` turns
 that off). The rule came from reviewing pull requests that later had to be

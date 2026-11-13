@@ -1,6 +1,7 @@
 //! The reason behind a REQUEST CHANGES, written under the report's verdict
 //! line. The verdict rule reads two flags that a lens sets and a profile's risk
-//! paths can raise, so the report alone does not say which finding caused it.
+//! paths can raise, and the ranking's mark at the blocking bar, so the report
+//! alone does not say which finding caused it.
 //! Rust only: the Workflow's report has no such line, and nothing here changes
 //! the verdict.
 
@@ -19,7 +20,8 @@ fn flag(f: &Value, key: &str) -> bool {
 
 /// Why each finding counts toward REQUEST CHANGES, under the same conditions
 /// as `verdict_for`: a critical survivor, or an important one that changes
-/// behavior or touches a high-risk surface. `findings` must already carry the
+/// behavior, touches a high-risk surface or was ranked at the blocking bar
+/// (`--block-min-worth`). `findings` must already carry the
 /// profile's risk paths (`with_risk_path_surface`). `None` when no finding
 /// qualifies, as when only a prior blocker caused the verdict.
 #[must_use]
@@ -32,19 +34,29 @@ pub fn verdict_basis(findings: &[Value]) -> Option<String> {
             && !flag(f, crate::questions::RANKED_BELOW_BLOCKING)
             && !flag(f, crate::pre_existing::PRE_EXISTING_CODE)
     }) {
-        let mut why: Vec<&str> = Vec::new();
+        let mut why: Vec<String> = Vec::new();
         match js::get(f, "severity").and_then(Value::as_str) {
-            Some("critical") => why.push("critical"),
+            Some("critical") => why.push("critical".into()),
             Some("important") => {
                 if flag(f, "isBehaviorChanging") {
-                    why.push("changes behavior");
+                    why.push("changes behavior".into());
                 }
                 if flag(f, "touchesHighRiskSurface") {
                     why.push(if flag(f, "riskPathSurface") {
-                        "its file is on a risk path of the profile"
+                        "its file is on a risk path of the profile".into()
                     } else {
-                        "touches a high-risk surface"
+                        "touches a high-risk surface".into()
                     });
+                }
+                if why.is_empty() && flag(f, crate::questions::RANKED_AT_BLOCKING) {
+                    why.push(
+                        js::get(f, crate::questions::RANK_WORTH)
+                            .and_then(Value::as_u64)
+                            .map_or_else(
+                                || "ranked at the blocking bar".to_owned(),
+                                |w| format!("ranked worth {w}, at the blocking bar"),
+                            ),
+                    );
                 }
             }
             _ => {}
@@ -74,7 +86,7 @@ pub fn verdict_basis(findings: &[Value]) -> Option<String> {
         String::new()
     };
     Some(format!(
-        "Why REQUEST CHANGES: {total} finding{} qualify under the verdict rule (a critical finding, or an important one that changes behavior or touches a high-risk surface): {shown}{more}.",
+        "Why REQUEST CHANGES: {total} finding{} qualify under the verdict rule (a critical finding, or an important one that changes behavior, touches a high-risk surface or was ranked at the blocking bar): {shown}{more}.",
         if total == 1 { "" } else { "s" }
     ))
 }

@@ -261,10 +261,14 @@ pub fn verdict_for(
         })
         .collect();
     let critical_survivor = blocking.iter().any(|f| severity_is(f, "critical"));
+    // Not from the workflow: `rankedAtBlocking` marks a finding the ranking
+    // put at or above `--block-min-worth`, which the report lists under
+    // "Blocking"; without it the verdict could say COMMENT under a blocker.
     let escalated_important = blocking.iter().any(|f| {
         severity_is(f, "important")
             && (js::truthy(js::get(f, "isBehaviorChanging"))
-                || js::truthy(js::get(f, "touchesHighRiskSurface")))
+                || js::truthy(js::get(f, "touchesHighRiskSurface"))
+                || js::truthy(js::get(f, "rankedAtBlocking")))
     });
     let critical_prior = priors.contains(&s("critical"));
     if critical_survivor || escalated_important || critical_prior {
@@ -499,6 +503,19 @@ mod tests {
         assert_eq!(verdict_for(Some(&[f]), None), "COMMENT");
         let g = json!({"severity": "critical", "adjudicated": true});
         assert_eq!(verdict_for(Some(&[g]), None), "REQUEST CHANGES");
+    }
+
+    #[test]
+    fn an_important_finding_ranked_at_the_blocking_bar_requests_changes() {
+        let f = json!({"severity": "important", "adjudicated": true, "rankedAtBlocking": true});
+        assert_eq!(verdict_for(Some(&[f]), None), "REQUEST CHANGES");
+        let unranked = json!({"severity": "important", "adjudicated": true});
+        assert_eq!(verdict_for(Some(&[unranked]), None), "COMMENT");
+        let nit = json!({"severity": "nit", "adjudicated": true, "rankedAtBlocking": true});
+        assert_eq!(verdict_for(Some(&[nit]), None), "APPROVE");
+        let demoted = json!({"severity": "important", "adjudicated": true, "rankedAtBlocking": true,
+            "verifiedByGateNote": "Downgraded from Blocking: verifiedBy is missing"});
+        assert_eq!(verdict_for(Some(&[demoted]), None), "COMMENT");
     }
     use super::*;
 
