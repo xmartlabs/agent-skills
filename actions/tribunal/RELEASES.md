@@ -25,8 +25,16 @@ own commit.
 
 ## Unreleased
 
-No change to the action itself. The next bundled engine leaves "Questions to review" out of the
-posted review; they stay in the run's report and metrics row.
+Nothing yet.
+
+## v1.4.7 — bundles Tribunal 115.6.2
+
+Tag `tribunal-action-v1.4.7` (and `tribunal-action-v1`) at `4756c0c`. Bundled Tribunal plugin
+`115.6.2` with binary `tribunal-rust-v115.6.2`.
+
+No change to the action itself. The bundled engine leaves "Questions to review" out of the posted
+review. Those findings never blocked or counted toward the findings status; they stay in the run's
+report and metrics row, and the fidelity gate no longer asks the body for them.
 
 ## v1.4.6 — bundles Tribunal 115.6.1
 
