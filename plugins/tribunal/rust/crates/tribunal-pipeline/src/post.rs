@@ -144,13 +144,12 @@ const CROSS_REPO_READ: &str = "When a claim depends on another repo, read it bef
 
 /// The last sentence of the template step: what the body says about its own
 /// limits, in plain prose and in the review's voice.
-/// The posted body's sections. The report's "Questions to review" do not
-/// count toward the verdict or the findings status a CI run leaves; without a
-/// section of their own the composer filed them under Should fix.
-const SECTIONS: &str = "`### 🔴 Blocking`, `### 🟡 Should fix, not blocking`, `### 🟣 Pre-existing, not blocking` (the report's pre-existing code: problems in code this PR did not change, each worth a separate ticket rather than a change to this PR), `### 🔵 Nits` (say when a nit did not go through the panel) and `### ⚪ Questions to review, not counted` (the report's questions to review, which were placed aside without a panel).";
+/// The posted body's sections. The report's "Questions to review" never reach
+/// the composer: [`posted_report`] removes them.
+const SECTIONS: &str = "`### 🔴 Blocking`, `### 🟡 Should fix, not blocking`, `### 🟣 Pre-existing, not blocking` (the report's pre-existing code: problems in code this PR did not change, each worth a separate ticket rather than a change to this PR) and `### 🔵 Nits` (say when a nit did not go through the panel).";
 
 /// Keeps each finding in the section the report gave it.
-const SECTION_RULE: &str = "Keep each finding in the report's own section: only the report's Blocking items go under Blocking and only its Should fix items under Should fix. An item from the report's questions to review, pre-existing or nits never moves up to Blocking or Should fix, whatever severity its text names.";
+const SECTION_RULE: &str = "Keep each finding in the report's own section: only the report's Blocking items go under Blocking and only its Should fix items under Should fix. An item from the report's pre-existing or nits never moves up to Blocking or Should fix, whatever severity its text names.";
 
 /// The panel's numbers mean nothing to the author and crowd out the finding:
 /// a posted item read "Panel: refuteFraction 0.00 vs kill 0.45, one vote
@@ -541,6 +540,32 @@ async fn standing_review(
     Ok((id, verdict))
 }
 
+/// How the report's section for `synthesis/questionsRule.txt` is titled.
+const QUESTIONS_HEADING: &str = "Questions to review";
+
+/// The level of a markdown heading line, `None` for any other line.
+fn heading_level(line: &str) -> Option<usize> {
+    let level = line.len() - line.trim_start_matches('#').len();
+    ((1..=6).contains(&level) && line[level..].starts_with(' ')).then_some(level)
+}
+
+/// The metrics row's findings the fidelity gate holds the posted body to: all
+/// but those the ranking moved to "Questions to review", which the body
+/// leaves out.
+#[must_use]
+pub fn posted_findings(metrics: &Value) -> Vec<Value> {
+    js::get(metrics, "findings")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|f| {
+            js::get(f, "placement").and_then(|p| js::get(p, "placement"))
+                != Some(&Value::from(crate::questions::LOWER_PRIORITY))
+        })
+        .cloned()
+        .collect()
+}
+
 /// How `coverage_report::typecheck_banner` opens for `DEGRADED_WRONG_REPO`.
 const TYPECHECK_SETUP_BANNER: &str = "⚠️ **The typecheck did not run** (`DEGRADED_WRONG_REPO`).";
 
@@ -550,8 +575,10 @@ const TYPECHECK_SETUP_BANNER: &str = "⚠️ **The typecheck did not run** (`DEG
 /// reads as an approval on a review posted in another state. The typecheck
 /// banner for `DEGRADED_WRONG_REPO` tells whoever ran the review to run it
 /// from a checkout, which a reader of the pull request cannot act on; in CI
-/// it was on every review. The operator's own copy of the report keeps all of
-/// them.
+/// it was on every review. The "Questions to review" section goes too: those
+/// findings were ranked below the report's bar, never block, and an author
+/// reading the review got nothing to act on from them. The operator's own copy
+/// of the report keeps all of them.
 #[must_use]
 pub fn posted_report(report: &str, posted_verdict: &str) -> String {
     use crate::synthesize::{
@@ -572,8 +599,20 @@ pub fn posted_report(report: &str, posted_verdict: &str) -> String {
                 .is_some_and(|v| v.trim() == "APPROVE")
     };
     let mut out: Vec<&str> = Vec::new();
+    let mut skipping_below: Option<usize> = None;
     for line in report.lines() {
         let kept = line.trim();
+        if let Some(level) = heading_level(kept) {
+            if skipping_below.is_some_and(|s| level <= s) {
+                skipping_below = None;
+            }
+            if kept[level..].trim_start().starts_with(QUESTIONS_HEADING) {
+                skipping_below = Some(level);
+            }
+        }
+        if skipping_below.is_some() {
+            continue;
+        }
         if operator_only.contains(&kept) || unposted_approval(line) {
             continue;
         }
@@ -708,10 +747,7 @@ pub async fn post_phase<A: Agent>(
         ));
     };
 
-    let findings = js::get(input.metrics, "findings")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
+    let findings = posted_findings(input.metrics);
     let mut round = 0;
     loop {
         let checked = if mode == PostMode::Delta {

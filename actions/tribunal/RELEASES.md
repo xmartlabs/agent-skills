@@ -25,7 +25,8 @@ own commit.
 
 ## Unreleased
 
-Nothing yet.
+No change to the action itself. The next bundled engine leaves "Questions to review" out of the
+posted review; they stay in the run's report and metrics row.
 
 ## v1.4.6 — bundles Tribunal 115.6.1
 

@@ -909,12 +909,11 @@ fn the_posted_report_drops_operator_lines_and_an_unposted_approval() {
     assert_eq!(posted_report(changes, "COMMENT"), changes);
 }
 
-/// The posted body has a section for the report's questions to review, and
-/// the composer is told to keep each finding in the report's own section:
-/// without both, questions landed under Should fix while the findings status
-/// counted none.
+/// The composer is told to keep each finding in the report's own section, and
+/// the posted body has no section for questions to review: they never reach
+/// the composer.
 #[test]
-fn the_compose_prompts_keep_questions_out_of_should_fix() {
+fn the_compose_prompts_keep_each_finding_in_its_section_and_name_no_questions() {
     use std::path::Path;
     use tribunal_pipeline::post::{compose_prompt, delta_prompt, edit_prompt};
     let (r, o) = (Path::new("/r.md"), Path::new("/o.md"));
@@ -923,10 +922,8 @@ fn the_compose_prompts_keep_questions_out_of_should_fix() {
         edit_prompt("1", "o/r", "abc", r, o),
         delta_prompt("1", "o/r", "abc", r, o),
     ] {
-        assert!(
-            prompt.contains("`### ⚪ Questions to review, not counted`"),
-            "{prompt}"
-        );
+        assert!(!prompt.contains("Questions to review"), "{prompt}");
+        assert!(!prompt.contains("questions to review"), "{prompt}");
         assert!(prompt.contains("only the report's Blocking items go under Blocking and only its Should fix items under Should fix"), "{prompt}");
         assert!(
             prompt.contains("never moves up to Blocking or Should fix"),
@@ -941,6 +938,51 @@ fn the_compose_prompts_keep_questions_out_of_should_fix() {
             "{prompt}"
         );
     }
+}
+
+/// The report's "Questions to review" section, titled as the report writer is
+/// told to title it, leaves the report the body is composed from, down to the
+/// next section. A deeper heading inside it goes with it.
+#[test]
+fn the_posted_report_drops_the_questions_to_review() {
+    use tribunal_pipeline::post::posted_report;
+    let rule = include_str!("../src/synthesis/questionsRule.txt");
+    let heading = rule.lines().next().unwrap();
+    assert!(heading.starts_with("### Questions to review"), "{heading}");
+    let report = format!(
+        "## Peer review\n\n### 🟡 Should fix\n- **Kept** `a.ts:1`\n\n{heading}\n- Form logs a name — `src/a.ts:89` → QUESTION TO REVIEW\n#### detail\nmore\n\n### Refuted / downgraded\n- gone\n"
+    );
+    assert_eq!(
+        posted_report(&report, "COMMENT"),
+        "## Peer review\n\n### 🟡 Should fix\n- **Kept** `a.ts:1`\n\n### Refuted / downgraded\n- gone\n"
+    );
+    // At the end of the report, the section goes to the end.
+    let last = format!("## Peer review\n\n{heading}\n- q\n");
+    assert_eq!(posted_report(&last, "COMMENT"), "## Peer review\n\n");
+}
+
+/// The fidelity gate holds the body to every finding but those moved to
+/// "Questions to review": a question merged from two places would otherwise
+/// send the patch step to put it back.
+#[tokio::test]
+async fn a_question_to_review_is_not_patched_back_into_the_body() {
+    let mut r = row("clear");
+    r["findings"].as_array_mut().unwrap().push(json!({
+        "title": "Form logs a name on failure",
+        "mergedLocations": [{"file": "f.ts", "line": 3}, {"file": "g.ts", "line": 7}],
+        "placement": {"placement": "lower-priority-question", "worth": 2, "support": 1},
+    }));
+    let w = world("question-aside", &r);
+    let agent = Scribe {
+        compose: GOOD_BODY.into(),
+        patched: None,
+        labels: Mutex::default(),
+    };
+    let (out, logs) = post(&w, &agent, &r).await;
+    assert!(matches!(out, PostOutcome::Posted { .. }), "{out:?}");
+    assert_eq!(*agent.labels.lock().unwrap(), ["compose-post"], "{logs:?}");
+    let posted = std::fs::read_to_string(w.root.join("posted-body.md")).unwrap();
+    assert!(!posted.contains("Form logs a name"), "{posted}");
 }
 
 /// The typecheck banner for a review run outside a checkout of the repo is

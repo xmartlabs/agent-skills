@@ -232,6 +232,8 @@ to 71%, at about 1.9 times the cost.
 The answers add findings, many of them true but minor, so a ranking step weighs
 each question finding against the rest of the review. One ranked below the
 report's bar moves to a "Questions to review" section, outside the verdict.
+That section stays in the operator's report; the review posted on the pull
+request leaves it out.
 The prompt that does this ranking was not written by hand: an evolutionary
 search produced it, as the next section describes.
 
