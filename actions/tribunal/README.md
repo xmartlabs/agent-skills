@@ -234,8 +234,8 @@ steps:
 ```
 
 After a review posts, the action sets a "Tribunal findings" commit status on the reviewed commit.
-It counts the findings under "Blocking" and "Should fix (not blocking)"; nits, questions and
-pre-existing findings do not count. The status's description gives the counts, and its link opens
+It counts the findings under "Blocking" and "Should fix (not blocking)"; nits and pre-existing
+findings do not count, and from Tribunal 115.6.2 the posted review leaves out questions to review. The status's description gives the counts, and its link opens
 the run, whose job summary lists each open finding.
 
 | | No finding open | Findings open | Findings could not be counted |
