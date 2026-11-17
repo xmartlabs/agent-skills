@@ -175,6 +175,20 @@ pub fn coverage_banner(gaps: &[Gap], unread_risk: &[String]) -> String {
     out
 }
 
+/// The report's list of files kept away from lenses by the profile's
+/// `lightPaths` or `--light-no-logic`. Empty when there are none.
+#[must_use]
+pub fn light_files_banner(files: &[String]) -> String {
+    if files.is_empty() {
+        return String::new();
+    }
+    let list: Vec<String> = files.iter().map(|f| format!("- `{f}`")).collect();
+    format!(
+        "\n\n---\n\n**Not reviewed by lenses (light).** The profile's `lightPaths` or `--light-no-logic` kept these away from every lens:\n\n{}",
+        list.join("\n")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,5 +276,13 @@ mod tests {
         assert!(!b.contains("src/c.ts"));
         assert!(b.contains("cannot approve"));
         assert!(coverage_banner(&[], &[]).is_empty());
+    }
+
+    #[test]
+    fn light_files_banner_lists_each_file_once_and_is_empty_without_any() {
+        assert!(light_files_banner(&[]).is_empty());
+        let b = light_files_banner(&["Cargo.lock".to_owned(), "docs/a.png".to_owned()]);
+        assert!(b.contains("**Not reviewed by lenses (light).**"));
+        assert!(b.contains("- `Cargo.lock`\n- `docs/a.png`"));
     }
 }

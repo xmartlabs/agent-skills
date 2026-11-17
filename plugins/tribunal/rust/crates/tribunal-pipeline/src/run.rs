@@ -18,7 +18,7 @@ use tribunal_context::runtime_case;
 use tribunal_context::{resolve_evidence_line, resolve_verified_anchors};
 use tribunal_core::evidence::line_correction::apply_line_correction;
 use tribunal_core::js;
-use tribunal_core::lens::coverage_gaps::{coverage_banner, unread_risk_files};
+use tribunal_core::lens::coverage_gaps::{coverage_banner, light_files_banner, unread_risk_files};
 use tribunal_core::lens::diff_usable::diff_is_usable;
 use tribunal_core::lens::js_ext::{to_js_string, utf16_prefix_lossy};
 use tribunal_core::profile::high_risk_surface::with_risk_path_surface;
@@ -1338,7 +1338,11 @@ pub async fn synthesize_phase<A: Agent>(
     )?;
     let report = with_coverage(
         report,
-        &coverage_banner(&review.candidates.lens_gaps, &unread_risk),
+        &format!(
+            "{}{}",
+            coverage_banner(&review.candidates.lens_gaps, &unread_risk),
+            light_files_banner(&plan.light_files)
+        ),
     );
     let lens_calls: Vec<(String, Vec<coverage_report::Call>)> = review
         .labels

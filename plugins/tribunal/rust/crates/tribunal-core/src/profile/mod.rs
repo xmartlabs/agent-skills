@@ -8,4 +8,5 @@ pub mod high_risk_surface;
 pub mod js_ext;
 pub mod lens_foci;
 pub mod lens_routing;
+pub mod light_paths;
 pub mod profile_lookup;

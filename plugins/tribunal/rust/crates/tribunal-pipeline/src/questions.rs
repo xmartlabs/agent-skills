@@ -18,6 +18,7 @@ use tokio::sync::Semaphore;
 use tribunal_agent::{Agent, DispatchRequest, DispatchResult};
 use tribunal_core::js;
 use tribunal_core::lens::out_of_diff::reanchor_out_of_diff;
+use tribunal_core::profile::light_paths::no_logic_file;
 
 use crate::review::{
     answer_of, dispatch_lenses, futures_join_all, warm_cache_with, ReviewerSetup, ReviewerTask,
@@ -184,38 +185,6 @@ pub const ANSWER_CONCURRENCY_FACTOR: usize = 2;
 /// of these kinds. Tests, config and migrations stay: the corpus has real
 /// defects in each.
 #[must_use]
-pub fn no_logic_file(path: &str) -> bool {
-    let p = path.to_ascii_lowercase();
-    let name = p.rsplit('/').next().unwrap_or(&p);
-    const NAMES: [&str; 9] = [
-        "package-lock.json",
-        "npm-shrinkwrap.json",
-        "yarn.lock",
-        "pnpm-lock.yaml",
-        "cargo.lock",
-        "poetry.lock",
-        "gemfile.lock",
-        "composer.lock",
-        "go.sum",
-    ];
-    const SUFFIXES: [&str; 23] = [
-        ".lock", ".snap", ".min.js", ".min.css", ".map", ".pb.go", "_pb2.py", ".md", ".mdx",
-        ".rst", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".pdf", ".woff", ".woff2",
-        ".ttf", ".eot", ".zip", ".gz",
-    ];
-    const DIRS: [&str; 5] = [
-        "__snapshots__",
-        "node_modules",
-        "dist",
-        "generated",
-        "__generated__",
-    ];
-    NAMES.contains(&name)
-        || SUFFIXES.iter().any(|s| name.ends_with(s))
-        || name.contains(".generated.")
-        || p.split('/').rev().skip(1).any(|d| DIRS.contains(&d))
-}
-
 fn same_file(a: &str, b: &str) -> bool {
     a == b || a.ends_with(&format!("/{b}")) || b.ends_with(&format!("/{a}"))
 }

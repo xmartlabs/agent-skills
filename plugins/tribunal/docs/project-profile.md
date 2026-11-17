@@ -29,6 +29,15 @@ forced foci fill the lens budget, the run adds lenses for them instead.
 `tribunal.inContextRiskPaths` belonged to an in-context review path that was
 removed: the loader still accepts it and nothing reads it.
 
+`lightPaths` is an optional array of case-insensitive regular expressions for
+changed files that should not be sent to lenses, for example
+`["\\.(png|svg)$", "^docs/generated/"]`. Matching files are excluded from
+the lens budget and reported once as not reviewed by lenses. Invalid entries
+are warned about and ignored. A file that matches a `riskPaths` pattern always
+reaches a lens, even when a `lightPaths` entry matches it. The built-in
+non-logic list (lockfiles, generated files, images, Markdown) is separately
+opt-in with `tribunal review --light-no-logic`.
+
 `projectRules` names the repo's own review rules, usually
 `.claude/review-rules.md`, read at the same ref as the profile. The plugin's
 methodology (`methodology/templates/backend.md`, `frontend.md`, `e2e.md` and `python.md`) has named
