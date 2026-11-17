@@ -175,6 +175,28 @@ pub fn coverage_banner(gaps: &[Gap], unread_risk: &[String]) -> String {
     out
 }
 
+/// A file path as a Markdown code span. Paths come from the pull request, so
+/// control characters (a newline would start a new Markdown block) are
+/// dropped, and the fence is one backtick longer than the longest run of
+/// backticks in the path, so the path cannot close it early.
+#[must_use]
+pub fn code_span(path: &str) -> String {
+    let clean: String = path.chars().filter(|c| !c.is_control()).collect();
+    let mut longest = 0;
+    let mut run = 0;
+    for c in clean.chars() {
+        run = if c == '`' { run + 1 } else { 0 };
+        longest = longest.max(run);
+    }
+    let fence = "`".repeat(longest + 1);
+    let pad = if clean.starts_with('`') || clean.ends_with('`') {
+        " "
+    } else {
+        ""
+    };
+    format!("{fence}{pad}{clean}{pad}{fence}")
+}
+
 /// The report's list of files kept away from lenses by the profile's
 /// `lightPaths` or `--light-no-logic`. Empty when there are none.
 #[must_use]
@@ -182,7 +204,10 @@ pub fn light_files_banner(files: &[String]) -> String {
     if files.is_empty() {
         return String::new();
     }
-    let list: Vec<String> = files.iter().map(|f| format!("- `{f}`")).collect();
+    let list: Vec<String> = files
+        .iter()
+        .map(|f| format!("- {}", code_span(f)))
+        .collect();
     format!(
         "\n\n---\n\n**Not reviewed by lenses (light).** The profile's `lightPaths` or `--light-no-logic` kept these away from every lens:\n\n{}",
         list.join("\n")
@@ -284,5 +309,15 @@ mod tests {
         let b = light_files_banner(&["Cargo.lock".to_owned(), "docs/a.png".to_owned()]);
         assert!(b.contains("**Not reviewed by lenses (light).**"));
         assert!(b.contains("- `Cargo.lock`\n- `docs/a.png`"));
+    }
+
+    #[test]
+    fn code_span_cannot_be_closed_or_broken_by_the_path() {
+        assert_eq!(code_span("src/a.rs"), "`src/a.rs`");
+        assert_eq!(code_span("a`b.rs"), "``a`b.rs``");
+        assert_eq!(code_span("`x``"), "``` `x`` ```");
+        assert_eq!(code_span("a\n# injected\r.rs"), "`a# injected.rs`");
+        let b = light_files_banner(&["evil`\n**x**.lock".to_owned()]);
+        assert!(b.ends_with("- ``evil`**x**.lock``"));
     }
 }
