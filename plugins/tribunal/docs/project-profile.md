@@ -48,7 +48,9 @@ clusters are assigned whole by churn unless a cluster exceeds the average
 group load, in which case its files are assigned individually. Use
 `tribunal review --partition churn` to compare with the previous per-file
 partition, or `--partition cohesion` to request cohesion explicitly. Cohesion
-without valid `groupBy` entries falls back to churn. `--lenses` remains an
+without valid `groupBy` entries falls back to churn. With at least one valid entry,
+the report also lists surviving findings by area, including touched clusters with
+no findings. `--lenses` remains an
 ablation override: its exact lens count is retained, and it can reduce the
 number of file groups; it does not use cohesion's per-group focus expansion.
 
