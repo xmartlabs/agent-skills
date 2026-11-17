@@ -38,6 +38,20 @@ reaches a lens, even when a `lightPaths` entry matches it. The built-in
 non-logic list (lockfiles, generated files, images, Markdown) is separately
 opt-in with `tribunal review --light-no-logic`.
 
+`groupBy` is an optional array of repo-relative directory patterns with one
+whole `*` path segment, for example `apps/space/src/prototypes/*/`. A matching
+file is assigned the cluster key through the matched segment, such as
+`apps/space/src/prototypes/insights/`; the first matching pattern wins. Files
+matching no entry remain individual units. Invalid entries are warned about
+and ignored. With at least one valid entry the default partition is cohesion:
+clusters are assigned whole by churn unless a cluster exceeds the average
+group load, in which case its files are assigned individually. Use
+`tribunal review --partition churn` to compare with the previous per-file
+partition, or `--partition cohesion` to request cohesion explicitly. Cohesion
+without valid `groupBy` entries falls back to churn. `--lenses` remains an
+ablation override: its exact lens count is retained, and it can reduce the
+number of file groups; it does not use cohesion's per-group focus expansion.
+
 `projectRules` names the repo's own review rules, usually
 `.claude/review-rules.md`, read at the same ref as the profile. The plugin's
 methodology (`methodology/templates/backend.md`, `frontend.md`, `e2e.md` and `python.md`) has named

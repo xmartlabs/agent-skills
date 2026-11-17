@@ -4,6 +4,7 @@
 
 pub mod conventions_channel;
 pub mod file_partition;
+pub mod group_by;
 pub mod high_risk_surface;
 pub mod js_ext;
 pub mod lens_foci;
