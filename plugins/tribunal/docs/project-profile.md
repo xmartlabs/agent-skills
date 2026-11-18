@@ -39,9 +39,9 @@ non-logic list (lockfiles, generated files, images, Markdown) is separately
 opt-in with `tribunal review --light-no-logic`.
 
 `groupBy` is an optional array of repo-relative directory patterns with one
-whole `*` path segment, for example `apps/space/src/prototypes/*/`. A matching
+whole `*` path segment, for example `src/features/*/`. A matching
 file is assigned the cluster key through the matched segment, such as
-`apps/space/src/prototypes/insights/`; the first matching pattern wins. Files
+`src/features/billing/`; the first matching pattern wins. Files
 matching no entry remain individual units. Invalid entries are warned about
 and ignored. With at least one valid entry the default partition is cohesion:
 clusters are assigned whole by churn unless a cluster exceeds the average

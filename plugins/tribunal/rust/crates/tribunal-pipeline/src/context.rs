@@ -961,7 +961,17 @@ pub async fn context_phase<A: Agent>(
             "lensCount": plan.lens_count,
             "lensGroups": plan.group_count,
             "incrementalFallback": plan.incremental_fallback,
+            "fileGroups": plan.file_groups,
         });
+        // What the partition did, so two plans can be compared without a
+        // patched build: present only under the cohesion partition.
+        let mut summary = summary;
+        let plan_value = plan.to_value();
+        for key in ["partitionMode", "clusters"] {
+            if let Some(v) = plan_value.get(key) {
+                summary[key] = v.clone();
+            }
+        }
         return Ok(ContextOutcome::Preflight { summary });
     }
 
