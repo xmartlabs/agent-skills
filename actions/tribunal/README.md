@@ -400,7 +400,7 @@ Security).
 | `max-agents` | empty | Positive integer: maximum agents dispatched. |
 | `max-output-tokens` | empty | Positive integer: output-token budget. |
 | `prior-verify` | empty | Positive integer: maximum prior findings verified on a re-review. |
-| `lens-samples` | empty | Integer 1–4: independent samples per lens. |
+| `lens-samples` | `2` | Integer 1–4: independent samples per lens. Two catch more than one at about twice the lens cost; empty inherits the engine's default. |
 | `bot-comments` | `false` | Also vet existing bot findings. |
 | `findings-check` | `off` | `off`, `inform` or `enforce`: set a "Tribunal findings" commit status with the count of open blocking and should-fix findings. Needs `statuses: write`. See [Findings check](#findings-check). |
 | `upload-run` | `true` | Upload the run record, the report and the logs as an artifact (14 days). Never on a public repository (see Security). |

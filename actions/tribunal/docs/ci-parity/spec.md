@@ -11,7 +11,8 @@
 | `openai-api-key` | empty | Required when Codex is enabled; never reused from runner authentication. |
 | `codex-model` | empty | Override the external model; otherwise inherit the engine's default. |
 | `model`, `effort` | empty | Override the engine's Claude model and reasoning effort. |
-| `concurrency`, `max-panels`, `max-agents`, `max-output-tokens`, `prior-verify`, `lens-samples` | empty | Pass a validated numeric override, or inherit the engine default. `lens-samples` is 1–4. |
+| `concurrency`, `max-panels`, `max-agents`, `max-output-tokens`, `prior-verify` | empty | Pass a validated numeric override, or inherit the engine default. |
+| `lens-samples` | `2` | Validated 1–4 override; empty inherits the engine default. |
 | `bot-comments` | `false` | Opt into vetting existing bot findings. |
 | `reviewer` | `frontend` | Generic `frontend`, `backend`, `python`, or `e2e` profile, only when the repo has none. |
 

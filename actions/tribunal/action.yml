@@ -97,7 +97,7 @@ inputs:
     default: ''
   lens-samples:
     description: 'Independent samples per lens, 1 to 4; empty uses the engine default.'
-    default: ''
+    default: '2'
   findings-check:
     description: >-
       `off` (default), `inform` or `enforce`. Other than `off`, a posted review also leaves a
