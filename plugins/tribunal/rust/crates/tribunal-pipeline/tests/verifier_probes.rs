@@ -174,7 +174,17 @@ fn cohesion_partition_preserves_lens_count_and_partition_invariants() {
             false,
         );
         let plain = plan_with(&files, &churn, &prof(false), None, lenses.as_ref(), false);
-        assert_eq!(forced.to_value(), plain.to_value(), "case {case}");
+        // Forcing churn over a groupBy records the choice; the rest of the
+        // plan is the plain one.
+        let mut forced_value = forced.to_value();
+        assert_eq!(
+            forced_value
+                .as_object_mut()
+                .and_then(|m| m.remove("partitionMode")),
+            Some(json!("churn")),
+            "case {case}"
+        );
+        assert_eq!(forced_value, plain.to_value(), "case {case}");
         assert_eq!(
             (coh.lens_count, coh.group_count, coh.lens_plan.len()),
             (plain.lens_count, plain.group_count, plain.lens_plan.len()),
