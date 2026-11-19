@@ -286,6 +286,16 @@ cmd_review() {
     args+=(--head-sha "$expected" --full)
   fi
   HOME="$JOB/home" gh auth setup-git >&2 || return 1
+  # The typecheck needs the reviewed repository with its packages installed; the binary runs from
+  # an empty work dir, so it is told where that checkout is.
+  if [ -n "${INPUT_TYPECHECK_DIR:-}" ]; then
+    if TRIBUNAL_REPO_DIR="$(cd "$INPUT_TYPECHECK_DIR" 2>/dev/null && pwd)"; then
+      export TRIBUNAL_REPO_DIR
+    else
+      unset TRIBUNAL_REPO_DIR
+      log "typecheck-dir '$INPUT_TYPECHECK_DIR' is not a directory; the review runs without the typecheck" 2>&1 | tee -a "$JOB/review.log"
+    fi
+  fi
   if public_repo; then
     # The engine prints the report on stdout and its log on stderr; a public repository's job log is
     # public, so both go only to the file.
