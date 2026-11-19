@@ -179,8 +179,8 @@ pub fn metrics_scope(
         lenses_override: plan.lenses_override.map_or(Value::Null, |n| json!(n)),
         lens_samples: effective_lens_samples(args),
         file_partition_mode: json!(plan.file_partition_mode),
-        partition_mode: if plan.partition_mode == "cohesion" {
-            json!("cohesion")
+        partition_mode: if plan.partition_chosen {
+            json!(plan.partition_mode)
         } else {
             Value::Null
         },
