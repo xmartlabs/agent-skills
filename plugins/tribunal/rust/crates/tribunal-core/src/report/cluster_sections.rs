@@ -20,6 +20,9 @@ pub fn cluster_sections(findings: &[Value], pr_files: &[String], rules: &[GroupB
     );
     clusters.sort();
     clusters.dedup();
+    if clusters.is_empty() && findings.is_empty() {
+        return String::new();
+    }
 
     let mut out = String::from("\n\n---\n\n**Findings by area.**");
     for cluster in clusters {
@@ -78,7 +81,8 @@ fn clean_text(text: &str) -> String {
 fn escape_markdown(text: &str) -> String {
     let mut escaped = String::with_capacity(text.len());
     for character in clean_text(text).chars() {
-        if "\\`*_[]()<>!#|".contains(character) {
+        // `@` would mention a user or team when the review is posted.
+        if "\\`*_[]()<>!#|@".contains(character) {
             escaped.push('\\');
         }
         escaped.push(character);
@@ -199,6 +203,28 @@ mod tests {
         assert!(
             !text.contains(":null") && !text.contains(":\"12\""),
             "{text}"
+        );
+    }
+
+    #[test]
+    fn a_mention_in_a_title_is_escaped() {
+        let findings = [json!({
+            "file": "apps/a/a.rs",
+            "title": "breaks @acme/security token check",
+            "severity": "important",
+            "line": 3
+        })];
+        let text = cluster_sections(&findings, &["apps/a/a.rs".into()], &rules());
+
+        assert!(text.contains(r"breaks \@acme/security"), "{text}");
+        assert!(!text.contains(" @acme"), "{text}");
+    }
+
+    #[test]
+    fn no_section_when_the_pr_touches_no_area_and_has_no_findings() {
+        assert_eq!(
+            cluster_sections(&[], &["docs/README.md".into()], &rules()),
+            ""
         );
     }
 
