@@ -176,3 +176,49 @@ fn incremental_light_files_stay_out_of_cohesion_units() {
         .flatten()
         .all(|file| file != "assets/icon.png"));
 }
+
+#[test]
+fn a_single_group_plan_scopes_lenses_away_from_light_files() {
+    // With one file group, lenses get no file list and read the whole diff,
+    // so a light file must still be kept out by listing the others.
+    let pr = json!({"files":["src/a.rs","src/b.rs","assets/logo.png"],"fileCount":3,"additions":85,"deletions":0,"fileChurn":[{"file":"src/a.rs","churn":40},{"file":"src/b.rs","churn":40},{"file":"assets/logo.png","churn":5}]});
+    let profile = json!({"lightPaths":["^assets/"]});
+    let plan = build_plan(&PlanInput {
+        pr_context: &pr,
+        bookkeeping: None,
+        wants_probe: false,
+        force_full: false,
+        pinned_sha: "",
+        lenses: None,
+        profile: &profile,
+        light_no_logic: false,
+        partition_mode: None,
+    })
+    .unwrap();
+    assert_eq!(plan.group_count, 1.0);
+    assert!(!plan.lens_plan.is_empty());
+    for slot in &plan.lens_plan {
+        assert_eq!(
+            slot.files.as_deref(),
+            Some(&["src/a.rs".to_owned(), "src/b.rs".to_owned()][..])
+        );
+    }
+}
+
+#[test]
+fn a_single_group_plan_without_light_files_keeps_whole_diff_lenses() {
+    let pr = json!({"files":["src/a.rs","src/b.rs"],"fileCount":2,"additions":80,"deletions":0,"fileChurn":[{"file":"src/a.rs","churn":40},{"file":"src/b.rs","churn":40}]});
+    let plan = build_plan(&PlanInput {
+        pr_context: &pr,
+        bookkeeping: None,
+        wants_probe: false,
+        force_full: false,
+        pinned_sha: "",
+        lenses: None,
+        profile: &json!({}),
+        light_no_logic: false,
+        partition_mode: None,
+    })
+    .unwrap();
+    assert!(plan.lens_plan.iter().all(|slot| slot.files.is_none()));
+}

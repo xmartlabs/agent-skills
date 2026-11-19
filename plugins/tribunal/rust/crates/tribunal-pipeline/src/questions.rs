@@ -178,13 +178,6 @@ pub fn merge_questions(samples: &[Vec<Question>], cap: usize) -> Vec<Question> {
 /// took about 9 seconds a question against 15, at the same cost.
 pub const ANSWER_CONCURRENCY_FACTOR: usize = 2;
 
-/// A file with no behaviour to question: lockfiles, snapshots, minified or
-/// built output, generated code, binaries and prose docs. A question about one
-/// is not answered. Across 256 labelled question findings, the two on docs
-/// were not defects, and none of the 247 labelled corpus defects is in a file
-/// of these kinds. Tests, config and migrations stay: the corpus has real
-/// defects in each.
-#[must_use]
 fn same_file(a: &str, b: &str) -> bool {
     a == b || a.ends_with(&format!("/{b}")) || b.ends_with(&format!("/{a}"))
 }

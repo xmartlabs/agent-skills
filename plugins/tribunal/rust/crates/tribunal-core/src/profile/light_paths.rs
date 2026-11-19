@@ -28,7 +28,12 @@ pub fn rules(profile: &Value) -> (Vec<JsRegex>, Vec<String>) {
     (rules, warnings)
 }
 
-/// Files with no behavior to review, shared by plan filtering and question routing.
+/// A file with no behaviour to question: lockfiles, snapshots, minified or
+/// built output, generated code, binaries and prose docs. A question about one
+/// is not answered. Across 256 labelled question findings, the two on docs
+/// were not defects, and none of the 247 labelled corpus defects is in a file
+/// of these kinds. Tests, config and migrations stay: the corpus has real
+/// defects in each. Shared by question routing and `--light-no-logic`.
 #[must_use]
 pub fn no_logic_file(path: &str) -> bool {
     let p = path.to_ascii_lowercase();
