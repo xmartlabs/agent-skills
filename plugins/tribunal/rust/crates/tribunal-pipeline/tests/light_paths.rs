@@ -225,3 +225,34 @@ fn malformed_risk_paths_error_with_and_without_light_paths() {
         assert!(result.unwrap_err().contains("focus"));
     }
 }
+
+#[test]
+fn an_all_light_pr_is_reviewed_anyway_with_the_log_line() {
+    let pr = json!({"files":["assets/a.png","assets/b.png"],"fileCount":2,"additions":10,"deletions":0,
+        "fileChurn":[{"file":"assets/a.png","churn":5},{"file":"assets/b.png","churn":5}]});
+    let profile = json!({"lightPaths":["^assets/"]});
+    let p = build_plan(&PlanInput {
+        pr_context: &pr,
+        bookkeeping: None,
+        wants_probe: false,
+        force_full: false,
+        pinned_sha: "",
+        lenses: None,
+        profile: &profile,
+        light_no_logic: false,
+    })
+    .unwrap();
+    assert_eq!(p.files, ["assets/a.png", "assets/b.png"]);
+    assert!(p.light_files.is_empty() && p.to_value().get("lightFiles").is_none());
+    assert_eq!((p.file_count, p.churn), (2.0, 10.0));
+    assert!(p.lens_plan.iter().all(|s| s.files.is_none()));
+    assert!(p
+        .logs
+        .iter()
+        .any(|l| l
+            == "Every changed file matches lightPaths or --light-no-logic; reviewing them anyway"));
+    assert!(!p
+        .logs
+        .iter()
+        .any(|l| l.starts_with("Not reviewed by lenses")));
+}
