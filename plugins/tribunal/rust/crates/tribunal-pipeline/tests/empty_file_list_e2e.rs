@@ -53,6 +53,18 @@ async fn preflight_on(
     diff: &str,
     deploy_branches: &[&str],
 ) -> Result<ContextOutcome, String> {
+    preflight_full(name, files, additions, diff, deploy_branches, 0).await
+}
+
+/// `diff_code` is the exit code of the recorded `gh pr diff`.
+async fn preflight_full(
+    name: &str,
+    files: &[&str],
+    additions: u64,
+    diff: &str,
+    deploy_branches: &[&str],
+    diff_code: i32,
+) -> Result<ContextOutcome, String> {
     let root = std::env::temp_dir().join(format!("tribunal-s12-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let _scratch = Scratch(root.clone());
@@ -89,7 +101,8 @@ async fn preflight_on(
         rec(&["api", "--paginate", "--slurp", &pulls], "[[]]"),
         rec(&["api", "--paginate", "--slurp", &issues], "[[]]"),
         rec(&["api", "user", "--jq", ".login"], "bot\n"),
-        rec(&["pr", "diff", "7", "--repo", REPO], diff),
+        json!({"args": ["pr", "diff", "7", "--repo", REPO], "stdout": diff,
+               "stderr": if diff_code == 0 { "" } else { "HTTP 502: Bad Gateway" }, "code": diff_code}),
         rec(
             &["pr", "view", "7", "--repo", REPO, "--json", "reviews", "--jq",
               "[.reviews[] | {author: .author.login, state, at: .submittedAt, commit: .commit.oid}]"],
@@ -169,4 +182,18 @@ async fn a_deployment_pr_with_an_empty_file_list_is_still_skipped() {
         matches!(&out, Ok(ContextOutcome::Skipped { reason }) if reason == "deployment PR"),
         "{out:?}"
     );
+}
+
+#[tokio::test]
+async fn a_failed_diff_fetch_with_no_files_stops_instead_of_planning_an_empty_pr() {
+    // Every count is 0 and the diff is missing, which on its own reads as an
+    // empty PR; the recorded fetch error is what tells them apart.
+    let err = preflight_full("difffail", &[], 0, "", &[], 1)
+        .await
+        .expect_err("must stop");
+    assert!(
+        err.contains("PR #7: fetching its files failed (pr-diff)"),
+        "{err}"
+    );
+    assert!(err.contains("retry"), "{err}");
 }

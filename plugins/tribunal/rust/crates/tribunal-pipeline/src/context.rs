@@ -797,6 +797,34 @@ pub fn empty_file_list_error(pr_context: &Value, pr: &str) -> Option<String> {
     })
 }
 
+/// Steps whose failure can leave the file list, the line counts and the diff
+/// size all empty at once, which `empty_file_list_error` reads as an empty PR.
+const FILE_LIST_STEPS: [&str; 4] = ["compare-files", "compare-diff", "pr-view", "pr-diff"];
+
+/// Reject an empty file list when a fetch step that supplies it failed.
+pub fn failed_file_list_error(
+    pr_context: &Value,
+    errors: Option<&Value>,
+    pr: &str,
+) -> Option<String> {
+    let files_empty = js::get(pr_context, "files")
+        .and_then(Value::as_array)
+        .is_some_and(Vec::is_empty);
+    let failed: Vec<&str> = errors
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| js::get(e, "step").and_then(Value::as_str))
+        .filter(|step| FILE_LIST_STEPS.contains(step))
+        .collect();
+    (files_empty && !failed.is_empty()).then(|| {
+        format!(
+            "PR #{pr}: fetching its files failed ({}), so its file list came back empty; retry the run (this may be a transient GitHub fetch failure)",
+            failed.join(", ")
+        )
+    })
+}
+
 /// The workflow's Context phase after SKILL.md's steps.
 ///
 /// # Errors
@@ -869,7 +897,9 @@ pub async fn context_phase<A: Agent>(
         });
     }
     // After the deployment skip, which never reads the files.
-    if let Some(error) = empty_file_list_error(&pr_context, &args.pr) {
+    if let Some(error) = empty_file_list_error(&pr_context, &args.pr)
+        .or_else(|| failed_file_list_error(&pr_context, js::get(&data, "errors"), &args.pr))
+    {
         return Err(error);
     }
     if !args.head_sha.is_empty() {
