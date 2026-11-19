@@ -462,6 +462,27 @@ pub fn pr_files_not_opened(files: &[String], lenses: &[DispatchResult]) -> Value
         .collect::<Vec<_>>())
 }
 
+/// `prFilesNotOpened`, and `lightFiles` when the profile kept any. Light
+/// files were kept from the lenses on purpose, so they are not counted as
+/// files no lens opened.
+#[must_use]
+pub fn lens_coverage(
+    all_pr_files: &[String],
+    light_files: &[String],
+    lenses: &[DispatchResult],
+) -> Vec<(&'static str, Value)> {
+    let lens_files: Vec<String> = all_pr_files
+        .iter()
+        .filter(|f| !light_files.contains(f))
+        .cloned()
+        .collect();
+    let mut out = vec![("prFilesNotOpened", pr_files_not_opened(&lens_files, lenses))];
+    if !light_files.is_empty() {
+        out.push(("lightFiles", json!(light_files)));
+    }
+    out
+}
+
 /// The directory the lenses' transcripts were saved in, so a reader can find
 /// them before the operating system clears it.
 #[must_use]
@@ -783,7 +804,9 @@ pub fn persist_phase(
         &review.dispatches[..lenses.min(review.dispatches.len())],
     );
     let lens_dispatches = &review.dispatches[..lenses.min(review.dispatches.len())];
-    metrics["prFilesNotOpened"] = pr_files_not_opened(&plan.all_pr_files, lens_dispatches);
+    for (key, value) in lens_coverage(&plan.all_pr_files, &plan.light_files, lens_dispatches) {
+        metrics[key] = value;
+    }
     metrics["transcriptsDir"] = transcripts_dir(lens_dispatches);
     // `agentsActual` stays null through the self-audit, as the workflow's row
     // does, and is patched in afterwards the way SKILL.md's Step 4 patches it.
@@ -1192,6 +1215,26 @@ mod tests {
         assert_eq!(
             pr_files_not_opened(&files, std::slice::from_ref(&unsaved)),
             Value::Null
+        );
+        let with_light = [
+            "src/a.ts".to_owned(),
+            "src/b.ts".to_owned(),
+            "yarn.lock".to_owned(),
+        ];
+        assert_eq!(
+            lens_coverage(
+                &with_light,
+                &["yarn.lock".to_owned()],
+                std::slice::from_ref(&read)
+            ),
+            vec![
+                ("prFilesNotOpened", json!(["src/b.ts"])),
+                ("lightFiles", json!(["yarn.lock"]))
+            ]
+        );
+        assert_eq!(
+            lens_coverage(&files, &[], std::slice::from_ref(&read)),
+            vec![("prFilesNotOpened", json!(["src/b.ts"]))]
         );
         assert_eq!(
             transcripts_dir(&[unsaved.clone(), read]),
