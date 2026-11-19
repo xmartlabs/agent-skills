@@ -353,3 +353,75 @@ fn a_file_beside_the_star_directory_has_no_cluster() {
     assert_eq!(group_by::cluster_key("src/features/index.ts", &rules), None);
     assert_eq!(group_by::cluster_key("src/features", &rules), None);
 }
+
+#[test]
+fn cohesion_without_known_churn_leaves_no_group_empty() {
+    for n in 13..90usize {
+        for clusters in 1..8usize {
+            let files: Vec<String> = (0..n)
+                .map(|i| {
+                    if i % 3 == 0 {
+                        format!("lone/f{i}.rs")
+                    } else {
+                        format!("apps/proto/c{}/f{i}.tsx", i % clusters)
+                    }
+                })
+                .collect();
+            let p = plan(
+                files.clone(),
+                vec![],
+                json!({"groupBy": ["apps/proto/*/"]}),
+                None,
+                None,
+            );
+            assert!(
+                p.file_groups.iter().all(|g| !g.is_empty()),
+                "n={n} c={clusters}: {:?}",
+                p.file_groups
+            );
+            let mut placed: Vec<&String> = p.file_groups.iter().flatten().collect();
+            placed.sort();
+            let mut want: Vec<&String> = files.iter().collect();
+            want.sort();
+            assert_eq!(placed, want);
+        }
+    }
+}
+
+#[test]
+fn partition_log_lists_each_group_clusters_in_path_order() {
+    // Small clusters placed z before a must still be logged a before z.
+    let files: Vec<String> = (0..14)
+        .map(|i| format!("lone/f{i}.rs"))
+        .chain([
+            "apps/proto/z/x.tsx".to_owned(),
+            "apps/proto/a/y.tsx".to_owned(),
+        ])
+        .collect();
+    let churn: Vec<_> = files
+        .iter()
+        .map(|f| json!({"file": f, "churn": if f.starts_with("lone") { 100 } else { 1 }}))
+        .collect();
+    let p = plan(
+        files,
+        churn,
+        json!({"groupBy": ["apps/proto/*/"]}),
+        None,
+        None,
+    );
+    let together = p
+        .clusters
+        .iter()
+        .any(|keys| keys.len() == 2 && keys[0] == "apps/proto/z/");
+    assert!(
+        together,
+        "fixture must put z before a in one group: {:?}",
+        p.clusters
+    );
+    let line = p
+        .logs
+        .iter()
+        .find(|l| l.starts_with("Partition cohesion"))
+        .unwrap();
+    assert!(line.contains("apps/proto/a/, apps/proto/z/"), "{line}");
+}
