@@ -1,5 +1,5 @@
-//! Probes from the independent verification of the cohesion stack
-//! (lightPaths, groupBy partition, report by area), kept as regression tests.
+//! Regression probes from independent verification of the cohesion feature
+//! (lightPaths, groupBy partition, report by area).
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use tribunal_core::profile::group_by;
@@ -51,7 +51,7 @@ impl Rng {
 }
 
 #[test]
-fn s1_opt_in_plan_has_no_new_keys() {
+fn default_plan_preserves_existing_schema() {
     let files: Vec<String> = (0..20).map(|i| format!("src/f{i}.rs")).collect();
     let churn: Vec<_> = files.iter().map(|f| (f.clone(), 30.0)).collect();
     let v = plan_with(&files, &churn, &json!({"foci": foci()}), None, None, false).to_value();
@@ -61,7 +61,7 @@ fn s1_opt_in_plan_has_no_new_keys() {
 }
 
 #[test]
-fn s1_light_file_gets_no_lens_in_a_single_group_plan() {
+fn light_files_are_excluded_from_single_group_lens_scopes() {
     let files = vec![
         "src/a.rs".to_owned(),
         "src/b.rs".to_owned(),
@@ -92,7 +92,7 @@ fn s1_light_file_gets_no_lens_in_a_single_group_plan() {
 }
 
 #[test]
-fn s1_risk_wins_case_insensitive_and_warnings() {
+fn risk_paths_override_light_paths_and_invalid_rules_warn() {
     let files = vec![
         "src/Auth/Login.SNAP".to_owned(),
         "ASSETS/X.PNG".to_owned(),
@@ -118,7 +118,7 @@ fn s1_risk_wins_case_insensitive_and_warnings() {
 }
 
 #[test]
-fn s2_light_no_logic_is_opt_in() {
+fn built_in_light_paths_are_opt_in() {
     let files = vec![
         "Cargo.lock".to_owned(),
         "src/a.rs".to_owned(),
@@ -136,7 +136,7 @@ fn s2_light_no_logic_is_opt_in() {
 }
 
 #[test]
-fn s3_s10_s14_random_property() {
+fn cohesion_partition_preserves_lens_count_and_partition_invariants() {
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
     let prof = |with: bool| {
         let mut p = json!({"foci": foci()});
@@ -227,7 +227,7 @@ fn s3_s10_s14_random_property() {
 }
 
 #[test]
-fn s3_cohesion_without_group_by_falls_back_with_a_log() {
+fn cohesion_without_valid_group_by_falls_back_to_churn() {
     let files: Vec<String> = (0..20).map(|i| format!("src/f{i}.rs")).collect();
     let churn: Vec<_> = files.iter().map(|f| (f.clone(), 30.0)).collect();
     let p = plan_with(
@@ -249,7 +249,7 @@ fn s3_cohesion_without_group_by_falls_back_with_a_log() {
 }
 
 #[test]
-fn s5_every_finding_is_listed_once() {
+fn cluster_report_lists_every_finding_once() {
     let (rules, _) = group_by::rules(&json!({"groupBy": ["apps/*/"]}));
     let findings = vec![
         json!({"file": "apps/a/x.ts", "title": "InA", "line": 1, "severity": "important"}),
@@ -268,7 +268,7 @@ fn s5_every_finding_is_listed_once() {
 }
 
 #[test]
-fn s3_s5_a_file_beside_the_star_directory_has_no_cluster() {
+fn files_outside_the_star_directory_have_no_cluster() {
     let (rules, _) = group_by::rules(&json!({"groupBy": ["src/features/*/"]}));
     assert_eq!(
         group_by::cluster_key("src/features/billing/a.ts", &rules).as_deref(),
@@ -292,7 +292,7 @@ fn s3_s5_a_file_beside_the_star_directory_has_no_cluster() {
 }
 
 #[test]
-fn s5_a_finding_without_a_file_has_no_empty_location() {
+fn findings_without_file_have_no_empty_location() {
     let (rules, _) = group_by::rules(&json!({"groupBy": ["apps/*/"]}));
     let text = cluster_sections(
         &[json!({"title": "NoFile", "severity": "nit"})],

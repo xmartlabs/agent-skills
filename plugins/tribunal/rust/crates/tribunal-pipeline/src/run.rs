@@ -1203,8 +1203,9 @@ pub async fn synthesize_phase<A: Agent>(
 
     let mut surviving = surviving_for_synthesis(&v.surviving);
     let (group_rules, _) = group_by::rules(profile);
-    add_cluster_keys(&mut surviving, &group_rules);
     let (anchored, payload) = anchored_payload(&surviving);
+    let synthesis_surviving = surviving.clone();
+    add_cluster_keys(&mut surviving, &group_rules);
     let relay = if anchored > 0 && js::truthy(head) {
         let head_s = to_js_string(head);
         let mut argv: Vec<String> = vec![
@@ -1298,7 +1299,7 @@ pub async fn synthesize_phase<A: Agent>(
         moot: &prior.outcome.moot,
         still_open: &prior.outcome.still_open,
         prior_re_examined: &re_examined,
-        surviving: &surviving,
+        surviving: &synthesis_surviving,
         prior_reviews: &prior_reviews,
         pre_decided: &side.pre_decided,
         placed_aside: &side.placed_aside,
@@ -1385,6 +1386,7 @@ pub async fn synthesize_phase<A: Agent>(
         &coverage_report::deps_drift_banner(&verify.deps_drift, &verify.repo_cwd),
     );
     let report = with_coverage(report, &coverage.banner());
+    // Reuse with_coverage only to append this harness-written section.
     let report = with_coverage(
         report,
         &cluster_sections(&surviving, &plan.all_pr_files, &group_rules),
