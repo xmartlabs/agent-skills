@@ -177,6 +177,8 @@ fn cohesion_partition(
         .iter()
         .filter_map(|f| churn.get(f).and_then(Value::as_f64))
         .collect();
+    // With no churn known at all every file weighs 1, so the LPT below
+    // balances by file count and leaves no group empty.
     let average = if known.is_empty() {
         1.0
     } else {
@@ -221,7 +223,8 @@ fn cohesion_partition(
         churn,
     } in units
     {
-        if let Some(cluster) = cluster_key.as_ref().filter(|_| churn > threshold) {
+        let oversized = churn > threshold;
+        if let (Some(cluster), true) = (cluster_key.as_ref(), oversized) {
             // Reserve the fewest currently-lightest groups whose capacity covers
             // this cluster's average-load share, then LPT its files within them.
             let target_groups = ((churn / threshold).ceil() as usize).min(groups);
