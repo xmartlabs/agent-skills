@@ -276,6 +276,50 @@ fn cohesion_partition(
         }
         totals[index] += churn;
     }
+    // A unit too heavy to split (one file, or a one-file cluster) can take a
+    // group while a cluster under the threshold fills another whole, leaving a
+    // group with no file whose lenses would review nothing. Split the heaviest
+    // multi-file group with it instead.
+    while let Some(empty) = out.iter().position(Vec::is_empty) {
+        let Some(donor) = (0..groups).filter(|i| out[*i].len() > 1).max_by(|a, b| {
+            totals[*a]
+                .partial_cmp(&totals[*b])
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b.cmp(a))
+        }) else {
+            break;
+        };
+        let mut moved = std::mem::take(&mut out[donor]);
+        moved.sort_by(|a, b| {
+            weight(b)
+                .partial_cmp(&weight(a))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        totals[donor] = 0.0;
+        totals[empty] = 0.0;
+        for file in moved {
+            // The donor takes the heaviest file, so the empty side, now the
+            // lighter one, takes the next: it never stays empty.
+            let index = if totals[empty] < totals[donor] {
+                empty
+            } else {
+                donor
+            };
+            totals[index] += weight(&file);
+            out[index].push(file);
+        }
+        for index in [donor, empty] {
+            let mut keys = Vec::new();
+            for file in &out[index] {
+                if let Some(key) = cluster_key(file, rules) {
+                    if !keys.contains(&key) {
+                        keys.push(key);
+                    }
+                }
+            }
+            cluster_keys[index] = keys;
+        }
+    }
     (out, cluster_keys)
 }
 

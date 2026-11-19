@@ -425,3 +425,50 @@ fn partition_log_lists_each_group_clusters_in_path_order() {
         .unwrap();
     assert!(line.contains("apps/proto/a/, apps/proto/z/"), "{line}");
 }
+
+#[test]
+fn a_heavy_lone_file_and_a_whole_cluster_leave_no_group_empty() {
+    // One file too heavy to split takes a group and the cluster, under the
+    // threshold, fits whole in another; the third group must still get files,
+    // or its lenses are told to review an empty list.
+    let mut files = vec!["src/big.ts".to_owned()];
+    files.extend((0..12).map(|i| format!("src/features/x/f{i}.ts")));
+    let churn: Vec<_> = files
+        .iter()
+        .map(|f| json!({"file":f,"churn":if f == "src/big.ts" {900} else {10}}))
+        .collect();
+    let p = plan(
+        files.clone(),
+        churn,
+        json!({"groupBy":["src/features/*/"]}),
+        Some("cohesion"),
+        None,
+    );
+    assert_eq!(p.group_count, 3.0);
+    assert!(
+        p.file_groups.iter().all(|g| !g.is_empty()),
+        "{:?}",
+        p.file_groups
+    );
+    for slot in &p.lens_plan {
+        if let Some(files) = &slot.files {
+            assert!(!files.is_empty(), "a lens slot got an empty file list");
+        }
+    }
+    let placed = p
+        .file_groups
+        .iter()
+        .flatten()
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(placed.len(), files.len());
+    assert_eq!(
+        p.file_groups.iter().map(Vec::len).sum::<usize>(),
+        files.len()
+    );
+    let big = p
+        .file_groups
+        .iter()
+        .find(|g| g.contains(&"src/big.ts".to_owned()))
+        .unwrap();
+    assert_eq!(big.len(), 1, "the heavy file keeps its own group");
+}

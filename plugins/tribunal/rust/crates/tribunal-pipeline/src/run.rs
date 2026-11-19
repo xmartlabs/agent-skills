@@ -989,6 +989,7 @@ pub async fn verify_phase<A: Agent>(
         &mut panel.dropped_pre_panel,
         &rc.plan.files,
         &rc.plan.all_pr_files,
+        &rc.plan.light_files,
         rc.plan
             .prior_review
             .as_ref()

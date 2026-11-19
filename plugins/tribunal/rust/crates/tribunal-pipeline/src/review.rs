@@ -455,11 +455,14 @@ const OUT_OF_DIFF: &str =
 /// the baseline, so a finding on a PR file that did not change is dropped as
 /// out-of-diff and the reason says the file is not in the PR. Rewrites that
 /// reason to say what happened: the file is in the PR, unchanged since the
-/// review at `prior_sha`, and so not re-reviewed.
+/// review at `prior_sha`, and so not re-reviewed. A file in `light_files`
+/// was left out of the lenses' list by the profile's `lightPaths`, in a full
+/// run too, so its reason says that instead.
 pub fn relabel_unchanged_drops(
     dropped: &mut [Value],
     scoped: &[String],
     all_pr_files: &[String],
+    light_files: &[String],
     prior_sha: Option<&str>,
 ) {
     let same =
@@ -487,12 +490,14 @@ pub fn relabel_unchanged_drops(
         {
             continue;
         }
-        obj.insert(
-            "reason".into(),
-            json!(format!(
+        let reason = if light_files.iter().any(|f| same(f, file)) {
+            format!("{prefix}out of scope (in this PR, a light path the profile keeps away from the lenses)")
+        } else {
+            format!(
                 "{prefix}out of scope (in this PR, unchanged since {since}, so this incremental run did not re-review it)"
-            )),
-        );
+            )
+        };
+        obj.insert("reason".into(), json!(reason));
     }
 }
 
@@ -519,7 +524,7 @@ mod tests {
             "src/changed.ts".to_owned(),
             "src/billing/statement.ts".to_owned(),
         ];
-        relabel_unchanged_drops(&mut d, &scoped, &all, Some("e8b4a9e1c0ffee"));
+        relabel_unchanged_drops(&mut d, &scoped, &all, &[], Some("e8b4a9e1c0ffee"));
         let unchanged = "out of scope (in this PR, unchanged since the review at e8b4a9e1, so this incremental run did not re-review it)";
         assert_eq!(d[0]["reason"], unchanged);
         assert_eq!(
@@ -537,8 +542,25 @@ mod tests {
     fn a_full_run_keeps_every_reason() {
         let mut d = vec![drop("src/a.ts", OUT_OF_DIFF), drop("lib/b.ts", OUT_OF_DIFF)];
         let files = vec!["src/a.ts".to_owned()];
-        relabel_unchanged_drops(&mut d, &files, &files, None);
+        relabel_unchanged_drops(&mut d, &files, &files, &[], None);
         assert_eq!(d[0]["reason"], OUT_OF_DIFF);
+        assert_eq!(d[1]["reason"], OUT_OF_DIFF);
+    }
+
+    #[test]
+    fn a_light_file_is_not_called_unchanged_in_a_full_run() {
+        let mut d = vec![
+            drop("yarn.lock", OUT_OF_DIFF),
+            drop("lib/b.ts", OUT_OF_DIFF),
+        ];
+        let scoped = vec!["src/a.ts".to_owned()];
+        let all = vec!["src/a.ts".to_owned(), "yarn.lock".to_owned()];
+        let light = vec!["yarn.lock".to_owned()];
+        relabel_unchanged_drops(&mut d, &scoped, &all, &light, None);
+        assert_eq!(
+            d[0]["reason"],
+            "out of scope (in this PR, a light path the profile keeps away from the lenses)"
+        );
         assert_eq!(d[1]["reason"], OUT_OF_DIFF);
     }
 }
