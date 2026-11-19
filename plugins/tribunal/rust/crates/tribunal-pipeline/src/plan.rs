@@ -15,6 +15,10 @@ use tribunal_core::report::carry_forward::incremental_fallback_for;
 
 pub const FILES_PER_GROUP: f64 = 6.0;
 
+/// Logged when every changed file is light and the plan reviews them anyway.
+pub const ALL_LIGHT_LOG: &str =
+    "Every changed file matches lightPaths or --light-no-logic; reviewing them anyway";
+
 pub struct PlanInput<'a> {
     /// `prContext` after `buildPrContext` and the pin, before any narrowing.
     pub pr_context: &'a Value,
@@ -364,13 +368,12 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
         })
         .cloned()
         .collect();
+    // A PR made only of light files would leave its lenses nothing to read,
+    // so light filtering is dropped for it and every file is reviewed.
     let all_files_are_light = !files.is_empty() && light_files.len() == files.len();
     if all_files_are_light {
         light_files.clear();
-        logs.push(
-            "Every changed file matches lightPaths or --light-no-logic; reviewing them anyway"
-                .to_owned(),
-        );
+        logs.push(ALL_LIGHT_LOG.to_owned());
     } else {
         files.retain(|f| !light_files.contains(f));
     }

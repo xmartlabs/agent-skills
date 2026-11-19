@@ -32,7 +32,9 @@ removed: the loader still accepts it and nothing reads it.
 `lightPaths` is an optional array of case-insensitive regular expressions for
 changed files that should not be sent to lenses, for example
 `["\\.(png|svg)$", "^docs/generated/"]`. Matching files are excluded from
-the lens budget and reported once as not reviewed by lenses. Invalid entries
+the lens budget and reported once as not reviewed by lenses; when every
+changed file is light, none is skipped and the run logs that it reviews them
+anyway. Invalid entries
 are warned about and ignored. A file that matches a `riskPaths` pattern always
 reaches a lens, even when a `lightPaths` entry matches it. The built-in
 non-logic list (lockfiles, generated files, images, Markdown) is separately
