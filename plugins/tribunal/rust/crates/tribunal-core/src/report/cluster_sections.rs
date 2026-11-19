@@ -7,8 +7,15 @@ pub fn cluster_sections(findings: &[Value], pr_files: &[String], rules: &[GroupB
         return String::new();
     }
 
+    // Every area the PR touches, plus any area a finding names, so no
+    // finding falls out of the section.
+    let finding_files = findings
+        .iter()
+        .filter_map(|finding| finding.get("file").and_then(Value::as_str));
     let mut clusters: Vec<String> = pr_files
         .iter()
+        .map(String::as_str)
+        .chain(finding_files)
         .filter_map(|path| crate::profile::group_by::cluster_key(path, rules))
         .collect();
     clusters.sort();
@@ -35,22 +42,7 @@ pub fn cluster_sections(findings: &[Value], pr_files: &[String], rules: &[GroupB
             out.push_str("\n- No findings.");
         } else {
             for finding in matched {
-                out.push_str(&format!(
-                    "\n- {} {} ({}:{})",
-                    clean_text(
-                        finding
-                            .get("severity")
-                            .and_then(Value::as_str)
-                            .unwrap_or("")
-                    ),
-                    clean_text(finding.get("title").and_then(Value::as_str).unwrap_or("")),
-                    crate::lens::coverage_gaps::code_span(
-                        finding.get("file").and_then(Value::as_str).unwrap_or("")
-                    ),
-                    finding
-                        .get("line")
-                        .map_or_else(|| "?".into(), Value::to_string)
-                ));
+                out.push_str(&finding_line(finding));
             }
         }
     }
@@ -67,22 +59,7 @@ pub fn cluster_sections(findings: &[Value], pr_files: &[String], rules: &[GroupB
     if !outside.is_empty() {
         out.push_str("\n\n**Outside every area**");
         for finding in outside {
-            out.push_str(&format!(
-                "\n- {} {} ({}:{})",
-                clean_text(
-                    finding
-                        .get("severity")
-                        .and_then(Value::as_str)
-                        .unwrap_or("")
-                ),
-                clean_text(finding.get("title").and_then(Value::as_str).unwrap_or("")),
-                crate::lens::coverage_gaps::code_span(
-                    finding.get("file").and_then(Value::as_str).unwrap_or("")
-                ),
-                finding
-                    .get("line")
-                    .map_or_else(|| "?".into(), Value::to_string)
-            ));
+            out.push_str(&finding_line(finding));
         }
     }
     out
@@ -105,6 +82,27 @@ pub fn add_cluster_keys(findings: &mut [Value], rules: &[GroupByRule]) {
 
 fn clean_text(text: &str) -> String {
     text.chars().filter(|c| !c.is_control()).collect()
+}
+
+/// One finding as a list line: severity, title and, when it has a file, its
+/// location. Model text loses control characters; the path is a code span.
+fn finding_line(finding: &Value) -> String {
+    let text = |key: &str| clean_text(finding.get(key).and_then(Value::as_str).unwrap_or(""));
+    let mut line = format!("\n- {} {}", text("severity"), text("title"));
+    if let Some(file) = finding
+        .get("file")
+        .and_then(Value::as_str)
+        .filter(|f| !f.is_empty())
+    {
+        let at = finding
+            .get("line")
+            .map_or_else(|| "?".into(), Value::to_string);
+        line.push_str(&format!(
+            " ({}:{at})",
+            crate::lens::coverage_gaps::code_span(file)
+        ));
+    }
+    line
 }
 
 #[cfg(test)]
