@@ -782,6 +782,21 @@ pub struct ReviewContext {
 
 pub const SECTIONS_ABOVE_FILES: usize = 12;
 
+/// Reject a fetch that returned no changed paths despite reporting PR changes.
+pub fn empty_file_list_error(pr_context: &Value, pr: &str) -> Option<String> {
+    let files_empty = js::get(pr_context, "files")
+        .and_then(Value::as_array)
+        .is_some_and(Vec::is_empty);
+    let changes = ["diffBytes", "additions", "deletions"].iter().any(|key| {
+        js::get(pr_context, key)
+            .and_then(Value::as_f64)
+            .is_some_and(|n| n > 0.0)
+    });
+    (files_empty && changes).then(|| {
+        format!("PR #{pr} has changes but its file list came back empty; retry the run (this may be a transient GitHub fetch failure)")
+    })
+}
+
 /// The workflow's Context phase after SKILL.md's steps.
 ///
 /// # Errors
@@ -847,6 +862,9 @@ pub async fn context_phase<A: Agent>(
         json!({"inThreadDecisions": [], "priorReviewSummaries": []})
     };
     let mut pr_context = build_pr_context(&data, &answer)?;
+    if let Some(error) = empty_file_list_error(&pr_context, &args.pr) {
+        return Err(error);
+    }
     if js::truthy(js::get(&pr_context, "isDeploymentPR")) {
         logs.push("Deployment PR — skipping review".into());
         return Ok(ContextOutcome::Skipped {
