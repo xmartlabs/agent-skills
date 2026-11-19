@@ -97,8 +97,8 @@ inputs:
     default: ''
   lens-samples:
     description: >-
-      Independent samples per lens, 1 to 4; empty uses the engine default. `2` costs 1.3x to 1.6x
-      per review with no measured detection gain; consider it only for large or high-risk PRs.
+      Independent samples per lens, 1 to 4; empty uses the engine default. See the README's input
+      table for when `2` is worth its cost.
     default: ''
   findings-check:
     description: >-

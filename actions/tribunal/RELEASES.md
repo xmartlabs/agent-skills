@@ -26,7 +26,7 @@ own commit.
 ## Unreleased
 
 - Docs: `lens-samples: '2'` is documented as an opt-in for large or high-risk PRs, with its
-  measured cost (1.3x to 1.6x per review) and no measured detection gain. The default stays empty.
+  measured cost (see the README's input table). The default stays empty.
 
 ## v1.4.7 — bundles Tribunal 115.6.2
 
