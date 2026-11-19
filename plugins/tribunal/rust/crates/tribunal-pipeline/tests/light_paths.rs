@@ -47,7 +47,7 @@ fn invalid_light_path_entries_warn_and_are_ignored() {
 }
 
 #[test]
-fn light_paths_do_not_affect_lpt_groups_or_file_and_churn_tiers() {
+fn light_files_are_excluded_from_groups_and_tier_inputs() {
     let files: Vec<String> = (0..13)
         .map(|i| format!("src/{i}.rs"))
         .chain(["assets/a.png".into()])
@@ -180,4 +180,48 @@ fn a_single_group_plan_without_light_files_keeps_whole_diff_lenses() {
     })
     .unwrap();
     assert!(plan.lens_plan.iter().all(|slot| slot.files.is_none()));
+}
+
+#[test]
+fn all_light_files_are_kept_and_reviewed_without_light_filtering() {
+    let pr = json!({"files":["assets/a.png","dist/b.js"],"fileCount":2,"additions":20,"deletions":0,"fileChurn":[{"file":"assets/a.png","churn":10},{"file":"dist/b.js","churn":10}]});
+    let profile = json!({"lightPaths":["^assets/","^dist/"]});
+    let plan = build_plan(&PlanInput {
+        pr_context: &pr,
+        bookkeeping: None,
+        wants_probe: false,
+        force_full: false,
+        pinned_sha: "",
+        lenses: None,
+        profile: &profile,
+        light_no_logic: false,
+    })
+    .unwrap();
+    assert_eq!(plan.files, ["assets/a.png", "dist/b.js"]);
+    assert!(plan.light_files.is_empty());
+    assert!(plan.logs.iter().any(|line| line
+        == "Every changed file matches lightPaths or --light-no-logic; reviewing them anyway"));
+    assert!(plan.lens_plan.iter().all(|slot| slot.files.is_none()));
+}
+
+#[test]
+fn malformed_risk_paths_error_with_and_without_light_paths() {
+    let pr = json!({"files":["src/a.rs"],"fileCount":1,"additions":1});
+    for light_paths in [None, Some(json!(["^assets/"]))] {
+        let mut profile = json!({"riskPaths":[null]});
+        if let Some(rules) = light_paths {
+            profile["lightPaths"] = rules;
+        }
+        let result = build_plan(&PlanInput {
+            pr_context: &pr,
+            bookkeeping: None,
+            wants_probe: false,
+            force_full: false,
+            pinned_sha: "",
+            lenses: None,
+            profile: &profile,
+            light_no_logic: false,
+        });
+        assert!(result.unwrap_err().contains("focus"));
+    }
 }

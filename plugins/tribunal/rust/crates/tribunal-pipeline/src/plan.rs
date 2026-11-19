@@ -211,12 +211,8 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
     let (light_rules, light_warnings) = light_path_rules(input.profile);
     logs.extend(light_warnings);
     // A risk path always reaches a lens, even when a light rule matches it.
-    let risk_rules = if light_rules.is_empty() && !input.light_no_logic {
-        Vec::new()
-    } else {
-        risk_path_rules(input.profile)?
-    };
-    let light_files: Vec<String> = files
+    let risk_rules = risk_path_rules(input.profile)?;
+    let mut light_files: Vec<String> = files
         .iter()
         .filter(|f| {
             (light_rules.iter().any(|r| r.test(f)) || (input.light_no_logic && no_logic_file(f)))
@@ -224,7 +220,16 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
         })
         .cloned()
         .collect();
-    files.retain(|f| !light_files.contains(f));
+    let all_files_are_light = !files.is_empty() && light_files.len() == files.len();
+    if all_files_are_light {
+        light_files.clear();
+        logs.push(
+            "Every changed file matches lightPaths or --light-no-logic; reviewing them anyway"
+                .to_owned(),
+        );
+    } else {
+        files.retain(|f| !light_files.contains(f));
+    }
     let file_count = match &incremental_scope {
         Some(_) => files.len() as f64,
         None => (num(js::get(pr, "fileCount")) - light_files.len() as f64).max(0.0),
@@ -241,6 +246,8 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
         .map(|entry| or_zero(js::get(entry, "churn")))
         .sum();
     let churn = match &incremental_scope {
+        // `inScopeChurn` and `light_churn` both measure each file's churn in
+        // the current PR diff, so subtracting the light files is consistent.
         Some(s) => (or_zero(js::get(s, "inScopeChurn")) - light_churn).max(0.0),
         None => (or_zero(js::get(pr, "additions")) + or_zero(js::get(pr, "deletions"))
             - light_churn)
@@ -312,8 +319,7 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
         Some(Value::Object(m)) => m,
         _ => Map::new(),
     };
-    let rules = risk_path_rules(input.profile)?;
-    let mut foci = select_foci(&files, lens_budget, &foci_map, &rules);
+    let mut foci = select_foci(&files, lens_budget, &foci_map, &risk_rules);
     if lenses_override.is_none() {
         foci = keep_correctness(foci, &foci_map);
     }
