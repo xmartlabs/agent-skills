@@ -165,5 +165,8 @@ async fn a_deployment_pr_with_an_empty_file_list_is_still_skipped() {
     // A deployment PR is skipped before anything reads its files, so a
     // transient empty list must not turn that skip into an error.
     let out = preflight_on("deploy", &[], 120, DIFF, &["main"]).await;
-    assert!(matches!(out, Ok(ContextOutcome::Skipped { .. })), "{out:?}");
+    assert!(
+        matches!(&out, Ok(ContextOutcome::Skipped { reason }) if reason == "deployment PR"),
+        "{out:?}"
+    );
 }
