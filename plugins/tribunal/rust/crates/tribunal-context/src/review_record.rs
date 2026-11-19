@@ -22,7 +22,9 @@ use serde_json::{Map, Number, Value};
 use tribunal_core::evidence::js_ext::{object_prototype_property, utf16_cmp};
 use tribunal_core::js;
 use tribunal_core::report::js_ext::{strict_eq, to_js_string};
-use tribunal_core::report::merged_locations_check::merged_locations_missing_from_report_text;
+use tribunal_core::report::merged_locations_check::{
+    is_question_to_review, merged_locations_missing_from_report,
+};
 use tribunal_core::report::report_fidelity_checks::{
     grounded_diagnostic_missing_from_report_text, kill_reason_missing_from_report_text,
     merged_from_annotation_missing_from_report_text, unexamined_wording_in_report_text,
@@ -1009,11 +1011,12 @@ fn merged_locations_error(v: Option<&Value>, core: String) -> String {
 pub fn apply_fidelity_checks(findings: &mut [Value], report_text: &str) -> Result<(), String> {
     for f in findings.iter_mut() {
         let unexamined = unexamined_wording_in_report_text(f, report_text);
+        let question = is_question_to_review(f);
         let Value::Object(m) = f else {
             continue;
         };
         let locations = m.get("mergedLocations");
-        let merged = merged_locations_missing_from_report_text(locations, report_text)
+        let mut merged = merged_locations_missing_from_report(locations, report_text)
             .map_err(|e| merged_locations_error(locations, e))?;
         let refuted = match m.get("votes") {
             Some(Value::Array(votes)) => votes.iter().find(|v| {
@@ -1029,7 +1032,7 @@ pub fn apply_fidelity_checks(findings: &mut [Value], report_text: &str) -> Resul
             Some(v) => kill_reason_missing_from_report_text(js::get(v, "killReason"), report_text),
             None => Vec::new(),
         };
-        let merged_from = merged_from_annotation_missing_from_report_text(
+        let mut merged_from = merged_from_annotation_missing_from_report_text(
             m.get("mergedFrom").filter(|v| js::truthy(Some(v))),
             report_text,
         );
@@ -1037,6 +1040,10 @@ pub fn apply_fidelity_checks(findings: &mut [Value], report_text: &str) -> Resul
             m.get("grounded").filter(|v| js::truthy(Some(v))),
             report_text,
         );
+        if question {
+            merged.clear();
+            merged_from.clear();
+        }
         m.insert(
             "mergedLocationsMissingFromReport".into(),
             Value::Array(merged),
@@ -1277,6 +1284,42 @@ pub fn run(argv: &[String], env: &LedgerEnv) -> CliOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_posted_body_does_not_hold_a_question_to_review_to_its_merged_lines() {
+        let finding = |placement: Value| {
+            serde_json::json!({
+                "title": "Cache read races the write",
+                "placement": placement,
+                "mergedFrom": ["correctness", "scenario-question"],
+                "mergedLocations": [
+                    {"file": "src/components/widgets.ts", "line": 212},
+                    {"file": "src/components/widgets.ts", "line": 203}
+                ]
+            })
+        };
+        let mut findings = vec![
+            finding(serde_json::json!({"placement": "lower-priority-question", "worth": 2})),
+            finding(Value::Null),
+        ];
+        apply_fidelity_checks(&mut findings, "a posted body with no questions").unwrap();
+        assert_eq!(
+            findings[0]["mergedLocationsMissingFromReport"],
+            serde_json::json!([])
+        );
+        assert_eq!(
+            findings[0]["mergedFromAnnotationMissingFromReport"],
+            serde_json::json!([])
+        );
+        assert_eq!(
+            findings[1]["mergedLocationsMissingFromReport"],
+            serde_json::json!(["src/components/widgets.ts:203"])
+        );
+        assert_ne!(
+            findings[1]["mergedFromAnnotationMissingFromReport"],
+            serde_json::json!([])
+        );
+    }
 
     #[test]
     fn strings_concatenate_and_falsy_values_fall_back_to_zero() {
