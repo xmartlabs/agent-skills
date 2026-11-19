@@ -784,6 +784,22 @@ pub struct ReviewContext {
     pub methodology_line: String,
 }
 
+/// What the partition did, for the preflight summary, so two plans can be
+/// compared without a patched build: `fileGroups` always, and `partitionMode`
+/// and `clusters` when the plan records them.
+#[must_use]
+pub fn preflight_partition_fields(plan: &Plan) -> Map<String, Value> {
+    let mut fields = Map::new();
+    fields.insert("fileGroups".into(), json!(plan.file_groups));
+    let plan_value = plan.to_value();
+    for key in ["partitionMode", "clusters"] {
+        if let Some(v) = plan_value.get(key) {
+            fields.insert(key.into(), v.clone());
+        }
+    }
+    fields
+}
+
 pub const SECTIONS_ABOVE_FILES: usize = 12;
 
 /// The workflow's Context phase after SKILL.md's steps.
@@ -961,16 +977,10 @@ pub async fn context_phase<A: Agent>(
             "lensCount": plan.lens_count,
             "lensGroups": plan.group_count,
             "incrementalFallback": plan.incremental_fallback,
-            "fileGroups": plan.file_groups,
         });
-        // fileGroups is always present; partitionMode and clusters are
-        // cohesion-only, so two plans can be compared without a patched build.
         let mut summary = summary;
-        let plan_value = plan.to_value();
-        for key in ["partitionMode", "clusters"] {
-            if let Some(v) = plan_value.get(key) {
-                summary[key] = v.clone();
-            }
+        for (key, value) in preflight_partition_fields(&plan) {
+            summary[key.as_str()] = value;
         }
         return Ok(ContextOutcome::Preflight { summary });
     }
