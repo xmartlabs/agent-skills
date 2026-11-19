@@ -85,21 +85,22 @@ fn cohesion_places_clusters_whole_and_keeps_lone_files_as_units() {
 }
 
 #[test]
-fn cohesion_uses_more_slots_to_give_each_group_the_top_foci() {
-    let files = many_files();
+fn cohesion_keeps_churn_lens_count_and_foci_per_slot() {
+    // Two files per cluster, so churn's per-file LPT splits clusters and
+    // cohesion keeps them whole: only the groups' files may differ.
+    let files: Vec<String> = (0..18)
+        .map(|i| format!("apps/prototypes/p{}/f{i}.rs", i / 2))
+        .collect();
     let churn: Vec<_> = files.iter().map(|f| json!({"file":f,"churn":10})).collect();
-    let p = plan(
-        files,
-        churn,
-        json!({"groupBy":["apps/prototypes/*/"]}),
-        None,
-        None,
-    );
-    assert_eq!(p.lens_count, 6.0);
-    for (i, slot) in p.lens_plan.iter().enumerate() {
-        assert_eq!(slot.focus, p.foci[i % 2]);
-        assert_eq!(slot.files.as_ref().unwrap(), &p.file_groups[i / 2]);
+    let profile = json!({"groupBy":["apps/prototypes/*/"]});
+    let cohesion = plan(files.clone(), churn.clone(), profile, None, None);
+    let churn_plan = plan(files, churn, json!({}), Some("churn"), None);
+    assert_eq!(cohesion.lens_count, churn_plan.lens_count);
+    assert_eq!(cohesion.lens_plan.len(), churn_plan.lens_plan.len());
+    for (cohesion_slot, churn_slot) in cohesion.lens_plan.iter().zip(&churn_plan.lens_plan) {
+        assert_eq!(cohesion_slot.focus, churn_slot.focus);
     }
+    assert_ne!(cohesion.file_groups, churn_plan.file_groups);
 }
 
 #[test]
