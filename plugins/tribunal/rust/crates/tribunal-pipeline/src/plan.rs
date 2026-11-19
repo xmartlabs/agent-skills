@@ -332,7 +332,15 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
             } else {
                 foci[i % foci.len()].clone()
             },
-            files: (group_count > 1.0).then(|| file_groups[i % file_groups.len()].clone()),
+            files: if group_count > 1.0 {
+                Some(file_groups[i % file_groups.len()].clone())
+            } else if light_files.is_empty() {
+                None
+            } else {
+                // One group reads the whole diff, light files included; list
+                // the rest so the lens stays off them.
+                Some(files.clone())
+            },
         })
         .collect();
     let uncovered_files: Vec<String> = if group_count > 1.0 {
