@@ -66,8 +66,8 @@ pub struct MetricsScope {
     #[serde(default = "one_lens_sample")]
     pub lens_samples: u32,
     pub file_partition_mode: Value,
-    /// `cohesion` when the plan partitioned by `groupBy` clusters; absent
-    /// (null) otherwise, so a churn row is unchanged.
+    /// `churn` or `cohesion` when the profile has `groupBy` or the run passed
+    /// `--partition`; absent (null) otherwise, so a default row is unchanged.
     pub partition_mode: Value,
     pub per_group_churn: Value,
     pub use_codex_head: bool,
@@ -762,7 +762,7 @@ pub fn metrics_row(s: &MetricsScope) -> Result<Value, String> {
     put("lensCountOverride", s.lenses_override.clone());
     put("lensSamples", json!(s.lens_samples));
     put("filePartitionMode", s.file_partition_mode.clone());
-    if s.partition_mode == json!("cohesion") {
+    if !s.partition_mode.is_null() {
         put("partitionMode", s.partition_mode.clone());
     }
     put("perGroupChurn", s.per_group_churn.clone());

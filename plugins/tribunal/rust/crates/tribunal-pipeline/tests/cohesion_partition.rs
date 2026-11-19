@@ -119,6 +119,11 @@ fn churn_override_and_cohesion_without_profile_preserve_churn_partition() {
     assert_eq!(override_plan.file_groups, base.file_groups);
     assert_eq!(override_plan.lens_plan, base.lens_plan);
     assert_eq!(no_profile.file_groups, base.file_groups);
+    // Churn chosen over a groupBy, or cohesion asked for without one, is
+    // recorded as churn; the default plan records nothing.
+    assert_eq!(override_plan.to_value()["partitionMode"], "churn");
+    assert_eq!(no_profile.to_value()["partitionMode"], "churn");
+    assert!(base.to_value().get("partitionMode").is_none());
     assert!(no_profile
         .logs
         .iter()

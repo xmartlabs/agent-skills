@@ -59,6 +59,9 @@ pub struct Plan {
     pub file_groups: Vec<Vec<String>>,
     /// How files are grouped: "churn" or "cohesion".
     pub partition_mode: &'static str,
+    /// The profile has `groupBy` or the run passed `--partition`, so the
+    /// partition mode is a choice worth recording, churn included.
+    pub partition_chosen: bool,
     /// How churn partitioning weighs files: "churn-aware" or round-robin fallback.
     pub file_partition_mode: &'static str,
     pub clusters: Vec<Vec<String>>,
@@ -100,8 +103,10 @@ impl Plan {
         if !self.light_files.is_empty() {
             value["lightFiles"] = strs(&self.light_files);
         }
-        if self.partition_mode == "cohesion" {
+        if self.partition_chosen {
             value["partitionMode"] = json!(self.partition_mode);
+        }
+        if self.partition_mode == "cohesion" {
             let clusters: Map<String, Value> = self
                 .clusters
                 .iter()
@@ -426,6 +431,7 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
     }
     let (group_by, group_by_warnings) = group_by_rules(input.profile);
     logs.extend(group_by_warnings);
+    let partition_chosen = input.partition_mode.is_some() || !group_by.is_empty();
     let requested_mode = input.partition_mode.unwrap_or(if group_by.is_empty() {
         "churn"
     } else {
@@ -642,6 +648,7 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
         file_groups,
         file_partition_mode,
         partition_mode,
+        partition_chosen,
         clusters,
         per_group_churn,
         foci,
