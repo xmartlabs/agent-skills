@@ -12,7 +12,7 @@
 | `codex-model` | empty | Override the external model; otherwise inherit the engine's default. |
 | `model`, `effort` | empty | Override the engine's Claude model and reasoning effort. |
 | `concurrency`, `max-panels`, `max-agents`, `max-output-tokens`, `prior-verify` | empty | Pass a validated numeric override, or inherit the engine default. |
-| `lens-samples` | `2` | Validated 1–4 override; empty inherits the engine default. |
+| `lens-samples` | empty | Validated 1–4 override; empty inherits the engine default. `'2'` is an opt-in for large or high-risk PRs (1.3x to 1.6x the cost, no measured detection gain). |
 | `bot-comments` | `false` | Opt into vetting existing bot findings. |
 | `reviewer` | `frontend` | Generic `frontend`, `backend`, `python`, or `e2e` profile, only when the repo has none. |
 

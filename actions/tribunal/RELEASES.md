@@ -25,9 +25,8 @@ own commit.
 
 ## Unreleased
 
-- `lens-samples` defaults to `2`: every lens is sampled twice, so a finding one sample misses can
-  still surface. It roughly doubles the lens stage's cost; set `lens-samples: '1'` for the previous
-  behavior, or an empty value to inherit the engine default.
+- Docs: `lens-samples: '2'` is documented as an opt-in for large or high-risk PRs, with its
+  measured cost (1.3x to 1.6x per review) and no measured detection gain. The default stays empty.
 
 ## v1.4.7 — bundles Tribunal 115.6.2
 

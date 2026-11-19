@@ -109,7 +109,7 @@ assert_eq "Codex remains opt-in" "codex='false'" "$(defaults "$ACTION" | grep '^
 assert_eq "bundled is the version default" "tribunal-version='bundled'" "$(defaults "$ACTION" | grep '^tribunal-version=')"
 assert_eq "comment is the verdict default" "verdict='comment'" "$(defaults "$ACTION" | grep '^verdict=')"
 assert_eq "full is the review default" "review-mode='full'" "$(defaults "$ACTION" | grep '^review-mode=')"
-assert_eq "two samples per lens is the default" "lens-samples='2'" "$(defaults "$ACTION" | grep '^lens-samples=')"
+assert_eq "lens samples inherit the engine default" "lens-samples=''" "$(defaults "$ACTION" | grep '^lens-samples=')"
 # The findings check is opt-in, and only a posted review leaves one.
 assert_eq "the findings check is off by default" "findings-check='off'" "$(defaults "$ACTION" | grep '^findings-check=')"
 assert_ok "the findings check follows a successful post only, and not when off" \
