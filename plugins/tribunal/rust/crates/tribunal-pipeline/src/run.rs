@@ -26,7 +26,7 @@ use tribunal_core::profile::high_risk_surface::with_risk_path_surface;
 use tribunal_core::profile::lens_foci::foci_label_for;
 use tribunal_core::profile::lens_routing::lens_agent_for;
 use tribunal_core::profile::profile_lookup::risk_path_rules;
-use tribunal_core::report::cluster_sections::{add_cluster_keys, cluster_sections};
+use tribunal_core::report::cluster_sections::{cluster_sections, split_for_report};
 use tribunal_core::report::draft_comments_strip::strip_draft_comments_from_body;
 use tribunal_core::votes::evidence_resolver_degrade::evidence_resolver_failure;
 
@@ -1245,13 +1245,12 @@ pub async fn synthesize_phase<A: Agent>(
     }
     let re_examined = prior_re_examined(&verified, &prior, logs);
 
-    let mut surviving = surviving_for_synthesis(&v.surviving);
     let (group_rules, _) = group_by::rules(profile);
-    let (anchored, payload) = anchored_payload(&surviving);
     // The synthesizer gets the findings as before; only the run data and the
     // "Findings by area" section carry the cluster keys.
-    let synthesis_surviving = surviving.clone();
-    add_cluster_keys(&mut surviving, &group_rules);
+    let (synthesis_surviving, surviving) =
+        split_for_report(&surviving_for_synthesis(&v.surviving), &group_rules);
+    let (anchored, payload) = anchored_payload(&synthesis_surviving);
     let relay = if anchored > 0 && js::truthy(head) {
         let head_s = to_js_string(head);
         let mut argv: Vec<String> = vec![

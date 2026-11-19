@@ -63,6 +63,16 @@ fn finding_cluster(finding: &Value, rules: &[GroupByRule]) -> Option<String> {
         .and_then(|file| crate::profile::group_by::cluster_key(file, rules))
 }
 
+/// The findings twice: as the synthesizer gets them, without cluster keys,
+/// and with the keys the run data and the area section read. Keeping the
+/// first copy free of keys leaves the report prompt as it was.
+#[must_use]
+pub fn split_for_report(findings: &[Value], rules: &[GroupByRule]) -> (Vec<Value>, Vec<Value>) {
+    let mut keyed = findings.to_vec();
+    add_cluster_keys(&mut keyed, rules);
+    (findings.to_vec(), keyed)
+}
+
 pub fn add_cluster_keys(findings: &mut [Value], rules: &[GroupByRule]) {
     if rules.is_empty() {
         return;
