@@ -89,6 +89,26 @@ pub struct DiffDelivery {
     pub head_sha: Option<Value>,
 }
 
+/// `diff` without the sections of `drop`, matched on the post-image path
+/// of each `diff --git` header. A header it cannot parse keeps its section.
+#[must_use]
+pub fn diff_without_files(diff: &str, drop: &[String]) -> String {
+    let mut out: Vec<&str> = Vec::new();
+    let mut keep = true;
+    for line in diff.split('\n') {
+        if let Some(rest) = line.strip_prefix("diff --git a/") {
+            keep = rest
+                .rfind(" b/")
+                .map(|i| &rest[i + 3..])
+                .is_none_or(|path| !drop.iter().any(|d| d == path));
+        }
+        if keep {
+            out.push(line);
+        }
+    }
+    out.join("\n")
+}
+
 impl DiffDelivery {
     /// `diffBody(tail)`.
     #[must_use]
@@ -372,5 +392,16 @@ mod tests {
         assert_eq!(exposure.lens_receivers, 1);
         assert_eq!(exposure.full_diff_receivers, 1);
         assert_eq!(exposure.delivered_bytes, 1234.0);
+    }
+
+    #[test]
+    fn diff_without_files_drops_only_the_named_sections() {
+        let diff = "diff --git a/src/a.ts b/src/a.ts\n+a\ndiff --git a/yarn.lock b/yarn.lock\n+lock\ndiff --git a/src/b.ts b/src/b.ts\n+b";
+        let kept = diff_without_files(diff, &["yarn.lock".to_owned()]);
+        assert_eq!(
+            kept,
+            "diff --git a/src/a.ts b/src/a.ts\n+a\ndiff --git a/src/b.ts b/src/b.ts\n+b"
+        );
+        assert_eq!(diff_without_files(diff, &[]), diff);
     }
 }

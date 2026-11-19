@@ -288,6 +288,41 @@ fn shared_diff(delivery: &DiffDelivery, logs: &mut Vec<String>) -> Option<String
     Some(text)
 }
 
+/// The lenses' copy of the diff: the run's diff without the light files'
+/// sections, written next to it. With no light file, no diff on disk, or a
+/// write that fails, the lenses get the run's own delivery.
+fn lens_delivery(
+    delivery: &DiffDelivery,
+    light: &[String],
+    logs: &mut Vec<String>,
+) -> DiffDelivery {
+    let Some(path) = delivery.diff_path.as_deref().filter(|_| !light.is_empty()) else {
+        return delivery.clone();
+    };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return delivery.clone();
+    };
+    let kept = crate::prompts::diff_without_files(&text, light);
+    let out = format!("{path}.lenses");
+    if let Err(e) = std::fs::write(&out, &kept) {
+        logs.push(format!(
+            "Lenses read the full diff: cannot write {out}: {e}"
+        ));
+        return delivery.clone();
+    }
+    logs.push(format!(
+        "Lenses read a diff without the {} light file(s): {} of {} bytes.",
+        light.len(),
+        kept.len(),
+        text.len()
+    ));
+    DiffDelivery {
+        diff_path: Some(out),
+        diff_bytes: Some(kept.len() as f64),
+        ..delivery.clone()
+    }
+}
+
 /// The most independent samples one lens may get from `--lens-samples`.
 pub const MAX_LENS_SAMPLES: u32 = 4;
 
@@ -337,6 +372,14 @@ pub async fn run_review<A: Agent>(
             rc.plan.lens_plan.len()
         ));
     }
+    let lens_delivery = lens_delivery(&rc.delivery, &rc.plan.light_files, logs);
+    if lens_delivery.diff_path != rc.delivery.diff_path && rc.plan.group_count <= 1.0 {
+        // The lenses' diff no longer holds the light files, so one group
+        // reads all of it rather than a list that implies other lenses.
+        for slot in &mut rc.plan.lens_plan {
+            slot.files = None;
+        }
+    }
     let profile = &prepared.profile;
     let lens_agent = lens_agent_for(profile)?.to_owned();
     let mut definition = agent_def::load(&rt.plugin_root, &lens_agent)?;
@@ -347,7 +390,7 @@ pub async fn run_review<A: Agent>(
     );
     let diff = shared
         .as_ref()
-        .and_then(|_| shared_diff(&rc.delivery, logs));
+        .and_then(|_| shared_diff(&lens_delivery, logs));
     if let Some((methodology, conventions)) = &shared {
         definition.body = lens_system_prompt(
             &definition.body,
@@ -388,7 +431,7 @@ pub async fn run_review<A: Agent>(
                 focus: &slot.focus,
                 files: slot.files.as_deref(),
             },
-            &rc.delivery,
+            &lens_delivery,
             &reference,
             &mut exposure,
         )?;
@@ -1659,6 +1702,32 @@ pub async fn run_full<A: Agent>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lenses_get_a_diff_without_the_light_files() {
+        let dir =
+            std::env::temp_dir().join(format!("tribunal-lens-delivery-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("pr.patch");
+        let diff =
+            "diff --git a/src/a.ts b/src/a.ts\n+a\ndiff --git a/yarn.lock b/yarn.lock\n+lock";
+        std::fs::write(&path, diff).unwrap();
+        let delivery = DiffDelivery {
+            diff_path: Some(path.to_string_lossy().into_owned()),
+            diff_bytes: Some(diff.len() as f64),
+            head_pin: json!(null),
+            head_sha: None,
+        };
+        let mut logs = Vec::new();
+        let lens = lens_delivery(&delivery, &["yarn.lock".to_owned()], &mut logs);
+        let lens_path = lens.diff_path.clone().unwrap();
+        assert_ne!(Some(lens_path.clone()), delivery.diff_path);
+        let text = std::fs::read_to_string(&lens_path).unwrap();
+        assert_eq!(text, "diff --git a/src/a.ts b/src/a.ts\n+a");
+        assert_eq!(lens.diff_bytes, Some(text.len() as f64));
+        assert_eq!(lens_delivery(&delivery, &[], &mut logs), delivery);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn uncovered_files_are_the_changed_files_no_candidate_names() {
