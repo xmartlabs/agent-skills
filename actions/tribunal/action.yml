@@ -96,7 +96,9 @@ inputs:
     description: 'Positive prior-finding verification limit; empty uses the engine default.'
     default: ''
   lens-samples:
-    description: 'Independent samples per lens, 1 to 4; empty uses the engine default.'
+    description: >-
+      Independent samples per lens, 1 to 4; empty uses the engine default. The README's input
+      table has the measured cost of `2` and when to use it.
     default: ''
   findings-check:
     description: >-

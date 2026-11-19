@@ -25,7 +25,9 @@ own commit.
 
 ## Unreleased
 
-Nothing yet.
+- Docs: `lens-samples: '2'` is documented as an opt-in for large or high-risk PRs, with its
+  measured cost and no measured detection gain (see the README's input table). The default
+  stays empty.
 
 ## v1.4.7 — bundles Tribunal 115.6.2
 
