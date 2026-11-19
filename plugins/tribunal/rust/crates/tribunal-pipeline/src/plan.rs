@@ -198,24 +198,52 @@ fn cohesion_partition(
         return (out, cluster_keys);
     }
     let threshold = units.iter().map(|u| u.2).sum::<f64>() / groups as f64;
-    let mut expanded = Vec::new();
-    for (key, unit_files, total) in units {
-        if key.is_some() && total > threshold {
-            expanded.extend(
-                unit_files
-                    .into_iter()
-                    .map(|f| (key.clone(), vec![f.clone()], weight(&f))),
-            );
-        } else {
-            expanded.push((key, unit_files, total));
-        }
-    }
     // Stable descending LPT: equal-weight units retain profile/file encounter order.
-    expanded.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+    units.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
     let mut out = vec![Vec::new(); groups];
     let mut cluster_keys = vec![Vec::new(); groups];
     let mut totals = vec![0.0; groups];
-    for (key, unit_files, total) in expanded {
+    for (key, mut unit_files, total) in units {
+        if key.is_some() && total > threshold {
+            // Reserve the fewest currently-lightest groups whose capacity covers
+            // this cluster's average-load share, then LPT its files within them.
+            let target_groups = ((total / threshold).ceil() as usize).min(groups);
+            let mut selected = (0..groups).collect::<Vec<_>>();
+            selected.sort_by(|a, b| {
+                totals[*a]
+                    .partial_cmp(&totals[*b])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.cmp(b))
+            });
+            selected.truncate(target_groups);
+            unit_files.sort_by(|a, b| {
+                weight(b)
+                    .partial_cmp(&weight(a))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let mut subtotals = selected.iter().map(|i| totals[*i]).collect::<Vec<_>>();
+            for file in unit_files {
+                let mut selected_index = 0;
+                for i in 1..selected.len() {
+                    if subtotals[i] < subtotals[selected_index]
+                        || (subtotals[i] == subtotals[selected_index]
+                            && selected[i] < selected[selected_index])
+                    {
+                        selected_index = i;
+                    }
+                }
+                let index = selected[selected_index];
+                out[index].push(file.clone());
+                if let Some(cluster) = &key {
+                    if !cluster_keys[index].contains(cluster) {
+                        cluster_keys[index].push(cluster.clone());
+                    }
+                }
+                subtotals[selected_index] += weight(&file);
+                totals[index] += weight(&file);
+            }
+            continue;
+        }
         let mut index = 0;
         for i in 1..groups {
             if totals[i] < totals[index] {
