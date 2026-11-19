@@ -316,3 +316,15 @@ fn one_group_keeps_churn_lens_plan_shape_and_lone_files_are_units() {
         files.len()
     );
 }
+
+#[test]
+fn a_file_beside_the_star_directory_has_no_cluster() {
+    use tribunal_core::profile::group_by;
+    let (rules, _) = group_by::rules(&json!({"groupBy": ["src/features/*/"]}));
+    assert_eq!(
+        group_by::cluster_key("src/features/billing/a.ts", &rules).as_deref(),
+        Some("src/features/billing/")
+    );
+    assert_eq!(group_by::cluster_key("src/features/index.ts", &rules), None);
+    assert_eq!(group_by::cluster_key("src/features", &rules), None);
+}
