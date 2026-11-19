@@ -97,8 +97,8 @@ inputs:
     default: ''
   lens-samples:
     description: >-
-      Independent samples per lens, 1 to 4; empty uses the engine default. See the README's input
-      table for when `2` is worth its cost.
+      Independent samples per lens, 1 to 4; empty uses the engine default. The README's input
+      table has the measured cost of `2` and when to use it.
     default: ''
   findings-check:
     description: >-

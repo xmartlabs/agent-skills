@@ -400,7 +400,7 @@ Security).
 | `max-agents` | empty | Positive integer: maximum agents dispatched. |
 | `max-output-tokens` | empty | Positive integer: output-token budget. |
 | `prior-verify` | empty | Positive integer: maximum prior findings verified on a re-review. |
-| `lens-samples` | empty | Integer 1–4: independent samples per lens; empty inherits the engine's default. `'2'` is an option for large or high-risk PRs, where paying more for a possible gain is easier to justify: on the maintainers' labelled corpus (November 2026) it cost 1.3x to 1.6x per review and found no more defects than one sample. |
+| `lens-samples` | empty | Integer 1–4: independent samples per lens; empty inherits the engine's default. On the maintainers' labelled corpus (November 2026) `'2'` cost 1.3x to 1.6x per review and found no more defects than one sample. Use it only on large or high-risk PRs, where paying more for an unmeasured gain is easier to justify. |
 | `bot-comments` | `false` | Also vet existing bot findings. |
 | `findings-check` | `off` | `off`, `inform` or `enforce`: set a "Tribunal findings" commit status with the count of open blocking and should-fix findings. Needs `statuses: write`. See [Findings check](#findings-check). |
 | `upload-run` | `true` | Upload the run record, the report and the logs as an artifact (14 days). Never on a public repository (see Security). |
