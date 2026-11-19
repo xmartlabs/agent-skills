@@ -50,7 +50,9 @@ group load, in which case its files are assigned individually. Use
 partition, or `--partition cohesion` to request cohesion explicitly. Cohesion
 without valid `groupBy` entries falls back to churn. `--lenses` remains an
 ablation override: its exact lens count is retained, and it can reduce the
-number of file groups; it does not use cohesion's per-group focus expansion.
+number of file groups. Cohesion changes only which files each group holds: the
+lens count and each lens's focus are the same as under churn. The run's
+metrics row records `partitionMode: "cohesion"` when it applied.
 
 `projectRules` names the repo's own review rules, usually
 `.claude/review-rules.md`, read at the same ref as the profile. The plugin's

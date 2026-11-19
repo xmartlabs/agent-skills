@@ -446,15 +446,7 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
     if lenses_override.is_none() {
         foci = keep_correctness(foci, &foci_map);
     }
-    let lens_count =
-        if partition_mode == "cohesion" && group_count > 1.0 && lenses_override.is_none() {
-            let per_group = ((lens_budget / group_count).ceil() as usize)
-                .min(foci.len())
-                .max(1);
-            group_count * per_group as f64
-        } else {
-            lens_count_for(lenses_override, group_count, lens_budget, foci.len() as f64)
-        };
+    let lens_count = lens_count_for(lenses_override, group_count, lens_budget, foci.len() as f64);
     if let Some(o) = lenses_override {
         logs.push(format!(
             "LENS ABLATION — lens count forced to {}, file partition collapsed to {} group(s) so coverage stays total. This run is one ARM of a deliberate A/B; its findings are not comparable to a normal run except against the other arm.",
@@ -462,16 +454,10 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
             n(group_count)
         ));
     }
-    let cohesion_per_group =
-        if partition_mode == "cohesion" && group_count > 1.0 && lenses_override.is_none() {
-            Some((lens_count as usize) / (group_count as usize))
-        } else {
-            None
-        };
     let lens_plan: Vec<LensSlot> = (0..lens_count as usize)
         .map(|i| {
-            let group_index = cohesion_per_group.map_or(i % file_groups.len(), |k| i / k);
-            let focus_index = cohesion_per_group.map_or(i % foci.len().max(1), |k| i % k);
+            let group_index = i % file_groups.len();
+            let focus_index = i % foci.len().max(1);
             LensSlot {
                 focus: foci.get(focus_index).cloned().unwrap_or(Value::Null),
                 files: (group_count > 1.0).then(|| file_groups[group_index].clone()),
