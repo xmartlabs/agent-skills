@@ -103,7 +103,8 @@ fn finding_line_number(finding: &Value) -> String {
 }
 
 /// One finding as a list line: severity, title and, when it has a file, its
-/// location. Model text loses control characters; the path is a code span.
+/// location. Model text loses control characters and has its Markdown
+/// escaped; the path is a code span and the line a number or `?`.
 fn finding_line(finding: &Value) -> String {
     let text = |key: &str| escape_markdown(finding.get(key).and_then(Value::as_str).unwrap_or(""));
     let mut line = format!("\n- {} {}", text("severity"), text("title"));

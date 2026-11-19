@@ -1204,6 +1204,8 @@ pub async fn synthesize_phase<A: Agent>(
     let mut surviving = surviving_for_synthesis(&v.surviving);
     let (group_rules, _) = group_by::rules(profile);
     let (anchored, payload) = anchored_payload(&surviving);
+    // The synthesizer gets the findings as before; only the run data and the
+    // "Findings by area" section carry the cluster keys.
     let synthesis_surviving = surviving.clone();
     add_cluster_keys(&mut surviving, &group_rules);
     let relay = if anchored > 0 && js::truthy(head) {
