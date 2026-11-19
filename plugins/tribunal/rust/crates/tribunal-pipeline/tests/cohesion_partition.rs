@@ -156,6 +156,125 @@ fn oversized_clusters_split_to_individual_files_and_single_group_ignores_cohesio
 }
 
 #[test]
+fn oversized_cluster_uses_only_the_fewest_groups_that_fit() {
+    let mut files = (0..4)
+        .map(|i| format!("apps/prototypes/large/f{i}.rs"))
+        .collect::<Vec<_>>();
+    files.extend((0..10).map(|i| format!("src/solo{i}.rs")));
+    let churn: Vec<_> = files
+        .iter()
+        .map(|f| json!({"file":f,"churn":if f.contains("large") {30} else {10}}))
+        .collect();
+    let p = plan(
+        files.clone(),
+        churn,
+        json!({"groupBy":["apps/prototypes/*/"]}),
+        None,
+        None,
+    );
+    assert_eq!(p.group_count, 3.0);
+    let containing = p
+        .file_groups
+        .iter()
+        .filter(|g| g.iter().any(|f| f.contains("large")))
+        .count();
+    assert_eq!(
+        containing, 2,
+        "cluster churn 120 / average load 73.3 requires two groups"
+    );
+    let placed = p
+        .file_groups
+        .iter()
+        .flatten()
+        .filter(|f| f.contains("large"))
+        .count();
+    assert_eq!(
+        placed, 4,
+        "every large-cluster file must be placed exactly once"
+    );
+    assert!(p.file_groups.iter().enumerate().all(|(i, g)| {
+        !g.iter().any(|f| f.contains("large"))
+            || p.to_value()["clusters"][i.to_string()]
+                .as_array()
+                .is_some_and(|ks| ks.contains(&json!("apps/prototypes/large/")))
+    }));
+    let all = p.file_groups.iter().flatten().cloned().collect::<Vec<_>>();
+    assert_eq!(all.len(), files.len());
+    assert_eq!(
+        all.iter().collect::<std::collections::HashSet<_>>().len(),
+        files.len()
+    );
+}
+
+#[test]
+fn cluster_with_at_least_eighty_percent_churn_uses_every_group() {
+    let mut files = (0..4)
+        .map(|i| format!("apps/prototypes/dominant/f{i}.rs"))
+        .collect::<Vec<_>>();
+    files.extend((0..10).map(|i| format!("src/solo{i}.rs")));
+    let churn: Vec<_> = files
+        .iter()
+        .map(|f| json!({"file":f,"churn":if f.contains("dominant") {100} else {5}}))
+        .collect();
+    let p = plan(
+        files,
+        churn,
+        json!({"groupBy":["apps/prototypes/*/"]}),
+        None,
+        None,
+    );
+    let containing = p
+        .file_groups
+        .iter()
+        .filter(|g| g.iter().any(|f| f.contains("dominant")))
+        .count();
+    assert_eq!(p.group_count, 3.0);
+    assert_eq!(
+        containing, 3,
+        "a cluster holding over 80% of churn needs all three groups"
+    );
+}
+
+#[test]
+fn oversized_cluster_keeps_churn_lens_count_and_foci_and_conserves_files() {
+    let mut files = (0..4)
+        .map(|i| format!("apps/prototypes/large/f{i}.rs"))
+        .collect::<Vec<_>>();
+    files.extend((0..10).map(|i| format!("src/solo{i}.rs")));
+    let churn: Vec<_> = files
+        .iter()
+        .map(|f| json!({"file":f,"churn":if f.contains("large") {30} else {10}}))
+        .collect();
+    let cohesion = plan(
+        files.clone(),
+        churn.clone(),
+        json!({"groupBy":["apps/prototypes/*/"]}),
+        None,
+        None,
+    );
+    let churn_plan = plan(files.clone(), churn, json!({}), Some("churn"), None);
+    assert_eq!(cohesion.lens_count, churn_plan.lens_count);
+    assert_eq!(cohesion.lens_plan.len(), churn_plan.lens_plan.len());
+    for (cohesion_slot, churn_slot) in cohesion.lens_plan.iter().zip(&churn_plan.lens_plan) {
+        assert_eq!(cohesion_slot.focus, churn_slot.focus);
+    }
+    let placed = cohesion
+        .file_groups
+        .iter()
+        .flatten()
+        .cloned()
+        .collect::<Vec<_>>();
+    assert_eq!(placed.len(), files.len());
+    assert_eq!(
+        placed
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        files.len()
+    );
+}
+
+#[test]
 fn one_group_keeps_churn_lens_plan_shape_and_lone_files_are_units() {
     let only = vec!["apps/prototypes/a/src.rs".into()];
     let clustered = plan(

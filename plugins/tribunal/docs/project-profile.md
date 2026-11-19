@@ -45,7 +45,9 @@ file is assigned the cluster key through the matched segment, such as
 matching no entry remain individual units. Invalid entries are warned about
 and ignored. With at least one valid entry the default partition is cohesion:
 clusters are assigned whole by churn unless a cluster exceeds the average
-group load, in which case its files are assigned individually. Use
+group load. An oversized cluster uses the fewest groups whose average load
+covers its churn, choosing the currently lightest groups (ties by group index),
+then assigns its files within those groups by churn. Use
 `tribunal review --partition churn` to compare with the previous per-file
 partition, or `--partition cohesion` to request cohesion explicitly. Cohesion
 without valid `groupBy` entries falls back to churn. With at least one valid entry,
