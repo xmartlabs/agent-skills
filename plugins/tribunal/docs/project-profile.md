@@ -36,7 +36,10 @@ the lens budget and reported once as not reviewed by lenses. Invalid entries
 are warned about and ignored. A file that matches a `riskPaths` pattern always
 reaches a lens, even when a `lightPaths` entry matches it. The built-in
 non-logic list (lockfiles, generated files, images, Markdown) is separately
-opt-in with `tribunal review --light-no-logic`.
+opt-in with `tribunal review --light-no-logic`. That flag lets the PR's own file
+names (a `dist/` or `generated/` folder, a `.generated.` or `.min.js` name)
+decide what lenses skip, which is why it is opt-in and why risk paths still
+reach a lens.
 
 `groupBy` is an optional array of repo-relative directory patterns with one
 whole `*` path segment, for example `src/features/*/`. A matching
