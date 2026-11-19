@@ -126,7 +126,7 @@ fn churn_override_and_cohesion_without_profile_preserve_churn_partition() {
 }
 
 #[test]
-fn oversized_clusters_split_to_individual_files_and_single_group_ignores_cohesion() {
+fn oversized_clusters_split_and_single_group_preserves_the_lens_plan() {
     let mut files = many_files();
     files.push("apps/prototypes/huge/a.rs".into());
     files.push("apps/prototypes/huge/b.rs".into());
@@ -202,6 +202,31 @@ fn oversized_cluster_uses_only_the_fewest_groups_that_fit() {
     assert_eq!(all.len(), files.len());
     assert_eq!(
         all.iter().collect::<std::collections::HashSet<_>>().len(),
+        files.len()
+    );
+}
+
+#[test]
+fn unknown_churn_lpt_keeps_every_group_nonempty_when_files_cover_groups() {
+    let files = (0..18)
+        .map(|i| format!("apps/prototypes/p{}/f{i}.rs", i % 2))
+        .collect::<Vec<_>>();
+    let p = plan(
+        files.clone(),
+        vec![],
+        json!({"groupBy":["apps/prototypes/*/"]}),
+        None,
+        Some(json!(3)),
+    );
+
+    assert!(p.file_groups.iter().all(|group| !group.is_empty()));
+    let placed = p.file_groups.iter().flatten().cloned().collect::<Vec<_>>();
+    assert_eq!(placed.len(), files.len());
+    assert_eq!(
+        placed
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
         files.len()
     );
 }

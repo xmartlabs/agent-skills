@@ -963,8 +963,8 @@ pub async fn context_phase<A: Agent>(
             "incrementalFallback": plan.incremental_fallback,
             "fileGroups": plan.file_groups,
         });
-        // What the partition did, so two plans can be compared without a
-        // patched build: present only under the cohesion partition.
+        // fileGroups is always present; partitionMode and clusters are
+        // cohesion-only, so two plans can be compared without a patched build.
         let mut summary = summary;
         let plan_value = plan.to_value();
         for key in ["partitionMode", "clusters"] {

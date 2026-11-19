@@ -53,8 +53,10 @@ pub struct Plan {
     pub group_count: f64,
     pub lenses_override: Option<f64>,
     pub file_groups: Vec<Vec<String>>,
-    pub file_partition_mode: &'static str,
+    /// How files are grouped: "churn" or "cohesion".
     pub partition_mode: &'static str,
+    /// How churn partitioning weighs files: "churn-aware" or round-robin fallback.
+    pub file_partition_mode: &'static str,
     pub clusters: Vec<Vec<String>>,
     pub per_group_churn: Vec<f64>,
     pub foci: Vec<Value>,
@@ -143,6 +145,12 @@ fn n(x: f64) -> String {
     js::number_to_string(x)
 }
 
+struct CohesionUnit {
+    cluster_key: Option<String>,
+    files: Vec<String>,
+    churn: f64,
+}
+
 fn cohesion_partition(
     files: &[String],
     churn: &Map<String, Value>,
@@ -166,48 +174,53 @@ fn cohesion_partition(
         .filter_map(|f| churn.get(f).and_then(Value::as_f64))
         .collect();
     let average = if known.is_empty() {
-        0.0
+        1.0
     } else {
         known.iter().sum::<f64>() / known.len() as f64
     };
     let weight = |f: &str| churn.get(f).and_then(Value::as_f64).unwrap_or(average);
-    let mut units: Vec<(Option<String>, Vec<String>, f64)> = Vec::new();
+    let mut units: Vec<CohesionUnit> = Vec::new();
     let mut indexes = std::collections::HashMap::<String, usize>::new();
     for file in files {
         if let Some(key) = cluster_key(file, rules) {
             let index = *indexes.entry(key.clone()).or_insert_with(|| {
-                units.push((Some(key), Vec::new(), 0.0));
+                units.push(CohesionUnit {
+                    cluster_key: Some(key),
+                    files: Vec::new(),
+                    churn: 0.0,
+                });
                 units.len() - 1
             });
-            units[index].1.push(file.clone());
-            units[index].2 += weight(file);
+            units[index].files.push(file.clone());
+            units[index].churn += weight(file);
         } else {
-            units.push((None, vec![file.clone()], weight(file)));
+            units.push(CohesionUnit {
+                cluster_key: None,
+                files: vec![file.clone()],
+                churn: weight(file),
+            });
         }
     }
-    if known.is_empty() {
-        let mut out = vec![Vec::new(); groups];
-        let mut cluster_keys = vec![Vec::new(); groups];
-        for (i, (key, unit_files, _)) in units.into_iter().enumerate() {
-            let index = i % groups;
-            out[index].extend(unit_files);
-            if let Some(key) = key {
-                cluster_keys[index].push(key);
-            }
-        }
-        return (out, cluster_keys);
-    }
-    let threshold = units.iter().map(|u| u.2).sum::<f64>() / groups as f64;
-    // Stable descending LPT: equal-weight units retain profile/file encounter order.
-    units.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+    let threshold = units.iter().map(|u| u.churn).sum::<f64>() / groups as f64;
+    // Stable descending LPT: equal-weight units retain file encounter order.
+    units.sort_by(|a, b| {
+        b.churn
+            .partial_cmp(&a.churn)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let mut out = vec![Vec::new(); groups];
     let mut cluster_keys = vec![Vec::new(); groups];
     let mut totals = vec![0.0; groups];
-    for (key, mut unit_files, total) in units {
-        if key.is_some() && total > threshold {
+    for CohesionUnit {
+        cluster_key,
+        mut files,
+        churn,
+    } in units
+    {
+        if let Some(cluster) = cluster_key.as_ref().filter(|_| churn > threshold) {
             // Reserve the fewest currently-lightest groups whose capacity covers
             // this cluster's average-load share, then LPT its files within them.
-            let target_groups = ((total / threshold).ceil() as usize).min(groups);
+            let target_groups = ((churn / threshold).ceil() as usize).min(groups);
             let mut selected = (0..groups).collect::<Vec<_>>();
             selected.sort_by(|a, b| {
                 totals[*a]
@@ -216,13 +229,13 @@ fn cohesion_partition(
                     .then_with(|| a.cmp(b))
             });
             selected.truncate(target_groups);
-            unit_files.sort_by(|a, b| {
+            files.sort_by(|a, b| {
                 weight(b)
                     .partial_cmp(&weight(a))
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
             let mut subtotals = selected.iter().map(|i| totals[*i]).collect::<Vec<_>>();
-            for file in unit_files {
+            for file in files {
                 let mut selected_index = 0;
                 for i in 1..selected.len() {
                     if subtotals[i] < subtotals[selected_index]
@@ -234,10 +247,8 @@ fn cohesion_partition(
                 }
                 let index = selected[selected_index];
                 out[index].push(file.clone());
-                if let Some(cluster) = &key {
-                    if !cluster_keys[index].contains(cluster) {
-                        cluster_keys[index].push(cluster.clone());
-                    }
+                if !cluster_keys[index].contains(cluster) {
+                    cluster_keys[index].push(cluster.clone());
                 }
                 subtotals[selected_index] += weight(&file);
                 totals[index] += weight(&file);
@@ -250,13 +261,13 @@ fn cohesion_partition(
                 index = i;
             }
         }
-        out[index].extend(unit_files);
-        if let Some(key) = key {
+        out[index].extend(files);
+        if let Some(key) = cluster_key {
             if !cluster_keys[index].contains(&key) {
                 cluster_keys[index].push(key);
             }
         }
-        totals[index] += total;
+        totals[index] += churn;
     }
     (out, cluster_keys)
 }
@@ -490,7 +501,7 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
     }
     let lens_plan: Vec<LensSlot> = (0..lens_count as usize)
         .map(|i| {
-            let group_index = i % file_groups.len();
+            let group_index = i % file_groups.len().max(1);
             let focus_index = i % foci.len().max(1);
             LensSlot {
                 focus: foci.get(focus_index).cloned().unwrap_or(Value::Null),
@@ -532,20 +543,16 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
         format!("Lenses ({}): content-selected for this diff", n(lens_count))
     });
     if partition_mode == "cohesion" {
-        let desc = file_groups
+        let desc = clusters
             .iter()
             .enumerate()
-            .map(|(i, group)| {
-                let names = group
-                    .iter()
-                    .filter_map(|f| cluster_key(f, &group_by))
-                    .collect::<std::collections::BTreeSet<_>>();
+            .map(|(i, names)| {
                 format!(
                     "group {i}: {}",
                     if names.is_empty() {
                         "(no clusters)".into()
                     } else {
-                        names.into_iter().collect::<Vec<_>>().join(", ")
+                        names.join(", ")
                     }
                 )
             })
