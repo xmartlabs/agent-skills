@@ -39,7 +39,9 @@ impl GroupByRule {
     #[must_use]
     pub fn cluster_key(&self, path: &str) -> Option<String> {
         let path_segments: Vec<_> = path.split('/').collect();
-        if path_segments.len() <= self.wildcard {
+        // The `*` segment names a directory, so the file must sit below it:
+        // `src/features/index.ts` is beside the clusters, not one of them.
+        if path_segments.len() <= self.wildcard + 1 {
             return None;
         }
         for (i, pattern) in self.segments.iter().enumerate() {

@@ -488,7 +488,15 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
             let focus_index = i % foci.len().max(1);
             LensSlot {
                 focus: foci.get(focus_index).cloned().unwrap_or(Value::Null),
-                files: (group_count > 1.0).then(|| file_groups[group_index].clone()),
+                files: if group_count > 1.0 {
+                    Some(file_groups[group_index].clone())
+                } else if light_files.is_empty() {
+                    None
+                } else {
+                    // One group reads the whole diff, light files included;
+                    // list the rest so the lens stays off them.
+                    Some(files.clone())
+                },
             }
         })
         .collect();
