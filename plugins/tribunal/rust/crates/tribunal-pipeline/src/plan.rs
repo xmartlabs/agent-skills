@@ -552,7 +552,11 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
                     if names.is_empty() {
                         "(no clusters)".into()
                     } else {
-                        names.join(", ")
+                        // Path order, as the log listed them before; the
+                        // `clusters` JSON keeps placement order.
+                        let mut sorted = names.clone();
+                        sorted.sort();
+                        sorted.join(", ")
                     }
                 )
             })

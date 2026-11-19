@@ -283,6 +283,7 @@ fn an_all_light_pr_is_reviewed_anyway_with_the_log_line() {
         lenses: None,
         profile: &profile,
         light_no_logic: false,
+        partition_mode: None,
     })
     .unwrap();
     assert_eq!(p.files, ["assets/a.png", "assets/b.png"]);
