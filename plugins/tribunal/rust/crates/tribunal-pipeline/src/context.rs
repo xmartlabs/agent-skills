@@ -862,14 +862,15 @@ pub async fn context_phase<A: Agent>(
         json!({"inThreadDecisions": [], "priorReviewSummaries": []})
     };
     let mut pr_context = build_pr_context(&data, &answer)?;
-    if let Some(error) = empty_file_list_error(&pr_context, &args.pr) {
-        return Err(error);
-    }
     if js::truthy(js::get(&pr_context, "isDeploymentPR")) {
         logs.push("Deployment PR — skipping review".into());
         return Ok(ContextOutcome::Skipped {
             reason: "deployment PR".into(),
         });
+    }
+    // After the deployment skip, which never reads the files.
+    if let Some(error) = empty_file_list_error(&pr_context, &args.pr) {
+        return Err(error);
     }
     if !args.head_sha.is_empty() {
         pr_context["headRefOid"] = json!(args.head_sha);

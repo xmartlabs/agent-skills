@@ -28,21 +28,41 @@ fn rec(args: &[&str], stdout: &str) -> Value {
     json!({"args": args, "stdout": stdout, "stderr": "", "code": 0})
 }
 
+/// Removes the scratch root even when the run under test returns early or panics.
+struct Scratch(PathBuf);
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 async fn preflight(
     name: &str,
     files: &[&str],
     additions: u64,
     diff: &str,
 ) -> Result<ContextOutcome, String> {
+    preflight_on(name, files, additions, diff, &[]).await
+}
+
+/// `deploy_branches` lists the profile's deploy branches; the PR's base is `main`.
+async fn preflight_on(
+    name: &str,
+    files: &[&str],
+    additions: u64,
+    diff: &str,
+    deploy_branches: &[&str],
+) -> Result<ContextOutcome, String> {
     let root = std::env::temp_dir().join(format!("tribunal-s12-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
+    let _scratch = Scratch(root.clone());
     std::fs::create_dir_all(root.join("tmp")).unwrap();
     let profile = root.join("profile.json");
     std::fs::write(
         &profile,
         json!({
             "schemaVersion": 1, "project": "widgets", "repo": REPO,
-            "reviewer": "backend", "baseBranch": "main", "deployBranches": [],
+            "reviewer": "backend", "baseBranch": "main", "deployBranches": deploy_branches,
             "foci": {
                 "correctness": "correctness and logic", "dataContract": "data contracts",
                 "security": "security and authorization", "performance": "performance",
@@ -105,9 +125,7 @@ async fn preflight(
     };
     let prepared = prepare(&rt, &args).await?;
     let mut logs = Vec::new();
-    let out = context_phase(&FakeAgent::new(), &rt, &args, &prepared, &mut logs).await;
-    let _ = std::fs::remove_dir_all(&root);
-    out
+    context_phase(&FakeAgent::new(), &rt, &args, &prepared, &mut logs).await
 }
 
 const DIFF: &str =
@@ -140,4 +158,12 @@ async fn a_normal_pr_still_plans() {
         panic!("normal PR must reach the plan");
     };
     assert_eq!(summary["filesInScope"], 1);
+}
+
+#[tokio::test]
+async fn a_deployment_pr_with_an_empty_file_list_is_still_skipped() {
+    // A deployment PR is skipped before anything reads its files, so a
+    // transient empty list must not turn that skip into an error.
+    let out = preflight_on("deploy", &[], 120, DIFF, &["main"]).await;
+    assert!(matches!(out, Ok(ContextOutcome::Skipped { .. })), "{out:?}");
 }
