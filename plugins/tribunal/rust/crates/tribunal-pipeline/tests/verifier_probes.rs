@@ -271,7 +271,8 @@ fn cluster_report_lists_every_finding_once() {
         &["apps/a/x.ts".into(), "apps/b/q.ts".into()],
         &rules,
     );
-    assert!(text.contains("**`apps/b/`**\n- No findings."));
+    assert!(text.contains("No findings in 1 area(s): `apps/b/`"));
+    assert!(!text.contains("**`apps/b/`**"));
     for t in ["InA", "NoFile", "ClusterNotInPr"] {
         assert_eq!(text.matches(t).count(), 1, "{t}:\n{text}");
     }
