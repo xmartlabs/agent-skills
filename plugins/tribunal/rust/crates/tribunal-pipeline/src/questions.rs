@@ -18,6 +18,7 @@ use tokio::sync::Semaphore;
 use tribunal_agent::{Agent, DispatchRequest, DispatchResult};
 use tribunal_core::js;
 use tribunal_core::lens::out_of_diff::reanchor_out_of_diff;
+use tribunal_core::profile::light_paths::no_logic_file;
 
 use crate::review::{
     answer_of, dispatch_lenses, futures_join_all, warm_cache_with, ReviewerSetup, ReviewerTask,
@@ -176,45 +177,6 @@ pub fn merge_questions(samples: &[Vec<Question>], cap: usize) -> Vec<Question> {
 /// and at 8 the answers were 60 to 70% of a run's wall clock; one run at 16
 /// took about 9 seconds a question against 15, at the same cost.
 pub const ANSWER_CONCURRENCY_FACTOR: usize = 2;
-
-/// A file with no behaviour to question: lockfiles, snapshots, minified or
-/// built output, generated code, binaries and prose docs. A question about one
-/// is not answered. Across 256 labelled question findings, the two on docs
-/// were not defects, and none of the 247 labelled corpus defects is in a file
-/// of these kinds. Tests, config and migrations stay: the corpus has real
-/// defects in each.
-#[must_use]
-pub fn no_logic_file(path: &str) -> bool {
-    let p = path.to_ascii_lowercase();
-    let name = p.rsplit('/').next().unwrap_or(&p);
-    const NAMES: [&str; 9] = [
-        "package-lock.json",
-        "npm-shrinkwrap.json",
-        "yarn.lock",
-        "pnpm-lock.yaml",
-        "cargo.lock",
-        "poetry.lock",
-        "gemfile.lock",
-        "composer.lock",
-        "go.sum",
-    ];
-    const SUFFIXES: [&str; 23] = [
-        ".lock", ".snap", ".min.js", ".min.css", ".map", ".pb.go", "_pb2.py", ".md", ".mdx",
-        ".rst", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".pdf", ".woff", ".woff2",
-        ".ttf", ".eot", ".zip", ".gz",
-    ];
-    const DIRS: [&str; 5] = [
-        "__snapshots__",
-        "node_modules",
-        "dist",
-        "generated",
-        "__generated__",
-    ];
-    NAMES.contains(&name)
-        || SUFFIXES.iter().any(|s| name.ends_with(s))
-        || name.contains(".generated.")
-        || p.split('/').rev().skip(1).any(|d| DIRS.contains(&d))
-}
 
 fn same_file(a: &str, b: &str) -> bool {
     a == b || a.ends_with(&format!("/{b}")) || b.ends_with(&format!("/{a}"))

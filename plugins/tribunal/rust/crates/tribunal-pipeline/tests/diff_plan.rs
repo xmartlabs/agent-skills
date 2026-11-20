@@ -223,6 +223,7 @@ fn rust_plan(p: &Value) -> Value {
         pinned_sha: p["pinnedSha"].as_str().unwrap(),
         lenses: p["parsedArgs"].get("lenses"),
         profile: &p["PROFILE"],
+        light_no_logic: false,
     };
     build_plan(&input).expect("plan").to_value()
 }

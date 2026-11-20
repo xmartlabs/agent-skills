@@ -8,10 +8,15 @@ use tribunal_core::js;
 use tribunal_core::lens::js_ext::to_js_string;
 use tribunal_core::profile::file_partition::partition_files_by_churn;
 use tribunal_core::profile::lens_foci::{foci_for, keep_correctness, lens_count_for, select_foci};
+use tribunal_core::profile::light_paths::{no_logic_file, rules as light_path_rules};
 use tribunal_core::profile::profile_lookup::risk_path_rules;
 use tribunal_core::report::carry_forward::incremental_fallback_for;
 
 pub const FILES_PER_GROUP: f64 = 6.0;
+
+/// Logged when every changed file is light and the plan reviews them anyway.
+pub const ALL_LIGHT_LOG: &str =
+    "Every changed file matches lightPaths or --light-no-logic; reviewing them anyway";
 
 pub struct PlanInput<'a> {
     /// `prContext` after `buildPrContext` and the pin, before any narrowing.
@@ -25,6 +30,7 @@ pub struct PlanInput<'a> {
     /// `args.lenses` as given.
     pub lenses: Option<&'a Value>,
     pub profile: &'a Value,
+    pub light_no_logic: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -55,6 +61,7 @@ pub struct Plan {
     pub lens_count: f64,
     pub lens_plan: Vec<LensSlot>,
     pub uncovered_files: Vec<String>,
+    pub light_files: Vec<String>,
     pub logs: Vec<String>,
 }
 
@@ -62,7 +69,7 @@ impl Plan {
     #[must_use]
     pub fn to_value(&self) -> Value {
         let strs = |v: &[String]| Value::from(v.to_vec());
-        json!({
+        let mut value = json!({
             "prFiles": strs(&self.files),
             "allPrFiles": strs(&self.all_pr_files),
             "incrementalScope": self.incremental_scope,
@@ -83,7 +90,11 @@ impl Plan {
             "lensPlan": self.lens_plan.iter().map(|s| json!({"focus": s.focus, "files": s.files})).collect::<Vec<_>>(),
             "uncoveredFiles": strs(&self.uncovered_files),
             "logs": self.logs,
-        })
+        });
+        if !self.light_files.is_empty() {
+            value["lightFiles"] = strs(&self.light_files);
+        }
+        value
     }
 }
 
@@ -201,13 +212,49 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
         logs.push(format!("Full review — {reason}"));
     }
 
+    let (light_rules, light_warnings) = light_path_rules(input.profile);
+    logs.extend(light_warnings);
+    // A risk path always reaches a lens, even when a light rule matches it.
+    let risk_rules = risk_path_rules(input.profile)?;
+    let mut light_files: Vec<String> = files
+        .iter()
+        .filter(|f| {
+            (light_rules.iter().any(|r| r.test(f)) || (input.light_no_logic && no_logic_file(f)))
+                && !risk_rules.iter().any(|r| r.re.test(f))
+        })
+        .cloned()
+        .collect();
+    // A PR made only of light files would leave its lenses nothing to read,
+    // so light filtering is dropped for it and every file is reviewed.
+    let all_files_are_light = !files.is_empty() && light_files.len() == files.len();
+    if all_files_are_light {
+        light_files.clear();
+        logs.push(ALL_LIGHT_LOG.to_owned());
+    } else {
+        files.retain(|f| !light_files.contains(f));
+    }
     let file_count = match &incremental_scope {
         Some(_) => files.len() as f64,
-        None => num(js::get(pr, "fileCount")),
+        None => (num(js::get(pr, "fileCount")) - light_files.len() as f64).max(0.0),
     };
+    let light_churn: f64 = js::get(pr, "fileChurn")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|entry| {
+            light_files
+                .iter()
+                .any(|f| js::get(entry, "file").and_then(Value::as_str) == Some(f.as_str()))
+        })
+        .map(|entry| or_zero(js::get(entry, "churn")))
+        .sum();
     let churn = match &incremental_scope {
-        Some(s) => or_zero(js::get(s, "inScopeChurn")),
-        None => or_zero(js::get(pr, "additions")) + or_zero(js::get(pr, "deletions")),
+        // `inScopeChurn` and `light_churn` both measure each file's churn in
+        // the current PR diff, so subtracting the light files is consistent.
+        Some(s) => (or_zero(js::get(s, "inScopeChurn")) - light_churn).max(0.0),
+        None => (or_zero(js::get(pr, "additions")) + or_zero(js::get(pr, "deletions"))
+            - light_churn)
+            .max(0.0),
     };
     let file_tier: f64 = if file_count <= 2.0 {
         1.0
@@ -275,8 +322,7 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
         Some(Value::Object(m)) => m,
         _ => Map::new(),
     };
-    let rules = risk_path_rules(input.profile)?;
-    let mut foci = select_foci(&files, lens_budget, &foci_map, &rules);
+    let mut foci = select_foci(&files, lens_budget, &foci_map, &risk_rules);
     if lenses_override.is_none() {
         foci = keep_correctness(foci, &foci_map);
     }
@@ -295,7 +341,15 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
             } else {
                 foci[i % foci.len()].clone()
             },
-            files: (group_count > 1.0).then(|| file_groups[i % file_groups.len()].clone()),
+            files: if group_count > 1.0 {
+                Some(file_groups[i % file_groups.len()].clone())
+            } else if light_files.is_empty() {
+                None
+            } else {
+                // One group reads the whole diff, light files included; list
+                // the rest so the lens stays off them.
+                Some(files.clone())
+            },
         })
         .collect();
     let uncovered_files: Vec<String> = if group_count > 1.0 {
@@ -329,6 +383,12 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
             uncovered_files.len()
         ));
     }
+    if !light_files.is_empty() {
+        logs.push(format!(
+            "Not reviewed by lenses (light): {}",
+            light_files.join(", ")
+        ));
+    }
     Ok(Plan {
         files,
         all_pr_files,
@@ -349,6 +409,7 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
         lens_count,
         lens_plan,
         uncovered_files,
+        light_files,
         logs,
     })
 }

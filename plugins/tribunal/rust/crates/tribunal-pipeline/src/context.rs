@@ -46,6 +46,8 @@ pub struct RunArgs {
     pub full: bool,
     pub since: String,
     pub lenses: Option<Value>,
+    /// `--light-no-logic`: exclude built-in non-behavioral files from lenses.
+    pub light_no_logic: bool,
     pub context: Option<String>,
     pub retest: Option<Value>,
     pub review_model: String,
@@ -966,6 +968,7 @@ pub async fn context_phase<A: Agent>(
         force_full: args.full,
         pinned_sha: &args.head_sha,
         lenses: args.lenses.as_ref(),
+        light_no_logic: args.light_no_logic,
         profile: &prepared.profile,
     })?;
     logs.extend(plan.logs.iter().cloned());
