@@ -32,6 +32,22 @@ pub fn kill_reason_missing_from_report_text(
     missing_if_absent(&expected, report_text)
 }
 
+/// The `source` of the vote the pre-decided check writes when it sets a
+/// finding aside because the thread already answered it.
+pub const PRE_DECIDED_CHECK: &str = "pre-decided-check";
+
+/// Whether the report owes a kill-reason category for this `REFUTED` vote.
+/// Not for the pre-decided check's vote when it gives none: the report lists
+/// that finding under "Pre-decided". Held to the default, it failed the
+/// self-audit and had "Kill reason: uncategorized" patched into posted reviews
+/// (agent-skills #182). Not from the workflow, whose votes never had this
+/// source; a panel refuter's vote is held as before.
+#[must_use]
+pub fn owes_kill_reason(vote: &Value) -> bool {
+    js::truthy(js::get(vote, "killReason"))
+        || js::get(vote, "source") != Some(&Value::String(PRE_DECIDED_CHECK.into()))
+}
+
 /// Ports `mergedFromAnnotationMissingFromReportText`. Applies only to a
 /// finding merged from two or more distinct lenses: candidates merged from one
 /// source (three scenario-question candidates) carry its label once per entry,
@@ -154,6 +170,18 @@ pub fn unexamined_wording_in_report_text(finding: &Value, report_text: &str) -> 
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_pre_decided_vote_without_a_kill_reason_owes_none() {
+        let vote = |source: &str, reason: Value| json!({"verdict": "REFUTED", "source": source, "killReason": reason, "refutationType": "PRE_DECIDED"});
+        assert!(!owes_kill_reason(&vote(PRE_DECIDED_CHECK, Value::Null)));
+        assert!(owes_kill_reason(&vote(
+            PRE_DECIDED_CHECK,
+            json!("by-design")
+        )));
+        assert!(owes_kill_reason(&vote("claude", Value::Null)));
+        assert!(owes_kill_reason(&json!({"verdict": "REFUTED"})));
+    }
 
     #[test]
     fn a_missing_kill_reason_defaults_to_uncategorized() {

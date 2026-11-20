@@ -27,7 +27,8 @@ use tribunal_core::report::merged_locations_check::{
 };
 use tribunal_core::report::report_fidelity_checks::{
     grounded_diagnostic_missing_from_report_text, kill_reason_missing_from_report_text,
-    merged_from_annotation_missing_from_report_text, unexamined_wording_in_report_text,
+    merged_from_annotation_missing_from_report_text, owes_kill_reason,
+    unexamined_wording_in_report_text,
 };
 
 use crate::ledger::{
@@ -1028,7 +1029,7 @@ pub fn apply_fidelity_checks(findings: &mut [Value], report_text: &str) -> Resul
             }),
             _ => None,
         };
-        let kill = match refuted {
+        let kill = match refuted.filter(|v| owes_kill_reason(v)) {
             Some(v) => kill_reason_missing_from_report_text(js::get(v, "killReason"), report_text),
             None => Vec::new(),
         };
@@ -1318,6 +1319,25 @@ mod tests {
         assert_ne!(
             findings[1]["mergedFromAnnotationMissingFromReport"],
             serde_json::json!([])
+        );
+    }
+
+    #[test]
+    fn the_record_asks_no_kill_reason_of_a_pre_decided_finding() {
+        let finding = |source: &str| {
+            serde_json::json!({"title": "Old worker drops the job", "votes": [
+                {"verdict": "REFUTED", "killReason": null, "source": source}
+            ]})
+        };
+        let mut findings = vec![finding("pre-decided-check"), finding("claude")];
+        apply_fidelity_checks(&mut findings, "Pre-decided: Old worker drops the job").unwrap();
+        assert_eq!(
+            findings[0]["killReasonMissingFromReport"],
+            serde_json::json!([])
+        );
+        assert_eq!(
+            findings[1]["killReasonMissingFromReport"],
+            serde_json::json!(["uncategorized"])
         );
     }
 
