@@ -43,6 +43,24 @@ names (a `dist/` or `generated/` folder, a `.generated.` or `.min.js` name)
 decide what lenses skip, which is why it is opt-in and why risk paths still
 reach a lens.
 
+`groupBy` is an optional array of repo-relative directory patterns with one
+whole `*` path segment, for example `src/features/*/`. A matching
+file is assigned the cluster key through the matched segment, such as
+`src/features/billing/`; the first matching pattern wins. Files
+matching no entry remain individual units. Invalid entries are warned about
+and ignored. With at least one valid entry the default partition is cohesion:
+clusters are assigned whole by churn unless a cluster exceeds the average
+group load. An oversized cluster uses the fewest groups whose average load
+covers its churn, choosing the currently lightest groups (ties by group index),
+then assigns its files within those groups by churn. Use
+`tribunal review --partition churn` to compare with the previous per-file
+partition, or `--partition cohesion` to request cohesion explicitly. Cohesion
+without valid `groupBy` entries falls back to churn. `--lenses` remains an
+ablation override: its exact lens count is retained, and it can reduce the
+number of file groups. Cohesion changes only which files each group holds: the
+lens count and each lens's focus are the same as under churn. The run's
+metrics row records `partitionMode: "cohesion"` when it applied.
+
 `projectRules` names the repo's own review rules, usually
 `.claude/review-rules.md`, read at the same ref as the profile. The plugin's
 methodology (`methodology/templates/backend.md`, `frontend.md`, `e2e.md` and `python.md`) has named

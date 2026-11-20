@@ -14,6 +14,7 @@ fn light_paths_are_removed_before_plan_accounting_and_recorded() {
         lenses: None,
         profile: &profile,
         light_no_logic: false,
+        partition_mode: None,
     })
     .unwrap();
     assert_eq!(plan.files, ["src/a.rs"]);
@@ -40,6 +41,7 @@ fn invalid_light_path_entries_warn_and_are_ignored() {
         lenses: None,
         profile: &profile,
         light_no_logic: false,
+        partition_mode: None,
     })
     .unwrap();
     assert_eq!(plan.files, ["src/a.rs"]);
@@ -67,6 +69,7 @@ fn light_files_are_excluded_from_groups_and_tier_inputs() {
         lenses: None,
         profile: &profile,
         light_no_logic: false,
+        partition_mode: None,
     })
     .unwrap();
     assert_eq!(plan.file_count, 13.0);
@@ -95,6 +98,7 @@ fn builtin_light_filter_is_opt_in_and_applies_inside_incremental_scope() {
         lenses: None,
         profile: &profile,
         light_no_logic: true,
+        partition_mode: None,
     })
     .unwrap();
     assert!(!plan.files.contains(&"Cargo.lock".to_owned()));
@@ -110,6 +114,7 @@ fn builtin_light_filter_is_opt_in_and_applies_inside_incremental_scope() {
         lenses: None,
         profile: &profile,
         light_no_logic: false,
+        partition_mode: None,
     })
     .unwrap();
     assert!(flag_off.files.contains(&"Cargo.lock".to_owned()));
@@ -131,6 +136,7 @@ fn a_risk_path_is_never_light() {
         lenses: None,
         profile: &profile,
         light_no_logic: true,
+        partition_mode: None,
     })
     .unwrap();
     assert_eq!(plan.files, ["src/a.rs", "src/auth/keys.lock"]);
@@ -153,6 +159,7 @@ fn a_single_group_plan_scopes_lenses_away_from_light_files() {
         lenses: None,
         profile: &profile,
         light_no_logic: false,
+        partition_mode: None,
     })
     .unwrap();
     assert_eq!(plan.group_count, 1.0);
@@ -177,6 +184,7 @@ fn a_single_group_plan_without_light_files_keeps_whole_diff_lenses() {
         lenses: None,
         profile: &json!({}),
         light_no_logic: false,
+        partition_mode: None,
     })
     .unwrap();
     assert!(plan.lens_plan.iter().all(|slot| slot.files.is_none()));
@@ -199,6 +207,7 @@ fn malformed_risk_paths_error_with_and_without_light_paths() {
             lenses: None,
             profile: &profile,
             light_no_logic: false,
+            partition_mode: None,
         });
         assert!(result.unwrap_err().contains("focus"));
     }
@@ -218,6 +227,7 @@ fn an_all_light_pr_is_reviewed_anyway_with_the_log_line() {
         lenses: None,
         profile: &profile,
         light_no_logic: false,
+        partition_mode: None,
     })
     .unwrap();
     assert_eq!(p.files, ["assets/a.png", "assets/b.png"]);
@@ -244,6 +254,7 @@ fn an_all_light_pr_through_light_no_logic_is_reviewed_anyway() {
         lenses: None,
         profile: &json!({}),
         light_no_logic: true,
+        partition_mode: None,
     })
     .unwrap();
     assert_eq!(p.files, ["Cargo.lock", "docs/a.md"]);
@@ -265,10 +276,44 @@ fn an_all_light_incremental_scope_is_reviewed_anyway() {
         lenses: None,
         profile: &json!({"lightPaths":["^assets/"]}),
         light_no_logic: false,
+        partition_mode: None,
     })
     .unwrap();
     assert_eq!(p.files, ["assets/a.png"]);
     assert!(p.light_files.is_empty());
     assert_eq!((p.file_count, p.churn), (1.0, 10.0));
     assert!(p.logs.iter().any(|l| l == ALL_LIGHT_LOG));
+}
+
+#[test]
+fn incremental_light_files_stay_out_of_cohesion_units() {
+    let mut files: Vec<String> = (0..13)
+        .map(|i| format!("apps/prototypes/p{}/src.rs", i))
+        .collect();
+    files.push("assets/icon.png".into());
+    let churn: Vec<_> = files
+        .iter()
+        .map(|file| json!({"file":file,"churn":10}))
+        .collect();
+    let pr = json!({"files":files,"fileCount":14,"additions":140,"deletions":0,"fileChurn":churn});
+    let profile = json!({"lightPaths":["\\.png$"],"groupBy":["apps/prototypes/*/"]});
+    let bk = json!({"prior":{"found":true,"sha":"123456789"},"scope":{"usable":true,"inScope":pr["files"],"changed":pr["files"],"added":[],"unchanged":[],"inScopeChurn":140}});
+    let p = build_plan(&PlanInput {
+        pr_context: &pr,
+        bookkeeping: Some(&bk),
+        wants_probe: true,
+        force_full: false,
+        pinned_sha: "",
+        lenses: None,
+        profile: &profile,
+        light_no_logic: false,
+        partition_mode: None,
+    })
+    .unwrap();
+    assert_eq!(p.light_files, ["assets/icon.png"]);
+    assert!(p
+        .file_groups
+        .iter()
+        .flatten()
+        .all(|file| file != "assets/icon.png"));
 }

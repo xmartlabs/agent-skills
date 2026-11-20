@@ -224,6 +224,7 @@ fn rust_plan(p: &Value) -> Value {
         lenses: p["parsedArgs"].get("lenses"),
         profile: &p["PROFILE"],
         light_no_logic: false,
+        partition_mode: None,
     };
     build_plan(&input).expect("plan").to_value()
 }

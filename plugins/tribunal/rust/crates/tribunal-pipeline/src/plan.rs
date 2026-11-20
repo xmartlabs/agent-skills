@@ -7,6 +7,7 @@ use serde_json::{json, Map, Value};
 use tribunal_core::js;
 use tribunal_core::lens::js_ext::to_js_string;
 use tribunal_core::profile::file_partition::partition_files_by_churn;
+use tribunal_core::profile::group_by::{cluster_key, rules as group_by_rules, GroupByRule};
 use tribunal_core::profile::lens_foci::{foci_for, keep_correctness, lens_count_for, select_foci};
 use tribunal_core::profile::light_paths::{no_logic_file, rules as light_path_rules};
 use tribunal_core::profile::profile_lookup::risk_path_rules;
@@ -31,6 +32,7 @@ pub struct PlanInput<'a> {
     pub lenses: Option<&'a Value>,
     pub profile: &'a Value,
     pub light_no_logic: bool,
+    pub partition_mode: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -55,7 +57,14 @@ pub struct Plan {
     pub group_count: f64,
     pub lenses_override: Option<f64>,
     pub file_groups: Vec<Vec<String>>,
+    /// How files are grouped: "churn" or "cohesion".
+    pub partition_mode: &'static str,
+    /// The profile has `groupBy` or the run passed `--partition`, so the
+    /// partition mode is a choice worth recording, churn included.
+    pub partition_chosen: bool,
+    /// How churn partitioning weighs files: "churn-aware" or round-robin fallback.
     pub file_partition_mode: &'static str,
+    pub clusters: Vec<Vec<String>>,
     pub per_group_churn: Vec<f64>,
     pub foci: Vec<Value>,
     pub lens_count: f64,
@@ -94,6 +103,19 @@ impl Plan {
         if !self.light_files.is_empty() {
             value["lightFiles"] = strs(&self.light_files);
         }
+        if self.partition_chosen {
+            value["partitionMode"] = json!(self.partition_mode);
+        }
+        if self.partition_mode == "cohesion" {
+            let clusters: Map<String, Value> = self
+                .clusters
+                .iter()
+                .enumerate()
+                .filter(|(_, keys)| !keys.is_empty())
+                .map(|(i, keys)| (i.to_string(), json!(keys)))
+                .collect();
+            value["clusters"] = Value::Object(clusters);
+        }
         value
     }
 }
@@ -130,6 +152,180 @@ fn sha8(v: Option<&Value>) -> String {
 
 fn n(x: f64) -> String {
     js::number_to_string(x)
+}
+
+struct CohesionUnit {
+    cluster_key: Option<String>,
+    files: Vec<String>,
+    churn: f64,
+}
+
+fn cohesion_partition(
+    files: &[String],
+    churn: &Map<String, Value>,
+    rules: &[GroupByRule],
+    groups: usize,
+) -> (Vec<Vec<String>>, Vec<Vec<String>>) {
+    if groups <= 1 {
+        let keys = files
+            .iter()
+            .filter_map(|f| cluster_key(f, rules))
+            .collect::<Vec<_>>();
+        let mut seen = std::collections::HashSet::new();
+        let keys = keys
+            .into_iter()
+            .filter(|key| seen.insert(key.clone()))
+            .collect();
+        return (vec![files.to_vec()], vec![keys]);
+    }
+    let known: Vec<f64> = files
+        .iter()
+        .filter_map(|f| churn.get(f).and_then(Value::as_f64))
+        .collect();
+    // With no churn known at all every file weighs 1, so the LPT below
+    // balances by file count and leaves no group empty.
+    let average = if known.is_empty() {
+        1.0
+    } else {
+        known.iter().sum::<f64>() / known.len() as f64
+    };
+    let weight = |f: &str| churn.get(f).and_then(Value::as_f64).unwrap_or(average);
+    let mut units: Vec<CohesionUnit> = Vec::new();
+    let mut indexes = std::collections::HashMap::<String, usize>::new();
+    for file in files {
+        if let Some(key) = cluster_key(file, rules) {
+            let index = *indexes.entry(key.clone()).or_insert_with(|| {
+                units.push(CohesionUnit {
+                    cluster_key: Some(key),
+                    files: Vec::new(),
+                    churn: 0.0,
+                });
+                units.len() - 1
+            });
+            units[index].files.push(file.clone());
+            units[index].churn += weight(file);
+        } else {
+            units.push(CohesionUnit {
+                cluster_key: None,
+                files: vec![file.clone()],
+                churn: weight(file),
+            });
+        }
+    }
+    let threshold = units.iter().map(|u| u.churn).sum::<f64>() / groups as f64;
+    // Stable descending LPT: equal-weight units retain file encounter order.
+    units.sort_by(|a, b| {
+        b.churn
+            .partial_cmp(&a.churn)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let mut out = vec![Vec::new(); groups];
+    let mut cluster_keys = vec![Vec::new(); groups];
+    let mut totals = vec![0.0; groups];
+    for CohesionUnit {
+        cluster_key,
+        mut files,
+        churn,
+    } in units
+    {
+        let oversized = churn > threshold;
+        if let (Some(cluster), true) = (cluster_key.as_ref(), oversized) {
+            // Reserve the fewest currently-lightest groups whose capacity covers
+            // this cluster's average-load share, then LPT its files within them.
+            let target_groups = ((churn / threshold).ceil() as usize).min(groups);
+            let mut selected = (0..groups).collect::<Vec<_>>();
+            selected.sort_by(|a, b| {
+                totals[*a]
+                    .partial_cmp(&totals[*b])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.cmp(b))
+            });
+            selected.truncate(target_groups);
+            files.sort_by(|a, b| {
+                weight(b)
+                    .partial_cmp(&weight(a))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let mut subtotals = selected.iter().map(|i| totals[*i]).collect::<Vec<_>>();
+            for file in files {
+                let mut selected_index = 0;
+                for i in 1..selected.len() {
+                    if subtotals[i] < subtotals[selected_index]
+                        || (subtotals[i] == subtotals[selected_index]
+                            && selected[i] < selected[selected_index])
+                    {
+                        selected_index = i;
+                    }
+                }
+                let index = selected[selected_index];
+                out[index].push(file.clone());
+                if !cluster_keys[index].contains(cluster) {
+                    cluster_keys[index].push(cluster.clone());
+                }
+                subtotals[selected_index] += weight(&file);
+                totals[index] += weight(&file);
+            }
+            continue;
+        }
+        let mut index = 0;
+        for i in 1..groups {
+            if totals[i] < totals[index] {
+                index = i;
+            }
+        }
+        out[index].extend(files);
+        if let Some(key) = cluster_key {
+            if !cluster_keys[index].contains(&key) {
+                cluster_keys[index].push(key);
+            }
+        }
+        totals[index] += churn;
+    }
+    // A unit too heavy to split (one file, or a one-file cluster) can take a
+    // group while a cluster under the threshold fills another whole, leaving a
+    // group with no file whose lenses would review nothing. Split the heaviest
+    // multi-file group with it instead.
+    while let Some(empty) = out.iter().position(Vec::is_empty) {
+        let Some(donor) = (0..groups).filter(|i| out[*i].len() > 1).max_by(|a, b| {
+            totals[*a]
+                .partial_cmp(&totals[*b])
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b.cmp(a))
+        }) else {
+            break;
+        };
+        let mut moved = std::mem::take(&mut out[donor]);
+        moved.sort_by(|a, b| {
+            weight(b)
+                .partial_cmp(&weight(a))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        totals[donor] = 0.0;
+        totals[empty] = 0.0;
+        for file in moved {
+            // The donor takes the heaviest file, so the empty side, now the
+            // lighter one, takes the next: it never stays empty.
+            let index = if totals[empty] < totals[donor] {
+                empty
+            } else {
+                donor
+            };
+            totals[index] += weight(&file);
+            out[index].push(file);
+        }
+        for index in [donor, empty] {
+            let mut keys = Vec::new();
+            for file in &out[index] {
+                if let Some(key) = cluster_key(file, rules) {
+                    if !keys.contains(&key) {
+                        keys.push(key);
+                    }
+                }
+            }
+            cluster_keys[index] = keys;
+        }
+    }
+    (out, cluster_keys)
 }
 
 /// Ports the glue. `Err` carries what the profile helpers throw.
@@ -233,6 +429,25 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
     } else {
         files.retain(|f| !light_files.contains(f));
     }
+    let (group_by, group_by_warnings) = group_by_rules(input.profile);
+    logs.extend(group_by_warnings);
+    let partition_chosen = input.partition_mode.is_some() || !group_by.is_empty();
+    let requested_mode = input.partition_mode.unwrap_or(if group_by.is_empty() {
+        "churn"
+    } else {
+        "cohesion"
+    });
+    if !matches!(requested_mode, "churn" | "cohesion") {
+        return Err(format!("invalid partition mode {requested_mode}"));
+    }
+    let partition_mode = if requested_mode == "cohesion" && group_by.is_empty() {
+        logs.push("Partition cohesion requested without valid groupBy entries; using churn".into());
+        "churn"
+    } else if requested_mode == "cohesion" {
+        "cohesion"
+    } else {
+        "churn"
+    };
     let file_count = match &incremental_scope {
         Some(_) => files.len() as f64,
         None => (num(js::get(pr, "fileCount")) - light_files.len() as f64).max(0.0),
@@ -307,8 +522,14 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
     } else {
         "churn-aware"
     };
-    let file_groups =
-        partition_files_by_churn(Some(&files), Some(&churn_map), group_count as usize);
+    let (file_groups, clusters) = if partition_mode == "cohesion" {
+        cohesion_partition(&files, &churn_map, &group_by, group_count as usize)
+    } else {
+        (
+            partition_files_by_churn(Some(&files), Some(&churn_map), group_count as usize),
+            vec![Vec::new(); group_count as usize],
+        )
+    };
     let per_group_churn: Vec<f64> = file_groups
         .iter()
         .map(|g| {
@@ -335,21 +556,21 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
         ));
     }
     let lens_plan: Vec<LensSlot> = (0..lens_count as usize)
-        .map(|i| LensSlot {
-            focus: if foci.is_empty() {
-                Value::Null
-            } else {
-                foci[i % foci.len()].clone()
-            },
-            files: if group_count > 1.0 {
-                Some(file_groups[i % file_groups.len()].clone())
-            } else if light_files.is_empty() {
-                None
-            } else {
-                // One group reads the whole diff, light files included; list
-                // the rest so the lens stays off them.
-                Some(files.clone())
-            },
+        .map(|i| {
+            let group_index = i % file_groups.len().max(1);
+            let focus_index = i % foci.len().max(1);
+            LensSlot {
+                focus: foci.get(focus_index).cloned().unwrap_or(Value::Null),
+                files: if group_count > 1.0 {
+                    Some(file_groups[group_index].clone())
+                } else if light_files.is_empty() {
+                    None
+                } else {
+                    // One group reads the whole diff, light files included;
+                    // list the rest so the lens stays off them.
+                    Some(files.clone())
+                },
+            }
         })
         .collect();
     let uncovered_files: Vec<String> = if group_count > 1.0 {
@@ -377,6 +598,28 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
     } else {
         format!("Lenses ({}): content-selected for this diff", n(lens_count))
     });
+    if partition_mode == "cohesion" {
+        let desc = clusters
+            .iter()
+            .enumerate()
+            .map(|(i, names)| {
+                format!(
+                    "group {i}: {}",
+                    if names.is_empty() {
+                        "(no clusters)".into()
+                    } else {
+                        // Path order, as the log listed them before; the
+                        // `clusters` JSON keeps placement order.
+                        let mut sorted = names.clone();
+                        sorted.sort();
+                        sorted.join(", ")
+                    }
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        logs.push(format!("Partition cohesion — {desc}"));
+    }
     if !uncovered_files.is_empty() {
         logs.push(format!(
             "{} changed file(s) fell outside every lens scope",
@@ -404,6 +647,9 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
         lenses_override,
         file_groups,
         file_partition_mode,
+        partition_mode,
+        partition_chosen,
+        clusters,
         per_group_churn,
         foci,
         lens_count,

@@ -3,7 +3,7 @@
 //! both; it posts nothing.
 //!
 //!   tribunal review --pr <n> [--repo <owner/name>] [--head-sha <sha>]
-//!     [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--light-no-logic] [--lens-samples <n>]
+//!     [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--light-no-logic] [--partition churn|cohesion] [--lens-samples <n>]
 //!     [--scenario-questions <n>|--no-scenario-questions] [--question-model <id>] [--refuters|--no-refuters]
 //!     [--block-min-worth <n>|--no-block-min-worth] [--block-pre-existing]
 //!     [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight]
@@ -51,7 +51,7 @@ fn usage() -> ExitCode {
     eprintln!("usage: tribunal override --ts <row ts> --title <finding title prefix> (--direction reinstated|rejected|withdrawn | --severity nit|important) --reason <how it was checked> [--by <login>] [--verified-at <sha>] [--dry-run]");
     eprintln!("usage: tribunal selfcheck [--apply] [--no-battery] [--model <id>] [--effort <level>] [--out <file>]");
     eprintln!("usage: tribunal post --from <run.json> [--verdict approve|request-changes|comment] [--delta|--edit-existing] [--over-own-review] [--over-standing-review] [--model <id>] [--effort <level>]");
-    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--light-no-logic] [--lens-samples <n>] [--scenario-questions <n>|--no-scenario-questions] [--question-model <id>] [--refuters|--no-refuters] [--block-min-worth <n>|--no-block-min-worth] [--block-pre-existing] [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight] [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
+    eprintln!("usage: tribunal review --pr <n> [--repo <owner/name>] [--profile <path> [--rules <path>]] [--head-sha <sha>] [--thread-before <iso>] [--full] [--since <sha>] [--lenses <n>] [--light-no-logic] [--partition churn|cohesion] [--lens-samples <n>] [--scenario-questions <n>|--no-scenario-questions] [--question-model <id>] [--refuters|--no-refuters] [--block-min-worth <n>|--no-block-min-worth] [--block-pre-existing] [--context <text>] [--bot-comments] [--runtime-confirm] [--model <id>] [--preflight] [--max-panels <n>] [--prior-verify <n>] [--max-agents <n>] [--concurrency <n>] [--effort <level>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--max-output-tokens <n>] [--post|--no-post] [--out <file>]");
     eprintln!("usage: tribunal panel --pr <n> --repo <owner/name> --head-sha <sha> --findings <file.json> [--thread-before <iso>] [--codex|--no-codex] [--gemini|--no-gemini] [--batch-panels|--no-batch-panels] [--model <id>] [--effort <level>] [--out <file>]");
     ExitCode::from(2)
 }
@@ -238,6 +238,13 @@ fn parse(argv: &[String]) -> Result<Cli, String> {
                 args.lenses = Some(json!(n));
             }
             "--light-no-logic" => args.light_no_logic = true,
+            "--partition" => {
+                let mode = value(&mut it, a)?;
+                if !matches!(mode.as_str(), "churn" | "cohesion") {
+                    return Err("--partition takes churn or cohesion".into());
+                }
+                args.partition_mode = Some(mode);
+            }
             "--lens-samples" => {
                 let n: u32 = value(&mut it, a)?
                     .parse()
@@ -1454,5 +1461,24 @@ mod tests {
             .map(|s| s.to_string())
             .collect();
         assert!(parse(&on).unwrap().args.light_no_logic);
+    }
+
+    #[test]
+    fn partition_mode_accepts_only_churn_or_cohesion() {
+        for mode in ["churn", "cohesion"] {
+            let args: Vec<String> = ["--pr", "7", "--partition", mode]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            assert_eq!(
+                parse(&args).unwrap().args.partition_mode.as_deref(),
+                Some(mode)
+            );
+        }
+        let invalid: Vec<String> = ["--pr", "7", "--partition", "random"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert!(parse(&invalid).is_err());
     }
 }
