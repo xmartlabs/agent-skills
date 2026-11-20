@@ -358,6 +358,45 @@ the engine checks live HEAD again before posting. If someone pushes in between, 
 refuses to post for the wrong commit. Keep `once: 'true'` if you prefer one automatic review per
 PR and label-triggered re-reviews instead.
 
+## Optional typecheck
+
+The engine can run the repository's own type checker over the pull request and use its errors to
+confirm findings. It needs a checkout of the repository with the dependencies installed, which the
+action does not make: the review runs from an empty directory. Without one, every review says
+"The typecheck did not run" (`DEGRADED_WRONG_REPO`) and carries on.
+
+To turn it on, check out the pull request's head, install the dependencies before the tribunal
+step, and pass the directory as `typecheck-dir`:
+
+```yaml
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: app
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: app/.nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci --ignore-scripts
+        working-directory: app
+      - run: npx prisma generate # only in a repository that uses Prisma
+        working-directory: app
+      - uses: xmartlabs/agent-skills/actions/tribunal@tribunal-action-v1
+        with:
+          claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          typecheck-dir: app
+```
+
+- The engine takes `node_modules` and `tsconfig.json` from that directory and types the pull
+  request's head in a tree of its own, so the checkout only has to have the head's dependencies.
+- `--ignore-scripts` keeps the pull request's install scripts from running in the job; run the
+  generation steps you need (such as `prisma generate`) explicitly.
+- The install adds its own minutes to every run. The `npm` cache above keeps them short.
+- A `typecheck-dir` that does not exist is logged and the review runs without the typecheck.
+
 ## Troubleshooting
 
 | What you see | Why | What to do |
@@ -367,6 +406,7 @@ PR and label-triggered re-reviews instead.
 | "Tribunal pending … the action's setup failed before the review started" | Downloading the binary or installing the tools failed | Open the run log linked in the comment |
 | "Tribunal skipped this pull request: …" | Tribunal chose not to review it, for example a deployment branch in the profile | Nothing to retry |
 | No comment at all, the run shows as cancelled | A newer label request replaced it, or the job hit `timeout-minutes` | Check the newer run, or raise the timeout for very large pull requests |
+| "The typecheck did not run" (`DEGRADED_WRONG_REPO`) in every review | The job has no checkout of the repository with its dependencies | See [Optional typecheck](#optional-typecheck) |
 | The run is skipped | A fork pull request, or no Claude credential reached the job | Use a branch of the repository; check the secret's name and access |
 
 The run record, the report and the logs are attached to each run as the
@@ -402,6 +442,7 @@ Security).
 | `prior-verify` | empty | Positive integer: maximum prior findings verified on a re-review. |
 | `lens-samples` | empty | Integer 1–4: independent samples per lens; empty inherits the engine's default. On the maintainers' labelled corpus (November 2026) `'2'` cost 1.3x to 1.6x per review and found no more defects than one sample. Use it only on large or high-risk PRs, where paying more for an unmeasured gain is easier to justify. |
 | `bot-comments` | `false` | Also vet existing bot findings. |
+| `typecheck-dir` | empty | A checkout of the repository with its dependencies installed, for the typecheck. Empty skips it. See [Optional typecheck](#optional-typecheck). |
 | `findings-check` | `off` | `off`, `inform` or `enforce`: set a "Tribunal findings" commit status with the count of open blocking and should-fix findings. Needs `statuses: write`. See [Findings check](#findings-check). |
 | `upload-run` | `true` | Upload the run record, the report and the logs as an artifact (14 days). Never on a public repository (see Security). |
 | `upload-transcripts` | `false` | Also upload every model dispatch's transcript. Never on a public repository (see Security). |
