@@ -25,12 +25,24 @@ own commit.
 
 ## Unreleased
 
+Nothing yet.
+
+## v1.5.0 — bundles Tribunal 115.7.0
+
+Tag `tribunal-action-v1.5.0` (and `tribunal-action-v1`) at `e8caa57`. Bundled Tribunal plugin
+`115.7.0` with binary `tribunal-rust-v115.7.0`.
+
 - Docs: `lens-samples: '2'` is documented as an opt-in for large or high-risk PRs, with its
   measured cost and no measured detection gain (see the README's input table). The default
   stays empty.
 - New input `typecheck-dir`: a checkout of the reviewed repository with its dependencies installed.
   The action passes it to the engine, so the grounded typecheck runs instead of reporting
   `DEGRADED_WRONG_REPO` on every review. The README's "Optional typecheck" shows the steps.
+- The bundled engine adds opt-in cohesion review for PRs that touch several self-contained areas:
+  a profile's `lightPaths` keeps non-logic files away from the lenses, `groupBy` groups each
+  area's files into one lens group, and the posted review gets a "Findings by area" section with
+  one verdict. Repos whose profile sets neither are reviewed as before. It also stops a run whose
+  file list comes back empty from a PR with changes, instead of reviewing no files.
 
 ## v1.4.7 — bundles Tribunal 115.6.2
 
