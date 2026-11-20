@@ -7,7 +7,9 @@ use serde_json::{json, Map, Value};
 use tribunal_core::js;
 use tribunal_core::lens::js_ext::{to_js_string, utf16_prefix_lossy};
 use tribunal_core::lens::lens_yield::build_lens_yield;
-use tribunal_core::report::merged_locations_check::merged_locations_missing_from_report_text;
+use tribunal_core::report::merged_locations_check::{
+    is_question_to_review, merged_locations_missing_from_report,
+};
 use tribunal_core::report::report_fidelity_checks::{
     grounded_diagnostic_missing_from_report_text, kill_reason_missing_from_report_text,
     merged_from_annotation_missing_from_report_text, unexamined_wording_in_report_text,
@@ -383,6 +385,7 @@ fn finding_row(v: &Value, s: &MetricsScope) -> Result<Value, String> {
     let report = s.report_as_posted.as_str();
     let merged_locations = or(fg("mergedLocations"), json!([]));
     let merged_from = or(fg("mergedFrom"), json!([]));
+    let question = is_question_to_review(v);
     let refuted_vote = votes(v)
         .iter()
         .find(|vote| get(vote, "verdict") == Some(&json!("REFUTED")));
@@ -469,10 +472,11 @@ fn finding_row(v: &Value, s: &MetricsScope) -> Result<Value, String> {
     put("mergedLocations", merged_locations.clone());
     put(
         "mergedLocationsMissingFromReport",
-        json!(merged_locations_missing_from_report_text(
-            Some(&merged_locations),
-            report
-        )?),
+        json!(if question {
+            Vec::new()
+        } else {
+            merged_locations_missing_from_report(Some(&merged_locations), report)?
+        }),
     );
     put(
         "killReasonMissingFromReport",
@@ -485,10 +489,11 @@ fn finding_row(v: &Value, s: &MetricsScope) -> Result<Value, String> {
     );
     put(
         "mergedFromAnnotationMissingFromReport",
-        json!(merged_from_annotation_missing_from_report_text(
-            Some(&merged_from),
-            report
-        )),
+        json!(if question {
+            Vec::new()
+        } else {
+            merged_from_annotation_missing_from_report_text(Some(&merged_from), report)
+        }),
     );
     put("grounded", grounded.clone());
     put(

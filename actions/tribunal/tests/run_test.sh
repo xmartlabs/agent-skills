@@ -19,7 +19,7 @@ sub="$1"; shift
   echo "TRIBUNAL_KEY=${TRIBUNAL_ANTHROPIC_API_KEY-<unset>}"; echo "OAUTH=${CLAUDE_CODE_OAUTH_TOKEN-<unset>}"
   echo "API_KEY=${ANTHROPIC_API_KEY-<unset>}"; echo "CODEX_HOME=$CODEX_HOME"; echo "CONVENTIONS=${TRIBUNAL_CONVENTIONS_TOKEN-<unset>}";
   echo "OPENAI_KEY=${OPENAI_API_KEY-<unset>}"; echo "CODEX_KEY=${CODEX_API_KEY-<unset>}";
-  echo "ACTION_REF=${TRIBUNAL_ACTION_REF-<unset>}"; } > "$FX/tribunal-$sub.env"
+  echo "ACTION_REF=${TRIBUNAL_ACTION_REF-<unset>}"; echo "REPO_DIR=${TRIBUNAL_REPO_DIR-<unset>}"; } > "$FX/tribunal-$sub.env"
 if [ "$sub" = review ]; then
   echo "REPORT-BODY-ON-STDOUT"
   out=""; while [ $# -gt 0 ]; do [ "$1" = --out ] && out="$2"; shift; done
@@ -282,6 +282,15 @@ MASK_OUT="$(TRIBUNAL_CONVENTIONS_TOKEN=docs-secret CLAUDE_CODE_OAUTH_TOKEN=oauth
 assert_ok "a conventions token is masked" grep -qx '::add-mask::docs-secret' <<< "$MASK_OUT"
 assert_ok "a conventions token reaches the binary" grep -qx "CONVENTIONS=docs-secret" "$FX/tribunal-review.env"
 assert_eq "a run's stdout carries it only in the mask command" "1" "$(grep -c 'docs-secret' <<< "$MASK_OUT")"
+mkdir -p "$TMP/workspace/app"
+review
+assert_ok "without typecheck-dir no checkout is named" grep -qx "REPO_DIR=<unset>" "$FX/tribunal-review.env"
+(cd "$TMP/workspace" && INPUT_TYPECHECK_DIR=app review)
+assert_ok "typecheck-dir reaches the binary as an absolute path" grep -qx "REPO_DIR=$(cd "$TMP/workspace/app" && pwd)" "$FX/tribunal-review.env"
+TC_OUT="$(cd "$TMP/workspace" && INPUT_TYPECHECK_DIR=missing CLAUDE_CODE_OAUTH_TOKEN=oauth-secret bash "$RUN" review 2>&1)"; RC=$?
+assert_eq "a missing typecheck-dir does not fail the review" "0" "$RC"
+assert_ok "it says the typecheck is skipped" grep -q "typecheck-dir 'missing' is not a directory" <<< "$TC_OUT"
+assert_ok "and names no checkout" grep -qx "REPO_DIR=<unset>" "$FX/tribunal-review.env"
 review
 assert_ok "no API key without one" grep -qx "TRIBUNAL_KEY=<unset>" "$FX/tribunal-review.env"
 assert_ok "git fetches use the job token" grep -qx "auth setup-git" "$FX/gh.log"
