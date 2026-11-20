@@ -15,7 +15,8 @@ use tribunal_core::report::draft_comments_strip::strip_draft_comments_from_body;
 use tribunal_core::report::merged_locations_check::merged_locations_missing_from_report_text;
 use tribunal_core::report::report_fidelity_checks::{
     grounded_diagnostic_missing_from_report_text, kill_reason_missing_from_report_text,
-    merged_from_annotation_missing_from_report_text, unexamined_wording_in_report_text,
+    merged_from_annotation_missing_from_report_text, owes_kill_reason,
+    unexamined_wording_in_report_text,
 };
 
 use crate::operator::{json_parse, read_file_utf8, CliOutput};
@@ -88,7 +89,7 @@ fn missing_for(f: &Value, report_text: &str) -> Result<[(&'static str, Value); 5
     merged_locations_throw(locations)?;
     let merged_locations = merged_locations_missing_from_report_text(locations, report_text)?;
 
-    let kill_reason = match refuted_vote(f) {
+    let kill_reason = match refuted_vote(f).filter(|v| owes_kill_reason(v)) {
         Some(vote) => {
             let reason = js::get(vote, "killReason");
             if let Some(r) = or_falsy(reason) {

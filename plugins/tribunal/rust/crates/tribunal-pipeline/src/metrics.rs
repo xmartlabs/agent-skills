@@ -12,7 +12,8 @@ use tribunal_core::report::merged_locations_check::{
 };
 use tribunal_core::report::report_fidelity_checks::{
     grounded_diagnostic_missing_from_report_text, kill_reason_missing_from_report_text,
-    merged_from_annotation_missing_from_report_text, unexamined_wording_in_report_text,
+    merged_from_annotation_missing_from_report_text, owes_kill_reason,
+    unexamined_wording_in_report_text,
 };
 use tribunal_core::verified_gate::demote_unanchored;
 use tribunal_core::votes::js_ext::number_value;
@@ -388,7 +389,8 @@ fn finding_row(v: &Value, s: &MetricsScope) -> Result<Value, String> {
     let question = is_question_to_review(v);
     let refuted_vote = votes(v)
         .iter()
-        .find(|vote| get(vote, "verdict") == Some(&json!("REFUTED")));
+        .find(|vote| get(vote, "verdict") == Some(&json!("REFUTED")))
+        .filter(|vote| owes_kill_reason(vote));
     let line_corrected_from = fg("lineCorrectedFrom").filter(|x| js::is_integer(Some(x)));
     let resolution = fg("evidenceResolution").filter(|r| js::truthy(Some(r)));
     let mut m = Map::new();
