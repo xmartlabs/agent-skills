@@ -4,6 +4,7 @@
 //! they share beyond `crate::js`.
 
 pub mod carry_forward;
+pub mod cluster_sections;
 pub mod draft_comments_strip;
 pub mod js_ext;
 pub mod merged_locations_check;

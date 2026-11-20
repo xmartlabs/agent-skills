@@ -55,7 +55,9 @@ covers its churn, choosing the currently lightest groups (ties by group index),
 then assigns its files within those groups by churn. Use
 `tribunal review --partition churn` to compare with the previous per-file
 partition, or `--partition cohesion` to request cohesion explicitly. Cohesion
-without valid `groupBy` entries falls back to churn. `--lenses` remains an
+without valid `groupBy` entries falls back to churn. With at least one valid entry,
+the report also lists surviving findings by area, including touched clusters with
+no findings. `--lenses` remains an
 ablation override: its exact lens count is retained, and it can reduce the
 number of file groups. Cohesion changes only which files each group holds: the
 lens count and each lens's focus are the same as under churn. The run's

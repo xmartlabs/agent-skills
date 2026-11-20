@@ -21,10 +21,12 @@ use tribunal_core::js;
 use tribunal_core::lens::coverage_gaps::{coverage_banner, light_files_banner, unread_risk_files};
 use tribunal_core::lens::diff_usable::diff_is_usable;
 use tribunal_core::lens::js_ext::{to_js_string, utf16_prefix_lossy};
+use tribunal_core::profile::group_by;
 use tribunal_core::profile::high_risk_surface::with_risk_path_surface;
 use tribunal_core::profile::lens_foci::foci_label_for;
 use tribunal_core::profile::lens_routing::lens_agent_for;
 use tribunal_core::profile::profile_lookup::risk_path_rules;
+use tribunal_core::report::cluster_sections::{cluster_sections, split_for_report};
 use tribunal_core::report::draft_comments_strip::strip_draft_comments_from_body;
 use tribunal_core::votes::evidence_resolver_degrade::evidence_resolver_failure;
 
@@ -1243,8 +1245,12 @@ pub async fn synthesize_phase<A: Agent>(
     }
     let re_examined = prior_re_examined(&verified, &prior, logs);
 
-    let surviving = surviving_for_synthesis(&v.surviving);
-    let (anchored, payload) = anchored_payload(&surviving);
+    let (group_rules, _) = group_by::rules(profile);
+    // The synthesizer gets the findings as before; only the run data and the
+    // "Findings by area" section carry the cluster keys.
+    let (synthesis_surviving, surviving) =
+        split_for_report(&surviving_for_synthesis(&v.surviving), &group_rules);
+    let (anchored, payload) = anchored_payload(&synthesis_surviving);
     let relay = if anchored > 0 && js::truthy(head) {
         let head_s = to_js_string(head);
         let mut argv: Vec<String> = vec![
@@ -1338,7 +1344,7 @@ pub async fn synthesize_phase<A: Agent>(
         moot: &prior.outcome.moot,
         still_open: &prior.outcome.still_open,
         prior_re_examined: &re_examined,
-        surviving: &surviving,
+        surviving: &synthesis_surviving,
         prior_reviews: &prior_reviews,
         pre_decided: &side.pre_decided,
         placed_aside: &side.placed_aside,
@@ -1425,6 +1431,11 @@ pub async fn synthesize_phase<A: Agent>(
         &coverage_report::deps_drift_banner(&verify.deps_drift, &verify.repo_cwd),
     );
     let report = with_coverage(report, &coverage.banner());
+    // Reuse with_coverage only to append this harness-written section.
+    let report = with_coverage(
+        report,
+        &cluster_sections(&surviving, &plan.all_pr_files, &group_rules),
+    );
     let anchor_format = coverage_report::anchor_format(&anchors);
     if let Some(first) = anchor_format["files"].get(0).and_then(Value::as_str) {
         logs.push(format!(
