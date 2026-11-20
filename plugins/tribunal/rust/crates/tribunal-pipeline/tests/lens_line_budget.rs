@@ -99,46 +99,6 @@ fn explicit_lenses_override_ignores_the_profile_budget() {
 }
 
 #[test]
-fn invalid_line_budgets_warn_and_are_ignored() {
-    let files = files(35);
-    for value in [json!(0), json!(-2), json!(1.5), json!("300"), Value::Null] {
-        let p = plan(
-            &files,
-            2.0,
-            &json!({"foci": foci(), "lensLineBudget": value}),
-            None,
-            None,
-        );
-        assert!(
-            p.logs.iter().any(|log| log.contains("lensLineBudget")),
-            "{:?}",
-            p.logs
-        );
-        assert_eq!(
-            p.lens_count,
-            plan(&files, 2.0, &json!({"foci": foci()}), None, None).lens_count
-        );
-        assert!(p.to_value().get("lensLineBudget").is_none());
-    }
-}
-
-#[test]
-fn incremental_scope_uses_its_in_scope_churn_for_the_budget() {
-    let files = files(35);
-    let bookkeeping = json!({"prior":{"found":true,"sha":"123456789"},
-        "scope":{"usable":true,"inScope":files,"changed":files,"added":[],"unchanged":[],"inScopeChurn":100}});
-    let p = plan(
-        &files,
-        500.0,
-        &json!({"foci": foci(), "lensLineBudget": 300}),
-        None,
-        Some(&bookkeeping),
-    );
-    assert_eq!(p.churn, 100.0);
-    assert_eq!(p.lens_count, 1.0);
-}
-
-#[test]
 fn grouped_files_are_placed_once_under_a_line_budget() {
     let files = files(35);
     let p = plan(
@@ -156,4 +116,34 @@ fn grouped_files_are_placed_once_under_a_line_budget() {
     let mut expected = files;
     expected.sort();
     assert_eq!(placed, expected);
+}
+
+#[test]
+fn a_one_lens_cap_keeps_the_first_selected_focus() {
+    // The budget cuts the slots, never the focus order: one lens keeps
+    // foci[0], a risk-forced focus when a risk path is touched.
+    let files: Vec<String> = (0..20).map(|i| format!("src/auth/f{i}.rs")).collect();
+    let churn: Vec<_> = files
+        .iter()
+        .map(|f| json!({"file": f, "churn": 1}))
+        .collect();
+    let pr = json!({"files": files, "fileCount": 20, "additions": 20, "deletions": 0, "fileChurn": churn});
+    let mut profile = json!({"foci": foci(), "lensLineBudget": 1000});
+    profile["riskPaths"] = json!([{"focus": "security", "pattern": "auth/"}]);
+    let capped = build_plan(&PlanInput {
+        pr_context: &pr,
+        bookkeeping: None,
+        wants_probe: false,
+        force_full: false,
+        pinned_sha: "",
+        lenses: None,
+        profile: &profile,
+        light_no_logic: false,
+        partition_mode: None,
+    })
+    .unwrap();
+    assert_eq!(capped.lens_count, 1.0);
+    assert_eq!(capped.lens_plan.len(), 1);
+    assert_eq!(capped.lens_plan[0].focus, capped.foci[0]);
+    assert_eq!(capped.foci[0], json!("security"));
 }

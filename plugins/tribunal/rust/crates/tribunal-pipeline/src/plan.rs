@@ -531,7 +531,7 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
         if let Some(line_budget) = lens_line_budget {
             let baseline_lens_count =
                 lens_count_for(None, group_count, lens_budget, foci.len() as f64);
-            let cap = ((churn / line_budget as f64).ceil() as f64).max(1.0);
+            let cap = (churn / line_budget as f64).ceil().max(1.0);
             let resulting = baseline_lens_count.min(cap);
             if resulting < baseline_lens_count {
                 logs.push(format!(
