@@ -27,6 +27,19 @@ own commit.
 
 Nothing yet.
 
+## v1.5.1 — bundles Tribunal 115.8.0
+
+Tag `tribunal-action-v1.5.1` (and `tribunal-action-v1`) at `71027f2`. Bundled Tribunal plugin
+`115.8.0` with binary `tribunal-rust-v115.8.0`. The action's own code is unchanged.
+
+- A backend profile may set `language`. The backend methodology is one role template filled by
+  language modules (TypeScript, Python); a language with no module, such as Go, is reviewed with
+  language-neutral wording and a warning. The `backend` and `python` reviewers read the same
+  methodology as before.
+- A profile may set `lensLineBudget` to cap the lens count by changed lines. The cap never drops a
+  focus a risk path forced, nor the correctness lens.
+- "Findings by area" lists areas with no findings on one line instead of one heading each.
+
 ## v1.5.0 — bundles Tribunal 115.7.0
 
 Tag `tribunal-action-v1.5.0` (and `tribunal-action-v1`) at `e8caa57`. Bundled Tribunal plugin
