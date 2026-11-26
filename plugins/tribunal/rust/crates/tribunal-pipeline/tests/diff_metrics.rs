@@ -314,6 +314,11 @@ fn the_metrics_row_is_the_workflows() {
             // `thread_before.rs`.
             let before = row.as_object_mut().unwrap().shift_remove("threadBefore");
             assert_eq!(before, Some(Value::Null), "threadBefore on {c}");
+            // Declared difference: `methodology`, the layers the lenses'
+            // methodology came from, which the workflow never wrote. A state
+            // without it records null. Witness: `methodology_row.rs`.
+            let layers = row.as_object_mut().unwrap().shift_remove("methodology");
+            assert_eq!(layers, Some(Value::Null), "methodology on {c}");
             row
         })
         .collect();

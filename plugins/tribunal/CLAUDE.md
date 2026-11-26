@@ -50,6 +50,11 @@ it reviews. Supporting a new kind of repo (Python, Go, anything) is welcome:
 
 - A profile and a rules file for it are JSON and Markdown, under `templates/`
   or in the reviewed repo.
+- A backend language is one module, `methodology/templates/lang/<name>.md`,
+  that fills slots of `methodology/templates/role/backend.md`; a profile picks
+  it with `"language": "<name>"`, and no persona, template or binary change is
+  needed. A new frontend or end-to-end stack still needs its own persona and
+  template.
 - Analysis of its code goes in Rust, with a parser crate, or by running the
   reviewed repo's own tools from the binary (its `python3`, `pytest`, `mypy`),
   the way `grounded_typecheck.rs` runs the repo's `npx tsc`.

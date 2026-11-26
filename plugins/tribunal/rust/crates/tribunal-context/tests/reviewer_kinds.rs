@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
-use tribunal_context::assemble_methodology::{assemble, template_path, KINDS, NAMESPACE};
+use tribunal_context::assemble_methodology::{assemble_for, KINDS};
 use tribunal_core::profile::lens_routing::{lens_agent_for, AGENT_NS, REVIEWER_AGENTS};
 use tribunal_core::profile::profile_lookup::{validate_profile, PROFILE_REVIEWER_KINDS};
 
@@ -41,7 +41,6 @@ fn the_three_lists_name_the_same_kinds() {
 fn every_kind_has_a_template_an_agent_and_a_matching_methodology() {
     let root = plugin_root();
     for kind in KINDS {
-        let template = read(Path::new(&template_path(root.to_str().unwrap(), kind)));
         let agent = agent_of(kind);
         let name = agent.strip_prefix(AGENT_NS).unwrap();
         let wrapper = read(&root.join("agents").join(format!("{name}.md")));
@@ -57,10 +56,10 @@ fn every_kind_has_a_template_an_agent_and_a_matching_methodology() {
             .filter(|f| f.ends_with(".md"))
             .unwrap_or_else(|| panic!("{kind}: agents/{name}.md names no methodology file"));
         let plain = read(&root.join("methodology").join(shipped));
-        let assembled = assemble(&template, None, NAMESPACE).unwrap();
+        let (assembled, _) = assemble_for(root.to_str().unwrap(), kind, None, None).unwrap();
         assert_eq!(
             plain, assembled.text,
-            "{kind}: methodology/{shipped} is not templates/{kind}.md with every slot at its default"
+            "{kind}: methodology/{shipped} is not the {kind} methodology with every slot at its default"
         );
         assert!(
             !assembled.slots.is_empty(),
@@ -79,8 +78,20 @@ fn every_kind_has_a_shipped_profile_and_its_rules_reach_a_slot() {
         assert_eq!(profile["reviewer"], json!(kind), "{}", path.display());
         validate_profile(&profile, &profile["repo"])
             .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        let template = read(Path::new(&template_path(root.to_str().unwrap(), kind)));
-        let a = assemble(&template, Some(&rules), NAMESPACE).unwrap();
+        let (a, _) = assemble_for(root.to_str().unwrap(), kind, None, Some(&rules)).unwrap();
         assert!(a.unknown.is_empty(), "{kind}: {:?}", a.unknown);
     }
+}
+
+#[test]
+fn a_backend_profile_routes_to_the_backend_agent_whatever_its_language() {
+    for language in ["typescript", "go", "python"] {
+        let p = json!({"reviewer": "backend", "language": language});
+        assert_eq!(
+            lens_agent_for(&p).unwrap(),
+            "tribunal:code-review-expert",
+            "{language}"
+        );
+    }
+    assert_eq!(agent_of("python"), "tribunal:py-code-review-expert");
 }

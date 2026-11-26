@@ -27,9 +27,12 @@ that live in that repo, not in the plugin:
    personas carry stack knowledge for Node, Express and Prisma (`backend`),
    React (`frontend`), Playwright test suites (`e2e`) and Python (`python`,
    framework-neutral: Django, FastAPI, Flask and SQLAlchemy are examples, not
-   assumptions). A repo on another
-   stack gets a working review, but its reviewers know nothing about that
-   stack's traps until you write them into the rules file (step 3).
+   assumptions). A backend on another stack (Go, Java, Ruby) uses `backend`
+   with `"language": "<name>"` in the profile; it is reviewed with
+   language-neutral wording until someone writes its module (see "A backend
+   in another language" below). A frontend or test suite on another stack gets
+   a working review, but its reviewers know nothing about that stack's traps
+   until you write them into the rules file (step 3).
 2. **Copy the profile and edit it.** Every field:
 
    | Field | Meaning |
@@ -92,11 +95,23 @@ An end-to-end suite works the same way: name the application it tests in
 `crossRepoAnchors`, so a reviewer can check that a locator or a mocked response
 matches the app.
 
+## A backend in another language
+
+A backend in a language tribunal has no module for (Go, Java, Ruby) uses
+`"reviewer": "backend"` with `"language": "<name>"`. It runs on the role's
+language-neutral wording, and `check.sh` prints a warning saying no module
+exists. To give that language its own wording, add
+`methodology/templates/lang/<name>.md` to tribunal: one
+`<!-- slot: lang/<slot> -->` block per slot of `methodology/templates/role/backend.md`
+you want to fill, with `lang/typescript.md` and `lang/python.md` as examples.
+A block naming a slot the role does not have is an error. No persona, template
+or binary change is needed.
+
 ## What a profile cannot do yet
 
-Another reviewer kind (a Go service, a mobile app) needs a new persona and a
-methodology template in tribunal, not a profile. The profile loader refuses
-any `reviewer` other than `backend`, `frontend`, `e2e` and `python`, so this
-fails loudly instead of borrowing another stack's reviewer.
+Another frontend or end-to-end stack (a mobile app, a Cypress suite) needs a
+new persona and a methodology template in tribunal, not a profile. The profile
+loader refuses any `reviewer` other than `backend`, `frontend`, `e2e` and
+`python`, so this fails loudly instead of borrowing another stack's reviewer.
 
 `templates/check.sh` checks a Python profile like the others.

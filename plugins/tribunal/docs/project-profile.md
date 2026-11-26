@@ -19,6 +19,20 @@ a profile and its rules before committing them, run
 runs the same loader and methodology assembler a review does. Every metrics row records that sha256,
 so a profile edit is visible in the data.
 
+`language` (optional, `backend` only) names the language the backend
+reviewer's methodology is written for. The `backend` role is one template,
+`methodology/templates/role/backend.md`, whose stack-specific passages are
+slots; a module under `methodology/templates/lang/` fills them for one
+language. `backend` means `typescript` and `python` means `backend` with
+`python`, so existing profiles need no change. A language with no module, such
+as `"language": "go"`, gets the role's language-neutral wording, and the loader
+prints a warning saying so; the review runs, but nothing has measured how well
+it reviews that stack. A malformed `language`, or one on a `frontend`, `e2e` or
+`python` reviewer, is ignored with a warning. A block in the repo's rules file
+fills any slot of the role template, the language slots included, and wins over
+the module. Every metrics row records the layers it ran with as `methodology`:
+`{role, language, module}`, with `module` null when no module existed.
+
 `riskPaths` says which changed paths count as high-risk and which focus each one
 forces (`migration`, `security` or `dataContract`), as `{focus, pattern}` with a
 case-insensitive regular expression. The forced foci read it. A rule naming any
@@ -75,7 +89,7 @@ override takes precedence. Invalid values are warned about and ignored.
 
 `projectRules` names the repo's own review rules, usually
 `.claude/review-rules.md`, read at the same ref as the profile. The plugin's
-methodology (`methodology/templates/backend.md`, `frontend.md`, `e2e.md` and `python.md`) has named
+methodology (`methodology/templates/role/backend.md` with its `lang/` modules, `frontend.md` and `e2e.md`) has named
 slots with generic text, and a `tribunal/<slot>` block in that file replaces the
 slot's text for this repo. The engine builds the file a review reads from them
 (`tribunal assemble-methodology` does the same on its own), and every row records the rules' sha256. Without
@@ -243,7 +257,8 @@ That file belongs to the machine and never ships with the plugin:
 
 To add a repo, start from the profile in [`templates/`](../templates/README.md),
 change `repo` and whatever differs, check it with `templates/check.sh`, and commit
-it to that repo as `.claude/review-profile.json`. One limit: the reviewer personas carry the stack knowledge they
-were written for (Node, Express and Prisma for `backend`, React for
-`frontend`, Playwright for `e2e`, Python for `python`). A repo on another stack
-can have a profile, but its reviewers do not know that stack yet.
+it to that repo as `.claude/review-profile.json`. One limit: the methodology carries the stack knowledge it was written for
+(Node, Express and Prisma for `backend`, Python for `python`, React for
+`frontend`, Playwright for `e2e`). A backend on another stack can set
+`language` and is reviewed with neutral wording until someone writes its
+module; a frontend or end-to-end suite on another stack has no such option yet.

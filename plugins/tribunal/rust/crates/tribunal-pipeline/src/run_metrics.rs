@@ -167,6 +167,7 @@ pub fn metrics_scope(
         project_rules_sha256: prepared.project_rules_sha256.clone(),
         project_rules_source: prepared.project_rules_source.clone(),
         conventions_manifest: prepared.conventions.manifest.clone().unwrap_or(Value::Null),
+        methodology: prepared.methodology_layers.clone(),
         lens_labels: array(&review.labels),
         review_results: Value::Array(
             review

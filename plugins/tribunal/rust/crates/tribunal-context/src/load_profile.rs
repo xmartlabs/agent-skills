@@ -341,10 +341,15 @@ fn accept(text: &str, source: &str, repo: &Value) -> Map<String, Value> {
     if let Err(e) = validate_parsed(&parsed, repo) {
         return fail(format!("{source}: {e}"));
     }
-    let warnings = match profile_warnings(&parsed) {
+    let mut warnings = match profile_warnings(&parsed) {
         Ok(w) => w,
         Err(e) => return fail(format!("{source}: {e}")),
     };
+    let plugin_root = std::env::var("TRIBUNAL_PLUGIN_ROOT").ok();
+    warnings.extend(crate::assemble_methodology::language_warnings(
+        &parsed,
+        plugin_root.as_deref(),
+    ));
     let mut m = Map::new();
     m.insert("ok".into(), Value::Bool(true));
     m.insert("profile".into(), parsed);
