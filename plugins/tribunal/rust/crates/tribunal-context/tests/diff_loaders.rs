@@ -56,12 +56,19 @@ const GOLDEN: &str = "loaders.json";
 const OPERATOR: &str = "lib/operator.mjs";
 const ENTRIES: [&str; 4] = [LOAD_PROFILE, LOAD_CONVENTIONS, ASSEMBLE, OPERATOR];
 
+// The per-kind templates `backend.md` and `python.md` were split into
+// `role/backend.md` and the `lang/` modules after this golden was recorded.
+// What they assembled is frozen byte for byte in `methodology_layers.rs`, so
+// their recorded hashes are left out of the staleness check.
+const RETIRED_TEMPLATES: [&str; 2] = ["backend.md", "python.md"];
+
 fn template_shas() -> Value {
     let dir = root().join("methodology/templates");
     let mut out = serde_json::Map::new();
     let mut names: Vec<_> = std::fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
         .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
     names.sort();
@@ -88,7 +95,13 @@ fn stale(rw: &Value) -> Vec<String> {
     for e in ENTRIES {
         out.extend(posting::stale_module_shas(&rw["entries"][e], e));
     }
-    if rw["templates"] != template_shas() {
+    let mut recorded = rw["templates"].clone();
+    if let Some(m) = recorded.as_object_mut() {
+        for r in RETIRED_TEMPLATES {
+            m.remove(r);
+        }
+    }
+    if recorded != template_shas() {
         out.push("methodology/templates".to_owned());
     }
     out
@@ -1816,11 +1829,25 @@ async fn method_case(
     out: &Path,
     expect: &str,
 ) -> String {
-    let r = root.to_string_lossy().into_owned();
+    method_case_at(label, fx, root, root, args, out, expect).await
+}
+
+/// `method_case` with the script under `js_root` and the port reading its
+/// templates under `port_root`.
+async fn method_case_at(
+    label: &str,
+    fx: &Fx,
+    js_root: &Path,
+    port_root: &Path,
+    args: &[&str],
+    out: &Path,
+    expect: &str,
+) -> String {
+    let r = port_root.to_string_lossy().into_owned();
     same(
         label,
         fx,
-        &root.join(ASSEMBLE),
+        &js_root.join(ASSEMBLE),
         Port::Methodology { root: &r },
         args,
         &fx.dir,
@@ -1996,6 +2023,8 @@ async fn assemble_methodology_matches_js_on_template_edges() {
         std::fs::copy(root().join(ASSEMBLE), fake.join(ASSEMBLE)).unwrap();
     }
     let fake = fake.canonicalize().unwrap();
+    let port_root = std::env::temp_dir().join(format!("tribunal-am-role-{}", std::process::id()));
+    std::fs::create_dir_all(port_root.join("methodology/templates/role")).unwrap();
     let out = fx.dir.join("m.md");
     let o = out.to_str().unwrap();
     let rules = fx.dir.join("r.md");
@@ -2009,7 +2038,22 @@ async fn assemble_methodology_matches_js_on_template_edges() {
         ("bad marker", "x\n<!-- slot:intro -->", "template:2: not a slot marker"),
     ] {
         std::fs::write(fake.join("methodology/templates/backend.md"), template).unwrap();
-        method_case(label, &fx, &fake, &["--kind", "backend", "--rules", rl, "--out", o], &out, expect).await;
+        // The backend kind reads `role/backend.md` since the split into
+        // `role/` and `lang/`. The port gets its own root holding the same
+        // template there, outside the recorded tree, so the call it is
+        // compared with keeps the key it was recorded under. With no `lang/`
+        // module, the role's own text is the whole methodology.
+        std::fs::write(port_root.join("methodology/templates/role/backend.md"), template).unwrap();
+        method_case_at(
+            label,
+            &fx,
+            &fake,
+            &port_root,
+            &["--kind", "backend", "--rules", rl, "--out", o],
+            &out,
+            expect,
+        )
+        .await;
     }
     method_case(
         "template missing",

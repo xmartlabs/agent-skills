@@ -121,6 +121,9 @@ pub struct Prepared {
     pub repo: String,
     pub profile: Value,
     pub methodology_path: String,
+    /// `{role, language, module}`: the layers the methodology came from,
+    /// recorded as `methodology`.
+    pub methodology_layers: Value,
     pub conventions: ConventionsChannel,
     /// Where the compose step finds other repos on this run. Empty without a
     /// conventions token, and then the step's prompt is unchanged.
@@ -263,7 +266,12 @@ pub async fn prepare(rt: &Runtime, args: &RunArgs) -> Result<Prepared, String> {
     let reviewer = to_js_string(js::get(&profile, "reviewer"));
 
     let methodology = methodology_path(&repo, &args.pr);
-    let mut argv = vec!["--kind".to_owned(), reviewer];
+    let language = assemble_methodology::profile_language(&profile)
+        .or_else(|| assemble_methodology::preset(&reviewer).map(|(_, default)| default.to_owned()));
+    let mut argv = vec!["--kind".to_owned(), reviewer.clone()];
+    if let Some(l) = &language {
+        argv.extend(["--language".to_owned(), l.clone()]);
+    }
     if let Some(rules) = loaded.get("projectRules").filter(|r| r.is_object()) {
         argv.extend(["--rules".to_owned(), rules_file.clone()]);
         if let Some(sha) = js::get(rules, "sha256").and_then(Value::as_str) {
@@ -273,6 +281,20 @@ pub async fn prepare(rt: &Runtime, args: &RunArgs) -> Result<Prepared, String> {
     argv.extend(["--out".to_owned(), methodology.clone()]);
     let assembled = assemble_methodology::main(&rt.plugin_root.to_string_lossy(), &argv);
     let assembled = json_line(&assembled.stdout, "assemble-methodology")?;
+    let methodology_layers = json!({
+        "role": assembled.get("role").cloned().unwrap_or_else(|| json!(reviewer)),
+        "language": assembled.get("language").cloned().unwrap_or(Value::Null),
+        "module": assembled.get("module").cloned().unwrap_or(Value::Null),
+    });
+    if let (Some(l), Some(Value::Null)) = (&language, assembled.get("module")) {
+        let notice = format!(
+            "profile warning: {}",
+            assemble_methodology::neutral_defaults_notice(l)
+        );
+        if !logs.contains(&notice) {
+            logs.push(notice);
+        }
+    }
     if let Some(unknown) = assembled
         .get("unknown")
         .and_then(Value::as_array)
@@ -388,6 +410,7 @@ pub async fn prepare(rt: &Runtime, args: &RunArgs) -> Result<Prepared, String> {
         repo,
         profile,
         methodology_path: methodology,
+        methodology_layers,
         conventions,
         cross_repo_note,
         profile_sha256: text(loaded.get("sha256")),

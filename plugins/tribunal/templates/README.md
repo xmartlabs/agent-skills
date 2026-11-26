@@ -92,11 +92,23 @@ An end-to-end suite works the same way: name the application it tests in
 `crossRepoAnchors`, so a reviewer can check that a locator or a mocked response
 matches the app.
 
+## A backend in another language
+
+A backend in a language tribunal has no module for (Go, Java, Ruby) uses
+`"reviewer": "backend"` with `"language": "<name>"`. It runs on the role's
+language-neutral wording, and `check.sh` prints a warning saying no module
+exists. To give that language its own wording, add
+`methodology/templates/lang/<name>.md` to tribunal: one
+`<!-- slot: lang/<slot> -->` block per slot of `methodology/templates/role/backend.md`
+you want to fill, with `lang/typescript.md` and `lang/python.md` as examples.
+A block naming a slot the role does not have is an error. No persona, template
+or binary change is needed.
+
 ## What a profile cannot do yet
 
-Another reviewer kind (a Go service, a mobile app) needs a new persona and a
-methodology template in tribunal, not a profile. The profile loader refuses
-any `reviewer` other than `backend`, `frontend`, `e2e` and `python`, so this
-fails loudly instead of borrowing another stack's reviewer.
+Another frontend or end-to-end stack (a mobile app, a Cypress suite) needs a
+new persona and a methodology template in tribunal, not a profile. The profile
+loader refuses any `reviewer` other than `backend`, `frontend`, `e2e` and
+`python`, so this fails loudly instead of borrowing another stack's reviewer.
 
 `templates/check.sh` checks a Python profile like the others.
