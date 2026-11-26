@@ -52,3 +52,16 @@ fn cluster_keys_do_not_change_the_verdict_and_the_section_has_none() {
         assert!(!section.contains(word), "{word} in {section}");
     }
 }
+
+#[test]
+fn no_finding_areas_are_collapsed_into_one_path_ordered_line() {
+    let (rules, _) = group_by::rules(&json!({"groupBy": ["apps/*/"]}));
+    let section = tribunal_core::report::cluster_sections::cluster_sections(
+        &[],
+        &["apps/z/file.ts".into(), "apps/a/file.ts".into()],
+        &rules,
+    );
+    assert!(section.contains("No findings in 2 area(s): `apps/a/`, `apps/z/`"));
+    assert!(!section.contains("**`apps/a/`**"));
+    assert!(!section.contains("**`apps/z/`**"));
+}

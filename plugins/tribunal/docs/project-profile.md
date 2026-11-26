@@ -56,12 +56,22 @@ then assigns its files within those groups by churn. Use
 `tribunal review --partition churn` to compare with the previous per-file
 partition, or `--partition cohesion` to request cohesion explicitly. Cohesion
 without valid `groupBy` entries falls back to churn. With at least one valid entry,
-the report also lists surviving findings by area, including touched clusters with
-no findings. `--lenses` remains an
+the report also lists surviving findings by area: one heading per area with
+findings, and one compact line naming the touched areas with none. `--lenses`
+remains an
 ablation override: its exact lens count is retained, and it can reduce the
 number of file groups. Cohesion changes only which files each group holds: the
 lens count and each lens's focus are the same as under churn. The run's
 metrics row records `partitionMode: "cohesion"` when it applied.
+
+`lensLineBudget` is an optional positive integer that caps the default lens
+count by changed lines: the cap is `max(1, ceil(churn / lensLineBudget))` and
+never raises the count. It also never drops below one lens per focus a risk
+path forced plus the `correctness` lens, so the budget trims only the optional
+foci. Churn excludes `lightPaths` files and uses in-scope churn during an
+incremental re-review. When the cap lowers the lens count, the
+engine also caps file groups so every group has a lens; an explicit `--lenses`
+override takes precedence. Invalid values are warned about and ignored.
 
 `projectRules` names the repo's own review rules, usually
 `.claude/review-rules.md`, read at the same ref as the profile. The plugin's

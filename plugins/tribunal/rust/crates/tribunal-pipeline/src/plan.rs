@@ -56,6 +56,7 @@ pub struct Plan {
     pub lens_budget: f64,
     pub group_count: f64,
     pub lenses_override: Option<f64>,
+    pub lens_line_budget: Option<u64>,
     pub file_groups: Vec<Vec<String>>,
     /// How files are grouped: "churn" or "cohesion".
     pub partition_mode: &'static str,
@@ -102,6 +103,9 @@ impl Plan {
         });
         if !self.light_files.is_empty() {
             value["lightFiles"] = strs(&self.light_files);
+        }
+        if let Some(budget) = self.lens_line_budget {
+            value["lensLineBudget"] = json!(budget);
         }
         if self.partition_chosen {
             value["partitionMode"] = json!(self.partition_mode);
@@ -499,11 +503,57 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
         .and_then(Value::as_f64)
         .filter(|x| x.is_finite() && *x > 0.0)
         .map(|x| x.floor().max(1.0));
-    let group_count = match lenses_override {
+    let lens_line_budget = match js::get(input.profile, "lensLineBudget") {
+        None => None,
+        Some(Value::Number(number)) if number.as_u64().is_some_and(|n| n > 0) => number.as_u64(),
+        Some(_) => {
+            logs.push("Invalid lensLineBudget; expected a positive integer; ignoring it".into());
+            None
+        }
+    };
+    let mut group_count = match lenses_override {
         Some(o) => group_count_base.min(o),
         None => group_count_base,
     };
     let lens_budget = file_tier.max(churn_tier).max(group_count);
+    let foci_map = match foci_for(input.profile)? {
+        Some(Value::Object(m)) => m,
+        _ => Map::new(),
+    };
+    let mut foci = select_foci(&files, lens_budget, &foci_map, &risk_rules);
+    if lenses_override.is_none() {
+        foci = keep_correctness(foci, &foci_map);
+    }
+    // lensLineBudget caps today's lens count by the churn and never raises
+    // it; the group count follows before partitioning, so no file loses its lens.
+    let mut budgeted_lens_count = None;
+    if lenses_override.is_none() {
+        if let Some(line_budget) = lens_line_budget {
+            let baseline_lens_count =
+                lens_count_for(None, group_count, lens_budget, foci.len() as f64);
+            // The cap never drops a focus a risk path forced, nor the
+            // correctness lens next to it.
+            let forced = select_foci(&files, 0.0, &foci_map, &risk_rules);
+            let correctness = foci_map
+                .get("correctness")
+                .filter(|v| js::truthy(Some(v)))
+                .map(tribunal_core::profile::js_ext::js_order);
+            let keeps_correctness = correctness.is_some_and(|c| !forced.contains(&c));
+            let floor = forced.len() as f64 + if keeps_correctness { 1.0 } else { 0.0 };
+            let cap = (churn / line_budget as f64).ceil().max(1.0).max(floor);
+            let resulting = baseline_lens_count.min(cap);
+            if resulting < baseline_lens_count {
+                logs.push(format!(
+                    "Lens line budget {line_budget}: lens count {} -> {} (churn {})",
+                    n(baseline_lens_count),
+                    n(resulting),
+                    n(churn)
+                ));
+            }
+            group_count = group_count.min(resulting).max(1.0);
+            budgeted_lens_count = Some(resulting);
+        }
+    }
 
     let mut churn_map = Map::new();
     if let Some(entries) = js::get(pr, "fileChurn").and_then(Value::as_array) {
@@ -539,15 +589,9 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
         })
         .collect();
 
-    let foci_map = match foci_for(input.profile)? {
-        Some(Value::Object(m)) => m,
-        _ => Map::new(),
-    };
-    let mut foci = select_foci(&files, lens_budget, &foci_map, &risk_rules);
-    if lenses_override.is_none() {
-        foci = keep_correctness(foci, &foci_map);
-    }
-    let lens_count = lens_count_for(lenses_override, group_count, lens_budget, foci.len() as f64);
+    let lens_count = budgeted_lens_count.unwrap_or_else(|| {
+        lens_count_for(lenses_override, group_count, lens_budget, foci.len() as f64)
+    });
     if let Some(o) = lenses_override {
         logs.push(format!(
             "LENS ABLATION — lens count forced to {}, file partition collapsed to {} group(s) so coverage stays total. This run is one ARM of a deliberate A/B; its findings are not comparable to a normal run except against the other arm.",
@@ -645,6 +689,7 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
         lens_budget,
         group_count,
         lenses_override,
+        lens_line_budget,
         file_groups,
         file_partition_mode,
         partition_mode,

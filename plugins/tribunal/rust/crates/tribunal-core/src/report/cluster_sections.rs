@@ -25,22 +25,34 @@ pub fn cluster_sections(findings: &[Value], pr_files: &[String], rules: &[GroupB
     }
 
     let mut out = String::from("\n\n---\n\n**Findings by area.**");
+    let mut empty_clusters = Vec::new();
     for cluster in clusters {
-        out.push_str(&format!(
-            "\n\n**{}**",
-            crate::lens::coverage_gaps::code_span(&cluster)
-        ));
         let matched: Vec<&Value> = findings
             .iter()
             .filter(|finding| finding_cluster(finding, rules).as_deref() == Some(cluster.as_str()))
             .collect();
         if matched.is_empty() {
-            out.push_str("\n- No findings.");
-        } else {
-            for finding in matched {
-                out.push_str(&finding_line(finding));
-            }
+            empty_clusters.push(cluster);
+            continue;
         }
+        out.push_str(&format!(
+            "\n\n**{}**",
+            crate::lens::coverage_gaps::code_span(&cluster)
+        ));
+        for finding in matched {
+            out.push_str(&finding_line(finding));
+        }
+    }
+    if !empty_clusters.is_empty() {
+        let keys = empty_clusters
+            .iter()
+            .map(|cluster| crate::lens::coverage_gaps::code_span(cluster))
+            .collect::<Vec<_>>()
+            .join(", ");
+        out.push_str(&format!(
+            "\n\nNo findings in {} area(s): {keys}",
+            empty_clusters.len()
+        ));
     }
 
     let outside: Vec<&Value> = findings
@@ -174,9 +186,15 @@ mod tests {
             ],
             &rules(),
         );
-        assert!(text.find("**`apps/a/`**").unwrap() < text.find("**`apps/b/`**").unwrap());
-        assert!(text.find("**`apps/b/`**").unwrap() < text.find("**`apps/z/`**").unwrap());
-        assert!(text.contains("- No findings."));
+        assert!(
+            text.find("**`apps/a/`**").unwrap()
+                < text.find("No findings in 1 area(s): `apps/b/`").unwrap()
+        );
+        assert!(
+            text.find("**`apps/z/`**").unwrap()
+                < text.find("No findings in 1 area(s): `apps/b/`").unwrap()
+        );
+        assert!(text.contains("No findings in 1 area(s): `apps/b/`"));
         assert!(text.contains("**Outside every area**"));
         assert!(text.find("Zed").unwrap() < text.find("Outside").unwrap());
     }
