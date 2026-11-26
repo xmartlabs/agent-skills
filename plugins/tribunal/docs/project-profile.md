@@ -66,8 +66,10 @@ metrics row records `partitionMode: "cohesion"` when it applied.
 
 `lensLineBudget` is an optional positive integer that caps the default lens
 count by changed lines: the cap is `max(1, ceil(churn / lensLineBudget))` and
-never raises the count. Churn excludes `lightPaths` files and uses in-scope
-churn during an incremental re-review. When the cap lowers the lens count, the
+never raises the count. It also never drops below one lens per focus a risk
+path forced plus the `correctness` lens, so the budget trims only the optional
+foci. Churn excludes `lightPaths` files and uses in-scope churn during an
+incremental re-review. When the cap lowers the lens count, the
 engine also caps file groups so every group has a lens; an explicit `--lenses`
 override takes precedence. Invalid values are warned about and ignored.
 

@@ -531,7 +531,16 @@ pub fn build_plan(input: &PlanInput) -> Result<Plan, String> {
         if let Some(line_budget) = lens_line_budget {
             let baseline_lens_count =
                 lens_count_for(None, group_count, lens_budget, foci.len() as f64);
-            let cap = (churn / line_budget as f64).ceil().max(1.0);
+            // The cap never drops a focus a risk path forced, nor the
+            // correctness lens next to it.
+            let forced = select_foci(&files, 0.0, &foci_map, &risk_rules);
+            let correctness = foci_map
+                .get("correctness")
+                .filter(|v| js::truthy(Some(v)))
+                .map(tribunal_core::profile::js_ext::js_order);
+            let keeps_correctness = correctness.is_some_and(|c| !forced.contains(&c));
+            let floor = forced.len() as f64 + if keeps_correctness { 1.0 } else { 0.0 };
+            let cap = (churn / line_budget as f64).ceil().max(1.0).max(floor);
             let resulting = baseline_lens_count.min(cap);
             if resulting < baseline_lens_count {
                 logs.push(format!(

@@ -119,9 +119,9 @@ fn grouped_files_are_placed_once_under_a_line_budget() {
 }
 
 #[test]
-fn a_one_lens_cap_keeps_the_first_selected_focus() {
-    // The budget cuts the slots, never the focus order: one lens keeps
-    // foci[0], a risk-forced focus when a risk path is touched.
+fn a_cap_keeps_a_forced_focus_and_the_correctness_lens() {
+    // A budget that would leave one lens still runs the focus the risk path
+    // forced and the correctness lens beside it.
     let files: Vec<String> = (0..20).map(|i| format!("src/auth/f{i}.rs")).collect();
     let churn: Vec<_> = files
         .iter()
@@ -142,8 +142,44 @@ fn a_one_lens_cap_keeps_the_first_selected_focus() {
         partition_mode: None,
     })
     .unwrap();
-    assert_eq!(capped.lens_count, 1.0);
-    assert_eq!(capped.lens_plan.len(), 1);
-    assert_eq!(capped.lens_plan[0].focus, capped.foci[0]);
-    assert_eq!(capped.foci[0], json!("security"));
+    assert_eq!(capped.lens_count, 2.0);
+    let foci: Vec<_> = capped.lens_plan.iter().map(|l| l.focus.clone()).collect();
+    assert_eq!(foci, [json!("security"), json!("correctness")]);
+}
+
+#[test]
+fn a_cap_keeps_every_forced_focus_and_correctness_when_two_risk_paths_match() {
+    let mut files: Vec<String> = (0..10).map(|i| format!("src/auth/f{i}.rs")).collect();
+    files.extend((0..10).map(|i| format!("db/migrations/m{i}.sql")));
+    let churn: Vec<_> = files
+        .iter()
+        .map(|f| json!({"file": f, "churn": 1}))
+        .collect();
+    let pr = json!({"files": files, "fileCount": 20, "additions": 20, "deletions": 0, "fileChurn": churn});
+    let mut foci = foci();
+    foci["migration"] = json!("migrations");
+    let mut profile = json!({"foci": foci, "lensLineBudget": 1000});
+    profile["riskPaths"] = json!([
+        {"focus": "security", "pattern": "auth/"},
+        {"focus": "migration", "pattern": "migrations/"}
+    ]);
+    let capped = build_plan(&PlanInput {
+        pr_context: &pr,
+        bookkeeping: None,
+        wants_probe: false,
+        force_full: false,
+        pinned_sha: "",
+        lenses: None,
+        profile: &profile,
+        light_no_logic: false,
+        partition_mode: None,
+    })
+    .unwrap();
+    let mut got: Vec<String> = capped
+        .lens_plan
+        .iter()
+        .map(|l| l.focus.as_str().unwrap().to_owned())
+        .collect();
+    got.sort();
+    assert_eq!(got, ["correctness", "migrations", "security"]);
 }
