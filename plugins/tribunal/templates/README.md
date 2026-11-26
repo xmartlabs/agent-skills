@@ -27,9 +27,12 @@ that live in that repo, not in the plugin:
    personas carry stack knowledge for Node, Express and Prisma (`backend`),
    React (`frontend`), Playwright test suites (`e2e`) and Python (`python`,
    framework-neutral: Django, FastAPI, Flask and SQLAlchemy are examples, not
-   assumptions). A repo on another
-   stack gets a working review, but its reviewers know nothing about that
-   stack's traps until you write them into the rules file (step 3).
+   assumptions). A backend on another stack (Go, Java, Ruby) uses `backend`
+   with `"language": "<name>"` in the profile; it is reviewed with
+   language-neutral wording until someone writes its module (see "A backend
+   in another language" below). A frontend or test suite on another stack gets
+   a working review, but its reviewers know nothing about that stack's traps
+   until you write them into the rules file (step 3).
 2. **Copy the profile and edit it.** Every field:
 
    | Field | Meaning |
