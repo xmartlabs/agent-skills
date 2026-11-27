@@ -124,9 +124,7 @@ const INSIDE_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
 /// Claude Code starts each Bash command in a process group of its own, so
 /// killing an agent's group misses a command the agent left running, and once
 /// the agent exits that command is reparented to init. Its working directory
-/// is still the checkout the agent started in. On 2026-11-27 a reviewer's
-/// `find / -path ...` outlived its review that way, at several cores, until
-/// it was killed by hand.
+/// is still the checkout the agent started in.
 ///
 /// Linux reads `/proc/<pid>/cwd` and macOS asks libproc. Elsewhere, Windows
 /// included, nothing is found.
