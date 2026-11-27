@@ -361,7 +361,10 @@ pub fn typecheck_banner(
 #[must_use]
 pub fn typecheck_applies(tree: Option<&Path>, pr_files: &[String]) -> bool {
     tree.is_none_or(|t| {
-        t.join("tsconfig.json").is_file() || pr_files.iter().any(|f| f.ends_with(".py"))
+        t.join("tsconfig.json").is_file()
+            || pr_files
+                .iter()
+                .any(|f| tribunal_core::lang::python::PYTHON.is_checked(f))
     })
 }
 

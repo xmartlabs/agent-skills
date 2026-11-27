@@ -13,6 +13,7 @@
 //! JavaScript would index into the array, string or number instead.
 
 use std::collections::{HashMap, HashSet};
+use tribunal_core::lang::typescript::TYPESCRIPT;
 
 use serde_json::{json, Map, Value};
 use tribunal_core::js;
@@ -35,7 +36,6 @@ const OBJECT_PROTO: [&str; 12] = [
     "toLocaleString",
 ];
 
-const EXTS: [&str; 7] = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
 const INDEX_SUFFIXES: [&str; 4] = ["/index.ts", "/index.tsx", "/index.js", "/index.jsx"];
 
 // ---------------------------------------------------------------------------
@@ -273,9 +273,7 @@ pub fn import_specifiers(content: &str) -> Vec<String> {
 
 /// The SOURCE_RE extension the path ends with, if any.
 pub fn source_ext(p: &str) -> Option<&'static str> {
-    [".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs"]
-        .into_iter()
-        .find(|e| p.ends_with(e))
+    TYPESCRIPT.source_ext(p)
 }
 
 fn stem(p: &str) -> String {
@@ -399,7 +397,7 @@ impl Resolver<'_> {
                 .find(|a| spec.starts_with(a.key_prefix.as_str()))?;
             format!("{}{}", alias.target_prefix, &spec[alias.key_prefix.len()..])
         };
-        for ext in EXTS {
+        for ext in std::iter::once("").chain(TYPESCRIPT.source.iter().copied()) {
             let f = format!("{resolved}{ext}");
             if self.known.contains(f.as_str()) {
                 return Some((f, "path"));

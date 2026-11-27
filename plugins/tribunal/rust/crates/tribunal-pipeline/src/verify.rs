@@ -13,6 +13,8 @@ use tribunal_core::evidence::tsc_oracle::{
     TscDiagnostic,
 };
 use tribunal_core::js;
+use tribunal_core::lang::python::PYTHON;
+use tribunal_core::lang::typescript::TYPESCRIPT;
 use tribunal_core::lens::js_ext::to_js_string;
 use tribunal_core::votes::dedup_veto::mergeable_within;
 use tribunal_core::votes::js_ext::number_value;
@@ -311,9 +313,6 @@ pub struct Grounded {
     pub confirm_only: bool,
 }
 
-const SOURCE_EXT: [&str; 6] = [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"];
-const PYTHON_EXT: [&str; 2] = [".py", ".pyi"];
-
 /// Ports `applyTypecheckResult` over the typecheck's text.
 ///
 /// # Errors
@@ -353,7 +352,7 @@ pub fn apply_typecheck_result(
         );
         return Ok(g);
     }
-    ground_on_coverage(text, &all, &SOURCE_EXT, pr_files, logs)
+    ground_on_coverage(text, &all, TYPESCRIPT.typed, pr_files, logs)
 }
 
 /// The log when the typecheck lists no program files. tsc that never started
@@ -442,7 +441,7 @@ fn apply_python_result(
         return Ok(Grounded::default());
     }
     let all = python_typecheck::parse_diagnostics(text);
-    let mut g = ground_on_coverage(text, &all, &PYTHON_EXT, pr_files, logs)?;
+    let mut g = ground_on_coverage(text, &all, PYTHON.typed, pr_files, logs)?;
     g.confirm_only = true;
     Ok(g)
 }

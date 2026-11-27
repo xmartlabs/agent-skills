@@ -118,11 +118,15 @@ fn is_word_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 
-const SOURCE_EXTENSIONS: [&str; 9] = [
-    "ts", "tsx", "js", "jsx", "mts", "cts", "prisma", "sql", "json",
-];
+fn source_extensions() -> &'static [&'static str] {
+    static EXTS: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    EXTS.get_or_init(|| {
+        crate::lang::cited_extensions(&crate::lang::LANGUAGES, &crate::lang::SCOPE_DATA)
+    })
+}
 
-/// The matches of `/[\w./-]+\.(ts|tsx|js|jsx|mts|cts|prisma|sql|json)\b/g`.
+/// The matches of `/[\w./-]+\.(ts|tsx|js|jsx|mts|cts|py|pyi|prisma|sql|json)\b/g`:
+/// the typed files of every language and the data files.
 fn source_file_mentions(text: &str) -> Vec<&str> {
     let chars: Vec<(usize, char)> = text.char_indices().collect();
     let byte_at = |i: usize| chars.get(i).map_or(text.len(), |&(b, _)| b);
@@ -134,7 +138,7 @@ fn source_file_mentions(text: &str) -> Vec<&str> {
             if chars[k].1 != '.' {
                 continue;
             }
-            for ext in SOURCE_EXTENSIONS {
+            for ext in source_extensions() {
                 let e = k + 1 + ext.len();
                 if e > chars.len() || !chars[k + 1..e].iter().map(|&(_, c)| c).eq(ext.chars()) {
                     continue;
@@ -407,6 +411,10 @@ mod tests {
         );
         assert_eq!(source_file_mentions("a.tsé"), ["a.ts"]);
         assert!(source_file_mentions("a.tsx_").is_empty());
+        assert_eq!(
+            source_file_mentions("see src/widgets.py and stubs/widgets.pyi, not a.pyc"),
+            ["src/widgets.py", "stubs/widgets.pyi"]
+        );
     }
 
     #[test]

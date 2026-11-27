@@ -5,6 +5,7 @@
 pub mod artifact_key;
 pub mod evidence;
 pub mod js;
+pub mod lang;
 pub mod lens;
 pub mod panel;
 pub mod profile;

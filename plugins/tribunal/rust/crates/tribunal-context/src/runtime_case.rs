@@ -22,7 +22,6 @@ pub const OUTPUT_CAP: usize = 16 * 1024;
 pub const RUNTIME_CASE: &str = "runtimeCase";
 pub const CLAIM_FIELD: &str = "runtimeClaim";
 
-const EXTENSIONS: [&str; 7] = ["ts", "tsx", "mts", "cts", "js", "mjs", "cjs"];
 const SCRIPTS: [&str; 2] = ["test:unit", "test"];
 const FAILURE_CHARS: usize = 300;
 
@@ -93,19 +92,18 @@ pub fn parse_claim(v: Option<&Value>) -> Option<Result<Claim, &'static str>> {
     Some(parsed.ok_or("malformed-claim"))
 }
 
-#[must_use]
-pub fn is_identifier(s: &str) -> bool {
-    let mut chars = s.chars();
-    chars
-        .next()
-        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '$')
-        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
-}
+pub use tribunal_core::lang::typescript::is_identifier;
+use tribunal_core::lang::typescript::TYPESCRIPT;
 
 #[must_use]
 pub fn runnable_file(path: &str) -> bool {
     path.rsplit_once('.').is_some_and(|(stem, ext)| {
-        !stem.is_empty() && !stem.ends_with('/') && EXTENSIONS.contains(&ext)
+        !stem.is_empty()
+            && !stem.ends_with('/')
+            && TYPESCRIPT
+                .runnable
+                .iter()
+                .any(|e| e.strip_prefix('.') == Some(ext))
     }) && !path.ends_with(".d.ts")
 }
 

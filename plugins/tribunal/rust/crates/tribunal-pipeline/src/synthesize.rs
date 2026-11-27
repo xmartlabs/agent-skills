@@ -10,7 +10,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use serde_json::{json, Map, Value};
-use tribunal_core::evidence::ref_evidence_check::{cited_identifiers, ref_evidence_verdict};
+use tribunal_core::evidence::ref_evidence_check::{cited_identifiers_in, ref_evidence_verdict};
 use tribunal_core::js;
 use tribunal_core::lens::js_ext::{to_js_string, utf16_prefix_lossy};
 use tribunal_core::panel::panel_gates::lower_severity_votes;
@@ -812,7 +812,11 @@ pub fn ref_evidence_targets(results: &[Value]) -> (Vec<Value>, Vec<String>) {
         for vote in votes_of(v) {
             let reason = js::get(vote, "reason");
             if js::get(vote, "verdict") == Some(&json!("REFUTED")) && js::truthy(reason) {
-                let cited: Vec<String> = cited_identifiers(reason)
+                let language = js::get(v, "file")
+                    .and_then(Value::as_str)
+                    .and_then(tribunal_core::lang::language_of)
+                    .unwrap_or(&tribunal_core::lang::typescript::TYPESCRIPT);
+                let cited: Vec<String> = cited_identifiers_in(reason, language)
                     .into_iter()
                     .filter(|i| {
                         !i.is_empty()
