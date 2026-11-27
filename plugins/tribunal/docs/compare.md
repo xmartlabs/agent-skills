@@ -122,6 +122,8 @@ labelled) and a matcher that decides which finding is which defect. Neither
 is in this repository: the corpus tribunal was measured on comes from private
 pull requests, and the tools that read it live next to it, outside the plugin.
 
+To start a corpus from your repository's history, see [Building a corpus](corpus/README.md).
+
 Three of those tools would help anyone with a corpus of their own:
 
 - turning `metrics.jsonl` rows and a corpus into the two observation files;

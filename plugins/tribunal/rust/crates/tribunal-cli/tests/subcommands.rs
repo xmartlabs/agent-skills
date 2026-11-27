@@ -353,3 +353,75 @@ fn compare_reads_two_arm_files() {
         assert_eq!(o.status.code(), Some(2), "{bad:?}");
     }
 }
+
+#[test]
+fn corpus_commands_refuse_missing_flags() {
+    let dir = scratch("corpus-flags");
+    let collect = tribunal(
+        &["corpus", "collect", "--checkout", ".", "--out", "x"],
+        &dir,
+    );
+    assert_eq!(collect.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&collect.stderr).contains("--repo is required"));
+    let read = tribunal(&["corpus", "read", "--in", "x", "--checkout", "."], &dir);
+    assert_eq!(read.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&read.stderr).contains("--max-usd is required"));
+    let bad = tribunal(&["corpus", "collect", "--bogus", "1"], &dir);
+    assert_eq!(bad.status.code(), Some(2));
+    let source = tribunal(
+        &[
+            "corpus",
+            "collect",
+            "--repo",
+            "acme/widgets",
+            "--checkout",
+            ".",
+            "--out",
+            "x",
+            "--source",
+            "nobody",
+        ],
+        &dir,
+    );
+    assert_eq!(source.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&source.stderr).contains("known: coderabbit, line-changed"));
+}
+
+/// The CLI reaches `gh` through `PATH`; a stand-in that lists no comments
+/// shows the wiring and the summary without a network.
+#[cfg(unix)]
+#[test]
+fn corpus_collect_runs_end_to_end_on_an_empty_listing() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = scratch("corpus-collect");
+    let bin = dir.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let gh = bin.join("gh");
+    std::fs::write(&gh, "#!/bin/sh\necho '[]'\n").unwrap();
+    std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let out = dir.join("out");
+    let run = Command::new(env!("CARGO_BIN_EXE_tribunal"))
+        .args(["corpus", "collect", "--repo", "acme/widgets", "--checkout"])
+        .arg(&dir)
+        .arg("--out")
+        .arg(&out)
+        .arg("--json")
+        .env("PATH", path)
+        .env("TRIBUNAL_DATA_DIR", &dir)
+        .output()
+        .unwrap();
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let summary: serde_json::Value = serde_json::from_str(stdout(&run).trim()).unwrap();
+    assert_eq!(summary["commentsRead"], 0);
+    assert_eq!(summary["pullRequestsWritten"], 0);
+    assert!(out.is_dir());
+}
