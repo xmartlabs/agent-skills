@@ -39,6 +39,9 @@ pub struct Language {
     pub declaration: fn(&str) -> Option<Declaration>,
     pub is_comment: fn(&str) -> bool,
     pub is_identifier: fn(&str) -> bool,
+    /// Whether `line` imports the module the file at the second argument
+    /// defines. Read from the line alone, with no path resolution.
+    pub imports_module: fn(&str, &str) -> bool,
     /// A regex for the identifiers worth looking up when prose cites code.
     pub cited_identifier: &'static str,
 }
@@ -127,6 +130,18 @@ pub fn cited_extensions(table: &[&Language], data: &[&'static str]) -> Vec<&'sta
         }
     }
     out
+}
+
+/// `name` as a whole word of `[A-Za-z0-9_]` in `s`.
+#[must_use]
+pub fn has_plain_word(s: &str, name: &str) -> bool {
+    let b = s.as_bytes();
+    let word = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
+    !name.is_empty()
+        && s.match_indices(name).any(|(i, _)| {
+            let end = i + name.len();
+            (i == 0 || !word(b[i - 1])) && (end == b.len() || !word(b[end]))
+        })
 }
 
 /// A segment before the last one named one of `names`.
@@ -218,6 +233,7 @@ mod tests {
             declaration: fake_decl,
             is_comment: never,
             is_identifier: never,
+            imports_module: |_, _| false,
             cited_identifier: r"\bfk_[a-z]+\b",
         };
         let table: [&Language; 3] = [&typescript::TYPESCRIPT, &python::PYTHON, &FAKE];

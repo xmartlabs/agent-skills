@@ -124,6 +124,9 @@ pub struct Prepared {
     /// `{role, language, module}`: the layers the methodology came from,
     /// recorded as `methodology`.
     pub methodology_layers: Value,
+    /// The language the profile resolves to: its `language`, else the
+    /// reviewer kind's preset. `None` for a kind with no language layer.
+    pub language: Option<String>,
     pub conventions: ConventionsChannel,
     /// Where the compose step finds other repos on this run. Empty without a
     /// conventions token, and then the step's prompt is unchanged.
@@ -411,6 +414,7 @@ pub async fn prepare(rt: &Runtime, args: &RunArgs) -> Result<Prepared, String> {
         profile,
         methodology_path: methodology,
         methodology_layers,
+        language,
         conventions,
         cross_repo_note,
         profile_sha256: text(loaded.get("sha256")),

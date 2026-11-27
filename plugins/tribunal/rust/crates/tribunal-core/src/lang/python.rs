@@ -1,6 +1,6 @@
 //! Python.
 
-use super::{has_dir_segment, Declaration, Language};
+use super::{has_dir_segment, has_plain_word, Declaration, Language};
 
 pub static PYTHON: Language = Language {
     name: "python",
@@ -12,6 +12,7 @@ pub static PYTHON: Language = Language {
     declaration,
     is_comment,
     is_identifier,
+    imports_module,
     cited_identifier: r"(?-u:\b)[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+(?-u:\b)",
 };
 
@@ -92,6 +93,24 @@ pub fn is_identifier(s: &str) -> bool {
     name_end(s, 0) == Some(s.len()) && !s.is_empty()
 }
 
+/// An `import` or `from ... import` line that names the target's module:
+/// the file's stem, or its directory for an `__init__.py`.
+#[must_use]
+pub fn imports_module(line: &str, target: &str) -> bool {
+    let base = target.rsplit('/').next().unwrap_or(target);
+    let stem = base
+        .strip_suffix(".pyi")
+        .or_else(|| base.strip_suffix(".py"))
+        .unwrap_or(base);
+    let module = if stem == "__init__" {
+        target.rsplit('/').nth(1).unwrap_or(stem)
+    } else {
+        stem
+    };
+    let t = line.trim_start();
+    (t.starts_with("import ") || t.starts_with("from ")) && has_plain_word(t, module)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,5 +178,22 @@ mod tests {
         assert!(is_comment("  # note") && !is_comment("x = 1  # y") && !is_comment("// a"));
         assert!(is_identifier("widget_names") && is_identifier("_x1"));
         assert!(!is_identifier("$a") && !is_identifier("1a") && !is_identifier(""));
+        assert!(imports_module(
+            "from pkg.widgets import widget_names",
+            "pkg/widgets.py"
+        ));
+        assert!(imports_module(
+            "    import pkg.widgets as w",
+            "pkg/widgets.py"
+        ));
+        assert!(imports_module(
+            "from . import widgets",
+            "pkg/widgets/__init__.py"
+        ));
+        assert!(!imports_module(
+            "from pkg.gadgets import widgets_all",
+            "pkg/widgets.py"
+        ));
+        assert!(!imports_module("widgets = load()", "pkg/widgets.py"));
     }
 }

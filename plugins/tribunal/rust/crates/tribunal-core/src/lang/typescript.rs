@@ -1,6 +1,6 @@
 //! TypeScript and JavaScript.
 
-use super::{has_dir_segment, Declaration, Language};
+use super::{has_dir_segment, has_plain_word, Declaration, Language};
 use crate::js;
 
 pub static TYPESCRIPT: Language = Language {
@@ -13,6 +13,7 @@ pub static TYPESCRIPT: Language = Language {
     declaration,
     is_comment,
     is_identifier,
+    imports_module,
     cited_identifier: r"(?-u:\b)[A-Za-z][A-Za-z0-9_]*[a-z][A-Z][A-Za-z0-9_]*(?-u:\b)",
 };
 
@@ -133,6 +134,25 @@ pub fn is_identifier(s: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
 }
 
+/// An `import`, `export ... from` or `require` line that names the target's
+/// file stem.
+#[must_use]
+pub fn imports_module(line: &str, target: &str) -> bool {
+    let base = target.rsplit('/').next().unwrap_or(target);
+    let stem = TYPESCRIPT
+        .source_ext(base)
+        .map_or(base, |e| &base[..base.len() - e.len()]);
+    let stem = if stem == "index" {
+        target.rsplit('/').nth(1).unwrap_or(stem)
+    } else {
+        stem
+    };
+    (line.contains("require(")
+        || line.contains(" from ")
+        || line.trim_start().starts_with("import"))
+        && has_plain_word(line, stem)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,5 +195,18 @@ mod tests {
         assert!(is_comment("  // note") && is_comment("/* a") && is_comment(" * b"));
         assert!(!is_comment("# note") && !is_comment("x = 1 // y"));
         assert!(is_identifier("$a_1") && !is_identifier("1a") && !is_identifier("a-b"));
+        assert!(imports_module(
+            "import { a } from './widgets';",
+            "src/widgets.ts"
+        ));
+        assert!(imports_module(
+            "const w = require('../widgets')",
+            "src/widgets/index.js"
+        ));
+        assert!(!imports_module(
+            "import { widgets } from './other';x",
+            "src/gadgets.ts"
+        ));
+        assert!(!imports_module("const widgets = 1;", "src/widgets.ts"));
     }
 }

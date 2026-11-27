@@ -32,6 +32,9 @@ it reviews that stack. A malformed `language`, or one on a `frontend`, `e2e` or
 fills any slot of the role template, the language slots included, and wins over
 the module. Every metrics row records the layers it ran with as `methodology`:
 `{role, language, module}`, with `module` null when no module existed.
+The language also picks the reviewer agent where one exists for it:
+`"reviewer": "backend"` with `"language": "python"` runs the Python agent, the
+one `"reviewer": "python"` runs.
 
 `riskPaths` says which changed paths count as high-risk and which focus each one
 forces (`migration`, `security` or `dataContract`), as `{focus, pattern}` with a
