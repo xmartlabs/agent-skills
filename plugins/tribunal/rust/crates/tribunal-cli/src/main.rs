@@ -563,6 +563,7 @@ fn report(outcome: &FullOutcome, logs: &[String]) -> Value {
             if !r.prepared.cross_repo_note.is_empty() {
                 report["crossRepoNote"] = json!(r.prepared.cross_repo_note);
             }
+            report["needsHuman"] = s.needs_human.to_value();
             report
         }
     }

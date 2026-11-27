@@ -23,6 +23,7 @@ use tribunal_core::report::draft_comments_strip::{
 };
 
 use crate::context::{RunArgs, Runtime};
+use crate::needs_human::{needs_human_line, NeedsHuman};
 
 /// Rounds of the fidelity gate's patch step before the review is posted
 /// with a note naming what is still missing.
@@ -168,7 +169,7 @@ pub fn compose_prompt(pr: &str, repo: &str, head: &str, report: &Path, out: &Pat
 2. Author refutations. For every reply by the PR author that dismisses or explains away a standing finding, check the claim against the code and say whether it is confirmed, refuted or narrower than claimed. Skip a claim an earlier review by the same reviewer already answered. The same rule on other repos applies here.
 3. Template. Put what this review contributes under {sections} Each item: a short bold title, the exact `file:line`, then the explanation. Move out of Blocking anything whose own verified text calls it non-blocking. {section_rule} {panel} {closing}
 4. Mentions. Use `@handle` only to address someone; a passing reference uses the bare handle.
-5. Keep, exactly as in the report: every `(found by: ...)` annotation, every `also at:` location, every kill-reason category, every typecheck diagnostic, the `Verdict suggestion:` line and the whole `### Draft comments` section.
+5. Keep, exactly as in the report: every `(found by: ...)` annotation, every `also at:` location, every kill-reason category, every typecheck diagnostic, the `Verdict suggestion:` line, the `A person should review this PR:` line (when the report has one) and the whole `### Draft comments` section.
 6. Run the homosapiens skill over the body in embedded mode (`homosapiens:homosapiens` when that plugin is installed, else `homosapiens`). If neither skill exists, write nothing and answer exactly NO-HOMOSAPIENS.
 
 Write the final body to {out} with the Write tool, then answer with the single word DONE.",
@@ -287,6 +288,51 @@ pub fn findings_in_body(findings: &[Value], body: &str) -> Vec<Value> {
         })
         .cloned()
         .collect()
+}
+
+/// The label every needs-human line carries, however the composer worded the rest.
+const NEEDS_HUMAN_LABEL: &str = "**A person should review this PR:**";
+
+/// The body with the needs-human `line` under its `Verdict suggestion:` line,
+/// or first when it has none. The composer is an LLM and may drop or reword
+/// the line: the first body line carrying the label is replaced with `line`,
+/// and any later one is dropped, so the body ends with exactly one canonical
+/// copy. No `line` leaves the body unchanged.
+#[must_use]
+pub fn with_needs_human_kept(body: &str, line: Option<&str>) -> String {
+    let Some(line) = line else {
+        return body.to_owned();
+    };
+    if body.contains(NEEDS_HUMAN_LABEL) {
+        let mut placed = false;
+        let mut out: Vec<&str> = Vec::new();
+        for l in body.split('\n') {
+            if !l.contains(NEEDS_HUMAN_LABEL) {
+                out.push(l);
+            } else if !placed {
+                placed = true;
+                out.push(line);
+            }
+        }
+        return out.join("\n");
+    }
+    let lines: Vec<&str> = body.split('\n').collect();
+    let verdict = lines.iter().position(|l| {
+        l.trim_start_matches(['#', ' '])
+            .starts_with("Verdict suggestion:")
+    });
+    match verdict {
+        Some(i) => {
+            let mut out: Vec<&str> = lines[..=i].to_vec();
+            out.extend(["", line]);
+            if lines.get(i + 1).is_some_and(|l| !l.trim().is_empty()) {
+                out.push("");
+            }
+            out.extend(&lines[i + 1..]);
+            out.join("\n")
+        }
+        None => format!("{line}\n\n{body}"),
+    }
 }
 
 /// The body with `note` placed before its `### Draft comments` section, which
@@ -793,6 +839,16 @@ pub async fn post_phase<A: Agent>(
         )
         .await;
         body = std::fs::read_to_string(&body_file).unwrap_or_default();
+    }
+
+    let line = NeedsHuman::from_value(js::get(input.metrics, "needsHuman").unwrap_or(&Value::Null))
+        .and_then(|nh| needs_human_line(&nh));
+    let kept = with_needs_human_kept(&body, line.as_deref());
+    if kept != body {
+        if let Err(e) = std::fs::write(&body_file, &kept) {
+            return PostOutcome::Held(format!("cannot write the body: {e}"));
+        }
+        logs.push("The composed body dropped the needs-human line; put it back".into());
     }
 
     let ledger = LedgerEnv {

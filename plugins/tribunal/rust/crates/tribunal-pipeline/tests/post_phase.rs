@@ -1018,3 +1018,64 @@ fn the_posted_report_drops_the_typecheck_setup_banner_only() {
     let report = format!("## Peer review{drift}\n");
     assert_eq!(posted_report(&report, "COMMENT"), report);
 }
+
+const NH_LINE: &str = "**A person should review this PR:** the lens found nothing (lens-empty).";
+
+#[test]
+fn a_dropped_needs_human_line_is_put_back() {
+    use tribunal_pipeline::post::with_needs_human_kept;
+    for heading in [
+        "### Verdict suggestion: COMMENT",
+        "Verdict suggestion: COMMENT",
+    ] {
+        let body = format!("# Review\n\n{heading}\n\n### Blocking\nNone.\n");
+        let out = with_needs_human_kept(&body, Some(NH_LINE));
+        assert_eq!(
+            out,
+            format!("# Review\n\n{heading}\n\n{NH_LINE}\n\n### Blocking\nNone.\n")
+        );
+    }
+    let tight = with_needs_human_kept("Verdict suggestion: COMMENT\nNext\n", Some(NH_LINE));
+    assert_eq!(
+        tight,
+        format!("Verdict suggestion: COMMENT\n\n{NH_LINE}\n\nNext\n")
+    );
+    let none = with_needs_human_kept("### Blocking\nNone.\n", Some(NH_LINE));
+    assert_eq!(none, format!("{NH_LINE}\n\n### Blocking\nNone.\n"));
+}
+
+#[test]
+fn a_kept_line_is_not_duplicated() {
+    use tribunal_pipeline::post::with_needs_human_kept;
+    let body = format!("### Verdict suggestion: COMMENT\n\n{NH_LINE}\n\nRest\n");
+    assert_eq!(with_needs_human_kept(&body, Some(NH_LINE)), body);
+}
+
+#[test]
+fn a_reworded_line_is_replaced_with_the_canonical_one() {
+    use tribunal_pipeline::post::with_needs_human_kept;
+    let body = "### Verdict suggestion: COMMENT\n\n**A person should review this PR:** the lens was empty.\n\nRest\n\n- **A person should review this PR:** again\n";
+    let out = with_needs_human_kept(body, Some(NH_LINE));
+    assert_eq!(
+        out.matches("**A person should review this PR:**").count(),
+        1
+    );
+    assert_eq!(
+        out,
+        format!("### Verdict suggestion: COMMENT\n\n{NH_LINE}\n\nRest\n\n")
+    );
+}
+
+#[test]
+fn no_line_leaves_the_body_alone() {
+    use tribunal_pipeline::post::with_needs_human_kept;
+    let body = "### Verdict suggestion: COMMENT\n\nRest\n";
+    assert_eq!(with_needs_human_kept(body, None), body);
+}
+
+#[test]
+fn the_compose_prompt_asks_to_keep_it() {
+    use tribunal_pipeline::post::compose_prompt;
+    let p = compose_prompt("1", "o/r", "abc", Path::new("r.md"), Path::new("o.md"));
+    assert!(p.contains("the `A person should review this PR:` line"));
+}

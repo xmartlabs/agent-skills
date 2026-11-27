@@ -21,6 +21,7 @@ use tribunal_core::profile::profile_lookup::risk_path_rules;
 
 use crate::context::{RunArgs, Runtime};
 use crate::metrics::{metrics_row, MetricsScope};
+use crate::needs_human::NeedsHuman;
 use crate::persist::{
     external_votes, persist_json, reconciliation_logs, resolve_vote_reconciliation,
     row_is_this_run, self_audit, wall_clock_fields,
@@ -722,6 +723,12 @@ fn grounded_checker(text: Option<&str>) -> Value {
     json!("tsc")
 }
 
+/// The row keys `persist_phase` takes from the synthesis outcome.
+fn set_coverage_keys(metrics: &mut Value, unread_risk_files: &[String], nh: &NeedsHuman) {
+    metrics["unreadRiskFiles"] = json!(unread_risk_files);
+    metrics["needsHuman"] = nh.to_value();
+}
+
 /// The end of the Synthesize phase: build the row, write the payload files,
 /// run `persist-run`, fold what it prints back into the row, and check the
 /// row landed.
@@ -805,7 +812,11 @@ pub fn persist_phase(
     metrics["verifiedByRepair"] = verify.anchor_repair.clone();
     metrics["blockMinWorth"] = json!(args.block_min_worth);
     metrics["lensNotReachedKinds"] = kind_counts(&review.candidates.lens_gaps);
-    metrics["unreadRiskFiles"] = json!(synthesis.unread_risk_files);
+    set_coverage_keys(
+        &mut metrics,
+        &synthesis.unread_risk_files,
+        &synthesis.needs_human,
+    );
     metrics["lensFailures"] = lens_failures(
         &review.labels,
         &review.dispatches[..lenses.min(review.dispatches.len())],
@@ -1258,6 +1269,28 @@ mod tests {
         let rows = lens_cost(&foci, &[], &[], 1.0, true, &profile(), &lenses);
         assert_eq!(rows[1]["overBudget"], json!(false));
         assert_eq!(rows[1]["lens"], json!("unknown"));
+    }
+
+    #[test]
+    fn persist_phase_writes_needs_human() {
+        use crate::needs_human::Reason;
+        use tribunal_core::profile::needs_human::Signal;
+        let nh = NeedsHuman {
+            raised: true,
+            reasons: vec![Reason {
+                signal: Signal::LensEmpty,
+                detail: "1 of 4 lens(es) returned nothing".to_owned(),
+            }],
+        };
+        let mut row = json!({});
+        set_coverage_keys(&mut row, &["src/widgets.ts".to_owned()], &nh);
+        assert_eq!(
+            row["needsHuman"],
+            json!({"raised": true, "reasons": [
+                {"signal": "lens-empty", "detail": "1 of 4 lens(es) returned nothing"}
+            ]})
+        );
+        assert_eq!(row["unreadRiskFiles"], json!(["src/widgets.ts"]));
     }
 
     #[test]

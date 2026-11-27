@@ -10,4 +10,5 @@ pub mod js_ext;
 pub mod lens_foci;
 pub mod lens_routing;
 pub mod light_paths;
+pub mod needs_human;
 pub mod profile_lookup;
