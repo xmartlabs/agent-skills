@@ -159,6 +159,10 @@ in order:
    is a draft and `drafts` is `false`; `paths` is set and no changed file matches it; or `once` is
    `true` and the action already reviewed the pull request. `paths` needs at least one include
    pattern: a list of only `!` exclusions matches nothing.
+5. With `human-review-check: on`, a `pull_request_review` event never reviews and sets no
+   skipped-commit status: the action checks whether the review clears the "Tribunal human review"
+   status (see [Ask for a human review](#ask-for-a-human-review)). With the check off, a review
+   event follows rules 1 to 4 like any other event.
 
 "Already reviewed" means a review on the pull request, by one of the action's own identities, that
 carries tribunal's footer (`<sub>tribunal v…`). The action's identities are `github-actions[bot]`
@@ -212,6 +216,10 @@ jobs:
           paths: ${{ env.REVIEW_PATHS }}
 ```
 
+With `human-review-check: on`, a commit the gate skips gets its "Tribunal human review" status
+from the gate job, so pass both human review inputs to the gate as well and give it `statuses:
+write` (see [Ask for a human review](#ask-for-a-human-review)).
+
 Pass the secret in each `with:` rather than in workflow `env:`, so only the steps that use it can
 read it. The review job's action checks again with the same rules, so both agree. On
 GitHub-hosted runners in a private repository the gate job bills its own minute on every event.
@@ -258,6 +266,143 @@ workflow's group. A status shows under its own name.
 - Without `statuses: write` the review still posts, and the job summary names the missing
   permission. The job does not fail.
 - With `findings-check: off`, the default, the action sets no status and makes no extra calls.
+
+## Ask for a human review
+
+Some reviews should not end at the bot. When the review says a person should look at the pull
+request, the action can say so in three ways: a label, a commit status that can hold the merge, and
+a rule that keeps `verdict: suggested` from approving. All three require Tribunal 115.9.0 or later;
+with `needs-human-label` or `human-review-check` set, an older engine fails the run with a clear
+error.
+
+### What raises the flag
+
+The engine raises it from signals in the run: a lens that came back empty, a high-risk path the
+reviewers did not read, a typecheck that did not run, a cut panel, an unverified or borderline
+finding, and so on. Which signals count, and the severity each needs, are profile settings. See the
+`needsHuman` section of [the profile reference](../../plugins/tribunal/docs/project-profile.md).
+The posted report has a line naming each reason. The `needs-human` output carries the result.
+
+### The label
+
+Set `needs-human-label` to a label that exists in the repository. The review adds it while the flag
+is raised and removes it when it is not. It needs `pull-requests: write`. A run that cannot say
+(a skipped run, an older engine) leaves the label alone.
+
+### The status
+
+Set `human-review-check: on` and give the review job `statuses: write`. The review then sets a
+"Tribunal human review" commit status on the commit it read: pending while the flag is raised,
+success when it is not. If the head moved while the review ran, it sets nothing.
+
+Every new head needs a status, so the workflow must also listen to `synchronize` (a push) and
+`reopened`:
+
+```yaml
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+```
+
+`synchronize` fires on every push, and the review job's `concurrency` block would cancel a running
+review each time. Decide in a [separate job](#decide-in-a-separate-job) so a push the gate skips
+only starts the cheap gate job.
+
+A commit the action does not review (a draft, `paths`, `once`, a missing Claude credential, an
+engine skip) gets its status from `human-review-on-skip`:
+
+- `carry` (the default) copies an existing status, so a push after a raised flag does not clear it.
+  It looks first at the push's previous head, then at the commit of the action's latest review
+  (pending if that commit has no status yet), then at earlier commits of the pull request, newest
+  first. If none has one, it sets success.
+- `success` sets success, "Not reviewed by Tribunal".
+- `pending` asks for a person.
+
+A head that already has the status keeps it. Label changes and review events set nothing. Fork pull
+requests get no status, because their token is read-only.
+
+### Approving clears it
+
+A person clears a pending status by approving the pull request. Add a workflow for it, in its own
+file so it never cancels a running review. It needs no Claude credential and runs no review.
+
+```yaml
+# .github/workflows/tribunal-approval.yml
+name: Tribunal approval
+on:
+  pull_request_review:
+    types: [submitted]
+jobs:
+  approval:
+    if: github.event.review.state == 'approved'
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write      # set the status
+      pull-requests: read  # read the pull request
+    steps:
+      - uses: xmartlabs/agent-skills/actions/tribunal@tribunal-action-v1
+        with:
+          human-review-check: on
+```
+
+The action sets success, "Cleared by @<login>'s approval", only when all of these hold. Otherwise
+it logs why and changes nothing:
+
+- the review is an approval, by a user rather than a bot;
+- the user is not the action's own identity, so a maintainer who puts their own PAT in
+  `github-token` cannot clear the status by approving;
+- it approves the pull request's current head commit;
+- the user has `write`, `maintain` or `admin` access (a permission that cannot be read counts as
+  none);
+- the head's status is pending;
+- the event is `submitted` (an `edited` or `dismissed` review event clears nothing).
+
+An approval given before the review finishes still counts: when the review raises the flag, it
+looks for an approval of the reviewed head that passes the same checks, and sets success, "Cleared
+by @<login>'s approval", instead of pending. Each person's latest approval, change request or
+dismissal is the one that counts. An approval does not clear a head with no status at all: a review
+that failed is never cleared blind.
+
+The permission check calls `GET /repos/{owner}/{repo}/collaborators/{user}/permission`, which needs
+read access to repository metadata. A job's `GITHUB_TOKEN` always has it, so the example above
+needs no extra line.
+
+The `approval` output is `true` when the action made that check. Use `types: [submitted]`: the
+action refuses every other review event.
+
+### Later commits
+
+A cleared status is carried to later commits the action does not review, for example with
+`once: true`. To make every push get a fresh look, either:
+
+- set `once: 'false'`, so each push is reviewed and sets its own status; or
+- turn on branch protection's "Dismiss stale pull request approvals when new commits are pushed",
+  together with required approvals.
+
+With `verdict: suggested`, a raised flag turns an approval into a comment, so the bot never approves
+a pull request it asked a person to look at.
+
+Give the workflow a `concurrency` group keyed on the pull request number with
+`cancel-in-progress: true`, as in [Setup](#4-add-the-workflow). Without it, a push that lands while
+a review runs could carry a status before that review posts its own.
+
+### Require it
+
+Make "Tribunal human review" a required check only after `human-review-check: on` runs in every job
+that handles pull request events, the [gate job](#decide-in-a-separate-job) included (it takes the
+input too, and needs `statuses: write`), and the workflow listens to `synchronize` and `reopened`
+(see [The status](#the-status)). With the Setup workflow's `types: [opened, ready_for_review,
+labeled]`, a push starts no run, the new head never gets a status, and every pull request blocks
+after its first push. Until then a commit with no status blocks the pull request for good. Fork
+pull requests never get one; add the people who may merge to the rule's bypass list (a ruleset's
+bypass list) as their override.
+
+The status guards against accidents, not a hostile writer: any workflow in the repository with
+`statuses: write` can post a "Tribunal human review" status. Pair the required check with required
+approvals or CODEOWNERS.
+
+Inputs and outputs: [`needs-human-label`](#inputs), `human-review-check`, `human-review-on-skip`,
+[`needs-human`, `approval`](#outputs).
 
 ## Select a Tribunal version
 
@@ -443,7 +588,10 @@ Security).
 | `lens-samples` | empty | Integer 1–4: independent samples per lens; empty inherits the engine's default. On the maintainers' labelled corpus (November 2026) `'2'` cost 1.3x to 1.6x per review and found no more defects than one sample. Use it only on large or high-risk PRs, where paying more for an unmeasured gain is easier to justify. |
 | `bot-comments` | `false` | Also vet existing bot findings. |
 | `typecheck-dir` | empty | A checkout of the repository with its dependencies installed, for the typecheck. Empty skips it. See [Optional typecheck](#optional-typecheck). |
+| `needs-human-label` | empty | A label the action adds while the review says a person should look at the pull request and removes when it does not. Empty leaves labels alone. Must differ from `label`. Needs Tribunal 115.9.0 or later and `pull-requests: write`. |
 | `findings-check` | `off` | `off`, `inform` or `enforce`: set a "Tribunal findings" commit status with the count of open blocking and should-fix findings. Needs `statuses: write`. See [Findings check](#findings-check). |
+| `human-review-check` | `off` | `off` or `on`: set a "Tribunal human review" commit status on the reviewed commit, pending while the review says a person should look at the pull request and success when it does not. A commit the action does not review gets the status `human-review-on-skip` says. Needs Tribunal 115.9.0 or later and `statuses: write`, also in a separate gate job (the gate action takes this input too). |
+| `human-review-on-skip` | `carry` | The "Tribunal human review" status on a commit the action does not review (skipped by `drafts`, `paths`, `once`, a missing Claude credential or the engine) while `human-review-check` is `on`. `carry` copies the status of the push's previous head (still read after a force-push), else of the commit the action last reviewed (pending when that review's status is not posted yet), else of the newest earlier commit that has one ("Carried from …"), or sets success when none has one, so a push after a raised flag does not clear it; `success` sets success ("Not reviewed by Tribunal"); `pending` asks for a person. A head that already has the status keeps it. Fork pull requests and label changes get none. The gate action takes this input too. |
 | `upload-run` | `true` | Upload the run record, the report and the logs as an artifact (14 days). Never on a public repository (see Security). |
 | `upload-transcripts` | `false` | Also upload every model dispatch's transcript. Never on a public repository (see Security). |
 
@@ -454,6 +602,8 @@ Security).
 | `posted` | `true` when the review was posted. |
 | `blocking` | Open blocking findings after the review. Empty when `findings-check` is `off` or they could not be counted. |
 | `should-fix` | Open should-fix findings after the review. Empty in the same cases. |
+| `needs-human` | `true` when the review raised needsHuman, `false` when it did not, empty when no review ran or the engine predates 115.9.0. With `verdict: suggested`, a raised flag turns an approval into a comment. |
+| `approval` | `true` on a `pull_request_review` event with `human-review-check: on`, when the action checked whether the approval clears the "Tribunal human review" status. Empty otherwise. The gate action has it too. |
 
 ## Runner requirements
 

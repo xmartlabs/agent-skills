@@ -12,6 +12,7 @@ pub mod coverage_report;
 pub mod decisions;
 pub mod live;
 pub mod metrics;
+pub mod needs_human;
 pub mod operator_override;
 pub mod panel;
 pub mod panel_only;

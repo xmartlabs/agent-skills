@@ -676,7 +676,7 @@ Regression cover: `eval/replay-lens-budget.mjs` (0 tokens) — the `notReached`
 plumbing against crashed and absent results, the union into `notChecked`, and the
 budget pinned between its measured failure floor (30) and efficiency knee (50).
 
-## Fields added for kinded gaps (Rust rows only): `lensNotReachedCount`, `lensNotReachedKinds`, `unreadRiskFiles`, `lensFailures`
+## Fields added for kinded gaps (Rust rows only): `lensNotReachedCount`, `lensNotReachedKinds`, `unreadRiskFiles`, `lensFailures`, `needsHuman`
 
 The Rust engine asks each lens to file a `notReached` entry as
 `{surface, file, kind}`. Rows from earlier runs, and Workflow rows, have plain
@@ -691,6 +691,7 @@ needed running something, or sat outside the PR.
 | `lensNotReachedKinds` | `{budget, outOfFocus, needsExecution, outsidePr, unstated}`: how many entries of each kind the lenses filed. `budget` is the only kind that is a hole in coverage. `unstated` counts plain strings. |
 | `unreadRiskFiles` | The files matching a `riskPaths` rule that every lens holding them left unread for budget. A non-empty list keeps the verdict from APPROVE (it becomes COMMENT), as an unreturned lens does, and the report names the files. |
 | `lensFailures` | `[{lens, cause}]` for each lens dispatch that returned no answer. `cause` is `rate-limit`, `overloaded`, `auth`, `timeout`, `killed`, `spawn-failed`, `no-answer` or `error`, read from the exit and what the CLI printed. Recorded so a retry is built for the causes that happen, if any do. |
+| `needsHuman` | `{raised, reasons: [{signal, detail}]}`: whether the run's own coverage facts ask for a person to review the PR. `signal` is one of `lens-empty`, `risk-path-unread`, `typecheck-not-run`, `panel-cut`, `risk-path-touched`, `finding-unverified`, `finding-borderline`, `critic-not-checked`, `incremental-fallback`; the profile's optional `needsHuman` field picks which are on. Never changes the verdict. The report carries the same reasons in a line under the verdict, and `run.json` carries the object too. Absent from rows written before the field. |
 
 `notChecked` keeps one string per entry: a kinded entry is written as
 `surface (kind)`. The report lists the `budget` entries and the

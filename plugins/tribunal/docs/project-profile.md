@@ -43,6 +43,50 @@ forced foci fill the lens budget, the run adds lenses for them instead.
 `tribunal.inContextRiskPaths` belonged to an in-context review path that was
 removed: the loader still accepts it and nothing reads it.
 
+`needsHuman` is an optional object that sets when a run asks for a person to
+review the PR. The run raises a flag when any enabled signal fires, and the
+report says why. The engine never changes its verdict for it; the flag is
+output for the caller (the GitHub Action turns it into a label and a status).
+
+```json
+"needsHuman": {
+  "signals": ["lens-empty", "risk-path-touched"],
+  "finding-unverified": { "minSeverity": "nit", "minCountedVotes": 1 },
+  "finding-borderline": { "minSeverity": "blocking", "band": 0.1 }
+}
+```
+
+`signals` lists the enabled signal ids. Without the field the default set is on;
+an empty list turns every signal off. Unknown ids are warned about and ignored.
+
+| Signal | Default | Raised when |
+| --- | --- | --- |
+| `lens-empty` | on | at least one lens returned nothing |
+| `risk-path-unread` | on | a file matching `riskPaths` was read by no lens |
+| `typecheck-not-run` | on | the typecheck applies to the PR but ran in a degraded state (it did not run fully) |
+| `panel-cut` | on | findings skipped the refutation panel to stay within budget, or the cost breaker fired |
+| `risk-path-touched` | on | the PR changes a file matching `riskPaths` |
+| `finding-unverified` | on | a finding at or above its floor survived with no counted refuter vote, or with fewer than `minCountedVotes` after some refuters failed |
+| `finding-borderline` | on | a finding at or above its floor, survived or killed, was decided by a vote within the band of the kill threshold (0.45) |
+| `critic-not-checked` | off | the critic did not check some items |
+| `incremental-fallback` | off | an incremental re-review fell back to a full review |
+
+The floors are `blocking`, `critical`, `important` and `nit`. `nit` means any
+severity and `important` means `important` or `critical`. Findings carry
+`critical`, `important` or `nit`; `blocking` means "would block if it survived":
+`critical`, or `important` with `isBehaviorChanging`, `touchesHighRiskSurface` or
+`rankedAtBlocking`. `finding-unverified.minSeverity` defaults to `nit` (any
+severity: a finding the agents could not verify always asks for a person) and
+`finding-borderline.minSeverity` to `blocking`.
+`finding-unverified.minCountedVotes` (an integer of at least 1, default `1`) is
+the number of counted refuter votes below which a finding kept after some refuters
+failed counts as unverified. A finding with no counted vote always raises the flag.
+With the default of 1, a finding that still has one counted vote does not raise it
+when other refuters failed; set 2 or more to react to a partial failure.
+`finding-borderline.band` (above 0, at most 0.45, default 0.1) is the distance
+from the kill threshold that counts as borderline. A bad floor, votes or band
+value keeps the default and is warned about in the run's logs.
+
 `lightPaths` is an optional array of case-insensitive regular expressions for
 changed files that should not be sent to lenses, for example
 `["\\.(png|svg)$", "^docs/generated/"]`. Matching files are excluded from

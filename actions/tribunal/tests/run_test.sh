@@ -65,7 +65,10 @@ chmod +x "$prefix/node_modules/.bin/codex"
 echo "npm $prefix $packages INPUT_OPENAI_API_KEY=${INPUT_OPENAI_API_KEY-<unset>}" >> "$FX/npm.log"
 SH
 # Fake gh: profile lookups answer from $FX/profile-<base|default|head>; the pull request's files,
-# its reviews and the token's user from $FX/files.json, reviews.json and user.json through --jq.
+# its reviews and the token's user from $FX/files.json, reviews.json and user.json through --jq;
+# the pull request's commits from $FX/commits.json and a commit's combined status (latest per
+# context, paged by per_page and page as GitHub pages it) from $FX/statuses-<sha>.json; a collaborator's permission from $FX/permission (missing:
+# the lookup fails).
 # Everything is logged.
 cat > "$TMP/ghbin/gh" <<'SH'
 #!/usr/bin/env bash
@@ -81,17 +84,35 @@ case "$*" in
   "api repos/acme/web-app/pulls/12 --jq .head.sha") echo "${LIVE_HEAD:-$HEAD_SHA}" ;;
   "api user"*) [ -f "$FX/user.json" ] || { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
     emit "$FX/user.json" ;;
+  "api --paginate repos/acme/web-app/pulls/12/commits --jq .[].sha")
+    [ -f "$FX/commits-error" ] && { echo "gh: Server Error (HTTP 502)" >&2; exit 1; }
+    emit "$FX/commits.json" ;;
+  "api repos/acme/web-app/commits/"*"/status"|"api repos/acme/web-app/commits/"*"/status?"*)
+    # Paged as GitHub pages it: per_page (default 30, at most 100) and page from the query string.
+    sha="${2#repos/acme/web-app/commits/}"; query="${sha#*/status}"; sha="${sha%%/status*}"
+    per_page="$(printf '%s' "$query" | sed -n 's/.*[?&]per_page=\([0-9]*\).*/\1/p')"; per_page="${per_page:-30}"
+    [ "$per_page" -le 100 ] || per_page=100
+    page="$(printf '%s' "$query" | sed -n 's/.*[?&]page=\([0-9]*\).*/\1/p')"; page="${page:-1}"
+    { cat "$FX/statuses-$sha.json" 2>/dev/null || echo '[]'; } \
+      | jq --argjson n "$per_page" --argjson p "$page" '{state: "pending", total_count: length, statuses: .[($p - 1) * $n:$p * $n]}' ;;
+  "api repos/acme/web-app/collaborators/"*"/permission --jq .permission")
+    [ -f "$FX/permission" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+    cat "$FX/permission" ;;
   *repos/acme/web-app/pulls/12/files*) emit "$FX/files.json" ;;
   *repos/acme/web-app/pulls/12/reviews*)
     [ -f "$FX/reviews-error" ] && { echo "gh: Server Error (HTTP 502)" >&2; exit 1; }
     emit "$FX/reviews.json" ;;
   "pr comment"*)
     while [ $# -gt 0 ]; do [ "$1" = --body-file ] && cp "$2" "$FX/posted-body.md"; shift; done ;;
+  "api -X POST repos/acme/web-app/issues/12/labels "*|"api -X DELETE repos/acme/web-app/issues/12/labels/needs-human"*)
+    [ -f "$FX/labels-forbidden" ] && { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
+    case "$*" in "api -X DELETE"*) [ -f "$FX/label-present" ] || { echo "gh: Label does not exist (HTTP 404)" >&2; exit 1; } ;; esac ;;
   "api -X DELETE"*) [ -f "$FX/label-present" ] || { echo "HTTP 404" >&2; exit 1; } ;;
   "api -X POST repos/acme/web-app/statuses/"*" --input "*)
     [ -f "$FX/statuses-forbidden" ] && { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
     printf '%s\n' "${4##*/}" > "$FX/status-sha"
-    cp "$6" "$FX/status-posted.json" ;;
+    cp "$6" "$FX/status-posted.json"
+    cat "$6" >> "$FX/statuses-posted.jsonl"; echo >> "$FX/statuses-posted.jsonl" ;;
   *contents/.claude/review-profile.json*)
     case "$*" in
       *"?ref=main "*|*"?ref=main") f=base ;;
@@ -120,18 +141,20 @@ export PATH="$TMP/bin:$TMP/ghbin:$PATH" FX="$TMP/fx" REL_ARCHIVE="$TMP/rel/$ASSE
   GITHUB_RUN_ID=7 GITHUB_SERVER_URL=https://github.com GH_TOKEN=job-secret HEAD_SHA=aaaa1111
 PLUGIN_ROOT="$(cd "$HERE/../../../plugins/tribunal" && pwd)"
 
-# new_job ACTION [LABEL] [HEAD_REPO]; DRAFT=true makes the pull request a draft.
+# new_job ACTION [LABEL] [HEAD_REPO]; DRAFT=true makes the pull request a draft, BEFORE sets the
+# event's previous head (a synchronize event's `before`).
 new_job() {
-  rm -rf "$TMP/runner" "${FX:?}"/*; mkdir -p "$TMP/runner"
+  rm -rf "$TMP/runner" "${FX:?}"/*; mkdir -p "$TMP/runner"; unset GITHUB_EVENT_NAME
   export RUNNER_TEMP="$TMP/runner" GITHUB_OUTPUT="$TMP/runner/out" GITHUB_PATH="$TMP/runner/path"
   export GITHUB_EVENT_PATH="$TMP/runner/event.json"
-  python3 - "$GITHUB_EVENT_PATH" "$1" "${2:-}" "${3:-acme/web-app}" "${DRAFT:-false}" "${PRIVATE-true}" <<'PY'
+  python3 - "$GITHUB_EVENT_PATH" "$1" "${2:-}" "${3:-acme/web-app}" "${DRAFT:-false}" "${PRIVATE-true}" "${BEFORE:-}" <<'PY'
 import json, sys
-path, action, label, head, draft, private = sys.argv[1:]
+path, action, label, head, draft, private, before = sys.argv[1:]
 e = {"action": action, "pull_request": {"number": 12, "base": {"ref": "main"}, "draft": draft == "true",
      "head": {"sha": "aaaa1111", "repo": {"full_name": head}}}}
 if private: e["repository"] = {"private": private == "true"}
 if label: e["label"] = {"name": label}
+if before: e["before"] = before
 json.dump(e, open(path, "w"))
 PY
   manifest "$SHA"
@@ -140,16 +163,18 @@ PY
 gate() {
   : > "$GITHUB_OUTPUT"
   HAS_CLAUDE_AUTH="${HAS:-true}" INPUT_LABEL=tribunal INPUT_PATHS="${PATHS:-}" INPUT_ONCE="${ONCE:-true}" \
-    INPUT_DRAFTS="${DRAFTS:-false}" bash "$RUN" gate 2>/dev/null
+    INPUT_DRAFTS="${DRAFTS:-false}" INPUT_HUMAN_REVIEW_CHECK="${HRC:-off}" INPUT_HUMAN_REVIEW_ON_SKIP="${ONSKIP:-carry}" \
+    bash "$RUN" gate > "$TMP/gate.txt" 2>&1
   sed -n 's/^run=//p' "$GITHUB_OUTPUT"
 }
 files() { python3 -c 'import json,sys;print(json.dumps([{"filename": f} for f in sys.argv[1:]]))' "$@" > "$FX/files.json"; }
-review_by() { # LOGIN BODY [STATE]: append a review to the pull request's reviews
-  python3 - "$FX/reviews.json" "$1" "$2" "${3:-COMMENTED}" <<'PY'
+review_by() { # LOGIN BODY [STATE] [COMMIT]: append a review to the pull request's reviews
+  python3 - "$FX/reviews.json" "$1" "$2" "${3:-COMMENTED}" "${4:-}" <<'PY'
 import json, os, sys
-path, login, body, state = sys.argv[1:]
+path, login, body, state, commit = sys.argv[1:]
 r = json.load(open(path)) if os.path.exists(path) else []
 r.append({"id": len(r) + 1, "user": {"login": login}, "body": body, "state": state})
+if commit: r[-1]["commit_id"] = commit
 json.dump(r, open(path, "w"))
 PY
 }
@@ -381,6 +406,26 @@ assert_fail "a run for another head leaves no status" test -f "$FX/status-posted
 assert_ok "and says why" grep -qF "reviewed HEAD differs" "$(job)/findings-line"
 assert_eq "even then the step exits 0" "0" "$RC"
 
+# --- needs-human --------------------------------------------------------------------------------
+needs_human_step() { : > "$GITHUB_OUTPUT"; bash "$RUN" needs-human >/dev/null 2>&1; RC=$?; sed -n 's/^needs-human=//p' "$GITHUB_OUTPUT"; }
+new_job opened; mkdir -p "$(job)"
+echo '{"needsHuman":{"raised":true,"reasons":[{"signal":"panel-cut","detail":"The panel was cut"},{"signal":"lens-empty","detail":"A lens returned nothing"}]}}' > "$(job)/run.json"
+assert_eq "needs_human_output_true" "true" "$(needs_human_step)"
+assert_eq "the step exits 0" "0" "$RC"
+assert_eq "the reasons are listed one per line" "- The panel was cut (panel-cut)
+- A lens returned nothing (lens-empty)" "$(cat "$(job)/needs-human.md")"
+echo '{"needsHuman":{"raised":false,"reasons":[]}}' > "$(job)/run.json"
+assert_eq "not raised outputs false" "false" "$(needs_human_step)"
+echo '{"verdict":"APPROVE","metrics":{}}' > "$(job)/run.json"
+assert_eq "needs_human_output_empty_on_old_engine" "" "$(needs_human_step)"
+assert_ok "an old engine still writes the output key, empty" grep -qx 'needs-human=' "$GITHUB_OUTPUT"
+assert_fail "and no reasons file" test -f "$(job)/needs-human.md"
+echo '{"skipped":true,"reason":"draft"}' > "$(job)/run.json"
+assert_eq "a skipped run outputs nothing" "" "$(needs_human_step)"
+rm -f "$(job)/run.json"
+assert_eq "a missing run.json outputs nothing" "" "$(needs_human_step)"
+assert_eq "and the step still exits 0" "0" "$RC"
+
 # --- summary ------------------------------------------------------------------------------------
 summary() { : > "$TMP/summary.md"; GITHUB_STEP_SUMMARY="$TMP/summary.md" bash "$RUN" summary >/dev/null 2>&1; }
 new_job labeled tribunal; mkdir -p "$(job)/tmp"
@@ -570,5 +615,321 @@ for vis in false ""; do
   assert_fail "a public repository's job log hides the review output" grep -qF REPORT-BODY-ON-STDOUT "$TMP/console.txt"
   assert_ok "the review output is still kept in the file" grep -qF REPORT-BODY-ON-STDOUT "$(job)/review.log"
 done
+
+# --- human review status ----------------------------------------------------------------------------
+human_review_check() { : > "$GITHUB_OUTPUT"; INPUT_HUMAN_REVIEW_CHECK=on bash "$RUN" human-review-check >"$TMP/hr.txt" 2>&1; RC=$?; }
+new_job opened; mkdir -p "$(job)"
+echo '{"metrics":{"headSha":"aaaa1111"},"needsHuman":{"raised":true,"reasons":[{"signal":"panel-cut","detail":"The panel was cut"}]}}' > "$(job)/run.json"
+human_review_check
+assert_eq "human_review_check_posts_pending: the context" "Tribunal human review" "$(status_field "d['context']")"
+assert_eq "human_review_check_posts_pending: the state" "pending" "$(status_field "d['state']")"
+assert_eq "human_review_check_posts_pending: the description" "A person should review: panel-cut" "$(status_field "d['description']")"
+assert_eq "the status is on the reviewed head" "aaaa1111" "$(cat "$FX/status-sha")"
+assert_eq "the step exits 0" "0" "$RC"
+new_job opened; mkdir -p "$(job)"
+echo '{"metrics":{"headSha":"aaaa1111"},"needsHuman":{"raised":true,"reasons":[{"signal":"panel-cut","detail":"x"}]}}' > "$(job)/run.json"
+INPUT_FINDINGS_CHECK=inform bash "$RUN" findings-check >/dev/null 2>&1; human_review_check
+assert_eq "both statuses on one commit are told apart" "Tribunal findings
+Tribunal human review" "$(python3 -c 'import json,sys;[print(json.loads(l)["context"]) for l in open(sys.argv[1]) if l.strip()]' "$FX/statuses-posted.jsonl")"
+new_job opened; mkdir -p "$(job)"
+echo '{"metrics":{"headSha":"bbbb2222"},"needsHuman":{"raised":true,"reasons":[]}}' > "$(job)/run.json"
+human_review_check
+assert_fail "a moved head posts no human review status" test -f "$FX/status-posted.json"
+assert_eq "even then the step exits 0" "0" "$RC"
+# An approval given while the review ran still counts when the review raises the flag.
+RAISED='{"metrics":{"headSha":"aaaa1111"},"needsHuman":{"raised":true,"reasons":[{"signal":"panel-cut","detail":"x"}]}}'
+new_job opened; mkdir -p "$(job)"; echo "$RAISED" > "$(job)/run.json"
+review_by dev "LGTM" APPROVED aaaa1111; echo write > "$FX/permission"
+human_review_check
+assert_eq "earlier_approval_clears_a_raised_flag" "success: Cleared by @dev's approval" "$(status_field "d['state']+': '+d['description']" 2>/dev/null)"
+assert_ok "earlier_approval_clears_a_raised_flag: the permission is looked up" grep -qF "api repos/acme/web-app/collaborators/dev/permission --jq .permission" "$FX/gh.log"
+new_job opened; mkdir -p "$(job)"; echo "$RAISED" > "$(job)/run.json"
+review_by dev "LGTM" APPROVED 9999eeee0000; echo write > "$FX/permission"
+human_review_check
+assert_eq "an earlier approval of another commit leaves it pending" "pending" "$(status_field "d['state']" 2>/dev/null)"
+new_job opened; mkdir -p "$(job)"; echo "$RAISED" > "$(job)/run.json"
+review_by dev "LGTM" APPROVED aaaa1111; echo read > "$FX/permission"
+human_review_check
+assert_eq "an earlier approval by a reader leaves it pending" "pending" "$(status_field "d['state']" 2>/dev/null)"
+new_job opened; mkdir -p "$(job)"; echo "$RAISED" > "$(job)/run.json"
+review_by dev "LGTM" APPROVED aaaa1111; review_by dev "Wait" CHANGES_REQUESTED aaaa1111; echo write > "$FX/permission"
+human_review_check
+assert_eq "an approval its author took back leaves it pending" "pending" "$(status_field "d['state']" 2>/dev/null)"
+new_job opened; mkdir -p "$(job)"; echo "$RAISED" > "$(job)/run.json"
+review_by "github-actions[bot]" "LGTM" APPROVED aaaa1111; echo write > "$FX/permission"
+human_review_check
+assert_eq "the action's own approval leaves it pending" "pending" "$(status_field "d['state']" 2>/dev/null)"
+new_job opened; mkdir -p "$(job)"; echo "$RAISED" > "$(job)/run.json"; touch "$FX/reviews-error"
+human_review_check
+assert_eq "reviews that cannot be listed leave it pending" "pending" "$(status_field "d['state']" 2>/dev/null)"
+new_job opened; mkdir -p "$(job)"; echo '{"skipped":true,"reason":"x"}' > "$(job)/run.json"
+human_review_check
+assert_fail "an engine skip posts no reviewed-commit status" test -f "$FX/status-posted.json"
+assert_ok "an engine skip says so, not that the head moved" grep -qF "the engine skipped the review" "$TMP/hr.txt"
+assert_fail "an engine skip does not blame the head" grep -qF "reviewed HEAD differs" "$TMP/hr.txt"
+new_job opened; mkdir -p "$(job)"; touch "$FX/statuses-forbidden"
+echo '{"metrics":{"headSha":"aaaa1111"},"needsHuman":{"raised":false,"reasons":[]}}' > "$(job)/run.json"
+human_review_check
+assert_eq "human_review_check_forbidden_only_warns: the job rc is 0" "0" "$RC"
+assert_ok "human_review_check_forbidden_only_warns: the warning" grep -qF '::warning::tribunal: the human review status was not created; give the job statuses: write' "$TMP/hr.txt"
+
+# --- human review status on skipped commits ----------------------------------------------------------
+commits() { python3 -c 'import json,sys;print(json.dumps([{"sha": s} for s in sys.argv[1:]]))' "$@" > "$FX/commits.json"; }
+statuses_of() { # SHA STATE DESCRIPTION [CONTEXT]: append a status to a commit's statuses (newest first)
+  python3 - "$FX/statuses-$1.json" "$2" "$3" "${4:-Tribunal human review}" <<'PY2'
+import json, os, sys
+path, state, description, context = sys.argv[1:]
+s = json.load(open(path)) if os.path.exists(path) else []
+json.dump([{"context": context, "state": state, "description": description}] + s, open(path, "w"))
+PY2
+}
+posted_count() { [ -f "$FX/statuses-posted.jsonl" ] && grep -c . "$FX/statuses-posted.jsonl" || echo 0; }
+
+new_job synchronize; review_by "github-actions[bot]" "## Peer review"$'\n\n'"$FOOTER"
+commits 1111aaaa2222 2222bbbb3333 aaaa1111
+statuses_of 1111aaaa2222 success "No reason for a human review"
+statuses_of 1111aaaa2222 pending "A person should review: panel-cut"
+statuses_of 2222bbbb3333 success "No blocking or should-fix findings open" "Tribunal findings"
+assert_eq "skip_status_carry_from_gate: the gate says no (once)" "false" "$(HRC=on gate)"
+assert_eq "skip_status_carry_from_gate: the status is on the new head" "aaaa1111" "$(cat "$FX/status-sha" 2>/dev/null)"
+assert_eq "skip_status_carry_from_gate: the context" "Tribunal human review" "$(status_field "d['context']" 2>/dev/null)"
+assert_eq "skip_status_carry_from_gate: the earlier pending state is carried" "pending" "$(status_field "d['state']" 2>/dev/null)"
+assert_eq "skip_status_carry_from_gate: the description names the commit it came from" \
+  "Carried from 1111aaa: A person should review: panel-cut" "$(status_field "d['description']" 2>/dev/null)"
+assert_eq "skip_status_carry_from_gate: it links the run" "https://github.com/acme/web-app/actions/runs/7" "$(status_field "d['target_url']" 2>/dev/null)"
+
+new_job synchronize; review_by "github-actions[bot]" "$FOOTER"; commits aaaa1111
+HRC=on gate >/dev/null
+assert_eq "carry without an earlier status posts success" "success: Not reviewed by Tribunal" \
+  "$(status_field "d['state']+': '+d['description']" 2>/dev/null)"
+
+DRAFT=true new_job opened
+assert_eq "skip_status_success: a draft is not reviewed" "false" "$(HRC=on ONSKIP=success gate)"
+assert_eq "skip_status_success: success, not reviewed" "success: Not reviewed by Tribunal" \
+  "$(status_field "d['state']+': '+d['description']" 2>/dev/null)"
+assert_fail "skip_status_success: no history is read" grep -qsF "pulls/12/commits" "$FX/gh.log"
+
+new_job synchronize
+assert_eq "skip_status_pending: no Claude credential" "false" "$(HAS=false HRC=on ONSKIP=pending gate)"
+assert_eq "skip_status_pending: pending, a person should review" "pending: Not reviewed by Tribunal; a person should review" \
+  "$(status_field "d['state']+': '+d['description']" 2>/dev/null)"
+
+new_job synchronize "" someone/fork
+HRC=on ONSKIP=pending gate >/dev/null
+assert_eq "skip_status_not_posted_for_fork" "0" "$(posted_count)"
+assert_fail "a fork makes no API call" test -s "$FX/gh.log"
+
+new_job opened; mkdir -p "$(job)"; echo '{"skipped":true,"reason":"deployment pull request"}' > "$(job)/run.json"
+INPUT_HUMAN_REVIEW_CHECK=on INPUT_HUMAN_REVIEW_ON_SKIP=pending bash "$RUN" human-review-skip > "$TMP/hs.txt" 2>&1; RC=$?
+assert_eq "skip_status_on_engine_skip: the state" "pending" "$(status_field "d['state']" 2>/dev/null)"
+assert_eq "skip_status_on_engine_skip: on the event head" "aaaa1111" "$(cat "$FX/status-sha" 2>/dev/null)"
+assert_eq "skip_status_on_engine_skip: the step exits 0" "0" "$RC"
+new_job opened; mkdir -p "$(job)"; echo '{"metrics":{"headSha":"aaaa1111"},"needsHuman":{"raised":false,"reasons":[]}}' > "$(job)/run.json"
+INPUT_HUMAN_REVIEW_CHECK=on INPUT_HUMAN_REVIEW_ON_SKIP=pending bash "$RUN" human-review-skip >/dev/null 2>&1
+assert_eq "a reviewed run gets no skip status" "0" "$(posted_count)"
+new_job opened; mkdir -p "$(job)"; echo '{"skipped":true,"reason":"x"}' > "$(job)/run.json"
+INPUT_HUMAN_REVIEW_CHECK=off bash "$RUN" human-review-skip >/dev/null 2>&1
+assert_fail "human-review-check off: no call on an engine skip" test -s "$FX/gh.log"
+
+BEFORE=0000dead1111 new_job synchronize; review_by "github-actions[bot]" "$FOOTER"
+commits 1111aaaa2222 aaaa1111
+statuses_of 1111aaaa2222 success "No reason for a human review"
+statuses_of 0000dead1111 pending "A person should review: panel-cut"
+HRC=on gate >/dev/null
+assert_eq "carry_from_before_after_force_push: the previous head's pending status is carried" \
+  "pending: Carried from 0000dea: A person should review: panel-cut" "$(status_field "d['state']+': '+d['description']" 2>/dev/null)"
+assert_ok "carry_from_before_after_force_push: read through the combined status" grep -qF "api repos/acme/web-app/commits/0000dead1111/status" "$FX/gh.log"
+
+new_job synchronize; review_by "github-actions[bot]" "Earlier. $FOOTER" COMMENTED 9999eeee0000
+review_by dev "Looks fine" COMMENTED 1111aaaa2222
+review_by "github-actions[bot]" "Latest. $FOOTER" COMMENTED 2222bbbb3333
+commits 1111aaaa2222 aaaa1111
+statuses_of 1111aaaa2222 success "No reason for a human review"
+HRC=on gate >/dev/null
+assert_eq "carry_from_latest_own_review: a reviewed commit without a status yet carries pending" \
+  "pending: Reviewed at 2222bbb; human review status not posted yet" "$(status_field "d['state']+': '+d['description']" 2>/dev/null)"
+new_job synchronize; review_by "github-actions[bot]" "Latest. $FOOTER" COMMENTED 2222bbbb3333
+statuses_of 2222bbbb3333 pending "A person should review: lens-empty"
+HRC=on ONSKIP=carry gate >/dev/null
+assert_eq "carry_from_latest_own_review: its status is carried" \
+  "pending: Carried from 2222bbb: A person should review: lens-empty" "$(status_field "d['state']+': '+d['description']" 2>/dev/null)"
+
+new_job edited; review_by "github-actions[bot]" "$FOOTER" COMMENTED aaaa1111
+statuses_of aaaa1111 pending "A person should review: panel-cut"
+HRC=on ONSKIP=success gate >/dev/null
+assert_eq "head_status_kept_via_combined_status" "0" "$(posted_count)"
+assert_ok "head_status_kept_via_combined_status: the combined endpoint is read" grep -qF "api repos/acme/web-app/commits/aaaa1111/status" "$FX/gh.log"
+
+new_job edited; review_by "github-actions[bot]" "$FOOTER" COMMENTED aaaa1111
+for i in $(seq 1 130); do statuses_of aaaa1111 success "check $i" "ci/check-$i"; done
+python3 - "$FX/statuses-aaaa1111.json" <<'PY2'
+import json, sys
+p = sys.argv[1]; s = json.load(open(p))
+s.insert(120, {"context": "Tribunal human review", "state": "pending", "description": "A person should review: panel-cut"})
+json.dump(s, open(p, "w"))
+PY2
+HRC=on ONSKIP=success gate >/dev/null
+assert_eq "combined_status_paged: a head status on the second page is kept" "0" "$(posted_count)"
+assert_ok "combined_status_paged: the second page is read" grep -qF "api repos/acme/web-app/commits/aaaa1111/status?per_page=100&page=2" "$FX/gh.log"
+
+new_job labeled bug
+HRC=on ONSKIP=pending gate >/dev/null
+assert_eq "another label (same head) posts no skip status" "0" "$(posted_count)"
+DRAFT=true new_job opened
+gate >/dev/null
+assert_fail "human-review-check off: a skip makes no call" test -s "$FX/gh.log"
+DRAFT=true new_job ready_for_review; statuses_of aaaa1111 pending "A person should review: panel-cut"
+HRC=on ONSKIP=success gate >/dev/null
+assert_eq "a head that already has a human review status keeps it" "0" "$(posted_count)"
+DRAFT=true new_job opened; touch "$FX/statuses-forbidden"
+HRC=on ONSKIP=success gate >/dev/null; RC=$?
+assert_ok "skip status refused: the gate still decides" grep -qx 'run=false' "$GITHUB_OUTPUT"
+assert_ok "skip status refused: the warning" grep -qF '::warning::tribunal: the human review status was not created; give the job statuses: write' "$TMP/gate.txt"
+new_job synchronize; review_by "github-actions[bot]" "$FOOTER"; touch "$FX/commits-error"
+HRC=on gate >/dev/null
+assert_eq "commits that cannot be listed post nothing" "0" "$(posted_count)"
+assert_ok "and warn" grep -qF '::warning::tribunal: the human review status was not created' "$TMP/gate.txt"
+assert_eq "and the gate still says no" "false" "$(sed -n 's/^run=//p' "$GITHUB_OUTPUT")"
+
+# --- needs-human label ----------------------------------------------------------------------------
+needs_human_label() { # VALUE: run the step; RC is its exit code, the output is in $TMP/nh.txt
+  INPUT_NEEDS_HUMAN_LABEL=needs-human NEEDS_HUMAN="$1" bash "$RUN" needs-human-label > "$TMP/nh.txt" 2>&1; RC=$?
+}
+new_job opened; needs_human_label true
+assert_eq "needs_human_label_added_when_raised" "api -X POST repos/acme/web-app/issues/12/labels -f labels[]=needs-human" "$(cat "$FX/gh.log")"
+assert_eq "the step exits 0" "0" "$RC"
+new_job opened; touch "$FX/label-present"; needs_human_label false
+assert_eq "needs_human_label_removed_when_quiet" "api -X DELETE repos/acme/web-app/issues/12/labels/needs-human" "$(cat "$FX/gh.log")"
+new_job opened; needs_human_label false
+assert_eq "a label that is not there (404) is success" "0" "$RC"
+assert_fail "and gives no warning" grep -qF '::warning::' "$TMP/nh.txt"
+new_job opened; needs_human_label ""
+assert_fail "needs_human_label_untouched_on_old_engine" test -s "$FX/gh.log"
+new_job opened; INPUT_NEEDS_HUMAN_LABEL='' NEEDS_HUMAN=true bash "$RUN" needs-human-label >/dev/null 2>&1
+assert_fail "an empty label input makes no call" test -s "$FX/gh.log"
+new_job opened; touch "$FX/labels-forbidden"; needs_human_label true
+assert_eq "needs_human_label_failure_only_warns: the job rc is 0" "0" "$RC"
+assert_ok "needs_human_label_failure_only_warns: the warning is logged" grep -qF '::warning::tribunal: the needs-human label was not updated; give the job pull-requests: write' "$TMP/nh.txt"
+new_job opened; touch "$FX/labels-forbidden" "$FX/label-present"; needs_human_label false
+assert_ok "a refused removal warns too" grep -qF '::warning::tribunal: the needs-human label was not updated' "$TMP/nh.txt"
+
+# --- approval override (pull_request_review) -------------------------------------------------------
+# new_review_event STATE USER_TYPE COMMIT PERMISSION: a pull_request_review event on PR 12 (head
+# aaaa1111) by `dev`; an empty PERMISSION makes the permission lookup fail.
+new_review_event() {
+  new_job submitted
+  export GITHUB_EVENT_NAME=pull_request_review
+  python3 - "$GITHUB_EVENT_PATH" "$1" "$2" "$3" <<'PY'
+import json, sys
+path, state, user_type, commit = sys.argv[1:]
+e = {"action": "submitted", "repository": {"private": True},
+     "review": {"state": state, "commit_id": commit, "user": {"login": "dev", "type": user_type}},
+     "pull_request": {"number": 12, "base": {"ref": "main"}, "draft": False,
+                      "head": {"sha": "aaaa1111", "repo": {"full_name": "acme/web-app"}}}}
+json.dump(e, open(path, "w"))
+PY
+  [ -z "$4" ] || printf '%s\n' "$4" > "$FX/permission"
+}
+approve() { bash "$RUN" human-review-approve > "$TMP/ap.txt" 2>&1; RC=$?; }
+
+for perm in write maintain admin; do
+  new_review_event approved User aaaa1111 "$perm"
+  statuses_of aaaa1111 pending "A person should review: panel-cut"
+  approve
+  assert_eq "approval_clears_pending ($perm): success" "success" "$(status_field "d['state']" 2>/dev/null)"
+done
+assert_eq "approval_clears_pending: the description" "Cleared by @dev's approval" "$(status_field "d['description']" 2>/dev/null)"
+assert_eq "approval_clears_pending: the context" "Tribunal human review" "$(status_field "d['context']" 2>/dev/null)"
+assert_eq "approval_clears_pending: on the head" "aaaa1111" "$(cat "$FX/status-sha" 2>/dev/null)"
+assert_eq "approval_clears_pending: it links the run" "https://github.com/acme/web-app/actions/runs/7" "$(status_field "d['target_url']" 2>/dev/null)"
+assert_eq "approval_clears_pending: the step exits 0" "0" "$RC"
+assert_ok "approval_clears_pending: the permission is looked up" grep -qF "api repos/acme/web-app/collaborators/dev/permission --jq .permission" "$FX/gh.log"
+
+new_review_event approved Bot aaaa1111 write; statuses_of aaaa1111 pending "A person should review: panel-cut"; approve
+assert_eq "approval_by_bot_is_ignored" "0" "$(posted_count)"
+assert_ok "approval_by_bot_is_ignored: says why" grep -qi "bot" "$TMP/ap.txt"
+assert_eq "approval_by_bot_is_ignored: the step exits 0" "0" "$RC"
+
+new_review_event approved User 9999eeee0000 write; statuses_of aaaa1111 pending "A person should review: panel-cut"; approve
+assert_eq "approval_of_old_commit_is_ignored" "0" "$(posted_count)"
+assert_ok "approval_of_old_commit_is_ignored: says why" grep -qF "9999eee" "$TMP/ap.txt"
+assert_eq "approval_of_old_commit_is_ignored: the step exits 0" "0" "$RC"
+
+for perm in read triage none; do
+  new_review_event approved User aaaa1111 "$perm"; statuses_of aaaa1111 pending "A person should review: panel-cut"; approve
+  assert_eq "approval_by_reader_is_ignored ($perm)" "0" "$(posted_count)"
+done
+assert_ok "approval_by_reader_is_ignored: says why" grep -qF "none" "$TMP/ap.txt"
+new_review_event approved User aaaa1111 ""; statuses_of aaaa1111 pending "A person should review: panel-cut"; approve
+assert_eq "a permission that cannot be read counts as no write access" "0" "$(posted_count)"
+assert_eq "even then the step exits 0" "0" "$RC"
+new_review_event approved User aaaa1111 write; statuses_of aaaa1111 pending "A person should review: panel-cut"
+echo '{"login":"dev"}' > "$FX/user.json"; approve
+assert_eq "an approval by the action's own identity is ignored" "0" "$(posted_count)"
+
+new_review_event approved User aaaa1111 write; statuses_of aaaa1111 success "No reason for a human review"; approve
+assert_eq "approval_without_pending_status_posts_nothing (success)" "0" "$(posted_count)"
+new_review_event approved User aaaa1111 write; approve
+assert_eq "approval_without_pending_status_posts_nothing (no status)" "0" "$(posted_count)"
+assert_eq "approval_without_pending_status_posts_nothing: the step exits 0" "0" "$RC"
+new_review_event approved User aaaa1111 write
+statuses_of aaaa1111 pending "A person should review: panel-cut" "Tribunal findings"
+statuses_of aaaa1111 success "No reason for a human review"; approve
+assert_eq "another context's pending status does not count" "0" "$(posted_count)"
+
+new_review_event approved User aaaa1111 write; statuses_of aaaa1111 pending "A person should review: panel-cut"
+python3 -c 'import json,sys;p=sys.argv[1];e=json.load(open(p));e["action"]="edited";json.dump(e,open(p,"w"))' "$GITHUB_EVENT_PATH"
+approve
+assert_eq "approval_edited_event_is_ignored" "0" "$(posted_count)"
+assert_ok "approval_edited_event_is_ignored: says why" grep -qF "the review event is edited, not submitted" "$TMP/ap.txt"
+assert_eq "approval_edited_event_is_ignored: the step exits 0" "0" "$RC"
+
+new_review_event approved User aaaa1111 write
+for i in $(seq 1 40); do statuses_of aaaa1111 success "check $i" "ci/check-$i"; done
+python3 - "$FX/statuses-aaaa1111.json" <<'PY2'
+import json, sys
+p = sys.argv[1]; s = json.load(open(p))
+s.append({"context": "Tribunal human review", "state": "pending", "description": "A person should review: panel-cut"})
+json.dump(s, open(p, "w"))
+PY2
+approve
+assert_eq "approval_finds_the_status_past_the_first_30_contexts" "success" "$(status_field "d['state']" 2>/dev/null)"
+assert_ok "approval_finds_the_status_past_the_first_30_contexts: asks for 100 a page" grep -qF "api repos/acme/web-app/commits/aaaa1111/status?per_page=100&page=1" "$FX/gh.log"
+
+for state in commented changes_requested dismissed; do
+  new_review_event "$state" User aaaa1111 write; statuses_of aaaa1111 pending "A person should review: panel-cut"; approve
+  assert_eq "comment_review_is_ignored ($state)" "0" "$(posted_count)"
+done
+assert_eq "comment_review_is_ignored: the step exits 0" "0" "$RC"
+
+new_review_event approved User aaaa1111 write; touch "$FX/statuses-forbidden"
+statuses_of aaaa1111 pending "A person should review: panel-cut"; approve
+assert_eq "a refused approval status only warns: rc 0" "0" "$RC"
+assert_ok "a refused approval status only warns: the warning" grep -qF '::warning::tribunal: the human review status was not created; give the job statuses: write' "$TMP/ap.txt"
+
+new_review_event approved User aaaa1111 write; statuses_of aaaa1111 pending "A person should review: panel-cut"
+assert_eq "review_event_never_runs_a_review" "false" "$(HRC=on ONSKIP=pending gate)"
+assert_ok "review_event_never_runs_a_review: approval=true with human-review-check on" grep -qx 'approval=true' "$GITHUB_OUTPUT"
+assert_eq "review_event_never_runs_a_review: no skip status" "0" "$(posted_count)"
+assert_fail "review_event_never_runs_a_review: the gate makes no API call" test -s "$FX/gh.log"
+new_review_event approved User aaaa1111 write
+assert_eq "a review event without a Claude credential: still no review" "false" "$(HAS=false HRC=on ONSKIP=pending gate)"
+assert_ok "and still approval=true (the override needs no credential)" grep -qx 'approval=true' "$GITHUB_OUTPUT"
+assert_eq "and no skip status" "0" "$(posted_count)"
+new_review_event approved User aaaa1111 write
+assert_eq "review_event_with_check_off_follows_the_old_rules: not reviewed yet, it reviews" "true" "$(gate)"
+assert_ok "review_event_with_check_off_follows_the_old_rules: decided by the event's action" grep -qF "gate: submitted" "$TMP/gate.txt"
+assert_fail "review_event_with_check_off_follows_the_old_rules: no approval output" grep -q '^approval=' "$GITHUB_OUTPUT"
+new_review_event approved User aaaa1111 write; review_by "github-actions[bot]" "$FOOTER"
+assert_eq "review_event_with_check_off_follows_the_old_rules: once still skips" "false" "$(gate)"
+assert_ok "review_event_with_check_off_follows_the_old_rules: says already reviewed" grep -qF "already reviewed (once: true)" "$TMP/gate.txt"
+assert_eq "review_event_with_check_off_follows_the_old_rules: no status" "0" "$(posted_count)"
+new_review_event approved User aaaa1111 write
+assert_eq "review_event_with_check_off_follows_the_old_rules: no credential skips" "false" "$(HAS=false gate)"
+new_review_event approved User aaaa1111 write
+python3 -c 'import json,sys;p=sys.argv[1];e=json.load(open(p));e["pull_request"]["head"]["repo"]["full_name"]="someone/fork";json.dump(e,open(p,"w"))' "$GITHUB_EVENT_PATH"
+assert_eq "a fork's review event does not run" "false" "$(HRC=on gate)"
+assert_fail "a fork's review event gets no approval output" grep -q '^approval=' "$GITHUB_OUTPUT"
+unset GITHUB_EVENT_NAME
 
 finish_tests

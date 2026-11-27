@@ -37,6 +37,10 @@ use crate::context::{
 use crate::coverage_report;
 use crate::decisions::is_retest_target;
 use crate::live::{LiveIo, PanelAgents};
+use crate::needs_human::{
+    needs_human, results_with_risk_surface, touched_risk_files, with_needs_human_line, NeedsHuman,
+    NeedsHumanFacts,
+};
 use crate::panel::{
     panel_phase, CriticGap, PanelEnv, PanelFlags, PanelOutcome, OUTPUT_CEILING_DEFAULT,
 };
@@ -67,6 +71,7 @@ use crate::verify::{
     apply_dedup, apply_typecheck_result, dedup_prompt, grounded_gate, partition_results, Dedup,
     Grounded, GroundedGate, Verdicts, MAX_AGENTS_DEFAULT, MAX_PANELS_DEFAULT,
 };
+use tribunal_core::profile::needs_human::needs_human_config;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct EvidenceStats {
@@ -1099,6 +1104,8 @@ pub struct SynthesisOutcome {
     /// The `riskPaths` files every lens that held them left unread for
     /// budget, which keep the verdict from APPROVE.
     pub unread_risk_files: Vec<String>,
+    /// Whether a person should review the PR, from the run's coverage facts.
+    pub needs_human: NeedsHuman,
     /// What the dispatches read outside the reviewed repo, and the critic's
     /// "not checked" list set against the lenses' commands.
     pub coverage: coverage_report::CoverageFacts,
@@ -1452,6 +1459,37 @@ pub async fn synthesize_phase<A: Agent>(
         }
         _ => report,
     };
+    let (nh_config, nh_warnings) = needs_human_config(profile);
+    logs.extend(nh_warnings);
+    let nh_rules = risk_path_rules(profile)?;
+    let touched = touched_risk_files(&plan.all_pr_files, &nh_rules);
+    let nh_results = results_with_risk_surface(&verify.verdicts.results, &nh_rules);
+    let not_checked: Vec<String> = coverage
+        .not_checked
+        .iter()
+        .map(|n| n.text.clone())
+        .collect();
+    let nh = needs_human(
+        &NeedsHumanFacts {
+            lenses_unreturned: &review.lenses_unreturned,
+            lens_count: plan.lens_plan.len(),
+            unread_risk_files: &unread_risk,
+            touched_risk_files: &touched,
+            typecheck_applies: verify.typecheck_applies,
+            typecheck_text: verify.typecheck.as_ref().map(|t| t.text.as_str()),
+            panel_skipped_for_budget: &verify.panel.panel_skipped_for_budget,
+            cost_breaker_fired: verify.panel.cost_breaker_fired.as_ref(),
+            results: &nh_results,
+            critic_not_checked: &not_checked,
+            incremental_fallback: plan.incremental_fallback.as_ref(),
+        },
+        &nh_config,
+    );
+    if nh.raised {
+        let ids: Vec<&str> = nh.reasons.iter().map(|r| r.signal.as_str()).collect();
+        logs.push(format!("needsHuman raised: {}", ids.join(", ")));
+    }
+    let report = with_needs_human_line(report, &nh);
     Ok(SynthesisOutcome {
         synthesize_seconds: synthesize_started.elapsed().as_secs_f64(),
         prior,
@@ -1463,6 +1501,7 @@ pub async fn synthesize_phase<A: Agent>(
         prompt,
         report,
         unread_risk_files: unread_risk,
+        needs_human: nh,
         coverage,
         dispatches,
     })

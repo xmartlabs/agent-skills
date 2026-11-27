@@ -32,6 +32,12 @@ inputs:
       Adding this label forces a review, ignoring `drafts`, `paths` and `once`; another label skips.
       The action removes it when it ends, so adding it again starts a new review.
     default: tribunal
+  needs-human-label:
+    description: >-
+      Label to add while the review says a person should look at the pull request, and to remove
+      when it does not. Empty (default) leaves labels alone. Must differ from `label`. Needs
+      Tribunal 115.9.0 or later and `pull-requests: write`.
+    default: ''
   paths:
     description: >-
       Review only when a changed file matches one of these globs, one per line (`*` also crosses
@@ -116,6 +122,23 @@ inputs:
       marks it failed when any is open. Needs `statuses: write`; without it the review still posts
       and the summary says the status is missing.
     default: 'off'
+  human-review-check:
+    description: >-
+      `off` (default) or `on`. When `on`, a posted review also leaves a "Tribunal human review"
+      commit status on the reviewed commit: pending while the review says a person should look at
+      the pull request, success when it does not. Needs Tribunal 115.9.0 or later and
+      `statuses: write`; without it the review still posts and the job logs a warning. A commit
+      the action does not review gets the status `human-review-on-skip` says.
+    default: 'off'
+  human-review-on-skip:
+    description: >-
+      The "Tribunal human review" status on a commit the action does not review (skipped by
+      `drafts`, `paths`, `once`, a missing Claude credential or the engine), when
+      `human-review-check` is `on`. `carry` (default) copies the status of the push's previous head
+      (force-pushes included), else of the commit the action last reviewed, else of the newest
+      earlier commit, or sets success when none has one; `success` marks it not reviewed;
+      `pending` asks for a person. Not set on fork pull requests or for a label change.
+    default: 'carry'
   upload-run:
     description: >-
       Upload the run record, the report and the logs as a workflow artifact. Never on a public
@@ -138,6 +161,14 @@ outputs:
   should-fix:
     description: Open should-fix findings after the review; empty when `findings-check` is `off` or they could not be counted.
     value: ${{ steps.findings.outputs.should-fix }}
+  needs-human:
+    description: '`true` when the review raised needsHuman, `false` when it did not, empty when no review ran or the engine predates 115.9.0.'
+    value: ${{ steps.needs-human.outputs.needs-human }}
+  approval:
+    description: >-
+      `true` on a `pull_request_review` event with `human-review-check: on`: the action checked
+      whether the approval clears the "Tribunal human review" status. Empty otherwise.
+    value: ${{ steps.gate.outputs.approval }}
 
 runs:
   using: composite
@@ -151,7 +182,17 @@ runs:
         INPUT_PATHS: ${{ inputs.paths }}
         INPUT_ONCE: ${{ inputs.once }}
         INPUT_DRAFTS: ${{ inputs.drafts }}
+        INPUT_HUMAN_REVIEW_CHECK: ${{ inputs.human-review-check }}
+        INPUT_HUMAN_REVIEW_ON_SKIP: ${{ inputs.human-review-on-skip }}
       run: bash "$GITHUB_ACTION_PATH/run.sh" gate
+
+    # A pull_request_review event: an approval by a person with write access may clear a pending
+    # "Tribunal human review" status. The gate said run=false, so no other step runs.
+    - if: steps.gate.outputs.approval == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" human-review-approve
 
     - id: node
       if: steps.gate.outputs.run == 'true'
@@ -169,6 +210,8 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.github-token }}
         HAS_CONVENTIONS_TOKEN: ${{ inputs.conventions-token != '' }}
+        INPUT_LABEL: ${{ inputs.label }}
+        INPUT_NEEDS_HUMAN_LABEL: ${{ inputs.needs-human-label }}
         INPUT_REVIEWER: ${{ inputs.reviewer }}
         INPUT_TRIBUNAL_VERSION: ${{ inputs.tribunal-version }}
         INPUT_VERDICT: ${{ inputs.verdict }}
@@ -178,6 +221,8 @@ runs:
         INPUT_CODEX_MODEL: ${{ inputs.codex-model }}
         INPUT_BOT_COMMENTS: ${{ inputs.bot-comments }}
         INPUT_FINDINGS_CHECK: ${{ inputs.findings-check }}
+        INPUT_HUMAN_REVIEW_CHECK: ${{ inputs.human-review-check }}
+        INPUT_HUMAN_REVIEW_ON_SKIP: ${{ inputs.human-review-on-skip }}
         INPUT_MODEL: ${{ inputs.model }}
         INPUT_EFFORT: ${{ inputs.effort }}
         INPUT_CONCURRENCY: ${{ inputs.concurrency }}
@@ -206,6 +251,11 @@ runs:
         INPUT_TYPECHECK_DIR: ${{ inputs.typecheck-dir }}
       run: bash "$GITHUB_ACTION_PATH/run.sh" review
 
+    - id: needs-human
+      if: steps.gate.outputs.run == 'true' && steps.review.outcome == 'success'
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/run.sh" needs-human
+
     - id: post
       if: steps.gate.outputs.run == 'true' && steps.review.outcome == 'success'
       shell: bash
@@ -222,6 +272,29 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         INPUT_FINDINGS_CHECK: ${{ inputs.findings-check }}
       run: bash "$GITHUB_ACTION_PATH/run.sh" findings-check
+
+    - if: steps.gate.outputs.run == 'true' && steps.post.outcome == 'success' && inputs.human-review-check == 'on'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" human-review-check
+
+    # The engine skipped instead of reviewing: the commit still gets its human review status.
+    - if: ${{ !cancelled() && steps.gate.outputs.run == 'true' && steps.review.outcome == 'success' && inputs.human-review-check == 'on' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_HUMAN_REVIEW_CHECK: ${{ inputs.human-review-check }}
+        INPUT_HUMAN_REVIEW_ON_SKIP: ${{ inputs.human-review-on-skip }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" human-review-skip
+
+    - if: steps.gate.outputs.run == 'true' && steps.post.outcome == 'success' && inputs.needs-human-label != '' && steps.needs-human.outputs.needs-human != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_NEEDS_HUMAN_LABEL: ${{ inputs.needs-human-label }}
+        NEEDS_HUMAN: ${{ steps.needs-human.outputs.needs-human }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh" needs-human-label
 
     - id: baseline
       if: steps.gate.outputs.run == 'true' && steps.post.outcome == 'success' && inputs.review-mode == 'incremental'

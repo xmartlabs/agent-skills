@@ -10,7 +10,7 @@
 //! missing on most of the items it applies to carries a note saying so, and a
 //! figure with no field at all is printed as not recorded rather than as 0.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{json, Map, Value};
 
@@ -502,6 +502,27 @@ fn group_metrics(g: &Group) -> Value {
         );
     }
 
+    // needsHuman: rows from an older engine carry no key and are left out.
+    let (mut nh_recorded, mut nh_raised) = (0, 0);
+    let mut nh_by_signal: BTreeMap<String, usize> = BTreeMap::new();
+    for r in &g.rows {
+        let Some(nh) = r.get("needsHuman").filter(|v| v.is_object()) else {
+            continue;
+        };
+        nh_recorded += 1;
+        if is_true(nh, "raised") {
+            nh_raised += 1;
+        }
+        // A signal counts once per row, however many reasons carry it.
+        let signals: BTreeSet<&str> = array(nh, "reasons")
+            .iter()
+            .filter_map(|d| d.get("signal").and_then(Value::as_str))
+            .collect();
+        for sig in signals {
+            *nh_by_signal.entry(sig.to_owned()).or_default() += 1;
+        }
+    }
+
     // Panel degradation.
     let (mut slots_known, mut with_failed, mut unverified_known, mut unverified) = (0, 0, 0, 0);
     let (mut detail_known, mut slots) = (0, 0);
@@ -673,6 +694,12 @@ fn group_metrics(g: &Group) -> Value {
                 "count": by_source.values().sum::<usize>(),
                 "bySource": by_source,
             })).collect::<Vec<_>>(),
+        },
+        "needsHuman": {
+            "recorded": nh_recorded,
+            "raised": nh_raised,
+            "raisedRate": rate(nh_raised, nh_recorded),
+            "bySignal": sorted_counts(nh_by_signal),
         },
         "killReasons": {
             "refutedVotes": refuted_votes,
@@ -847,6 +874,26 @@ fn render_group(s: &mut String, g: &Value) {
         )
     };
     s.push_str(&format!("  Panel degradation: {failed}; {unverified}\n"));
+    let nh = &g["needsHuman"];
+    if n(&nh["recorded"]) == 0 {
+        s.push_str("  needsHuman: not recorded\n");
+    } else {
+        let by: Vec<String> = nh["bySignal"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|e| format!("{} {}", e["key"].as_str().unwrap_or("?"), e["count"]))
+            .collect();
+        let tail = if by.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", by.join(", "))
+        };
+        s.push_str(&format!(
+            "  needsHuman: {} of {} run(s) raised it{tail}\n",
+            nh["raised"], nh["recorded"]
+        ));
+    }
     let reasons: Vec<String> = dg["byReason"]
         .as_array()
         .into_iter()
@@ -1330,6 +1377,51 @@ mod tests {
         let r = metrics_report(&rows, 0, &f);
         assert_eq!(r["rows"]["filteredOut"], 2);
         assert_eq!(r["rows"]["legacySkipped"], 0);
+    }
+
+    #[test]
+    fn needs_human_counts_rows_by_signal() {
+        let with = |nh: Option<Value>| {
+            let mut r = row(Some("rust"), Some(3), Value::Null, vec![]);
+            if let Some(v) = nh {
+                r["needsHuman"] = v;
+            }
+            r
+        };
+        let reason = |signal: &str| json!({"signal": signal, "detail": "d"});
+        let rows = vec![
+            with(Some(json!({"raised": false, "reasons": []}))),
+            with(Some(
+                json!({"raised": true, "reasons": [reason("lens-empty")]}),
+            )),
+            // A signal repeated inside one row counts once.
+            with(Some(json!({"raised": true, "reasons": [
+                reason("lens-empty"), reason("risk-path-touched"), reason("lens-empty"),
+            ]}))),
+            // An older row has no needsHuman key and is left out.
+            with(None),
+        ];
+        let r = metrics_report(&rows, 0, &RowFilter::default());
+        let g = group(&r, "rust", 3);
+        assert_eq!(g["rows"], 4);
+        let nh = &g["needsHuman"];
+        assert_eq!(nh["recorded"], 3);
+        assert_eq!(nh["raised"], 2);
+        assert_eq!(nh["raisedRate"], 0.6667);
+        assert_eq!(
+            nh["bySignal"],
+            json!([
+                {"key": "lens-empty", "count": 2},
+                {"key": "risk-path-touched", "count": 1},
+            ])
+        );
+        let text = render(&r);
+        assert!(
+            text.contains(
+                "  needsHuman: 2 of 3 run(s) raised it (lens-empty 2, risk-path-touched 1)\n"
+            ),
+            "{text}"
+        );
     }
 
     #[test]

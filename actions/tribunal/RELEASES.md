@@ -25,7 +25,24 @@ own commit.
 
 ## Unreleased
 
-Nothing yet.
+The features below require Tribunal 115.9.0 or later; with `needs-human-label` or
+`human-review-check` set, an older engine fails the run with a clear error.
+
+- New output `needs-human`: `true` when the review says a person should look at the pull request,
+  `false` when it does not, empty when no review ran or the engine is older.
+- New input `needs-human-label`: a label added while the flag is raised and removed when it is not.
+  Needs `pull-requests: write`.
+- New input `human-review-check` (`off` default, `on`): a "Tribunal human review" commit status on
+  the reviewed commit, pending while the flag is raised. Needs `statuses: write`.
+- New input `human-review-on-skip` (`carry` default, `success`, `pending`): the status on a commit
+  the action does not review. `carry` copies the previous head's, the latest review's or an earlier
+  commit's. Both status inputs are also on the `gate` action, whose job then needs `statuses: write`.
+- A `pull_request_review` event with `human-review-check: on` now clears a pending status when a
+  non-bot user with write access approves the current head, and sets the new output `approval`.
+  The action's own identity cannot clear it, and only a `submitted` event clears. An approval given
+  while the review ran still counts. With the check off, review events behave as before.
+- With `verdict: suggested`, a raised flag turns an engine approval into a comment.
+- README: new section "Ask for a human review".
 
 ## v1.5.1 — bundles Tribunal 115.8.0
 
