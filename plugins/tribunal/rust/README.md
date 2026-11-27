@@ -761,6 +761,43 @@ its own `deps/` directory, so running it alone needs `cargo build -p
 tribunal-context --bin tribunal-test-gh` first; `cargo test --workspace`
 builds it.
 
+## Languages of the reviewed code
+
+What the engine knows about a language without parsing it lives in one place,
+`crates/tribunal-core/src/lang/`: one `Language` value per language, listed in
+`LANGUAGES`. It holds the language's source, typed, checked and runnable file
+extensions, what a test file, a top-level declaration, a comment and an
+identifier look like, how a line imports a module, which names prose cites,
+and the capabilities the engine has for it. TypeScript (with JavaScript) and
+Python are there.
+
+No other code spells a source extension: `tribunal-core/tests/lang_extension_ratchet.rs`
+fails when one appears outside `lang/`.
+
+To add a language:
+
+1. Add `crates/tribunal-core/src/lang/<name>.rs` with its `Language` and unit
+   tests for `is_test`, `declaration`, `is_comment` and `imports_module`.
+2. List it in `LANGUAGES` and add its extensions to the ratchet's `EXTENSIONS`.
+3. Give it the capabilities it has, usually none at first. A run over its
+   files then logs `Language support: <name> has no ...` and records the gaps
+   in the row's `languageSupport`.
+
+That alone gives its files the right test detection, the newly-called
+exception of the pre-existing rule, a refuter scope that widens for its cited
+files, and a reference audit that looks up its names. The review instructions
+are a separate layer: a module under `methodology/templates/lang/`
+(`docs/project-profile.md`).
+
+A capability is an analysis in `tribunal-context`: `dependents` and
+`attention` (`blast_radius`, `attention_facts`), `siblings`, `typecheck`
+(`grounded_typecheck`, `python_typecheck`), `runtime-case` and
+`import-adjacency`. Those modules are written for one language each. To give a
+language a capability, write its module, call it where the existing one is
+called, and add the capability to the language's list. A capability that adds
+text to every lens prompt needs a measured gain on labelled pull requests
+before it is on by default.
+
 ## Running the tests
 
 ```bash

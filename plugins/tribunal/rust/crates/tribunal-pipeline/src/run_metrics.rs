@@ -87,6 +87,21 @@ fn sectioning(section_index: Option<&Value>, pr_context: &Value) -> (bool, f64, 
 }
 
 /// `--thread-before` as the row records it: the instant the run read the
+/// The row's `languageSupport`: the languages of the pull request's files and
+/// the analyses the engine lacks for each.
+#[must_use]
+pub fn language_support(pr_files: &[String]) -> Value {
+    let s = tribunal_core::lang::support(pr_files);
+    json!({
+        "languages": s.languages,
+        "unsupported": s
+            .unsupported
+            .iter()
+            .map(|(language, capability)| json!({"language": language, "capability": capability}))
+            .collect::<Vec<_>>(),
+    })
+}
+
 /// thread up to, or `null` when it read the thread as it is.
 #[must_use]
 pub fn thread_before_of(args: &RunArgs) -> Value {
@@ -168,6 +183,7 @@ pub fn metrics_scope(
         project_rules_source: prepared.project_rules_source.clone(),
         conventions_manifest: prepared.conventions.manifest.clone().unwrap_or(Value::Null),
         methodology: prepared.methodology_layers.clone(),
+        language_support: language_support(&plan.all_pr_files),
         lens_labels: array(&review.labels),
         review_results: Value::Array(
             review

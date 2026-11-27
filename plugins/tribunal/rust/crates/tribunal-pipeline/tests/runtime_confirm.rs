@@ -40,3 +40,17 @@ fn the_row_says_whether_it_ran_and_what_it_found() {
         vec![("runtimeConfirm", json!(true)), ("runtimeChecks", record)]
     );
 }
+
+#[test]
+fn a_lens_is_asked_for_runtime_claims_only_over_files_a_case_can_run_for() {
+    use tribunal_pipeline::run::can_run_a_case;
+    let files = |f: &[&str]| f.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+    assert!(can_run_a_case(&files(&["src/widgets.ts"])));
+    assert!(can_run_a_case(&files(&["pkg/widgets.py", "web/a.tsx"])));
+    assert!(!can_run_a_case(&files(&[
+        "pkg/widgets.py",
+        "pkg/test_widgets.py"
+    ])));
+    assert!(!can_run_a_case(&files(&["README.md", "go.mod"])));
+    assert!(!can_run_a_case(&[]));
+}

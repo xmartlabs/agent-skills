@@ -15,6 +15,110 @@
 pub mod python;
 pub mod typescript;
 
+/// An analysis the engine runs over the reviewed code. A language lists the
+/// ones it has ([`Language::capabilities`]); a run records the ones a changed
+/// file's language lacks ([`support`]) and says so, where it skipped them
+/// silently before.
+///
+/// Each is implemented in `tribunal-context`: `Dependents` and `Attention`
+/// by `blast_radius` and `attention_facts`, `Siblings` by `siblings`,
+/// `Typecheck` by `grounded_typecheck` and `python_typecheck`, `RuntimeCase`
+/// by `runtime_case`, `ImportAdjacency` by `import_adjacency`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Capability {
+    /// Unchanged code that depends on what the pull request changed.
+    Dependents,
+    /// Defect-class questions matched on the syntax tree of added lines.
+    Attention,
+    /// Code outside the pull request that shares a callee or a write.
+    Siblings,
+    /// The repository's own type checker.
+    Typecheck,
+    /// Running a generated case against the reviewed head.
+    RuntimeCase,
+    /// Which unchanged files import, or are imported by, a changed file.
+    ImportAdjacency,
+}
+
+impl Capability {
+    pub const ALL: [Capability; 6] = [
+        Capability::Dependents,
+        Capability::Attention,
+        Capability::Siblings,
+        Capability::Typecheck,
+        Capability::RuntimeCase,
+        Capability::ImportAdjacency,
+    ];
+
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Capability::Dependents => "dependents",
+            Capability::Attention => "attention",
+            Capability::Siblings => "siblings",
+            Capability::Typecheck => "typecheck",
+            Capability::RuntimeCase => "runtime-case",
+            Capability::ImportAdjacency => "import-adjacency",
+        }
+    }
+}
+
+/// The languages a pull request's files are in, and the capabilities each
+/// lacks.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Support {
+    pub languages: Vec<&'static str>,
+    pub unsupported: Vec<(&'static str, &'static str)>,
+}
+
+/// What the engine can and cannot analyse in `files`, among `table`.
+#[must_use]
+pub fn support_in(table: &[&Language], files: &[String]) -> Support {
+    let mut out = Support::default();
+    for l in table {
+        if !files.iter().any(|f| l.owns(f)) {
+            continue;
+        }
+        out.languages.push(l.name);
+        for c in Capability::ALL {
+            if !l.has(c) {
+                out.unsupported.push((l.name, c.name()));
+            }
+        }
+    }
+    out
+}
+
+/// [`support_in`] over [`LANGUAGES`].
+#[must_use]
+pub fn support(files: &[String]) -> Support {
+    support_in(&LANGUAGES, files)
+}
+
+impl Support {
+    /// One line per language with a gap, for the run's log.
+    #[must_use]
+    pub fn log_lines(&self) -> Vec<String> {
+        self.languages
+            .iter()
+            .filter_map(|l| {
+                let missing: Vec<&str> = self
+                    .unsupported
+                    .iter()
+                    .filter(|(lang, _)| lang == l)
+                    .map(|&(_, c)| c)
+                    .collect();
+                (!missing.is_empty()).then(|| {
+                    format!(
+                        "Language support: {l} has no {}; a review of its files runs without them",
+                        missing.join(", ")
+                    )
+                })
+            })
+            .collect()
+    }
+}
+
 /// A top-level declaration found on one line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Declaration {
@@ -44,6 +148,8 @@ pub struct Language {
     pub imports_module: fn(&str, &str) -> bool,
     /// A regex for the identifiers worth looking up when prose cites code.
     pub cited_identifier: &'static str,
+    /// The analyses the engine has for this language.
+    pub capabilities: &'static [Capability],
 }
 
 pub static LANGUAGES: [&Language; 2] = [&typescript::TYPESCRIPT, &python::PYTHON];
@@ -87,6 +193,11 @@ impl Language {
     #[must_use]
     pub fn grep_globs(&self) -> Vec<String> {
         self.source.iter().map(|e| format!("*{e}")).collect()
+    }
+
+    #[must_use]
+    pub fn has(&self, capability: Capability) -> bool {
+        self.capabilities.contains(&capability)
     }
 
     fn owns(&self, path: &str) -> bool {
@@ -235,6 +346,7 @@ mod tests {
             is_identifier: never,
             imports_module: |_, _| false,
             cited_identifier: r"\bfk_[a-z]+\b",
+            capabilities: &[Capability::Siblings],
         };
         let table: [&Language; 3] = [&typescript::TYPESCRIPT, &python::PYTHON, &FAKE];
         let l = language_in(&table, "src/widget_spec.fk").expect("the fake language owns .fk");
@@ -243,5 +355,34 @@ mod tests {
         assert_eq!((l.declaration)("thing widget").unwrap().name, "widget");
         assert!(cited_extensions(&table, &[]).contains(&"fk"));
         assert!(language_of("src/widget_spec.fk").is_none());
+        let files = ["src/widget_spec.fk".to_owned()];
+        let s = support_in(&table, &files);
+        assert_eq!(s.languages, ["fake"]);
+        assert_eq!(s.unsupported.len(), Capability::ALL.len() - 1);
+        assert!(support(&files).languages.is_empty());
+    }
+
+    #[test]
+    fn a_run_records_the_capabilities_a_changed_language_lacks() {
+        let ts = support(&["src/a.ts".to_owned(), "README.md".to_owned()]);
+        assert_eq!(ts.languages, ["typescript"]);
+        assert!(ts.unsupported.is_empty() && ts.log_lines().is_empty());
+        let both = support(&["src/a.tsx".to_owned(), "pkg/widgets.py".to_owned()]);
+        assert_eq!(both.languages, ["typescript", "python"]);
+        assert_eq!(
+            both.unsupported,
+            [
+                ("python", "dependents"),
+                ("python", "attention"),
+                ("python", "siblings"),
+                ("python", "runtime-case"),
+                ("python", "import-adjacency"),
+            ]
+        );
+        assert_eq!(
+            both.log_lines(),
+            ["Language support: python has no dependents, attention, siblings, runtime-case, import-adjacency; a review of its files runs without them"]
+        );
+        assert_eq!(support(&["notes.md".to_owned()]), Support::default());
     }
 }
