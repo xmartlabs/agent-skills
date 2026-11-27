@@ -95,6 +95,7 @@ pub struct MetricsScope {
     pub vote_corrections: Vec<Value>,
     pub cross_file_clusters_rejected: f64,
     pub proximity_vetoed: f64,
+    pub proximity_vetoed_pairs: Value,
     pub grounded_available: bool,
     pub grounded_confirmed: f64,
     pub grounded_refuted: f64,
@@ -839,6 +840,7 @@ pub fn metrics_row(s: &MetricsScope) -> Result<Value, String> {
         n(s.cross_file_clusters_rejected),
     );
     put("proximityVetoed", n(s.proximity_vetoed));
+    put("proximityVetoedPairs", s.proximity_vetoed_pairs.clone());
     put("groundedChecked", json!(s.grounded_available));
     put("groundedConfirmed", n(s.grounded_confirmed));
     put("groundedRefuted", n(s.grounded_refuted));

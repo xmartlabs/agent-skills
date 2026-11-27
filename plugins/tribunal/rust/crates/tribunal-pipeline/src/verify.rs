@@ -154,6 +154,10 @@ pub struct Dedup {
     pub clusters: usize,
     pub cross_file_clusters_rejected: usize,
     pub proximity_vetoed: usize,
+    /// One entry per candidate the proximity veto kept out of a cluster the
+    /// dedup step proposed: where it and the cluster's first member sit, and
+    /// their titles, so the veto can be judged on real pairs.
+    pub proximity_vetoed_pairs: Vec<Value>,
 }
 
 fn index_of(i: &Value, len: usize) -> Option<usize> {
@@ -184,6 +188,7 @@ pub fn apply_dedup(
     let mut clusters: Vec<Vec<usize>> = Vec::new();
     let mut cross_file = 0;
     let mut proximity = 0;
+    let mut vetoed_pairs = Vec::new();
     for idxs in &raw {
         let Some(idxs) = idxs.as_array() else {
             continue;
@@ -231,6 +236,9 @@ pub fn apply_dedup(
                 .map(|(_, &i)| i)
                 .collect();
             proximity += group.len() - kept.len();
+            for &i in group.iter().skip(1).filter(|i| !kept.contains(i)) {
+                vetoed_pairs.push(vetoed_pair(anchor, &all[i]));
+            }
             if kept.len() < 2 {
                 continue;
             }
@@ -272,6 +280,22 @@ pub fn apply_dedup(
         clusters: clusters.len(),
         cross_file_clusters_rejected: cross_file,
         proximity_vetoed: proximity,
+        proximity_vetoed_pairs: vetoed_pairs,
+    })
+}
+
+fn vetoed_pair(anchor: &Value, other: &Value) -> Value {
+    let side = |c: &Value| {
+        json!({
+            "line": js::get(c, "line").cloned().unwrap_or(Value::Null),
+            "title": js::get(c, "title").and_then(Value::as_str).unwrap_or("").chars().take(200).collect::<String>(),
+            "lens": js::get(c, "lens").cloned().unwrap_or(Value::Null),
+        })
+    };
+    json!({
+        "file": js::get(anchor, "file").cloned().unwrap_or(Value::Null),
+        "kept": side(anchor),
+        "vetoed": side(other),
     })
 }
 

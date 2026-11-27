@@ -214,6 +214,7 @@ pub fn metrics_scope(
         vote_corrections: panel.vote_corrections.clone(),
         cross_file_clusters_rejected: verify.dedup.cross_file_clusters_rejected as f64,
         proximity_vetoed: verify.dedup.proximity_vetoed as f64,
+        proximity_vetoed_pairs: Value::Array(verify.dedup.proximity_vetoed_pairs.clone()),
         grounded_available: verify.grounded.available,
         grounded_confirmed: verify.gate.confirmed.len() as f64,
         grounded_refuted: verify.gate.refuted.len() as f64,

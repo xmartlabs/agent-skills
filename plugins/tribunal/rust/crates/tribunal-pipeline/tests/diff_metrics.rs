@@ -319,6 +319,15 @@ fn the_metrics_row_is_the_workflows() {
             // without it records null. Witness: `methodology_row.rs`.
             let layers = row.as_object_mut().unwrap().shift_remove("methodology");
             assert_eq!(layers, Some(Value::Null), "methodology on {c}");
+            // Declared difference: `proximityVetoedPairs`, the pairs the dedup
+            // proximity veto kept apart, which the workflow never wrote. A
+            // state without it records null. Witness:
+            // `proximity_vetoed_pairs.rs`.
+            let pairs = row
+                .as_object_mut()
+                .unwrap()
+                .shift_remove("proximityVetoedPairs");
+            assert_eq!(pairs, Some(Value::Null), "proximityVetoedPairs on {c}");
             row
         })
         .collect();
