@@ -811,3 +811,138 @@ async fn the_fix_is_the_first_commit_that_changed_the_lines() {
     assert_eq!(pr7["knownReal"][0]["fix"], json!(s.c2));
     assert_eq!(pr7["knownReal"][0]["seenAt"], json!(s.c1));
 }
+
+/// A comment made on c2 about a line that already existed at c1 must not be
+/// pinned at c1: the pin may predate what the comment is about.
+#[tokio::test]
+async fn an_item_is_never_pinned_before_its_comment() {
+    let base = common::scratch("corpus-collect-pin-order");
+    let (checkout, s) = build(&base, &PYTHON);
+    let short = |sha: &str| sha[..7].to_owned();
+    let page = vec![
+        comment(
+            3,
+            "2026-01-03T00:00:00Z",
+            CR,
+            &body("Count ignores empty input", "Minor", &short(&s.c3)),
+            7,
+            PYTHON.widgets,
+            None,
+            2,
+            &s.c2,
+        ),
+        comment(
+            2,
+            "2026-01-02T00:00:00Z",
+            CR,
+            &body("Total has no default", "Minor", &short(&s.c2)),
+            7,
+            PYTHON.widgets,
+            None,
+            3,
+            &s.c1,
+        ),
+        comment(
+            1,
+            "2026-01-01T00:00:00Z",
+            CR,
+            &body("Total counts missing prices", "Major", &short(&s.c2)),
+            7,
+            PYTHON.widgets,
+            None,
+            4,
+            &s.c1,
+        ),
+    ];
+    let calls = vec![
+        json!({"args": page_args(1), "stdout": Value::Array(page).to_string(), "stderr": "", "code": 0}),
+    ];
+    let tools = common::tools(&common::recordings(&base, calls));
+    let out = base.join("out");
+    collect(&tools, &args(&checkout, &out)).await.unwrap();
+    let pr7 = read(&out.join("pr-acme-widgets-7.json"));
+    assert_eq!(pr7["reviewedSha"], json!(s.c1));
+    assert_eq!(
+        ids(&pr7, "knownReal"),
+        ["total-counts-missing-prices", "total-has-no-default"]
+    );
+    assert_eq!(pr7["skipped"][0]["id"], "count-ignores-empty-input");
+    assert_eq!(pr7["skipped"][0]["reason"], "pin-before-comment");
+}
+
+/// After a rebase the commented commit is not in the pull request's history.
+/// Its rewritten copy changes the same lines, and must not be taken as the
+/// fix.
+#[tokio::test]
+async fn a_rewritten_history_is_not_read_as_a_fix() {
+    let base = common::scratch("corpus-collect-rewritten");
+    let work = base.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    git(&work, &["init", "-q"]);
+    write(
+        &work,
+        "src/widgets.py",
+        &["def widget_count(items):", "    return len(items)"],
+    );
+    commit(&work, "c0");
+    git(&work, &["checkout", "-q", "-b", "old"]);
+    write(
+        &work,
+        "src/widgets.py",
+        &["def widget_count(items):", "    return len(list(items))"],
+    );
+    let r1 = commit(&work, "count lists");
+    git(&work, &["checkout", "-q", "main"]);
+    git(&work, &["checkout", "-q", "-b", "new"]);
+    write(
+        &work,
+        "src/widgets.py",
+        &["def widget_count(items):", "    return len(list(items))"],
+    );
+    commit(&work, "count lists (rebased)");
+    write(
+        &work,
+        "src/widgets.py",
+        &[
+            "def widget_count(items):",
+            "    return sum(1 for _ in items)",
+        ],
+    );
+    let r2 = commit(&work, "count without a list");
+    git(&work, &["checkout", "-q", "main"]);
+    git(&base, &["clone", "-q", "--bare", "work", "remote.git"]);
+    let remote = base.join("remote.git");
+    git(&remote, &["update-ref", "refs/pull/5/head", &r2]);
+    git(&remote, &["update-ref", "refs/keep/old", &r1]);
+    git(&remote, &["branch", "-D", "old", "new"]);
+    git(
+        &remote,
+        &["config", "uploadpack.allowReachableSHA1InWant", "true"],
+    );
+    git(
+        &base,
+        &["clone", "-q", "--no-local", "remote.git", "checkout"],
+    );
+    let page = vec![comment(
+        1,
+        "2026-01-01T00:00:00Z",
+        "reviewer-a",
+        "This builds a list for nothing",
+        5,
+        "src/widgets.py",
+        None,
+        2,
+        &r1,
+    )];
+    let calls = vec![
+        json!({"args": page_args(1), "stdout": Value::Array(page).to_string(), "stderr": "", "code": 0}),
+        json!({"args": ["api", "repos/acme/widgets/pulls/5"], "stdout": json!({"user": {"login": "author-dev"}}).to_string(), "stderr": "", "code": 0}),
+    ];
+    let tools = common::tools(&common::recordings(&base, calls));
+    let out = base.join("out");
+    let mut a = args(&base.join("checkout"), &out);
+    a.line_changed = true;
+    let summary = collect(&tools, &a).await.unwrap();
+    assert_eq!(summary["droppedItems"], json!({"history-rewritten": 1}));
+    assert!(!out.join("pr-acme-widgets-5.json").exists());
+}
