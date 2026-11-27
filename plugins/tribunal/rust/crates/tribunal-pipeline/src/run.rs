@@ -18,6 +18,7 @@ use tribunal_context::runtime_case;
 use tribunal_context::{resolve_evidence_line, resolve_verified_anchors};
 use tribunal_core::evidence::line_correction::apply_line_correction;
 use tribunal_core::js;
+use tribunal_core::lang::language_of;
 use tribunal_core::lens::coverage_gaps::{coverage_banner, light_files_banner, unread_risk_files};
 use tribunal_core::lens::diff_usable::diff_is_usable;
 use tribunal_core::lens::js_ext::{to_js_string, utf16_prefix_lossy};
@@ -691,9 +692,9 @@ pub async fn verify_phase<A: Agent>(
     let eligible = !args.panel_only
         && dedup.panel_candidates.iter().any(|c| {
             js::truthy(js::get(c, "mechanicalClaim"))
-                || js::get(c, "file").and_then(Value::as_str).is_some_and(|f| {
-                    f.ends_with(".ts") || f.ends_with(".tsx") || f.ends_with(".py")
-                })
+                || js::get(c, "file")
+                    .and_then(Value::as_str)
+                    .is_some_and(|f| language_of(f).is_some_and(|l| l.is_checked(f)))
         });
     let head = js::get(&rc.pr_context, "headRefOid");
     let pin_ok = js::truthy(js::get(&rc.head_pin, "ok"));

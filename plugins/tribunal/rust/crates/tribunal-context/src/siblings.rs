@@ -9,8 +9,8 @@ use std::path::Path;
 
 use crate::blast_radius::is_test;
 use crate::exec::Tools;
+use tribunal_core::lang::typescript::TYPESCRIPT;
 
-const CODE_GLOBS: [&str; 6] = ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs"];
 const WRITE_OPS: [&str; 6] = [
     "create",
     "createMany",
@@ -84,9 +84,7 @@ fn is_word(b: u8) -> bool {
 }
 
 fn is_code_file(p: &str) -> bool {
-    p.rsplit('.')
-        .next()
-        .is_some_and(|e| matches!(e, "ts" | "tsx" | "js" | "jsx" | "mjs" | "cjs"))
+    TYPESCRIPT.is_source(p)
 }
 
 /// Names followed by `(` that are not a member access, with the names the
@@ -242,7 +240,8 @@ async fn grep(tools: &Tools, dir: &Path, args: &[&str]) -> Vec<Hit> {
     let mut a: Vec<&str> = vec!["grep", "-n", "-I"];
     a.extend_from_slice(args);
     a.push("--");
-    a.extend(CODE_GLOBS);
+    let globs = TYPESCRIPT.grep_globs();
+    a.extend(globs.iter().map(String::as_str));
     match tools.git(&a, Some(dir)).await {
         Ok(o) if o.code == Some(0) => parse_grep(&o.stdout),
         _ => Vec::new(),

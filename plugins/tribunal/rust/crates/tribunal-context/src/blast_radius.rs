@@ -18,6 +18,12 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 use tribunal_core::js;
+use tribunal_core::lang::has_dir_segment;
+pub use tribunal_core::lang::typescript::is_test;
+use tribunal_core::lang::typescript::{
+    declaration, ident_end, is_comment as is_comment_line, is_ident, is_word, keyword_ws, skip_ws,
+    TYPESCRIPT,
+};
 
 use crate::ast_bindings::Ref;
 use crate::attention_facts;
@@ -32,16 +38,6 @@ pub const MAX_CALLERS: usize = 25;
 const TEXT_CHARS: usize = 100;
 /// `execFileSync`'s `maxBuffer`: a larger answer is a failed call.
 const MAX_BUFFER: usize = 64 << 20;
-const GREP_GLOBS: [&str; 6] = ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs"];
-
-fn is_word(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_'
-}
-
-fn is_ident(b: u8) -> bool {
-    is_word(b) || b == b'$'
-}
-
 fn is_source(p: &str) -> bool {
     source_ext(p).is_some()
 }
@@ -50,25 +46,6 @@ fn no_ext(p: &str) -> &str {
     source_ext(p).map_or(p, |e| &p[..p.len() - e.len()])
 }
 
-/// A segment before the last one named one of `names`.
-fn has_dir_segment(p: &str, names: &[&str]) -> bool {
-    let segs: Vec<&str> = p.split('/').collect();
-    segs[..segs.len() - 1].iter().any(|s| names.contains(s))
-}
-
-/// TEST_RE: a `__tests__`, `__mocks__`, `test` or `tests` directory, or a
-/// `.test.`/`.spec.` file with something after it.
-pub fn is_test(p: &str) -> bool {
-    if has_dir_segment(p, &["__tests__", "__mocks__", "test", "tests"]) {
-        return true;
-    }
-    let last = p.rsplit('/').next().unwrap_or(p);
-    [".test.", ".spec."]
-        .iter()
-        .any(|m| last.match_indices(m).any(|(i, _)| i + m.len() < last.len()))
-}
-
-/// HANDLER_PATH: where a request or a job breaks.
 fn on_handler_path(p: &str) -> bool {
     has_dir_segment(
         p,
@@ -90,45 +67,12 @@ fn on_handler_path(p: &str) -> bool {
     )
 }
 
-fn skip_ws(s: &str, mut i: usize) -> usize {
-    while let Some(c) = s[i..].chars().next() {
-        if !js::is_js_whitespace(c) {
-            break;
-        }
-        i += c.len_utf8();
-    }
-    i
-}
-
 fn trim_start(s: &str) -> &str {
     s.trim_start_matches(js::is_js_whitespace)
 }
 
 fn trim_end(s: &str) -> &str {
     s.trim_end_matches(js::is_js_whitespace)
-}
-
-/// `[A-Za-z_$][\w$]*` at `i`: the index after it.
-fn ident_end(s: &str, i: usize) -> Option<usize> {
-    let b = s.as_bytes();
-    match b.get(i) {
-        Some(&c) if c.is_ascii_alphabetic() || c == b'_' || c == b'$' => {}
-        _ => return None,
-    }
-    let mut j = i + 1;
-    while j < b.len() && is_ident(b[j]) {
-        j += 1;
-    }
-    Some(j)
-}
-
-/// `kw\s+` at `i`: the index after the whitespace.
-fn keyword_ws(s: &str, i: usize, kw: &str) -> Option<usize> {
-    if !s[i..].starts_with(kw) {
-        return None;
-    }
-    let j = skip_ws(s, i + kw.len());
-    (j > i + kw.len()).then_some(j)
 }
 
 /// `(^|[^\w$])name([^\w$]|$)`: `name` as a whole identifier.
@@ -162,12 +106,6 @@ fn is_call_of(s: &str, name: &str) -> bool {
         }
         b.get(j) == Some(&b'(')
     })
-}
-
-/// COMMENT_LINE: `//`, `/*` or `*` after leading whitespace.
-fn is_comment_line(l: &str) -> bool {
-    let t = trim_start(l);
-    t.starts_with("//") || t.starts_with("/*") || t.starts_with('*')
 }
 
 /// `String.prototype.slice(0, n)` over UTF-16 units. A cut through a
@@ -346,38 +284,7 @@ impl Decl {
 
 /// DECL_RE: `(exported, kind, name)`.
 fn match_decl(l: &str) -> Option<(bool, String, String)> {
-    let mut i = 0;
-    let exported = match keyword_ws(l, i, "export") {
-        Some(j) => {
-            i = j;
-            true
-        }
-        None => false,
-    };
-    for kw in ["default", "declare", "async"] {
-        if let Some(j) = keyword_ws(l, i, kw) {
-            i = j;
-        }
-    }
-    let kinds = [
-        "function*",
-        "function",
-        "const",
-        "let",
-        "var",
-        "class",
-        "enum",
-        "type",
-        "interface",
-    ];
-    for kind in kinds {
-        let Some(j) = keyword_ws(l, i, kind) else {
-            continue;
-        };
-        let end = ident_end(l, j)?;
-        return Some((exported, kind.to_owned(), l[j..end].to_owned()));
-    }
-    None
+    declaration(l).map(|d| (d.exported, d.kind, d.name))
 }
 
 /// CJS_DECL_RE: `exports.name =` or `module.exports.name =`.
@@ -851,7 +758,8 @@ impl<'a> Repo<'a> {
             args.push(rev);
         }
         args.push("--");
-        args.extend(GREP_GLOBS);
+        let globs = TYPESCRIPT.grep_globs();
+        args.extend(globs.iter().map(String::as_str));
         let Some(out) = self.git(&args).await else {
             return Vec::new();
         };

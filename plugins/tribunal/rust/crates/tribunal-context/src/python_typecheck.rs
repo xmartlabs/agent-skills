@@ -15,6 +15,8 @@ use std::time::Duration;
 use regex::Regex;
 use serde_json::Value;
 use tribunal_core::evidence::tsc_oracle::TscDiagnostic;
+use tribunal_core::lang::python::PYTHON;
+use tribunal_core::lang::typescript::TYPESCRIPT;
 
 use crate::exec::{run as exec, Tools};
 
@@ -48,7 +50,7 @@ impl Checker {
 }
 
 fn is_python(f: &str) -> bool {
-    f.ends_with(".py") || f.ends_with(".pyi")
+    PYTHON.is_typed(f)
 }
 
 /// The PR's Python files.
@@ -65,9 +67,7 @@ pub fn py_files(pr_files: &[String]) -> Vec<String> {
 /// prints one program's result.
 #[must_use]
 pub fn wants_python(has_tsconfig: bool, pr_files: &[String]) -> bool {
-    let ts = pr_files
-        .iter()
-        .any(|f| f.ends_with(".ts") || f.ends_with(".tsx"));
+    let ts = pr_files.iter().any(|f| TYPESCRIPT.is_checked(f));
     pr_files.iter().any(|f| is_python(f)) && !(ts && has_tsconfig)
 }
 

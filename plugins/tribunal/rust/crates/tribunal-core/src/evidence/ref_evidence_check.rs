@@ -8,6 +8,9 @@ use serde_json::{json, Value};
 
 use super::js_ext;
 use crate::js;
+use crate::lang::{self, typescript::TYPESCRIPT, Language};
+use std::collections::HashMap;
+use std::sync::Mutex;
 
 pub const REF_EVIDENCE_STOPLIST: [&str; 17] = [
     "JavaScript",
@@ -34,21 +37,34 @@ pub const REF_EVIDENCE_STOPLIST: [&str; 17] = [
 fn source_path() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"(?-u:\b)[A-Za-z0-9_./-]+\.(?:ts|tsx|js|jsx|mts|cts|prisma)(?-u:\b)").unwrap()
+        let exts = lang::cited_extensions(&lang::LANGUAGES, &lang::REFERENCE_DATA).join("|");
+        Regex::new(&format!(r"(?-u:\b)[A-Za-z0-9_./-]+\.(?:{exts})(?-u:\b)")).unwrap()
     })
 }
 
-fn inner_capital() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(r"(?-u:\b)[A-Za-z][A-Za-z0-9_]*[a-z][A-Z][A-Za-z0-9_]*(?-u:\b)").unwrap()
-    })
+fn identifier(language: &'static Language) -> Regex {
+    static CACHE: OnceLock<Mutex<HashMap<&'static str, Regex>>> = OnceLock::new();
+    let mut cache = CACHE
+        .get_or_init(Mutex::default)
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    cache
+        .entry(language.cited_identifier)
+        .or_insert_with(|| Regex::new(language.cited_identifier).unwrap())
+        .clone()
 }
 
 /// Ports `citedIdentifiers`. `text` is a vote's `reason`, read as
 /// `String(text || "")`. The result is deduplicated and sorted by UTF-16
 /// units, as `[...set].sort()` does.
 pub fn cited_identifiers(text: Option<&Value>) -> Vec<String> {
+    cited_identifiers_in(text, &TYPESCRIPT)
+}
+
+/// [`cited_identifiers`] with the identifiers of `language`, the language of
+/// the file the refuted finding is about: camelCase names in TypeScript,
+/// snake_case names in Python. File paths of every language are cited.
+pub fn cited_identifiers_in(text: Option<&Value>, language: &'static Language) -> Vec<String> {
     let s = js_ext::string_or_empty(text);
     let mut out: Vec<String> = Vec::new();
     let mut add = |m: &str| {
@@ -59,7 +75,7 @@ pub fn cited_identifiers(text: Option<&Value>) -> Vec<String> {
     for m in source_path().find_iter(&s) {
         add(m.as_str());
     }
-    for m in inner_capital().find_iter(&s) {
+    for m in identifier(language).find_iter(&s) {
         let m = m.as_str();
         if js::utf16_len(m) >= 8 && !REF_EVIDENCE_STOPLIST.contains(&m) {
             add(m);
@@ -129,6 +145,19 @@ mod tests {
         assert_eq!(
             cited_identifiers(Some(&t)),
             ["export-sanitize.ts", "redactEmail"]
+        );
+    }
+
+    #[test]
+    fn a_python_finding_cites_snake_case_names_and_py_files() {
+        let t = json!("`widget_names` in src/widgets.py already calls redactEmail and max_n");
+        assert_eq!(
+            cited_identifiers_in(Some(&t), &lang::python::PYTHON),
+            ["src/widgets.py", "widget_names"]
+        );
+        assert_eq!(
+            cited_identifiers(Some(&t)),
+            ["redactEmail", "src/widgets.py"]
         );
     }
 
