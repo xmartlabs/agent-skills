@@ -152,3 +152,45 @@ fn the_row_carries_the_layers() {
     .unwrap();
     assert_eq!(row["methodology"], layers);
 }
+
+#[test]
+fn the_row_says_which_analyses_a_changed_language_lacks() {
+    use tribunal_pipeline::run_metrics::language_support;
+    let row_for = |files: &[&str]| {
+        let files: Vec<String> = files.iter().map(|f| (*f).to_owned()).collect();
+        metrics_row(&MetricsScope {
+            language_support: language_support(&files),
+            ..MetricsScope::default()
+        })
+        .unwrap()
+    };
+    assert_eq!(
+        row_for(&["src/a.ts", "docs/a.md"])["languageSupport"],
+        json!({"languages": ["typescript"], "unsupported": []})
+    );
+    let py = row_for(&["pkg/widgets.py"]);
+    assert_eq!(py["languageSupport"]["languages"], json!(["python"]));
+    let missing: Vec<&str> = py["languageSupport"]["unsupported"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|u| {
+            assert_eq!(u["language"], json!("python"));
+            u["capability"].as_str().unwrap()
+        })
+        .collect();
+    assert_eq!(
+        missing,
+        [
+            "dependents",
+            "attention",
+            "siblings",
+            "runtime-case",
+            "import-adjacency"
+        ]
+    );
+    assert_eq!(
+        row_for(&["notes.md"])["languageSupport"],
+        json!({"languages": [], "unsupported": []})
+    );
+}

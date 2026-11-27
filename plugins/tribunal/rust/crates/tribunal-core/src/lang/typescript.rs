@@ -1,6 +1,6 @@
 //! TypeScript and JavaScript.
 
-use super::{has_dir_segment, has_plain_word, Declaration, Language};
+use super::{has_dir_segment, has_plain_word, Capability, Declaration, Language};
 use crate::js;
 
 pub static TYPESCRIPT: Language = Language {
@@ -15,6 +15,7 @@ pub static TYPESCRIPT: Language = Language {
     is_identifier,
     imports_module,
     cited_identifier: r"(?-u:\b)[A-Za-z][A-Za-z0-9_]*[a-z][A-Z][A-Za-z0-9_]*(?-u:\b)",
+    capabilities: &Capability::ALL,
 };
 
 #[must_use]

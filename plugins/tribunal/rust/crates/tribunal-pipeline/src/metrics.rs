@@ -64,6 +64,9 @@ pub struct MetricsScope {
     pub conventions_manifest: Value,
     /// `{role, language, module}` of the methodology the lenses read.
     pub methodology: Value,
+    /// The languages of the pull request's files and the analyses each
+    /// lacks: `{languages, unsupported: [{language, capability}]}`.
+    pub language_support: Value,
     pub lens_labels: Value,
     pub review_results: Value,
     pub lens_findings: Value,
@@ -766,6 +769,7 @@ pub fn metrics_row(s: &MetricsScope) -> Result<Value, String> {
     put("projectRulesSource", s.project_rules_source.clone());
     put("conventions", s.conventions_manifest.clone());
     put("methodology", s.methodology.clone());
+    put("languageSupport", s.language_support.clone());
     put(
         "lensYield",
         serde_json::to_value(lens_yield).map_err(|e| e.to_string())?,

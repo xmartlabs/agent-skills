@@ -1,6 +1,6 @@
 //! Python.
 
-use super::{has_dir_segment, has_plain_word, Declaration, Language};
+use super::{has_dir_segment, has_plain_word, Capability, Declaration, Language};
 
 pub static PYTHON: Language = Language {
     name: "python",
@@ -14,6 +14,7 @@ pub static PYTHON: Language = Language {
     is_identifier,
     imports_module,
     cited_identifier: r"(?-u:\b)[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+(?-u:\b)",
+    capabilities: &[Capability::Typecheck],
 };
 
 /// A `test` or `tests` directory, or a `test_*.py`, `*_test.py` or

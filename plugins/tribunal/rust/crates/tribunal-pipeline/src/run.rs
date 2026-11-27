@@ -18,7 +18,7 @@ use tribunal_context::runtime_case;
 use tribunal_context::{resolve_evidence_line, resolve_verified_anchors};
 use tribunal_core::evidence::line_correction::apply_line_correction;
 use tribunal_core::js;
-use tribunal_core::lang::language_of;
+use tribunal_core::lang::{language_of, Capability};
 use tribunal_core::lens::coverage_gaps::{coverage_banner, light_files_banner, unread_risk_files};
 use tribunal_core::lens::diff_usable::diff_is_usable;
 use tribunal_core::lens::js_ext::{to_js_string, utf16_prefix_lossy};
@@ -402,6 +402,11 @@ pub async fn run_review<A: Agent>(
             diff.as_deref(),
         );
     }
+    for line in tribunal_core::lang::support(&rc.plan.all_pr_files).log_lines() {
+        if !logs.contains(&line) {
+            logs.push(line);
+        }
+    }
     let label_map = foci_label_for(profile)?;
     let foci: Vec<Value> = rc.plan.lens_plan.iter().map(|s| s.focus.clone()).collect();
     let labels = lens_labels(&foci, &label_map);
@@ -439,7 +444,8 @@ pub async fn run_review<A: Agent>(
             &mut exposure,
         )?;
         let mut task = lens_task(format!("lens:{}", i + 1), prompt);
-        if args.runtime_confirm && !args.no_refuters {
+        let lens_files = slot.files.as_deref().unwrap_or(&rc.plan.files);
+        if args.runtime_confirm && !args.no_refuters && can_run_a_case(lens_files) {
             task.prompt.push_str(runtime_case::LENS_PARAGRAPH);
             task.schema = schemas::findings_with_runtime_claim();
         }
@@ -1123,6 +1129,16 @@ fn uncovered_files(files: &[String], candidates: &[Value]) -> Vec<String> {
         })
         .cloned()
         .collect()
+}
+
+/// Whether a lens over `files` is asked for runtime claims: only when one of
+/// them is in a language the engine can run a case for. A claim about any
+/// other file would be skipped, so asking for it costs tokens for nothing.
+#[must_use]
+pub fn can_run_a_case(files: &[String]) -> bool {
+    files
+        .iter()
+        .any(|f| language_of(f).is_some_and(|l| l.has(Capability::RuntimeCase)))
 }
 
 /// The critic's sibling list: only when the critic will run and a pinned

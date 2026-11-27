@@ -319,6 +319,12 @@ fn the_metrics_row_is_the_workflows() {
             // without it records null. Witness: `methodology_row.rs`.
             let layers = row.as_object_mut().unwrap().shift_remove("methodology");
             assert_eq!(layers, Some(Value::Null), "methodology on {c}");
+            // Declared difference: `languageSupport`, the languages of the
+            // pull request's files and the analyses each lacks, which the
+            // workflow never wrote. A state without it records null.
+            // Witness: `methodology_row.rs`.
+            let support = row.as_object_mut().unwrap().shift_remove("languageSupport");
+            assert_eq!(support, Some(Value::Null), "languageSupport on {c}");
             // Declared difference: `proximityVetoedPairs`, the pairs the dedup
             // proximity veto kept apart, which the workflow never wrote. A
             // state without it records null. Witness:
