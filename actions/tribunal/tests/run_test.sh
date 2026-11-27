@@ -805,7 +805,7 @@ assert_eq "a label that is not there (404) is success" "0" "$RC"
 assert_fail "and gives no warning" grep -qF '::warning::' "$TMP/nh.txt"
 new_job opened; needs_human_label ""
 assert_fail "needs_human_label_untouched_on_old_engine" test -s "$FX/gh.log"
-new_job opened; INPUT_NEEDS_HUMAN_LABEL= NEEDS_HUMAN=true bash "$RUN" needs-human-label >/dev/null 2>&1
+new_job opened; INPUT_NEEDS_HUMAN_LABEL='' NEEDS_HUMAN=true bash "$RUN" needs-human-label >/dev/null 2>&1
 assert_fail "an empty label input makes no call" test -s "$FX/gh.log"
 new_job opened; touch "$FX/labels-forbidden"; needs_human_label true
 assert_eq "needs_human_label_failure_only_warns: the job rc is 0" "0" "$RC"
