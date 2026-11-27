@@ -84,8 +84,8 @@ fn every_kind_has_a_shipped_profile_and_its_rules_reach_a_slot() {
 }
 
 #[test]
-fn a_backend_profile_routes_to_the_backend_agent_whatever_its_language() {
-    for language in ["typescript", "go", "python"] {
+fn a_backend_profile_routes_by_its_language_where_that_language_has_an_agent() {
+    for language in ["typescript", "go"] {
         let p = json!({"reviewer": "backend", "language": language});
         assert_eq!(
             lens_agent_for(&p).unwrap(),
@@ -93,5 +93,7 @@ fn a_backend_profile_routes_to_the_backend_agent_whatever_its_language() {
             "{language}"
         );
     }
+    let p = json!({"reviewer": "backend", "language": "python"});
+    assert_eq!(lens_agent_for(&p).unwrap(), agent_of("python"));
     assert_eq!(agent_of("python"), "tribunal:py-code-review-expert");
 }

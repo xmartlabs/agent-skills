@@ -23,6 +23,8 @@ use tribunal_context::ast_bindings::binding_refs;
 use tribunal_context::blast_radius::{declarations, has_word, is_test, read_aliases};
 use tribunal_context::import_adjacency::source_ext;
 use tribunal_core::js;
+use tribunal_core::lang::typescript::TYPESCRIPT;
+use tribunal_core::lang::{has_plain_word, language_of, Language};
 
 /// The finding field the verdict, the verdict basis and the row's `blocking`
 /// read to keep a finding about unchanged code from blocking.
@@ -173,15 +175,100 @@ fn unchanged_quote(
     Some((file.to_owned(), text, at))
 }
 
-fn is_comment(line: &str) -> bool {
-    let t = line.trim_start();
-    t.starts_with("//") || t.starts_with("/*") || t.starts_with('*')
+/// A top-level declaration and the lines it runs over, to the line before
+/// the next one.
+struct Span {
+    name: String,
+    exported: bool,
+    at: usize,
+    end: usize,
+}
+
+fn spans(language: &Language, text: &str) -> Vec<Span> {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let mut out: Vec<Span> = Vec::new();
+    for (i, l) in lines.iter().enumerate() {
+        if let Some(d) = (language.declaration)(l) {
+            if let Some(last) = out.last_mut() {
+                last.end = i;
+            }
+            out.push(Span {
+                name: d.name,
+                exported: d.exported,
+                at: i + 1,
+                end: lines.len(),
+            });
+        }
+    }
+    out
+}
+
+/// [`newly_called`] for a language with no import resolver: a reference from
+/// another file counts when that file has an import line naming this file's
+/// module and an added line names the declaration.
+fn newly_called_by_name(
+    language: &Language,
+    file: &str,
+    text: &str,
+    at: &[u64],
+    head_root: &Path,
+    added: &HashMap<String, HashSet<u64>>,
+) -> bool {
+    let all = spans(language, text);
+    let holding: Vec<&Span> = all
+        .iter()
+        .filter(|d| at.iter().any(|&n| d.at as u64 <= n && n <= d.end as u64))
+        .collect();
+    if holding.is_empty() {
+        return false;
+    }
+    let names = |lines: &[&str], n: usize, d: &Span| {
+        lines
+            .get(n - 1)
+            .is_some_and(|l| !(language.is_comment)(l) && has_plain_word(l, &d.name))
+    };
+    let own: Vec<&str> = text.split('\n').collect();
+    for (other, lines) in added {
+        if (language.is_test)(other) || !language.is_source(other) {
+            continue;
+        }
+        if other == file {
+            let hit = holding.iter().any(|d| {
+                lines.iter().any(|&n| {
+                    let n = n as usize;
+                    n >= 1 && (n < d.at || n > d.end) && names(&own, n, d)
+                })
+            });
+            if hit {
+                return true;
+            }
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(head_root.join(other)) else {
+            continue;
+        };
+        let theirs: Vec<&str> = content.split('\n').collect();
+        if !theirs.iter().any(|l| (language.imports_module)(l, file)) {
+            continue;
+        }
+        let hit = holding.iter().filter(|d| d.exported).any(|d| {
+            lines
+                .iter()
+                .any(|&n| n >= 1 && names(&theirs, n as usize, d))
+        });
+        if hit {
+            return true;
+        }
+    }
+    false
 }
 
 /// Whether a line the diff adds, outside test files, refers to a top-level
 /// declaration of `file` that holds one of the lines at `at`: through an
 /// import or a `require` bound to it from another file, or by name from
-/// elsewhere in `file`.
+/// elsewhere in `file`. A TypeScript or JavaScript file binds imports through
+/// the syntax tree; a file of another language goes by name
+/// ([`newly_called_by_name`]).
 #[must_use]
 pub fn newly_called(
     file: &str,
@@ -190,6 +277,12 @@ pub fn newly_called(
     head_root: &Path,
     added: &HashMap<String, HashSet<u64>>,
 ) -> bool {
+    match language_of(file) {
+        Some(l) if !std::ptr::eq(l, &TYPESCRIPT) => {
+            return newly_called_by_name(l, file, text, at, head_root, added)
+        }
+        _ => {}
+    }
     let decls = declarations(text);
     let holding: Vec<_> = decls
         .iter()
@@ -212,7 +305,7 @@ pub fn newly_called(
                     (n < d.at || n > d.end)
                         && own
                             .get(n - 1)
-                            .is_some_and(|l| !is_comment(l) && has_word(l, &d.name))
+                            .is_some_and(|l| !(TYPESCRIPT.is_comment)(l) && has_word(l, &d.name))
                 })
             });
             if hit {
@@ -539,6 +632,91 @@ mod tests {
         let js = kept("src/old.js", "const old = fetchOld(x);", 2);
         let (m, _) = outcome(&root, js, &adds(&[("src/user.js", 2)]));
         assert_eq!(m.newly_called, 1);
+    }
+
+    fn python_head(name: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "tribunal-pre-existing-py-{}-{name}",
+            std::process::id()
+        ));
+        let files = [
+            (
+                "pkg/widgets.py",
+                "LIMIT = 3\n\ndef widget_names(items):\n    names = [fetch_old(i) for i in items]\n    return names\n\ndef again():\n    return widget_names([])\n",
+            ),
+            (
+                "pkg/caller.py",
+                "from pkg.widgets import widget_names\n\ndef run():\n    return widget_names([1])\n",
+            ),
+            (
+                "pkg/test_caller.py",
+                "from pkg.widgets import widget_names\n\ndef test_run():\n    assert widget_names([1])\n",
+            ),
+            (
+                "pkg/other.py",
+                "from pkg.gadgets import widget_names\n\ndef go():\n    return widget_names([2])\n",
+            ),
+            (
+                "pkg/limits.py",
+                "from pkg.widgets import widget_names\n\ndef cap():\n    # widget_names is capped\n    return 3\n",
+            ),
+        ];
+        for (f, body) in files {
+            std::fs::create_dir_all(root.join(f).parent().unwrap()).unwrap();
+            std::fs::write(root.join(f), body).unwrap();
+        }
+        root
+    }
+
+    #[test]
+    fn a_python_def_the_pull_request_newly_calls_is_not_marked() {
+        let root = python_head("new_caller");
+        let quote = || kept("pkg/widgets.py", "names = [fetch_old(i) for i in items]", 4);
+        // Another file that imports the module and names the def on an added line.
+        let (m, f) = outcome(&root, quote(), &adds(&[("pkg/caller.py", 4)]));
+        assert_eq!(
+            m,
+            Marked {
+                pre_existing: 0,
+                newly_called: 1
+            }
+        );
+        assert_eq!(f[NEWLY_CALLED_CODE], json!(true));
+        assert!(f.get(PRE_EXISTING_CODE).is_none());
+        // An added line elsewhere in the same file.
+        let (m, _) = outcome(&root, quote(), &adds(&[("pkg/widgets.py", 8)]));
+        assert_eq!(m.newly_called, 1);
+    }
+
+    #[test]
+    fn a_python_call_that_is_old_in_a_test_unimported_or_a_comment_keeps_the_mark() {
+        let root = python_head("old_caller");
+        for diff in [
+            // The call is on an unchanged line.
+            adds(&[("pkg/caller.py", 3)]),
+            // A pytest file is not the pull request calling the code.
+            adds(&[("pkg/test_caller.py", 4)]),
+            // The name comes from another module.
+            adds(&[("pkg/other.py", 4)]),
+            // The added line only names it in a comment.
+            adds(&[("pkg/limits.py", 4)]),
+            // A line added inside the def that holds the quote.
+            adds(&[("pkg/widgets.py", 5)]),
+            // A line added to another declaration that does not name it.
+            adds(&[("pkg/widgets.py", 1)]),
+        ] {
+            let quote = kept("pkg/widgets.py", "names = [fetch_old(i) for i in items]", 4);
+            let (m, f) = outcome(&root, quote, &diff);
+            assert_eq!(
+                m,
+                Marked {
+                    pre_existing: 1,
+                    newly_called: 0
+                },
+                "{diff}"
+            );
+            assert_eq!(f[PRE_EXISTING_CODE], json!(true));
+        }
     }
 
     #[test]

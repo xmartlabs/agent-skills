@@ -16,7 +16,12 @@ pub const REVIEWER_AGENTS: [(&str, &str); 4] = [
     ("python", "tribunal:py-code-review-expert"),
 ];
 
-/// Ports `lensAgentFor`. The kind is used as a property key, so it goes
+/// The agent a `backend` profile gets when its `language` names one of
+/// these, in place of the backend agent. Not in the workflow.
+pub const LANGUAGE_AGENTS: [(&str, &str); 1] = [("python", "tribunal:py-code-review-expert")];
+
+/// Ports `lensAgentFor`, and then lets a `backend` profile's `language` pick
+/// that language's agent ([`LANGUAGE_AGENTS`]). The kind is used as a property key, so it goes
 /// through `ToString` first: `["frontend"]` routes like `"frontend"`.
 ///
 /// A kind that names an `Object.prototype` member (`"constructor"`,
@@ -30,6 +35,12 @@ pub fn lens_agent_for(profile: &Value) -> Result<&'static str, String> {
         Some(profile)
     };
     let key = js_ext::to_string(kind);
+    if key == "backend" {
+        let language = js::get(profile, "language").and_then(Value::as_str);
+        if let Some(&(_, agent)) = LANGUAGE_AGENTS.iter().find(|(l, _)| Some(*l) == language) {
+            return Ok(agent);
+        }
+    }
     REVIEWER_AGENTS
         .iter()
         .find(|(k, _)| *k == key)
@@ -64,6 +75,30 @@ mod tests {
         assert_eq!(
             lens_agent_for(&json!({"reviewer": "python"})),
             Ok("tribunal:py-code-review-expert")
+        );
+    }
+
+    #[test]
+    fn a_backend_profile_in_python_gets_the_python_reviewer() {
+        assert_eq!(
+            lens_agent_for(&json!({"reviewer": "backend", "language": "python"})),
+            Ok("tribunal:py-code-review-expert")
+        );
+        for language in [
+            json!("typescript"),
+            json!("go"),
+            json!(null),
+            json!(["python"]),
+        ] {
+            assert_eq!(
+                lens_agent_for(&json!({"reviewer": "backend", "language": language})),
+                Ok("tribunal:code-review-expert"),
+                "{language}"
+            );
+        }
+        assert_eq!(
+            lens_agent_for(&json!({"reviewer": "frontend", "language": "python"})),
+            Ok("tribunal:fe-code-review-expert")
         );
     }
 
