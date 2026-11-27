@@ -16,12 +16,15 @@ use tribunal_pipeline::corpus_read::{prompt, read, ReadArgs};
 struct ScriptedAgent {
     answers: HashMap<String, Value>,
     cost: f64,
+    /// How long each dispatch takes, so dispatches overlap.
+    delay_ms: u64,
     calls: Mutex<Vec<DispatchRequest>>,
 }
 
 impl Agent for ScriptedAgent {
     async fn run(&self, req: &DispatchRequest) -> DispatchResult {
         self.calls.lock().unwrap().push(req.clone());
+        tokio::time::sleep(std::time::Duration::from_millis(self.delay_ms)).await;
         let answer = self.answers.get(&req.label).cloned();
         DispatchResult {
             exit: Exit::Code(if answer.is_some() { 0 } else { 1 }),
@@ -135,6 +138,7 @@ fn agent(cost: f64, labels: &[(&str, Value)]) -> ScriptedAgent {
             .map(|(l, v)| ((*l).to_owned(), v.clone()))
             .collect(),
         cost,
+        delay_ms: 0,
         calls: Mutex::new(Vec::new()),
     }
 }
@@ -220,7 +224,7 @@ async fn the_cap_stops_new_dispatches_and_a_second_run_reads_the_rest() {
         ("corpus-read:7:c", answer("defect", LINE.trim())),
         ("corpus-read:8:d", answer("defect", LINE.trim())),
     ];
-    // 0.40 a dispatch against a 1.00 cap: the first is priced at the 0.30
+    // 0.40 a dispatch against a 1.00 cap: the first is priced at the 0.10
     // estimate, the second at the 0.40 seen, and a third would pass 1.00.
     let s = read(
         &agent(0.4, &all),
@@ -320,4 +324,30 @@ fn the_prompt_names_no_language_of_its_own() {
     for part in ["FILE:3", "PIN", "SEEN", "git show FIX", "TEXT"] {
         assert!(prompt(&entry, &item).contains(part), "{part}");
     }
+}
+
+/// Two workers, 0.05 a dispatch, a 0.16 cap. The second worker's first
+/// dispatch does not fit at the 0.10 estimate while the first is running; it
+/// waits, and the real cost leaves room for three dispatches in all.
+#[tokio::test]
+async fn a_worker_over_the_cap_waits_for_running_dispatches_instead_of_stopping() {
+    let (base, repo, input, _) = setup("corpus-read-wait");
+    let all = [
+        ("corpus-read:7:a", answer("defect", LINE.trim())),
+        ("corpus-read:7:b", answer("defect", LINE.trim())),
+        ("corpus-read:7:c", answer("defect", LINE.trim())),
+        ("corpus-read:8:d", answer("defect", LINE.trim())),
+    ];
+    let mut slow = agent(0.05, &all);
+    slow.delay_ms = 200;
+    let s = read(
+        &slow,
+        &Tools::default(),
+        &args(&base, &repo, &input, 0.16, 2),
+    )
+    .await
+    .unwrap();
+    assert_eq!(s["itemsRead"], 3, "{s}");
+    assert_eq!(s["stoppedAtCap"], true);
+    assert_eq!(s["errors"], json!([]));
 }

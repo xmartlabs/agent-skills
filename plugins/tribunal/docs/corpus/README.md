@@ -134,9 +134,13 @@ It needs a local clone of the repository (`--checkout`) whose `origin` is the Gi
 - fetches each pull request's head into a private ref, `refs/tribunal-corpus/pr-<n>`, and any commit
   still missing by its sha. For `line-changed` it follows the commented lines through each later
   commit of the pull request (first parent only), moving them as earlier hunks add or remove lines,
-  and stops at the first commit that changes them;
-- picks, per pull request, the pin where most of its items hold. An item holds at a commit when its
-  file is there, its quoted line is there, and its fix is not already in;
+  and stops at the first commit that changes them. When the commented commit is no longer in the
+  pull request's history (the branch was rebased and force-pushed), the comment is dropped as
+  `history-rewritten`: the rebased copy of that commit would otherwise read as the fix;
+- picks, per pull request, the pin where most of its items hold. An item holds at a commit when the
+  comment was made on that commit or an earlier one, its file and quoted line are there, and its fix
+  is not already in. A pin earlier than the comment could predate what the comment is about, even
+  with the quoted line present;
 - writes one file per pull request, `pr-<owner>-<name>-<n>.json`, with `status: "candidate"`. Items
   that do not hold at the pin go under `skipped`, with the reason.
 
@@ -168,8 +172,9 @@ The answer goes into the item as `proposal`, with the model, the cost and the da
 a line of the file at the pin is marked `quoteFound: false`.
 
 `--max-usd` is required. Before each dispatch the command adds what it has spent, the dispatches still
-running and the next one, priced at the mean cost so far (US$0.30 before the first one ends), and
-starts nothing that would pass the cap. Run it again to continue: items that already have a proposal
+running and the next one, priced at the mean cost so far (US$0.10 before the first one ends), and
+starts nothing that would pass the cap. A dispatch that does not fit waits for the running ones, whose
+real cost may leave room; the cap is reached only when none is running. Run it again to continue: items that already have a proposal
 are skipped. `--concurrency` (4) is how many pull requests are read at once, each in its own worktree.
 Every worktree is removed when the command ends.
 

@@ -332,6 +332,11 @@ impl Repo<'_> {
         from: u64,
         to: u64,
     ) -> Result<String, &'static str> {
+        // After a rebase the commented commit is not in the pull request's
+        // history, and its rewritten copy would read as the first change.
+        if !self.is_ancestor(seen, head).await {
+            return Err("history-rewritten");
+        }
         let log = self
             .git(&[
                 "log",
@@ -421,6 +426,11 @@ struct Item {
 }
 
 async fn holds(repo: &Repo<'_>, pin: &str, it: &Item) -> Result<(), &'static str> {
+    // A pin before the commented commit may predate what the comment is about,
+    // even when the quoted line is already there.
+    if !repo.is_ancestor(&it.seen_at, pin).await {
+        return Err("pin-before-comment");
+    }
     let Some(lines) = repo.lines(pin, &it.c.path).await else {
         return Err("file-missing-at-pin");
     };

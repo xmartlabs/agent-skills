@@ -7,7 +7,9 @@
 //! once, each a detached checkout of one pin shared by that entry's items.
 //! Before each dispatch the spend so far, the dispatches running and the
 //! next one are priced at the mean cost seen (or [`FIRST_ESTIMATE_USD`] before
-//! any), and nothing starts past `max_usd`. A re-run skips items that already
+//! any), and nothing starts past `max_usd`: a worker that does not fit waits
+//! for the running dispatches, and the cap is reached only when none is
+//! running. Worktrees are added and removed one at a time. A re-run skips items that already
 //! carry a proposal.
 
 use std::collections::BTreeMap;
@@ -26,7 +28,7 @@ pub const DEFAULT_MODEL: &str = "claude-sonnet-5-5";
 pub const DEFAULT_EFFORT: &str = "medium";
 pub const DEFAULT_CONCURRENCY: usize = 4;
 /// The price of a dispatch before any has finished.
-pub const FIRST_ESTIMATE_USD: f64 = 0.30;
+pub const FIRST_ESTIMATE_USD: f64 = 0.10;
 const TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 #[derive(Debug, Clone)]
@@ -106,6 +108,14 @@ impl Spend {
             self.spent / self.done as f64
         }
     }
+}
+
+/// What the workers share.
+struct Shared {
+    spend: Mutex<Spend>,
+    tally: Mutex<Tally>,
+    /// Held while a worktree is added or removed.
+    worktrees: tokio::sync::Mutex<()>,
 }
 
 #[derive(Debug, Default)]
@@ -192,8 +202,7 @@ async fn read_entry<A: Agent>(
     args: &ReadArgs,
     path: &Path,
     mut entry: Value,
-    spend: &Mutex<Spend>,
-    tally: &Mutex<Tally>,
+    sh: &Shared,
 ) {
     let pin = s(&entry, "reviewedSha").to_owned();
     let name = path
@@ -206,25 +215,44 @@ async fn read_entry<A: Agent>(
         std::process::id()
     ));
     let wt_s = wt.display().to_string();
-    if let Err(e) = git(
-        tools,
-        &args.checkout,
-        &["worktree", "add", "--quiet", "--detach", &wt_s, &pin],
-    )
-    .await
-    {
-        tally.lock().unwrap().errors.push(format!("{name}: {e}"));
+    // Concurrent `git worktree add` on one repository can read each other's
+    // half-written entries under .git/worktrees.
+    let added = {
+        let _one_at_a_time = sh.worktrees.lock().await;
+        git(
+            tools,
+            &args.checkout,
+            &["worktree", "add", "--quiet", "--detach", &wt_s, &pin],
+        )
+        .await
+    };
+    if let Err(e) = added {
+        sh.tally.lock().unwrap().errors.push(format!("{name}: {e}"));
         return;
     }
     for idx in pending(&entry) {
-        {
-            let mut sp = spend.lock().unwrap();
-            let est = sp.estimate();
-            if sp.stopped || sp.spent + (sp.running as f64 + 1.0) * est > args.max_usd {
-                sp.stopped = true;
-                break;
+        // Over the cap with dispatches still running, wait for them: their
+        // real cost may leave room. With none running, the cap is reached.
+        let admitted = loop {
+            {
+                let mut sp = sh.spend.lock().unwrap();
+                if sp.stopped {
+                    break false;
+                }
+                let est = sp.estimate();
+                if sp.spent + (sp.running as f64 + 1.0) * est <= args.max_usd {
+                    sp.running += 1;
+                    break true;
+                }
+                if sp.running == 0 {
+                    sp.stopped = true;
+                    break false;
+                }
             }
-            sp.running += 1;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        };
+        if !admitted {
+            break;
         }
         let item = entry["knownReal"][idx].clone();
         let mut req = DispatchRequest::new(
@@ -240,13 +268,13 @@ async fn read_entry<A: Agent>(
         let res = agent.run(&req).await;
         let cost = res.output.as_ref().map_or(0.0, |o| o.total_cost_usd);
         {
-            let mut sp = spend.lock().unwrap();
+            let mut sp = sh.spend.lock().unwrap();
             sp.running -= 1;
             sp.spent += cost;
             sp.done += 1;
         }
         let Some(ans) = res.structured().cloned() else {
-            let mut t = tally.lock().unwrap();
+            let mut t = sh.tally.lock().unwrap();
             t.failed += 1;
             t.errors.push(format!(
                 "{name} {}: the dispatch returned no answer ({:?})",
@@ -284,22 +312,25 @@ async fn read_entry<A: Agent>(
             "date": args.date,
         });
         {
-            let mut t = tally.lock().unwrap();
+            let mut t = sh.tally.lock().unwrap();
             t.read += 1;
             *t.verdicts.entry(verdict).or_default() += 1;
         }
         if let Err(e) = write(path, &entry) {
-            tally.lock().unwrap().errors.push(e);
+            sh.tally.lock().unwrap().errors.push(e);
         }
     }
-    if let Err(e) = git(
-        tools,
-        &args.checkout,
-        &["worktree", "remove", "--force", &wt_s],
-    )
-    .await
-    {
-        tally.lock().unwrap().errors.push(format!("{name}: {e}"));
+    let removed = {
+        let _one_at_a_time = sh.worktrees.lock().await;
+        git(
+            tools,
+            &args.checkout,
+            &["worktree", "remove", "--force", &wt_s],
+        )
+        .await
+    };
+    if let Err(e) = removed {
+        sh.tally.lock().unwrap().errors.push(format!("{name}: {e}"));
     }
 }
 
@@ -317,21 +348,24 @@ pub async fn read<A: Agent>(agent: &A, tools: &Tools, args: &ReadArgs) -> Result
         .collect();
     let total: usize = entries.iter().map(|(_, e)| pending(e).len()).sum();
     let queue = Mutex::new(entries);
-    let spend = Mutex::new(Spend::default());
-    let tally = Mutex::new(Tally::default());
+    let sh = Shared {
+        spend: Mutex::new(Spend::default()),
+        tally: Mutex::new(Tally::default()),
+        worktrees: tokio::sync::Mutex::new(()),
+    };
     join_all((0..args.concurrency.max(1)).map(|_| async {
         loop {
-            if spend.lock().unwrap().stopped {
+            if sh.spend.lock().unwrap().stopped {
                 break;
             }
             let next = queue.lock().unwrap().pop();
             let Some((path, entry)) = next else { break };
-            read_entry(agent, tools, args, &path, entry, &spend, &tally).await;
+            read_entry(agent, tools, args, &path, entry, &sh).await;
         }
     }))
     .await;
-    let sp = spend.into_inner().unwrap();
-    let t = tally.into_inner().unwrap();
+    let sp = sh.spend.into_inner().unwrap();
+    let t = sh.tally.into_inner().unwrap();
     Ok(json!({
         "itemsPending": total,
         "itemsRead": t.read,
