@@ -1140,6 +1140,7 @@ dependencies = [
 name = "tribunal-context"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "nix",
  "oxc_allocator",
  "oxc_ast",

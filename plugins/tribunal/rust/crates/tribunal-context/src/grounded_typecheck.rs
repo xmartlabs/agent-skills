@@ -195,7 +195,9 @@ pub async fn run(
 
 /// The teardown of a tree the run made: `git worktree remove --force` for a
 /// worktree, `rm -rf` for a plain clone. Best effort, as in the workflow.
+/// Whatever an agent left running inside the tree is killed first.
 pub async fn remove_tree(tools: &Tools, path: &str, plain_clone: bool, cwd: &Path) {
+    crate::proc::kill_inside(&in_cwd(Some(cwd), path)).await;
     if plain_clone {
         rm_rf(path, Some(cwd));
     } else {
@@ -208,6 +210,34 @@ pub async fn remove_tree(tools: &Tools, path: &str, plain_clone: bool, cwd: &Pat
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn removing_a_tree_kills_what_an_agent_left_running_in_it() {
+        use std::os::unix::process::{CommandExt, ExitStatusExt};
+        let tree = std::env::temp_dir().join(format!(
+            "tribunal-remove-tree-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tree).unwrap();
+        let mut left = std::process::Command::new("sleep")
+            .arg("30")
+            .current_dir(&tree)
+            .process_group(0)
+            .spawn()
+            .unwrap();
+
+        let parent = tree.parent().unwrap().to_path_buf();
+        let name = tree.file_name().unwrap().to_str().unwrap().to_owned();
+        remove_tree(&Tools::default(), &name, true, &parent).await;
+
+        assert!(left.wait().unwrap().signal().is_some());
+        assert!(!tree.exists());
+    }
 
     #[test]
     fn coverage_counts_the_program_and_lists_the_pr_files_in_it() {

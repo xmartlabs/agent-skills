@@ -322,6 +322,7 @@ async fn read_entry<A: Agent>(
     }
     let removed = {
         let _one_at_a_time = sh.worktrees.lock().await;
+        tribunal_context::proc::kill_inside(&wt).await;
         git(
             tools,
             &args.checkout,

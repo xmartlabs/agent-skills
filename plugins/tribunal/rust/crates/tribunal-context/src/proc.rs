@@ -114,6 +114,118 @@ pub async fn kill_tree(pid: u32) {
     }
 }
 
+/// How long [`kill_inside`] waits after SIGTERM before SIGKILL.
+const INSIDE_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Kills every process whose working directory is `dir` or below it, other
+/// than this one, and returns their pids. A tree the run is about to remove
+/// has nothing left to run.
+///
+/// Claude Code starts each Bash command in a process group of its own, so
+/// killing an agent's group misses a command the agent left running, and once
+/// the agent exits that command is reparented to init. Its working directory
+/// is still the checkout the agent started in.
+///
+/// Linux reads `/proc/<pid>/cwd` and macOS asks libproc. Elsewhere, Windows
+/// included, nothing is found.
+pub async fn kill_inside(dir: &Path) -> Vec<u32> {
+    let Ok(root) = std::fs::canonicalize(dir) else {
+        return Vec::new();
+    };
+    let me = std::process::id();
+    let pids: Vec<u32> = cwds()
+        .into_iter()
+        .filter(|(pid, cwd)| *pid != me && cwd.starts_with(&root))
+        .map(|(pid, _)| pid)
+        .collect();
+    if pids.is_empty() {
+        return pids;
+    }
+    signal_all(&pids, false);
+    tokio::time::sleep(INSIDE_GRACE).await;
+    signal_all(&pids, true);
+    pids
+}
+
+#[cfg(unix)]
+fn signal_all(pids: &[u32], hard: bool) {
+    use nix::sys::signal::{kill, Signal};
+    let sig = if hard {
+        Signal::SIGKILL
+    } else {
+        Signal::SIGTERM
+    };
+    for &pid in pids {
+        let _ = kill(nix::unistd::Pid::from_raw(pid as i32), sig);
+    }
+}
+
+#[cfg(not(unix))]
+fn signal_all(_: &[u32], _: bool) {}
+
+#[cfg(target_os = "linux")]
+fn cwds() -> Vec<(u32, PathBuf)> {
+    let Ok(dir) = std::fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    dir.filter_map(Result::ok)
+        .filter_map(|e| {
+            let pid: u32 = e.file_name().to_str()?.parse().ok()?;
+            let cwd = std::fs::read_link(e.path().join("cwd")).ok()?;
+            Some((pid, cwd))
+        })
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+fn cwds() -> Vec<(u32, PathBuf)> {
+    use std::ffi::CStr;
+    use std::os::raw::{c_int, c_void};
+    let n = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
+    if n <= 0 {
+        return Vec::new();
+    }
+    // Room for processes started between the two calls.
+    let mut pids: Vec<c_int> = vec![0; n as usize + 64];
+    let bytes = (pids.len() * std::mem::size_of::<c_int>()) as c_int;
+    let got = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast::<c_void>(), bytes) };
+    if got <= 0 {
+        return Vec::new();
+    }
+    pids.truncate(got as usize);
+    pids.into_iter()
+        .filter(|&pid| pid > 0)
+        .filter_map(|pid| {
+            let mut info: libc::proc_vnodepathinfo = unsafe { std::mem::zeroed() };
+            let size = std::mem::size_of::<libc::proc_vnodepathinfo>() as c_int;
+            let wrote = unsafe {
+                libc::proc_pidinfo(
+                    pid,
+                    libc::PROC_PIDVNODEPATHINFO,
+                    0,
+                    std::ptr::addr_of_mut!(info).cast::<c_void>(),
+                    size,
+                )
+            };
+            if wrote != size {
+                return None;
+            }
+            // `vip_path` is a char[MAXPATHLEN] that libc spells as 32x32.
+            let raw = &info.pvi_cdir.vip_path;
+            let flat = unsafe {
+                std::slice::from_raw_parts(raw.as_ptr().cast::<u8>(), std::mem::size_of_val(raw))
+            };
+            let path = CStr::from_bytes_until_nul(flat).ok()?.to_str().ok()?;
+            (!path.is_empty()).then(|| (pid as u32, PathBuf::from(path)))
+        })
+        .collect()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn cwds() -> Vec<(u32, PathBuf)> {
+    Vec::new()
+}
+
 /// `ln -s target link` for a directory. Windows needs a privilege for a
 /// symlink that a junction does not, so a junction is the fallback there.
 ///
@@ -142,5 +254,66 @@ pub fn link_dir(target: &Path, link: &Path) -> std::io::Result<()> {
         } else {
             Err(std::io::Error::other("mklink /J failed"))
         }
+    }
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod tests {
+    use super::*;
+    use std::os::unix::process::{CommandExt, ExitStatusExt};
+
+    fn scratch(tag: &str) -> PathBuf {
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let p =
+            std::env::temp_dir().join(format!("tribunal-proc-{}-{n}-{tag}", std::process::id()));
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    // Each in a group of its own, as Claude Code starts a Bash command.
+    fn sleeper(cwd: &Path) -> std::process::Child {
+        std::process::Command::new("sleep")
+            .arg("30")
+            .current_dir(cwd)
+            .process_group(0)
+            .spawn()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn kills_what_runs_inside_the_tree_and_nothing_outside() {
+        let tree = scratch("tree");
+        let nested = tree.join("src/deep");
+        std::fs::create_dir_all(&nested).unwrap();
+        let other = scratch("other");
+        let mut at_root = sleeper(&tree);
+        let mut below = sleeper(&nested);
+        let mut outside = sleeper(&other);
+
+        let killed = kill_inside(&tree).await;
+
+        assert!(killed.contains(&at_root.id()), "{killed:?}");
+        assert!(killed.contains(&below.id()), "{killed:?}");
+        assert!(!killed.contains(&outside.id()), "{killed:?}");
+        assert!(at_root.wait().unwrap().signal().is_some());
+        assert!(below.wait().unwrap().signal().is_some());
+        assert!(
+            outside.try_wait().unwrap().is_none(),
+            "outside sleeper died"
+        );
+        outside.kill().unwrap();
+        let _ = outside.wait();
+        let _ = std::fs::remove_dir_all(&tree);
+        let _ = std::fs::remove_dir_all(&other);
+    }
+
+    #[tokio::test]
+    async fn a_missing_tree_kills_nothing() {
+        let gone = scratch("gone");
+        std::fs::remove_dir_all(&gone).unwrap();
+        assert!(kill_inside(&gone).await.is_empty());
     }
 }

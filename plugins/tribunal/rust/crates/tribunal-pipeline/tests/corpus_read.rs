@@ -351,3 +351,45 @@ async fn a_worker_over_the_cap_waits_for_running_dispatches_instead_of_stopping(
     assert_eq!(s["stoppedAtCap"], true);
     assert_eq!(s["errors"], json!([]));
 }
+
+/// Leaves a command running in the worktree it was given, in a process group
+/// of its own, as a reader's Bash call can.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+struct LeavesACommandBehind {
+    inner: ScriptedAgent,
+    left: Mutex<Vec<std::process::Child>>,
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+impl Agent for LeavesACommandBehind {
+    async fn run(&self, req: &DispatchRequest) -> DispatchResult {
+        use std::os::unix::process::CommandExt;
+        let child = Command::new("sleep")
+            .arg("30")
+            .current_dir(&req.cwd)
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        self.left.lock().unwrap().push(child);
+        self.inner.run(req).await
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[tokio::test]
+async fn a_command_a_reader_left_running_dies_with_its_worktree() {
+    use std::os::unix::process::ExitStatusExt;
+    let (base, repo, input, _) = setup("corpus-read-reap");
+    let a = LeavesACommandBehind {
+        inner: agent(0.1, &[("corpus-read:8:d", answer("defect", LINE.trim()))]),
+        left: Mutex::new(Vec::new()),
+    };
+    read(&a, &Tools::default(), &args(&base, &repo, &input, 5.0, 1))
+        .await
+        .unwrap();
+    let left = std::mem::take(&mut *a.left.lock().unwrap());
+    assert!(!left.is_empty());
+    for mut child in left {
+        assert!(child.wait().unwrap().signal().is_some());
+    }
+}
