@@ -72,8 +72,8 @@ PY
 
 ACTION="$HERE/../action.yml" GATE="$HERE/../gate/action.yml"
 assert_ok "there is a gate action" test -f "$GATE"
-SHARED="$(defaults "$ACTION" | grep -E '^(github-token|claude-token|anthropic-api-key|label|paths|once|drafts)=')"
-assert_eq "the action has every shared input" 7 "$(printf '%s\n' "$SHARED" | grep -c .)"
+SHARED="$(defaults "$ACTION" | grep -E '^(github-token|claude-token|anthropic-api-key|label|paths|once|drafts|human-review-check|human-review-on-skip)=')"
+assert_eq "the action has every shared input" 9 "$(printf '%s\n' "$SHARED" | grep -c .)"
 assert_eq "the gate takes the action's shared inputs, with the same defaults" "$SHARED" "$(defaults "$GATE" 2>/dev/null)"
 assert_eq "paths defaults to any file" "paths=''" "$(printf '%s\n' "$SHARED" | grep '^paths=')"
 assert_eq "once defaults to true" "once='true'" "$(printf '%s\n' "$SHARED" | grep '^once=')"
@@ -86,14 +86,15 @@ gate_env() {
 }
 assert_eq "the gate computes the credential as the action does" \
   "$(gate_env "$ACTION" | grep '^HAS_CLAUDE_AUTH:')" "$(gate_env "$GATE" | grep '^HAS_CLAUDE_AUTH:')"
-for v in GH_TOKEN INPUT_LABEL INPUT_PATHS INPUT_ONCE INPUT_DRAFTS; do
+assert_eq "carry is the skipped-commit default" "human-review-on-skip='carry'" "$(printf '%s\n' "$SHARED" | grep '^human-review-on-skip=')"
+for v in GH_TOKEN INPUT_LABEL INPUT_PATHS INPUT_ONCE INPUT_DRAFTS INPUT_HUMAN_REVIEW_CHECK INPUT_HUMAN_REVIEW_ON_SKIP; do
   assert_ok "the action's gate step gets $v" grep -q "^$v: \${{ inputs\." <(gate_env "$ACTION")
   assert_eq "the gate action passes $v as the action does" \
     "$(gate_env "$ACTION" | grep "^$v:")" "$(gate_env "$GATE" | grep "^$v:")"
 done
 
 # Structured settings are supplied only to trusted setup; review uses saved validated args.
-for input in tribunal-version verdict review-mode codex openai-api-key codex-model bot-comments findings-check model effort concurrency max-panels max-agents max-output-tokens prior-verify lens-samples; do
+for input in tribunal-version verdict review-mode codex openai-api-key codex-model bot-comments findings-check human-review-check human-review-on-skip model effort concurrency max-panels max-agents max-output-tokens prior-verify lens-samples; do
   env_name="INPUT_$(printf '%s' "$input" | tr '[:lower:]-' '[:upper:]_')"
   assert_ok "the action declares $input" grep -q "^  $input:" "$ACTION"
   assert_ok "setup receives $input" grep -qF "$env_name: \${{ inputs.$input }}" "$ACTION"
@@ -114,6 +115,9 @@ assert_eq "lens samples inherit the engine default" "lens-samples=''" "$(default
 assert_eq "the findings check is off by default" "findings-check='off'" "$(defaults "$ACTION" | grep '^findings-check=')"
 assert_ok "the findings check follows a successful post only, and not when off" \
   grep -qF "if: steps.gate.outputs.run == 'true' && steps.post.outcome == 'success' && inputs.findings-check != 'off'" "$ACTION"
+assert_ok "an engine skip gets the human review status, even after a failed post" \
+  grep -qF "if: \${{ !cancelled() && steps.gate.outputs.run == 'true' && steps.review.outcome == 'success' && inputs.human-review-check == 'on' }}" "$ACTION"
+assert_ok "the engine-skip status is wired" grep -qF 'run: bash "$GITHUB_ACTION_PATH/run.sh" human-review-skip' "$ACTION"
 assert_ok "the findings check is wired" grep -qF 'run: bash "$GITHUB_ACTION_PATH/run.sh" findings-check' "$ACTION"
 assert_ok "the action outputs the blocking count" grep -qF 'value: ${{ steps.findings.outputs.blocking }}' "$ACTION"
 assert_ok "the action outputs the should-fix count" grep -qF 'value: ${{ steps.findings.outputs.should-fix }}' "$ACTION"

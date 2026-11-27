@@ -20,10 +20,17 @@ SOURCE_REPO = "xmartlabs/agent-skills"
 MIN_VERSION = (115, 2, 0)
 # The first engine that keeps conventions-token out of the reviewers' environment.
 MIN_CONVENTIONS_TOKEN_VERSION = (115, 4, 0)
+# The first engine that writes `needsHuman` into run.json.
+MIN_NEEDS_HUMAN_VERSION = (115, 9, 0)
 REVIEWERS = ("frontend", "backend", "python", "e2e")
 RESTORE_RUN_LIMIT = 30  # newest runs of this workflow on the PR branch to search for a baseline
 NUMBERS = ("concurrency", "max-panels", "max-agents", "max-output-tokens", "prior-verify", "lens-samples")
 CHECK_NAME = "Tribunal findings"
+HUMAN_CHECK_NAME = "Tribunal human review"
+HUMAN_SKIP_MODES = ("carry", "success", "pending")
+NOT_REVIEWED = "Not reviewed by Tribunal"
+# The legacy `permission` values that may clear the human review status (maintain reads as write).
+WRITE_PERMISSIONS = ("admin", "maintain", "write")
 # The engine's `questions::BLOCKING_WORTH`: a finding kept from blocking at this worth or more is
 # reported under "Should fix (not blocking)".
 SHOULD_FIX_WORTH = 4
@@ -52,6 +59,8 @@ def validate():
         ("codex", ("true", "false"), "false"),
         ("bot-comments", ("true", "false"), "false"),
         ("findings-check", ("off", "inform", "enforce"), "off"),
+        ("human-review-check", ("off", "on"), "off"),
+        ("human-review-on-skip", HUMAN_SKIP_MODES, "carry"),
         ("effort", ("", "low", "medium", "high", "max"), ""),
     ):
         if setting(name, default) not in choices:
@@ -66,6 +75,8 @@ def validate():
             raise ValueError(f"{name} must be a model identifier, not command-line arguments")
     if setting("codex", "false") == "true" and not setting("openai-api-key"):
         raise ValueError("codex: true requires openai-api-key")
+    if setting("needs-human-label") and setting("needs-human-label") == setting("label", "tribunal"):
+        raise ValueError("needs-human-label must differ from label")
 
 
 def review_args():
@@ -187,6 +198,10 @@ def resolve(job, action):
     version = manifest["version"]
     if os.environ.get("HAS_CONVENTIONS_TOKEN") == "true" and semver(version) < MIN_CONVENTIONS_TOKEN_VERSION:
         raise ValueError(f"conventions-token needs Tribunal 115.4.0 or newer, and this run selected {version}; an older engine would ignore it and pass it to the reviewers")
+    needs_human = [name for name, on in (("needs-human-label", bool(setting("needs-human-label"))), ("human-review-check", setting("human-review-check") == "on")) if on]
+    if needs_human and semver(version) < MIN_NEEDS_HUMAN_VERSION:
+        names = ", ".join(needs_human)
+        raise ValueError(f"{names} {'needs' if len(needs_human) == 1 else 'need'} Tribunal 115.9.0 or later, and this run selected {version}")
     semver(version)
     if selected_version is not None and version != selected_version:
         raise ValueError("selected freeze does not contain the requested plugin version")
@@ -431,14 +446,36 @@ def open_findings(run, prior_row=None):
     return found
 
 
+def needs_human(job):
+    """True when the review raised needsHuman, False when it did not, None when it cannot be told.
+
+    None covers no run.json, an engine skip and an engine older than 115.9.0 (no `needsHuman` key).
+    """
+    path = job / "run.json"
+    if not path.is_file():
+        return None
+    run = read(path)
+    if not isinstance(run, dict) or run.get("skipped") or not isinstance(run.get("needsHuman"), dict):
+        return None
+    return run["needsHuman"].get("raised") is True
+
+
+def needs_human_reasons(job):
+    reasons = read(job / "run.json")["needsHuman"].get("reasons") or []
+    return [f"- {r.get('detail')} ({r.get('signal')})" for r in reasons if isinstance(r, dict)]
+
+
 def post_state(job):
     """The `tribunal post --verdict` value for the job's `verdict`, or None to post the engine's own.
 
     `no-approve` posts a change request when the engine asks for one and a comment otherwise, so
-    the action never approves however clean the review is.
+    the action never approves however clean the review is. `suggested` posts the engine's own
+    verdict, except that an approval becomes a comment while the review needs a human.
     """
     mode = (job / "verdict").read_text().strip()
     if mode == "suggested":
+        if needs_human(job) is True and read(job / "run.json").get("verdict") == "APPROVE":
+            return "comment"
         return None
     if mode == "no-approve" and read(job / "run.json").get("verdict") == "REQUEST CHANGES":
         return "request-changes"
@@ -485,6 +522,219 @@ def findings_check(job):
     return status, "\n".join(lines) + "\n", blocking, should_fix
 
 
+def human_review_status(job):
+    """The "Tribunal human review" commit status for the reviewed head.
+
+    Pending while the review raised needsHuman, success when it did not. A raised flag is cleared
+    at once, as an approval would clear it, when a person who may clear it already approved the
+    head (an approval given while the review ran). Raises ValueError when the run cannot say (no
+    run.json, an engine skip, an engine older than 115.9.0) or the head moved.
+    """
+    if not (job / "run.json").is_file():
+        raise ValueError("no review ran (no run.json)")
+    raised = needs_human(job)
+    if raised is None:
+        raise ValueError("the engine skipped the review or is older than 115.9.0: it does not say whether a person should look at it")
+    run = read(job / "run.json")
+    pr = event()
+    head = pr["head"]["sha"]
+    if run.get("metrics", {}).get("headSha") != head:
+        raise ValueError("reviewed HEAD differs from the triggering event")
+    repo = os.environ["GITHUB_REPOSITORY"]
+    run_url = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{repo}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+    if raised:
+        approver = earlier_approver(repo, pr["number"], head)
+        if approver:
+            state, description = "success", f"Cleared by @{approver}'s approval"
+        else:
+            signals = ", ".join(str(r.get("signal")) for r in run["needsHuman"].get("reasons") or [] if isinstance(r, dict))
+            state, description = "pending", f"A person should review: {signals}"
+    else:
+        state, description = "success", "No reason for a human review"
+    return {"context": HUMAN_CHECK_NAME, "target_url": run_url, "state": state, "description": description[:140]}
+
+
+def carried_human_review(statuses_by_sha):
+    """The state and description `carry` gives a commit Tribunal did not review.
+
+    `statuses_by_sha` is the candidate commits in the order to try them: (sha, statuses) pairs, or
+    (sha, statuses, True) for the commit the action's latest review read. Each commit's statuses are
+    the latest per context (the combined status). The first candidate with a "Tribunal human
+    review" status gives it, a status carried before keeping the commit it first came from. A
+    reviewed commit without one gives pending: its status may not be posted yet. Without any, the
+    commit gets success.
+    """
+    for sha, statuses, *reviewed in statuses_by_sha:
+        found = next((s for s in statuses if isinstance(s, dict) and s.get("context") == HUMAN_CHECK_NAME), None)
+        if found is None or found.get("state") not in ("pending", "success", "failure", "error"):
+            if reviewed and reviewed[0]:
+                return {"state": "pending", "description": f"Reviewed at {sha[:7]}; human review status not posted yet"}
+            continue
+        description = str(found.get("description") or "")
+        if not re.match(r"Carried from [0-9a-f]{7}: ", description):
+            description = f"Carried from {sha[:7]}: {description}"
+        return {"state": found["state"], "description": description[:140]}
+    return {"state": "success", "description": NOT_REVIEWED}
+
+
+def pr_reviews(repo, number):
+    """The pull request's reviews, oldest first: the listing the gate's `once` reads too."""
+    listed = call("gh", "api", "--paginate", f"repos/{repo}/pulls/{number}/reviews?per_page=100", "--jq", ".[] | tojson")
+    return [r for r in (json.loads(line) for line in listed.splitlines() if line.strip()) if isinstance(r, dict)]
+
+
+def latest_own_review_commit(repo, number):
+    """The commit the action's latest own review read (the reviews the gate's `once` counts), or None."""
+    logins = own_logins()
+    commit = None
+    for review in pr_reviews(repo, number):
+        if ((review.get("user") or {}).get("login") in logins
+                and "<sub>tribunal v" in (review.get("body") or "") and review.get("commit_id")):
+            commit = review["commit_id"]
+    return commit
+
+
+def combined_statuses(repo, sha):
+    """A commit's combined status: the latest status of each context, every page of it.
+
+    GitHub pages the combined status's `statuses` (30 by default, at most 100), so a commit with
+    more contexts than one page holds is read page by page until `total_count` are in.
+    """
+    statuses, page = [], 1
+    while True:
+        listed = json.loads(api(f"repos/{repo}/commits/{sha}/status?per_page=100&page={page}"))
+        if not isinstance(listed, dict) or not isinstance(listed.get("statuses"), list):
+            return statuses
+        statuses += listed["statuses"]
+        total = listed.get("total_count")
+        if not listed["statuses"] or not isinstance(total, int) or len(statuses) >= total:
+            return statuses
+        page += 1
+
+
+def approval_refusal(repo, review, head, logins):
+    """Why `review` cannot clear the human review status of `head`, or None when it can.
+
+    It can when it is an approval of `head` by a user who is not a bot, not one of the action's own
+    `logins`, and has write, maintain or admin access. A permission that cannot be read counts as
+    no write access.
+    """
+    user = review.get("user") if isinstance(review.get("user"), dict) else {}
+    login, commit, state = user.get("login") or "", review.get("commit_id") or "", str(review.get("state") or "")
+    if state.lower() != "approved":
+        return f"the review is {state or 'without a state'}, not an approval"
+    if not login:
+        return "the review has no author"
+    if user.get("type") == "Bot":
+        return f"@{login} is a bot"
+    if not head or commit != head:
+        return f"the approval is of {commit[:7] or 'an unknown commit'}, not the head {head[:7]}"
+    if login in logins:
+        return f"@{login} is the action's own identity"
+    try:
+        path = f"repos/{repo}/collaborators/{urllib.parse.quote(login, safe='')}/permission"
+        permission = call("gh", "api", path, "--jq", ".permission").strip()
+    except ValueError:
+        return f"could not read @{login}'s permission"
+    if permission not in WRITE_PERMISSIONS:
+        return f"@{login} has {permission or 'no'} access, not write"
+    return None
+
+
+def earlier_approver(repo, number, head):
+    """The login of a person whose approval of `head`, already on the pull request, clears the flag.
+
+    Each user's latest approval, change request or dismissal counts, so an approval its author
+    later took back does not. None when there is none, or the reviews cannot be read (the status
+    then stays pending, the safe side).
+    """
+    try:
+        reviews = pr_reviews(repo, number)
+    except ValueError as error:
+        print(f"tribunal: could not list the reviews for an earlier approval: {error}", file=sys.stderr)
+        return None
+    latest = {}
+    for review in reviews:
+        login = (review.get("user") or {}).get("login") if isinstance(review.get("user"), dict) else None
+        if login and str(review.get("state") or "").upper() in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED"):
+            latest[login] = review
+    if not latest:
+        return None
+    logins = own_logins()
+    for login, review in latest.items():
+        if approval_refusal(repo, review, head, logins) is None:
+            return login
+    return None
+
+
+def human_review_approval_status():
+    """The "Tribunal human review" status a `pull_request_review` event clears, or why it does not.
+
+    Returns (status, None) when a `submitted` review passes `approval_refusal` while the head's
+    newest human review status is pending, else (None, reason). An absent status is not cleared: a
+    review that failed must not be cleared blind.
+    """
+    repo, payload = os.environ["GITHUB_REPOSITORY"], read(os.environ["GITHUB_EVENT_PATH"])
+    if payload.get("action") != "submitted":
+        return None, f"the review event is {payload.get('action') or 'without an action'}, not submitted"
+    review = payload.get("review") if isinstance(payload.get("review"), dict) else {}
+    pr = payload.get("pull_request") if isinstance(payload.get("pull_request"), dict) else {}
+    head = (pr.get("head") or {}).get("sha") or ""
+    reason = approval_refusal(repo, review, head, own_logins())
+    if reason:
+        return None, reason
+    found = next((s for s in combined_statuses(repo, head)
+                  if isinstance(s, dict) and s.get("context") == HUMAN_CHECK_NAME), None)
+    if found is None or found.get("state") != "pending":
+        current = found.get("state") if found else "none"
+        return None, f"the head's {HUMAN_CHECK_NAME} status is {current}, not pending"
+    login = review["user"]["login"]
+    run_url = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{repo}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+    return {"context": HUMAN_CHECK_NAME, "target_url": run_url, "state": "success",
+            "description": f"Cleared by @{login}'s approval"[:140]}, None
+
+
+def human_review_skip_status():
+    """The "Tribunal human review" status for the event's head, which Tribunal did not review.
+
+    None when the head already has one: an event that did not change the head (an edit, a reopen)
+    must not replace the status a review or an approval left on it. `carry` looks, in order, at the
+    previous head of a push (still readable after a force-push), the commit the action's latest
+    review read, and the pull request's earlier commits, newest first.
+    """
+    mode = setting("human-review-on-skip", "carry")
+    if mode not in HUMAN_SKIP_MODES:
+        raise ValueError(f"human-review-on-skip must be one of {', '.join(repr(m) for m in HUMAN_SKIP_MODES)}")
+    repo, payload = os.environ["GITHUB_REPOSITORY"], read(os.environ["GITHUB_EVENT_PATH"])
+    pr = payload["pull_request"]
+    head = pr["head"]["sha"]
+
+    def statuses(sha):
+        return combined_statuses(repo, sha)
+
+    if any(isinstance(s, dict) and s.get("context") == HUMAN_CHECK_NAME for s in statuses(head)):
+        return None
+    if mode == "success":
+        state = {"state": "success", "description": NOT_REVIEWED}
+    elif mode == "pending":
+        state = {"state": "pending", "description": f"{NOT_REVIEWED}; a person should review"}
+    else:
+        def candidates():
+            before = payload.get("before")
+            if payload.get("action") == "synchronize" and isinstance(before, str) and before and before != head:
+                yield before, statuses(before)
+            reviewed = latest_own_review_commit(repo, pr["number"])
+            if reviewed:
+                yield reviewed, statuses(reviewed), True
+            shas = call("gh", "api", "--paginate", f"repos/{repo}/pulls/{pr['number']}/commits", "--jq", ".[].sha").split()
+            for sha in reversed(shas):
+                if sha != head:
+                    yield sha, statuses(sha)
+        state = carried_human_review(candidates())
+    run_url = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{repo}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+    return {"context": HUMAN_CHECK_NAME, "target_url": run_url, **state}
+
+
 def main():
     command = sys.argv[1]
     job = Path(os.environ["RUNNER_TEMP"]) / "tribunal"
@@ -507,6 +757,38 @@ def main():
         with open(os.environ.get("GITHUB_OUTPUT", os.devnull), "a") as outputs:
             outputs.write(f"blocking={'' if blocking is None else blocking}\nshould-fix={'' if should_fix is None else should_fix}\n")
         print(f"{status['state']}: {status['description']}")
+    elif command == "human-review-check":
+        status = human_review_status(job)
+        write(job / "human-status.json", status)
+        print(f"{status['state']}: {status['description']}")
+    elif command == "human-review-skip":
+        (job / "human-status.json").unlink(missing_ok=True)
+        status = human_review_skip_status()
+        if status is None:
+            print(f"left as it is: the head already has a {HUMAN_CHECK_NAME} status")
+        else:
+            write(job / "human-status.json", status)
+            print(f"{status['state']}: {status['description']}")
+    elif command == "human-review-approve":
+        (job / "human-status.json").unlink(missing_ok=True)
+        status, reason = human_review_approval_status()
+        if status is None:
+            print(f"not cleared: {reason}")
+        else:
+            write(job / "human-status.json", status)
+            print(f"{status['state']}: {status['description']}")
+    elif command == "needs-human":
+        flag = None
+        (job / "needs-human.md").unlink(missing_ok=True)
+        try:
+            flag = needs_human(job)
+            if flag:
+                (job / "needs-human.md").write_text("\n".join(needs_human_reasons(job)) + "\n")
+        except (OSError, ValueError) as error:
+            flag = None
+            print(f"needs-human: {error}", file=sys.stderr)
+        with open(os.environ.get("GITHUB_OUTPUT", os.devnull), "a") as outputs:
+            outputs.write(f"needs-human={'' if flag is None else str(flag).lower()}\n")
     elif command == "post-state":
         print(post_state(job) or "")
     elif command == "check-head":

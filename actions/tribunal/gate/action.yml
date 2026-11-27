@@ -6,7 +6,10 @@ author: Xmartlabs
 
 inputs:
   github-token:
-    description: Token for reading the pull request's files and reviews.
+    description: >-
+      Token for reading the pull request's files and reviews, and, with `human-review-check: on`,
+      for setting the human review status on a commit it skips (the job then needs
+      `statuses: write`).
     default: ${{ github.token }}
   claude-token:
     description: >-
@@ -28,11 +31,24 @@ inputs:
   drafts:
     description: Same as the tribunal action's input.
     default: 'false'
+  human-review-check:
+    description: >-
+      Same as the tribunal action's input. When `on`, a commit the gate skips gets the
+      "Tribunal human review" status `human-review-on-skip` says.
+    default: 'off'
+  human-review-on-skip:
+    description: Same as the tribunal action's input.
+    default: 'carry'
 
 outputs:
   run:
     description: '`true` when the tribunal action would review.'
     value: ${{ steps.gate.outputs.run }}
+  approval:
+    description: >-
+      `true` on a `pull_request_review` event with `human-review-check: on`: the tribunal action
+      would check whether the approval clears the "Tribunal human review" status. Empty otherwise.
+    value: ${{ steps.gate.outputs.approval }}
 
 runs:
   using: composite
@@ -46,4 +62,6 @@ runs:
         INPUT_PATHS: ${{ inputs.paths }}
         INPUT_ONCE: ${{ inputs.once }}
         INPUT_DRAFTS: ${{ inputs.drafts }}
+        INPUT_HUMAN_REVIEW_CHECK: ${{ inputs.human-review-check }}
+        INPUT_HUMAN_REVIEW_ON_SKIP: ${{ inputs.human-review-on-skip }}
       run: bash "$GITHUB_ACTION_PATH/../run.sh" gate

@@ -205,6 +205,26 @@ class RuntimeTests(unittest.TestCase):
         with patch.dict(os.environ, {"HAS_CONVENTIONS_TOKEN": "true"}):
             runtime.resolve(self.job, action)
 
+    def test_needs_human_inputs_require_115_9(self):
+        action = self.bundled_checkout(Path(self.temp.name) / "wrapper")
+        manifest = action.parent.parent / "plugins/tribunal/.claude-plugin/plugin.json"
+        manifest.write_text(json.dumps({"version": "115.8.0"}))
+        both = "needs-human-label, human-review-check need Tribunal 115.9.0 or later"
+        with patch.dict(os.environ, {"INPUT_NEEDS_HUMAN_LABEL": "needs-human-review", "INPUT_HUMAN_REVIEW_CHECK": "on"}):
+            with self.assertRaisesRegex(ValueError, both):
+                runtime.resolve(self.job, action)
+        with patch.dict(os.environ, {"INPUT_NEEDS_HUMAN_LABEL": "needs-human-review", "INPUT_HUMAN_REVIEW_CHECK": "off"}):
+            with self.assertRaisesRegex(ValueError, "^needs-human-label needs Tribunal 115.9.0 or later"):
+                runtime.resolve(self.job, action)
+        with patch.dict(os.environ, {"INPUT_NEEDS_HUMAN_LABEL": "", "INPUT_HUMAN_REVIEW_CHECK": "on"}):
+            with self.assertRaisesRegex(ValueError, "^human-review-check needs Tribunal 115.9.0 or later"):
+                runtime.resolve(self.job, action)
+        with patch.dict(os.environ, {"INPUT_NEEDS_HUMAN_LABEL": "", "INPUT_HUMAN_REVIEW_CHECK": "off"}):
+            runtime.resolve(self.job, action)
+        manifest.write_text(json.dumps({"version": "115.9.0"}))
+        with patch.dict(os.environ, {"INPUT_NEEDS_HUMAN_LABEL": "needs-human-review", "INPUT_HUMAN_REVIEW_CHECK": "on"}):
+            runtime.resolve(self.job, action)
+
     def test_missing_freeze_never_falls_back_to_bundled(self):
         with patch.dict(os.environ, {"INPUT_TRIBUNAL_VERSION": "115.3.0"}), patch.object(runtime, "api_json", side_effect=ValueError("missing freeze")), self.assertRaisesRegex(ValueError, "missing freeze"):
             runtime.resolve(self.job, Path(__file__).resolve().parents[1])
@@ -346,6 +366,157 @@ class RuntimeTests(unittest.TestCase):
                 runtime.write(self.job / "run.json", {"verdict": verdict})
                 self.assertEqual(expected, runtime.post_state(self.job))
         with patch.dict(os.environ, {"INPUT_VERDICT": "no-approve"}):
+            runtime.validate()
+
+    def test_needs_human_reads_run_json(self):
+        raised = {"needsHuman": {"raised": True, "reasons": [{"signal": "panel-cut", "detail": "the panel was cut"}]}}
+        for name, run, expected in (
+            ("raised", raised, True),
+            ("not raised", {"needsHuman": {"raised": False, "reasons": []}}, False),
+            ("older engine", {}, None),
+            ("skipped", {"skipped": True, "reason": "draft"}, None),
+            ("no file", None, None),
+        ):
+            with self.subTest(name):
+                (self.job / "run.json").unlink(missing_ok=True)
+                if run is not None:
+                    runtime.write(self.job / "run.json", run)
+                self.assertEqual(expected, runtime.needs_human(self.job))
+
+    def test_suggested_never_approves_while_raised(self):
+        (self.job / "verdict").write_text("suggested\n")
+        for verdict, raised, expected in (
+            ("APPROVE", True, "comment"),
+            ("APPROVE", False, None),
+            ("REQUEST CHANGES", True, None),
+        ):
+            with self.subTest(verdict=verdict, raised=raised):
+                runtime.write(self.job / "run.json", {"verdict": verdict, "needsHuman": {"raised": raised, "reasons": []}})
+                self.assertEqual(expected, runtime.post_state(self.job))
+        runtime.write(self.job / "run.json", {"verdict": "APPROVE"})
+        self.assertIsNone(runtime.post_state(self.job))
+
+    def human_run(self, raised, reasons=(), head="a" * 40, reviews=()):
+        """A run.json; the pull request's reviews are `reviews`, and every author has write access."""
+        runtime.write(self.job / "run.json", {"metrics": {"headSha": head}, "needsHuman": {"raised": raised, "reasons": list(reasons)}})
+        for name, value in (("pr_reviews", list(reviews)), ("own_logins", ["github-actions[bot]"])):
+            stub = patch.object(runtime, name, return_value=value)
+            stub.start()
+            self.addCleanup(stub.stop)
+        stub = patch.object(runtime, "call", return_value="write\n")
+        stub.start()
+        self.addCleanup(stub.stop)
+
+    @staticmethod
+    def approval(login="dev", state="APPROVED", commit="a" * 40, user_type="User"):
+        return {"user": {"login": login, "type": user_type}, "state": state, "commit_id": commit}
+
+    def test_human_review_status_counts_an_earlier_approval(self):
+        self.human_run(True, [{"signal": "panel-cut", "detail": "x"}], reviews=[self.approval()])
+        status = runtime.human_review_status(self.job)
+        self.assertEqual(("success", "Cleared by @dev's approval"), (status["state"], status["description"]))
+        runtime.call.assert_called_once_with("gh", "api", "repos/acme/web-app/collaborators/dev/permission", "--jq", ".permission")
+
+    def test_human_review_status_ignores_approvals_that_cannot_clear(self):
+        for reviews in ([self.approval(commit="e" * 40)], [self.approval(user_type="Bot")],
+                        [self.approval(login="github-actions[bot]")], [self.approval(state="COMMENTED")],
+                        [self.approval(), self.approval(state="CHANGES_REQUESTED")]):
+            with self.subTest(reviews=reviews):
+                self.human_run(True, [{"signal": "panel-cut", "detail": "x"}], reviews=reviews)
+                self.assertEqual("pending", runtime.human_review_status(self.job)["state"])
+
+    def test_human_review_status_ignores_an_approval_below_write(self):
+        self.human_run(True, [{"signal": "panel-cut", "detail": "x"}], reviews=[self.approval()])
+        runtime.call.return_value = "read\n"
+        self.assertEqual("pending", runtime.human_review_status(self.job)["state"])
+
+    def test_human_review_status_names_an_engine_skip(self):
+        runtime.write(self.job / "run.json", {"skipped": True, "reason": "deployment pull request"})
+        with self.assertRaisesRegex(ValueError, "engine skipped"):
+            runtime.human_review_status(self.job)
+        (self.job / "run.json").unlink()
+        with self.assertRaisesRegex(ValueError, "no review ran"):
+            runtime.human_review_status(self.job)
+
+    def test_combined_statuses_reads_every_page(self):
+        statuses = [{"context": f"ci/{i}", "state": "success"} for i in range(130)]
+        asked = []
+
+        def api(path):
+            asked.append(path)
+            page = int(path.rsplit("page=", 1)[1])
+            return json.dumps({"total_count": len(statuses), "statuses": statuses[(page - 1) * 100:page * 100]})
+
+        with patch.object(runtime, "api", side_effect=api):
+            self.assertEqual(statuses, runtime.combined_statuses("acme/web-app", "a" * 40))
+        self.assertEqual([f"repos/acme/web-app/commits/{'a' * 40}/status?per_page=100&page={n}" for n in (1, 2)], asked)
+
+    def test_human_review_status_pending_when_raised(self):
+        self.human_run(True, [{"signal": "panel-cut", "detail": "x"}, {"signal": "lens-empty", "detail": "y"}])
+        with patch.dict(os.environ, {"GITHUB_SERVER_URL": "https://github.com"}):
+            status = runtime.human_review_status(self.job)
+        self.assertEqual({"context": "Tribunal human review", "target_url": "https://github.com/acme/web-app/actions/runs/8", "state": "pending", "description": "A person should review: panel-cut, lens-empty"}, status)
+
+    def test_human_review_status_success_when_quiet(self):
+        self.human_run(False)
+        status = runtime.human_review_status(self.job)
+        self.assertEqual(("success", "No reason for a human review"), (status["state"], status["description"]))
+
+    def test_human_review_status_description_fits_github_limit(self):
+        self.human_run(True, [{"signal": "s" * 30, "detail": "x"} for _ in range(8)])
+        self.assertEqual(140, len(runtime.human_review_status(self.job)["description"]))
+
+    def test_human_review_status_refuses_a_moved_head(self):
+        self.human_run(True, [{"signal": "panel-cut", "detail": "x"}], head="e" * 40)
+        with self.assertRaises(ValueError):
+            runtime.human_review_status(self.job)
+
+    def test_human_review_status_refuses_an_old_engine(self):
+        runtime.write(self.job / "run.json", {"metrics": {"headSha": "a" * 40}})
+        with self.assertRaises(ValueError):
+            runtime.human_review_status(self.job)
+
+    @staticmethod
+    def human_status(state, description, context="Tribunal human review"):
+        return {"context": context, "state": state, "description": description}
+
+    def test_carry_takes_the_newest_earlier_status(self):
+        history = [
+            ("c" * 40, [self.human_status("success", "x", context="Tribunal findings")]),
+            ("d" * 40, [self.human_status("pending", "A person should review: panel-cut"), self.human_status("success", "No reason for a human review")]),
+            ("e" * 40, [self.human_status("success", "No reason for a human review")]),
+        ]
+        self.assertEqual({"state": "pending", "description": "Carried from ddddddd: A person should review: panel-cut"}, runtime.carried_human_review(history))
+
+    def test_carry_without_history_is_success(self):
+        self.assertEqual({"state": "success", "description": "Not reviewed by Tribunal"}, runtime.carried_human_review([]))
+        only_other = [("c" * 40, [self.human_status("failure", "2 blocking", context="Tribunal findings")])]
+        self.assertEqual({"state": "success", "description": "Not reviewed by Tribunal"}, runtime.carried_human_review(only_other))
+
+    def test_carry_cleared_status_carries_success(self):
+        cleared = [("d" * 40, [self.human_status("success", "Cleared by dev's approval"), self.human_status("pending", "A person should review: panel-cut")])]
+        self.assertEqual({"state": "success", "description": "Carried from ddddddd: Cleared by dev's approval"}, runtime.carried_human_review(cleared))
+
+    def test_carry_reviewed_commit_without_status_is_pending(self):
+        history = [("b" * 40, []), ("d" * 40, [], True), ("e" * 40, [self.human_status("success", "No reason for a human review")])]
+        self.assertEqual({"state": "pending", "description": "Reviewed at ddddddd; human review status not posted yet"}, runtime.carried_human_review(history))
+
+    def test_carry_order_follows_the_candidates(self):
+        history = [("b" * 40, [self.human_status("pending", "A person should review: panel-cut")]), ("d" * 40, [self.human_status("success", "x")], True)]
+        self.assertEqual("Carried from bbbbbbb: A person should review: panel-cut", runtime.carried_human_review(history)["description"])
+
+    def test_carry_keeps_the_first_origin_and_fits_github_limit(self):
+        carried = [("d" * 40, [self.human_status("pending", "Carried from ccccccc: A person should review: panel-cut")])]
+        self.assertEqual("Carried from ccccccc: A person should review: panel-cut", runtime.carried_human_review(carried)["description"])
+        long = [("d" * 40, [self.human_status("pending", "s" * 200)])]
+        self.assertEqual(140, len(runtime.carried_human_review(long)["description"]))
+
+    def test_human_review_on_skip_mode_is_validated(self):
+        with patch.dict(os.environ, {"INPUT_HUMAN_REVIEW_ON_SKIP": "fail"}), self.assertRaises(ValueError):
+            runtime.validate()
+
+    def test_human_review_check_mode_is_validated(self):
+        with patch.dict(os.environ, {"INPUT_HUMAN_REVIEW_CHECK": "maybe"}), self.assertRaises(ValueError):
             runtime.validate()
 
     def test_findings_check_mode_is_validated(self):

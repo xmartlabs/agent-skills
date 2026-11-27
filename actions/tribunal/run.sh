@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run.sh gate|node-check|validate|prepare|restore|review|post|findings-check|baseline|fallback|summary|cleanup — the steps of the tribunal action.
+# run.sh gate|node-check|validate|prepare|restore|review|post|findings-check|human-review-check|human-review-skip|human-review-approve|needs-human|needs-human-label|baseline|fallback|summary|cleanup — the steps of the tribunal action.
 #
 # Each step is a subcommand so it can be tested on its own. Everything a run writes lives in one
 # job directory under RUNNER_TEMP: HOME (Claude's config and the homosapiens skill), TMPDIR (the
@@ -85,6 +85,12 @@ public_repo() { [ "$(event repository.private)" != true ]; }
 
 cmd_gate() {
   decide() { log "gate: $1"; out run "$2"; }
+  # A commit the gate will not review still gets its human review status, unless the event is a
+  # label change: the head did not move, and the status already on it stands.
+  skip() {
+    decide "$1" false
+    case "$(event action)" in labeled|unlabeled) ;; *) cmd_human_review_skip ;; esac
+  }
   if public_repo; then
     out public true
     log "gate: public repository (or visibility unknown): no review artifacts and no report in the job summary"
@@ -94,27 +100,35 @@ cmd_gate() {
   [ -n "$(pr_number)" ] || { decide "not a pull_request event" false; return 0; }
   [ "$(event pull_request.head.repo.full_name)" = "$GITHUB_REPOSITORY" ] \
     || { decide "fork pull request (no secrets)" false; return 0; }
+  # With human-review-check on, a review is not a new head, so it gets no review and no skip status:
+  # the approval step decides whether it clears the human review status, and needs no Claude
+  # credential. With the check off, a review event follows the rules below, as it always did.
+  if [ "${GITHUB_EVENT_NAME:-}" = pull_request_review ] && [ "${INPUT_HUMAN_REVIEW_CHECK:-off}" = on ]; then
+    decide "review event" false
+    out approval true
+    return 0
+  fi
   # Dependabot and similar runs get no secrets: without Claude credentials there is nothing to run.
   [ "${HAS_CLAUDE_AUTH:-}" = true ] \
-    || { decide "no claude-token or anthropic-api-key (secrets are not available to this run)" false; return 0; }
+    || { skip "no claude-token or anthropic-api-key (secrets are not available to this run)"; return 0; }
   if [ "$(event action)" = labeled ]; then
     if [ "$(event label.name)" = "$INPUT_LABEL" ]; then decide "label '$INPUT_LABEL' forces a review" true
     else decide "label '$(event label.name)' is not '$INPUT_LABEL'" false; fi
     return 0
   fi
   if [ "$(event pull_request.draft)" = true ] && [ "${INPUT_DRAFTS:-false}" != true ]; then
-    decide "draft pull request (drafts: false); add the '$INPUT_LABEL' label to review it" false; return 0
+    skip "draft pull request (drafts: false); add the '$INPUT_LABEL' label to review it"; return 0
   fi
   mkdir -p "$JOB"
   if [ -n "${INPUT_PATHS:-}" ]; then
     changed_files "$JOB/changed-files.txt" || { log "gate: could not list the pull request's files"; return 1; }
     matches_paths "$JOB/changed-files.txt" "$INPUT_PATHS" \
-      || { decide "no changed file matches 'paths'" false; return 0; }
+      || { skip "no changed file matches 'paths'"; return 0; }
   fi
   if [ "${INPUT_ONCE:-true}" = true ]; then
     own_reviews "$JOB/own-reviews.txt" || { log "gate: could not list the pull request's reviews"; return 1; }
     if [ -s "$JOB/own-reviews.txt" ]; then
-      decide "already reviewed (once: true); add the '$INPUT_LABEL' label to review again" false; return 0
+      skip "already reviewed (once: true); add the '$INPUT_LABEL' label to review again"; return 0
     fi
   fi
   decide "$(event action)" true
@@ -380,6 +394,77 @@ cmd_findings_check() {
   return 0
 }
 
+# The "Tribunal human review" commit status on the reviewed head, from the review's needsHuman flag.
+# Best effort like the findings status, and written to its own file so the two never overwrite each other.
+cmd_human_review_check() {
+  local line
+  rm -f "$JOB/human-status.json"
+  if ! line="$(python3 "$ACTION_DIR/runtime.py" human-review-check 2> "$JOB/human-review-check.err")"; then
+    printf 'Human review status not created: %s\n' "$(tail -n 1 "$JOB/human-review-check.err")" >&2
+    return 0
+  fi
+  if gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$(event pull_request.head.sha)" --input "$JOB/human-status.json" > /dev/null 2> "$JOB/human-review-check.err"; then
+    printf 'Human review status: %s\n' "$line" >&2
+  else
+    printf 'Human review status not created (%s).\n' "$(tail -n 1 "$JOB/human-review-check.err")" >&2
+    echo "::warning::tribunal: the human review status was not created; give the job statuses: write"
+  fi
+  return 0
+}
+
+# The "Tribunal human review" status on a head Tribunal did not review (the gate said no, or the
+# engine skipped), as `human-review-on-skip` says, so a required status never waits forever and a
+# push after a raised flag does not clear it (`carry`). Best effort, as above, but every failure warns:
+# without the status a required check blocks the pull request.
+cmd_human_review_skip() {
+  local line
+  [ "${INPUT_HUMAN_REVIEW_CHECK:-off}" = on ] || return 0
+  mkdir -p "$JOB"
+  if ! line="$(python3 "$ACTION_DIR/runtime.py" human-review-skip 2> "$JOB/human-review-skip.err")"; then
+    printf 'Human review status not created: %s\n' "$(tail -n 1 "$JOB/human-review-skip.err")" >&2
+    echo "::warning::tribunal: the human review status was not created: $(tail -n 1 "$JOB/human-review-skip.err")"
+    return 0
+  fi
+  if [ ! -f "$JOB/human-status.json" ]; then
+    printf 'Human review status %s\n' "$line" >&2
+  elif gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$(event pull_request.head.sha)" --input "$JOB/human-status.json" > /dev/null 2> "$JOB/human-review-skip.err"; then
+    printf 'Human review status (not reviewed): %s\n' "$line" >&2
+  else
+    printf 'Human review status not created (%s).\n' "$(tail -n 1 "$JOB/human-review-skip.err")" >&2
+    echo "::warning::tribunal: the human review status was not created; give the job statuses: write"
+  fi
+  return 0
+}
+
+# On a `pull_request_review` event: an approval of the current head by a person with write access
+# clears a pending "Tribunal human review" status. Every refusal logs why and posts nothing, and the
+# step never fails the job.
+cmd_human_review_approve() {
+  local line
+  mkdir -p "$JOB"
+  if ! line="$(python3 "$ACTION_DIR/runtime.py" human-review-approve 2> "$JOB/human-review-approve.err")"; then
+    printf 'Human review status not cleared: %s\n' "$(tail -n 1 "$JOB/human-review-approve.err")" >&2
+    echo "::warning::tribunal: the approval could not be checked: $(tail -n 1 "$JOB/human-review-approve.err")"
+    return 0
+  fi
+  if [ ! -f "$JOB/human-status.json" ]; then
+    printf 'Human review status %s\n' "$line" >&2
+  elif gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$(event pull_request.head.sha)" --input "$JOB/human-status.json" > /dev/null 2> "$JOB/human-review-approve.err"; then
+    printf 'Human review status: %s\n' "$line" >&2
+  else
+    printf 'Human review status not created (%s).\n' "$(tail -n 1 "$JOB/human-review-approve.err")" >&2
+    echo "::warning::tribunal: the human review status was not created; give the job statuses: write"
+  fi
+  return 0
+}
+
+# human-review-skip step: the engine wrote a skip instead of a review.
+cmd_human_review_engine_skip() {
+  [ -f "$JOB/run.json" ] && python3 -c 'import json,sys
+sys.exit(0 if json.load(open(sys.argv[1])).get("skipped") else 1)' "$JOB/run.json" 2>/dev/null || return 0
+  cmd_human_review_skip
+}
+
 # Why nothing was posted: the post's own line, else the last line the binary printed, else the
 # setup failed before either ran.
 not_posted_reason() {
@@ -459,6 +544,7 @@ if fallback:
 PYMODE
     fi
     [ ! -f "$JOB/findings-line" ] || { echo; cat "$JOB/findings-line"; }
+    [ ! -f "$JOB/needs-human.md" ] || { printf '\nNeeds a human:\n\n'; cat "$JOB/needs-human.md"; }
     if public_repo; then
       echo
       echo "This repository is public (or its visibility is unknown), so the findings table, the report and the"
@@ -478,6 +564,33 @@ PYMODE
       echo "No report was written."
     fi
   } >> "$GITHUB_STEP_SUMMARY"
+  return 0
+}
+
+# needs-human-label: add the label while the review raises needsHuman and remove it when it does not.
+# NEEDS_HUMAN is the needs-human step's output: empty (no verdict on the flag) leaves the label alone.
+# A failure only warns: the label is a courtesy and must not fail the job.
+cmd_needs_human_label() {
+  local pr label err
+  [ -n "${INPUT_NEEDS_HUMAN_LABEL:-}" ] || return 0
+  pr="$(pr_number)"
+  err="$(mktemp)"
+  case "${NEEDS_HUMAN:-}" in
+    true)
+      gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$pr/labels" -f "labels[]=$INPUT_NEEDS_HUMAN_LABEL" >/dev/null 2>"$err" || {
+        echo "::warning::tribunal: the needs-human label was not updated; give the job pull-requests: write"
+        cat "$err" >&2
+      } ;;
+    false)
+      label="$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1],safe=""))' "$INPUT_NEEDS_HUMAN_LABEL")"
+      gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$pr/labels/$label" >/dev/null 2>"$err" || {
+        if ! grep -q 'HTTP 404' "$err"; then
+          echo "::warning::tribunal: the needs-human label was not updated; give the job pull-requests: write"
+          cat "$err" >&2
+        fi
+      } ;;
+  esac
+  rm -f "$err"
   return 0
 }
 
@@ -514,10 +627,15 @@ case "${1:-}" in
   restore) cmd_restore ;;
   baseline) cmd_baseline ;;
   findings-check) cmd_findings_check ;;
+  human-review-check) cmd_human_review_check ;;
+  human-review-skip) cmd_human_review_engine_skip ;;
+  human-review-approve) cmd_human_review_approve ;;
+  needs-human-label) cmd_needs_human_label ;;
+  needs-human) python3 "$ACTION_DIR/runtime.py" needs-human || true ;;
   review) cmd_review ;;
   post) cmd_post ;;
   fallback) cmd_fallback ;;
   summary) cmd_summary ;;
   cleanup) cmd_cleanup ;;
-  *) echo "usage: run.sh gate|node-check|validate|prepare|restore|review|post|findings-check|baseline|fallback|summary|cleanup" >&2; exit 2 ;;
+  *) echo "usage: run.sh gate|node-check|validate|prepare|restore|review|post|findings-check|human-review-check|human-review-skip|human-review-approve|needs-human|needs-human-label|baseline|fallback|summary|cleanup" >&2; exit 2 ;;
 esac
