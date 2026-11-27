@@ -27,6 +27,19 @@ own commit.
 
 Nothing yet.
 
+## v1.5.3 — bundles Tribunal 115.10.0
+
+Tag `tribunal-action-v1.5.3` (and `tribunal-action-v1`) at `9b15a47`. Bundled Tribunal plugin
+`115.10.0` with binary `tribunal-rust-v115.10.0`. The action's own code is unchanged.
+
+- A scenario-question finding ranked worth 2 or 3 stays in the report when two or three candidates
+  were merged into it, and never blocks. Before, it went to "Questions to review", which the posted
+  review leaves out, so a review now posts more findings.
+- One registry for the languages of the reviewed code. For Python: pytest file names count as tests,
+  a refuter's scope widens for a cited `.py` file, the pre-existing rule spares a `def` the pull
+  request newly calls, and a `backend` profile with `language: "python"` runs the Python reviewer.
+- A review logs the analyses it lacks for a language and records them as `languageSupport`.
+
 ## v1.5.2 — bundles Tribunal 115.9.0
 
 Tag `tribunal-action-v1.5.2` (and `tribunal-action-v1`) at `16ff234`. Bundled Tribunal plugin
