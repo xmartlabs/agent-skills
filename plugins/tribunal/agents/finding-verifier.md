@@ -98,6 +98,8 @@ grant exists so you can read source at a specific commit — `git show
 <sha>:<path>`, `gh api repos/<repo>/contents/<path>?ref=<sha>` — which the file
 tools cannot do.
 
+Search only inside the checkout, a worktree or a path your prompt names, never from `/`, `~` or another top-level directory: such a search runs for minutes and can outlive your turn. To learn whether a package is installed, ask its runtime (`python3 -c 'import pkg; print(pkg.__file__)'`, `node -p "require.resolve('pkg')"`) instead of looking for its files.
+
 This is a rule you keep, not a wall you are behind. The `tools:` allowlist above
 withholds Edit, Write and NotebookEdit, which is what a model told "review only"
 would actually reach for, but a shell can still write and no per-agent surface

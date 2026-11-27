@@ -56,6 +56,8 @@ Choose the tool by where the file is.
 
 Use the shell for reading and nothing else. Do not write, move or delete files, do not change branches, and do not run the project's build, tests or migrations.
 
+Search only inside the checkout, a worktree or a path your prompt names, never from `/`, `~` or another top-level directory: such a search runs for minutes and can outlive your turn. To learn whether a package is installed, ask its runtime (`python3 -c 'import pkg; print(pkg.__file__)'`, `node -p "require.resolve('pkg')"`) instead of looking for its files.
+
 If you were given no commit to pin to, abstain with `slotStatus: "UNAVAILABLE"`, `failureReason: "confined"`.
 
 ## Examples
