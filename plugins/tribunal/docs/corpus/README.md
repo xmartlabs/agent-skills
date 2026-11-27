@@ -172,8 +172,9 @@ The answer goes into the item as `proposal`, with the model, the cost and the da
 a line of the file at the pin is marked `quoteFound: false`.
 
 `--max-usd` is required. Before each dispatch the command adds what it has spent, the dispatches still
-running and the next one, priced at the mean cost so far (US$0.30 before the first one ends), and
-starts nothing that would pass the cap. Run it again to continue: items that already have a proposal
+running and the next one, priced at the mean cost so far (US$0.10 before the first one ends), and
+starts nothing that would pass the cap. A dispatch that does not fit waits for the running ones, whose
+real cost may leave room; the cap is reached only when none is running. Run it again to continue: items that already have a proposal
 are skipped. `--concurrency` (4) is how many pull requests are read at once, each in its own worktree.
 Every worktree is removed when the command ends.
 
