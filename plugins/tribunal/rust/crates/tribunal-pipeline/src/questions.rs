@@ -236,6 +236,16 @@ pub const RANK_PROMPT: &str = "You rank the findings of one code review of a pul
 pub const KEEP_WORTH: u64 = 4;
 pub const KEEP_SUPPORT: usize = 4;
 
+/// A question finding below [`KEEP_WORTH`] also stays in the report when at
+/// least [`AGREED_SUPPORT`] candidates were merged into it and the ranking
+/// gives it at least [`AGREED_WORTH`]. It never blocks. On 12 pinned runs over
+/// public Python pull requests, 8 of the 24 findings this keeps were defects
+/// the author later fixed, against 4 of the 166 raised by one candidate alone.
+/// On 8 TypeScript pull requests it kept 13 more, as often real as the
+/// question findings already in the report.
+pub const AGREED_SUPPORT: usize = 2;
+pub const AGREED_WORTH: u64 = 2;
+
 /// The `placement` a moved finding carries, which keeps it out of the verdict.
 pub const LOWER_PRIORITY: &str = "lower-priority-question";
 
@@ -372,7 +382,11 @@ pub fn worths(answer: Option<&Value>, count: usize) -> Vec<Option<u64>> {
 pub fn keeps(worth: Option<u64>, support: usize) -> bool {
     match worth {
         None => true,
-        Some(w) => w >= KEEP_WORTH || support >= KEEP_SUPPORT,
+        Some(w) => {
+            w >= KEEP_WORTH
+                || support >= KEEP_SUPPORT
+                || (support >= AGREED_SUPPORT && w >= AGREED_WORTH)
+        }
     }
 }
 
