@@ -27,6 +27,17 @@ own commit.
 
 Nothing yet.
 
+## v1.5.2 — bundles Tribunal 115.9.0
+
+Tag `tribunal-action-v1.5.2` (and `tribunal-action-v1`) at `16ff234`. Bundled Tribunal plugin
+`115.9.0` with binary `tribunal-rust-v115.9.0`. The action's own code is unchanged.
+
+- Lens prompts tell agents never to search from the filesystem root.
+- Before a review tree is removed, the engine kills any process still running inside it (Linux and
+  macOS), so a command an agent left behind does not outlive the review.
+- Metrics record the finding pairs a proximity veto kept apart.
+- The binary adds `tribunal corpus collect` and `tribunal corpus read`; a review does not use them.
+
 ## v1.5.1 — bundles Tribunal 115.8.0
 
 Tag `tribunal-action-v1.5.1` (and `tribunal-action-v1`) at `71027f2`. Bundled Tribunal plugin
