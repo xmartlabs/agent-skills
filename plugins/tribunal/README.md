@@ -296,7 +296,7 @@ Measured on 57 recorded reviews, with the refutation panel on: a PR of 1 to 7 fi
 
 ## What it records, and why that matters
 
-Every run appends one row to `~/.claude/tribunal-data/metrics.jsonl` on your machine: findings, votes, verdict, cost and a hash of tribunal's code. It never travels with the plugin. [Details](docs/records.md).
+Every run appends one row to `~/.claude/tribunal-data/metrics.jsonl` on your machine: findings, votes, verdict, cost and a hash of tribunal's code. It never travels with the plugin. [Details](docs/records.md). To measure tribunal on your own code you need a labelled corpus; [Building a corpus](docs/corpus/README.md) says how to start one from your repository's history.
 
 ## When to use it
 

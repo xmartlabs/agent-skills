@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/xmartlabs/agent-skills/plugins/tribunal/templates/corpus-entry.schema.json",
+  "title": "Tribunal corpus entry",
+  "description": "One pull request of a labelled corpus: the commit its defects were labelled at, and the defects. `tribunal corpus collect` writes entries with status `candidate`; a person confirms each defect and sets status `labelled`. See docs/corpus/README.md.",
+  "type": "object",
+  "required": ["repo", "pr", "reviewedSha", "status", "knownReal"],
+  "properties": {
+    "repo": { "type": "string", "description": "owner/name" },
+    "pr": { "type": "integer" },
+    "title": { "type": ["string", "null"] },
+    "headSha": { "type": ["string", "null"], "description": "The pull request's head when the entry was written." },
+    "reviewedSha": { "type": "string", "description": "The pin: the commit a measurement run reviews, where every labelled defect is present." },
+    "status": { "type": "string", "enum": ["candidate", "labelled"] },
+    "groundTruthTier": { "type": ["string", "null"] },
+    "candidateSource": {
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string" },
+        "source": { "type": "string" },
+        "reviewer": { "type": "string" }
+      }
+    },
+    "knownReal": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "file", "description"],
+        "properties": {
+          "id": { "type": "string", "description": "Unique inside the entry. Use the defect's own words: a matcher pairs findings with it." },
+          "file": { "type": "string" },
+          "line": { "type": ["integer", "null"] },
+          "quote": { "type": ["string", "null"], "description": "A whole line of the file at the pin, trimmed." },
+          "description": { "type": "string", "description": "The defect in its own words." },
+          "evidence": { "type": ["string", "null"] },
+          "raisedBy": { "type": ["string", "null"] },
+          "resolution": { "type": ["string", "null"] },
+          "source": { "type": ["string", "null"] },
+          "expectedSeverity": { "type": ["string", "null"], "enum": ["important", "nit", null] },
+          "reviewerSeverity": { "type": ["string", "null"] },
+          "tier": { "type": ["string", "null"] },
+          "comment": { "type": ["string", "null"] },
+          "seenAt": { "type": ["string", "null"], "description": "The commit the reviewer commented on." },
+          "fix": { "type": ["string", "null"], "description": "The commit that fixed it." },
+          "proposal": {
+            "type": "object",
+            "description": "What `tribunal corpus read` proposed. A person decides; nothing here changes status or tier.",
+            "required": ["verdict", "description", "model", "costUsd", "date"],
+            "properties": {
+              "verdict": { "type": "string", "enum": ["defect", "minor", "not-a-defect", "cannot-tell"] },
+              "severity": { "type": ["string", "null"], "enum": ["important", "nit", null] },
+              "description": { "type": "string" },
+              "quote": { "type": ["string", "null"] },
+              "quoteFound": { "type": ["boolean", "null"] },
+              "reasoning": { "type": ["string", "null"] },
+              "model": { "type": "string" },
+              "costUsd": { "type": "number" },
+              "date": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "skipped": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "file", "reason"],
+        "properties": {
+          "id": { "type": "string" },
+          "file": { "type": "string" },
+          "reason": { "type": "string" },
+          "comment": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

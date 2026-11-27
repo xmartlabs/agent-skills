@@ -6,6 +6,7 @@
 pub mod agent_def;
 pub mod anchor_repair;
 pub mod context;
+pub mod corpus_read;
 pub mod cost_report;
 pub mod coverage_report;
 pub mod decisions;

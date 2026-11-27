@@ -43,6 +43,8 @@ fn usage() -> ExitCode {
     eprintln!(
         "usage: tribunal audit [--repo <owner/name>] [--since <iso date>] [--limit <n>] [--candidates] [--json]"
     );
+    eprintln!("usage: tribunal corpus collect --repo <owner/name> --checkout <dir> --out <dir> [--source <name>[,<name>...]] [--reviewer <login>] [--marker <text>] [--since <iso date>] [--max-comments <n>] [--json]");
+    eprintln!("usage: tribunal corpus read --in <dir> --checkout <dir> --max-usd <n> [--model <id>] [--effort <level>] [--concurrency <n>] [--json]");
     eprintln!("usage: tribunal compare --a <file.json> --b <file.json> [--resamples <n>] [--seed <n>] [--json]");
     eprintln!("usage: tribunal lost-runs [--recent <days>]");
     eprintln!("usage: tribunal harness-version [--short|--manifest]");
@@ -986,6 +988,205 @@ async fn audit_main(argv: &[String]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// `tribunal corpus collect|read`: candidate corpus entries from addressed
+/// review comments, and an agent's proposal for each (docs/corpus/README.md).
+async fn corpus_main(argv: &[String]) -> ExitCode {
+    let result = match argv.first().map(String::as_str) {
+        Some("collect") => corpus_collect(&argv[1..]).await,
+        Some("read") => corpus_read(&argv[1..]).await,
+        _ => Err("corpus needs collect or read".to_owned()),
+    };
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) if e.starts_with("usage: ") => {
+            eprintln!("tribunal: {}", &e["usage: ".len()..]);
+            usage()
+        }
+        Err(e) => {
+            eprintln!("tribunal: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Flags as `--name value`, plus `--json`. An unknown flag or a flag with no
+/// value is a usage error.
+fn corpus_flags(
+    argv: &[String],
+    known: &[&str],
+) -> Result<(std::collections::HashMap<String, String>, bool), String> {
+    let mut flags = std::collections::HashMap::new();
+    let mut json = false;
+    let mut it = argv.iter();
+    while let Some(a) = it.next() {
+        if a == "--json" {
+            json = true;
+            continue;
+        }
+        if !known.contains(&a.as_str()) {
+            return Err(format!("usage: unknown argument {a}"));
+        }
+        let v = it
+            .next()
+            .ok_or_else(|| format!("usage: {a} needs a value"))?;
+        flags.insert(a.trim_start_matches("--").to_owned(), v.clone());
+    }
+    Ok((flags, json))
+}
+
+fn need(flags: &std::collections::HashMap<String, String>, name: &str) -> Result<String, String> {
+    flags
+        .get(name)
+        .cloned()
+        .ok_or_else(|| format!("usage: --{name} is required"))
+}
+
+async fn corpus_collect(argv: &[String]) -> Result<(), String> {
+    use tribunal_context::corpus::collect::{
+        collect, summary_text, CollectArgs, DEFAULT_MAX_COMMENTS, DEFAULT_SOURCES, LINE_CHANGED,
+    };
+    use tribunal_context::corpus::source::{names, source};
+    let (f, as_json) = corpus_flags(
+        argv,
+        &[
+            "--repo",
+            "--checkout",
+            "--out",
+            "--source",
+            "--reviewer",
+            "--marker",
+            "--since",
+            "--max-comments",
+        ],
+    )?;
+    let wanted: Vec<String> = match f.get("source") {
+        Some(v) => v
+            .split(',')
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        None => DEFAULT_SOURCES.iter().map(|s| (*s).to_owned()).collect(),
+    };
+    let mut markers = Vec::new();
+    let mut line_changed = false;
+    for name in &wanted {
+        if name == LINE_CHANGED {
+            line_changed = true;
+            continue;
+        }
+        let known = || {
+            let mut k = names();
+            k.push(LINE_CHANGED);
+            k.join(", ")
+        };
+        markers.push(
+            source(name).ok_or_else(|| format!("unknown --source {name}; known: {}", known()))?,
+        );
+    }
+    if f.contains_key("reviewer") || f.contains_key("marker") {
+        let first = markers.first_mut().ok_or_else(|| {
+            "usage: --reviewer and --marker need a marker source in --source".to_owned()
+        })?;
+        *first = first
+            .clone()
+            .with_overrides(f.get("reviewer").cloned(), f.get("marker").cloned());
+    }
+    let max_comments = match f.get("max-comments") {
+        Some(v) => v
+            .parse()
+            .map_err(|_| format!("usage: --max-comments must be a whole number, got {v}"))?,
+        None => DEFAULT_MAX_COMMENTS,
+    };
+    let args = CollectArgs {
+        repo: need(&f, "repo")?,
+        checkout: PathBuf::from(need(&f, "checkout")?),
+        out: PathBuf::from(need(&f, "out")?),
+        markers,
+        line_changed,
+        since: f.get("since").cloned(),
+        max_comments,
+    };
+    let summary = collect(&runtime().tools, &args).await?;
+    if as_json {
+        println!("{summary}");
+    } else {
+        print!("{}", summary_text(&summary));
+    }
+    Ok(())
+}
+
+/// Today as `YYYY-MM-DD`, in UTC.
+fn utc_date() -> String {
+    let days = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() / 86_400) as i64;
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+async fn corpus_read(argv: &[String]) -> Result<(), String> {
+    use tribunal_pipeline::corpus_read::{
+        read, summary_text, ReadArgs, DEFAULT_CONCURRENCY, DEFAULT_EFFORT, DEFAULT_MODEL,
+    };
+    let (f, as_json) = corpus_flags(
+        argv,
+        &[
+            "--in",
+            "--checkout",
+            "--max-usd",
+            "--model",
+            "--effort",
+            "--concurrency",
+        ],
+    )?;
+    let max_usd: f64 = need(&f, "max-usd")?
+        .parse()
+        .map_err(|_| "usage: --max-usd must be a number of dollars".to_owned())?;
+    let concurrency = match f.get("concurrency") {
+        Some(v) => v.parse::<usize>().ok().filter(|n| *n > 0).ok_or_else(|| {
+            format!("usage: --concurrency must be a positive whole number, got {v}")
+        })?,
+        None => DEFAULT_CONCURRENCY,
+    };
+    let rt = runtime();
+    let args = ReadArgs {
+        input: PathBuf::from(need(&f, "in")?),
+        checkout: PathBuf::from(need(&f, "checkout")?),
+        max_usd,
+        model: f
+            .get("model")
+            .cloned()
+            .unwrap_or_else(|| DEFAULT_MODEL.to_owned()),
+        effort: f
+            .get("effort")
+            .cloned()
+            .unwrap_or_else(|| DEFAULT_EFFORT.to_owned()),
+        concurrency,
+        tmp: PathBuf::from(&rt.tmpdir),
+        date: utc_date(),
+    };
+    let agent = claude_agent().map_err(|_| "cannot start the claude CLI".to_owned())?;
+    let agent = Progress {
+        inner: agent,
+        started: std::time::Instant::now(),
+    };
+    let summary = read(&agent, &rt.tools, &args).await?;
+    if as_json {
+        println!("{summary}");
+    } else {
+        print!("{}", summary_text(&summary));
+    }
+    Ok(())
+}
+
 /// `tribunal lost-runs`: the runs that started and never wrote their metrics
 /// row, from `inflight-runs.jsonl`. `--recent <days>` prints one warning line
 /// when the persist step looks broken, and nothing otherwise.
@@ -1190,6 +1391,7 @@ async fn run() -> ExitCode {
         Some("cost") => return cost_main(&argv[1..]),
         Some("metrics") => return metrics_main(&argv[1..]),
         Some("audit") => return audit_main(&argv[1..]).await,
+        Some("corpus") => return corpus_main(&argv[1..]).await,
         Some("compare") => return compare_main(&argv[1..]),
         Some("override") => return override_main(&argv[1..]),
         Some("lost-runs") => return lost_runs_main(&argv[1..]),
