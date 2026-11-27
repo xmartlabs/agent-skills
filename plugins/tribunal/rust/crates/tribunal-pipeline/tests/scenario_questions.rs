@@ -348,6 +348,51 @@ async fn a_question_finding_below_worth_four_leaves_the_body_unless_many_raised_
     assert!(basis.contains("worth four") && basis.contains("worth two raised by five"));
 }
 
+#[tokio::test]
+async fn a_question_finding_two_candidates_agree_on_stays_in_the_body_and_never_blocks() {
+    use tribunal_pipeline::questions::{rank_and_place, rank_prompt, RANKED_BELOW_BLOCKING};
+    let fake = FakeAgent::new().answer(
+        "question-rank",
+        FakeAnswer::Structured(json!({"ranking": [
+            {"id": "1", "worth": 2}, {"id": "2", "worth": 3}, {"id": "3", "worth": 1},
+            {"id": "4", "worth": 2}, {"id": "5", "worth": 3}
+        ]})),
+    );
+    let mut surviving = vec![
+        result("worth two raised by two", QUESTION_LENS, 2),
+        result("worth three raised by three", QUESTION_LENS, 3),
+        result("worth one raised by three", QUESTION_LENS, 3),
+        result("worth two raised by one", QUESTION_LENS, 1),
+        result("worth three raised by one", QUESTION_LENS, 1),
+    ];
+    let mut aside = Vec::new();
+    let prompt = rank_prompt("acme/web-app", "12", "abc123", &surviving);
+    let s = setup();
+    let (_, summary) = rank_and_place(&fake, &s, prompt, &mut surviving, &mut aside, None).await;
+    let titles = |v: &[serde_json::Value]| -> Vec<String> {
+        v.iter()
+            .map(|r| r["finding"]["title"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(
+        titles(&surviving),
+        ["worth two raised by two", "worth three raised by three"]
+    );
+    assert_eq!(
+        titles(&aside),
+        [
+            "worth one raised by three",
+            "worth two raised by one",
+            "worth three raised by one"
+        ]
+    );
+    assert!(surviving
+        .iter()
+        .all(|r| r["finding"][RANKED_BELOW_BLOCKING] == json!(true)));
+    assert_eq!(summary["belowBlocking"], json!(2));
+    assert_eq!(summary["movedToQuestionsToReview"], json!(3));
+}
+
 /// The ranking's worth reaches the metrics row on every finding it scored,
 /// so a threshold can be tried again offline; a finding it did not score
 /// keeps the row's shape.

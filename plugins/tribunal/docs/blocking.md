@@ -109,7 +109,9 @@ returns to the severity rule. The metrics row records the threshold as
 The same worth decides where scenario-question findings go: one below worth 4
 moves to "Questions to review", outside the verdict, unless four or more
 candidates were merged into it. On the pilot's runs that cut the report body
-by 38% and changed no verdict.
+by 38% and changed no verdict. One at worth 2 or 3 that two or three
+candidates were merged into also stays in the report, and never blocks: when
+separate questions reach the same finding it is a defect more often.
 
 ## Code the pull request did not change
 
